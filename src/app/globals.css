@@ -1,0 +1,58 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --user-bubble: #10b981;
+  --ai-bubble: #1e293b;
+}
+
+html,
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Pretendard', system-ui, -apple-system, sans-serif;
+}
+
+/* 스크롤바 숨김 유틸리티 */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* 커스텀 스크롤바 (사이드바, 채팅창) */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+}
+
+/* prose 마크다운 스타일 오버라이드 */
+.prose-invert p {
+  margin: 0.3em 0;
+}
+.prose-invert ul,
+.prose-invert ol {
+  margin: 0.3em 0;
+  padding-left: 1.2em;
+}
+.prose-invert strong {
+  color: var(--text-primary);
+}
