@@ -173,7 +173,7 @@ export async function GET() {
 
     const filename = encodeURIComponent(`모니_경영보고서_${year}년${String(month).padStart(2, '0')}월.docx`)
 
-    return new NextResponse(buf, {
+    return new NextResponse(new Uint8Array(buf), {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
