@@ -13,8 +13,7 @@ interface ChatWindowProps {
 // AI 응답에서 [ACTION:...] 블록 및 내보내기 태그 제거 (UI 표시용)
 function cleanResponse(text: string): string {
   return text
-    .replace(/\[ACTION:SAVE_TRANSACTION\][\s\S]*?\[\/ACTION\]/g, '')
-    .replace(/\[ACTION:SAVE_INVENTORY\][\s\S]*?\[\/ACTION\]/g, '')
+    .replace(/\[ACTION:[^\]]+\][\s\S]*?\[\/ACTION\]/g, '')
     .replace(/\[EXCEL_EXPORT\]/g, '')
     .replace(/\[WORD_EXPORT\]/g, '')
     .trim()
