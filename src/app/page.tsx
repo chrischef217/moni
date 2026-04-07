@@ -96,15 +96,29 @@ export default function HomePage() {
     ])
   }
 
+  // File → base64 변환 헬퍼
+  const fileToBase64 = (file: File): Promise<{ base64: string; mediaType: string }> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        const base64 = result.split(',')[1]
+        resolve({ base64, mediaType: file.type })
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+
   // 메시지 전송
   const handleSend = useCallback(
-    async (text: string) => {
-      if (!text.trim() || isStreaming) return
+    async (text: string, file?: File) => {
+      if ((!text.trim() && !file) || isStreaming) return
 
+      const displayText = text.trim() || (file ? `📎 ${file.name}` : '')
       const userMsg: Message = {
         id: uid(),
         role: 'user',
-        content: text,
+        content: displayText,
         timestamp: new Date(),
       }
 
@@ -114,6 +128,12 @@ export default function HomePage() {
       setStreamingText('')
 
       try {
+        // 이미지 첨부 시 base64 변환
+        let imagePayload: { base64: string; mediaType: string } | undefined
+        if (file && file.type.startsWith('image/')) {
+          imagePayload = await fileToBase64(file)
+        }
+
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -122,6 +142,7 @@ export default function HomePage() {
               role: m.role,
               content: m.content,
             })),
+            ...(imagePayload ? { image: imagePayload } : {}),
           }),
         })
 
@@ -157,7 +178,7 @@ export default function HomePage() {
 
               // DB 저장 완료 — Log Palette 업데이트
               if (parsed.actions) {
-                const { savedTransaction, savedInventory } = parsed.actions
+                const { savedTransaction, savedInventory, savedRawInbound, savedRawOutbound, savedPkgInbound, savedPkgOutbound, savedProduction } = parsed.actions
                 if (savedTransaction) {
                   setLogs((prev) => [
                     ...prev,
@@ -180,6 +201,21 @@ export default function HomePage() {
                       timestamp: new Date(),
                     },
                   ])
+                }
+                if (savedRawInbound) {
+                  setLogs((prev) => [...prev, { id: uid(), type: 'inventory', description: `원료 입고: ${(savedRawInbound as Record<string, unknown>).item_name} ${((savedRawInbound as Record<string, unknown>).quantity_g as number / 1000).toFixed(1)}kg`, timestamp: new Date() }])
+                }
+                if (savedRawOutbound) {
+                  setLogs((prev) => [...prev, { id: uid(), type: 'inventory', description: `원료 출고: ${(savedRawOutbound as Record<string, unknown>).item_name}`, timestamp: new Date() }])
+                }
+                if (savedPkgInbound) {
+                  setLogs((prev) => [...prev, { id: uid(), type: 'inventory', description: `포장재 입고: ${(savedPkgInbound as Record<string, unknown>).material_name} ${(savedPkgInbound as Record<string, unknown>).quantity}개`, timestamp: new Date() }])
+                }
+                if (savedPkgOutbound) {
+                  setLogs((prev) => [...prev, { id: uid(), type: 'inventory', description: `포장재 출고: ${(savedPkgOutbound as Record<string, unknown>).material_name}`, timestamp: new Date() }])
+                }
+                if (savedProduction) {
+                  setLogs((prev) => [...prev, { id: uid(), type: 'inventory', description: `생산실적: ${(savedProduction as Record<string, unknown>).product_name}`, timestamp: new Date() }])
                 }
               }
 
@@ -237,6 +273,7 @@ export default function HomePage() {
         setStreamingText('')
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [messages, isStreaming, activeConvId]
   )
 
