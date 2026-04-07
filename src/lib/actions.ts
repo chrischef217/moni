@@ -522,6 +522,23 @@ export async function parseAndExecuteActions(text: string): Promise<{
     } catch (e) { console.error('CHECK_CASHFLOW 파싱 오류:', e) }
   }
 
+  // ── Sprint 4: BOM 조회 ───────────────────────────────────
+  const queryBomMatch = text.match(/\[ACTION:QUERY_BOM\]([\s\S]*?)\[\/ACTION\]/)
+  if (queryBomMatch) {
+    try {
+      const data = JSON.parse(queryBomMatch[1].trim())
+      const productName: string = data.product_name ?? ''
+      const { data: bom } = await supabase
+        .from('bom_items')
+        .select('product_name, raw_name, ratio_percent, note')
+        .eq('business_id', 'default')
+        .ilike('product_name', `%${productName}%`)
+        .order('ratio_percent', { ascending: false })
+
+      result.calendarEvent = { type: 'bom_query', product_name: productName, items: bom ?? [] }
+    } catch (e) { console.error('QUERY_BOM 파싱 오류:', e) }
+  }
+
   // ── Sprint 4: 구글 캘린더 이벤트 ─────────────────────────
   const calendarMatch = text.match(/\[ACTION:SAVE_CALENDAR_EVENT\]([\s\S]*?)\[\/ACTION\]/)
   if (calendarMatch) {

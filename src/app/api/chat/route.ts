@@ -277,6 +277,39 @@ export async function POST(req: NextRequest) {
           dbContext += `\n포장재: ${packaging.map((m) => `${m.material_name} ${m.current_stock}개`).join(', ')}`
         }
 
+        // BOM 데이터 (배합표 관련 질문 시)
+        if (
+          lastUserMessage.includes('BOM') ||
+          lastUserMessage.includes('bom') ||
+          lastUserMessage.includes('배합') ||
+          lastUserMessage.includes('원료 얼마') ||
+          lastUserMessage.includes('원료 필요')
+        ) {
+          // 언급된 제품명 추출 시도 후 해당 BOM 로드, 없으면 전체 로드
+          const { data: bomItems } = await supabase
+            .from('bom_items')
+            .select('product_name, raw_name, ratio_percent, note')
+            .eq('business_id', 'default')
+            .order('product_name')
+            .limit(100)
+
+          if (bomItems && bomItems.length > 0) {
+            // 제품별로 그룹핑하여 컨텍스트 생성
+            const bomByProduct = new Map<string, typeof bomItems>()
+            for (const b of bomItems) {
+              const arr = bomByProduct.get(b.product_name) ?? []
+              arr.push(b)
+              bomByProduct.set(b.product_name, arr)
+            }
+            const bomSummary = Array.from(bomByProduct.entries())
+              .map(([name, items]) =>
+                `${name}: ${items.map((i) => `${i.raw_name}(${i.ratio_percent}%)`).join(', ')}`
+              )
+              .join('\n')
+            dbContext += `\n\n[BOM 배합표]\n${bomSummary}`
+          }
+        }
+
         // 자금 현황
         if (lastUserMessage.includes('자금') || lastUserMessage.includes('발주') || lastUserMessage.includes('현금')) {
           const { data: cashFlow } = await supabase
