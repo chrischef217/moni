@@ -1,6 +1,121 @@
 import { supabase } from './supabase'
 import type { Transaction, InventoryLog } from '@/types'
 
+// ── Sprint 4: 발주 등록 ───────────────────────────────────────
+export async function savePurchaseOrder(data: {
+  item_name: string
+  supplier?: string | null
+  order_quantity_g: number
+  unit_price?: number | null
+  lead_time_days?: number
+  order_date: string
+}): Promise<{ ok: boolean; error?: string }> {
+  const id = `PO-${Date.now()}`
+  const leadTime = data.lead_time_days ?? 3
+  const expectedDate = new Date(data.order_date)
+  expectedDate.setDate(expectedDate.getDate() + leadTime)
+
+  const totalAmount = data.unit_price
+    ? Math.round((data.order_quantity_g / 1000) * data.unit_price)
+    : null
+
+  const { error } = await supabase.from('purchase_orders').insert({
+    id,
+    item_name: data.item_name,
+    supplier: data.supplier ?? '',
+    order_quantity_g: data.order_quantity_g,
+    unit_price: data.unit_price ?? null,
+    total_amount: totalAmount,
+    lead_time_days: leadTime,
+    order_date: data.order_date,
+    expected_arrival_date: expectedDate.toISOString().slice(0, 10),
+    status: 'planned',
+    business_id: 'default',
+  })
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+// ── Sprint 4: 자금 현황 등록 ──────────────────────────────────
+export async function saveCashFlow(data: {
+  type: 'balance' | 'receivable' | 'payable'
+  counterpart?: string | null
+  amount: number
+  due_date?: string | null
+}): Promise<{ ok: boolean; error?: string }> {
+  const id = `CF-${Date.now()}`
+  const { error } = await supabase.from('cash_flow').insert({
+    id,
+    type: data.type,
+    counterpart: data.counterpart ?? null,
+    amount: data.amount,
+    due_date: data.due_date ?? null,
+    business_id: 'default',
+  })
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+// ── Sprint 4: 자금 충분 여부 확인 ────────────────────────────
+export async function checkCashFlow(requiredAmount: number): Promise<{
+  sufficient: boolean
+  balance: number
+  receivable: number
+  message: string
+}> {
+  const { data } = await supabase
+    .from('cash_flow')
+    .select('type, amount')
+    .eq('business_id', 'default')
+
+  if (!data) return { sufficient: false, balance: 0, receivable: 0, message: '자금 정보 없음' }
+
+  const balance = data.filter((c) => c.type === 'balance').reduce((s, c) => s + c.amount, 0)
+  const receivable = data.filter((c) => c.type === 'receivable').reduce((s, c) => s + c.amount, 0)
+
+  const available = balance + receivable
+  const sufficient = available >= requiredAmount
+
+  return {
+    sufficient,
+    balance,
+    receivable,
+    message: sufficient
+      ? `💡 가용 자금 ${available.toLocaleString()}원으로 발주 가능합니다.`
+      : `⚠️ 가용 자금이 부족합니다. (가용: ${available.toLocaleString()}원 / 필요: ${requiredAmount.toLocaleString()}원)`,
+  }
+}
+
+// ── Sprint 4: 구글 캘린더 이벤트 저장 ────────────────────────
+export async function saveCalendarEvent(data: {
+  title: string
+  date: string
+  description?: string
+  type: 'order' | 'delivery' | 'production'
+}, accessToken?: string): Promise<{ ok: boolean; message: string; link?: string }> {
+  if (!accessToken) {
+    return {
+      ok: false,
+      message: '구글 캘린더 연동이 필요합니다. /api/auth/google 에서 구글 계정을 연결해주세요.',
+    }
+  }
+
+  try {
+    const res = await fetch('/api/calendar/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    const json = await res.json()
+    if (!res.ok) return { ok: false, message: json.error ?? '이벤트 등록 실패' }
+    return { ok: true, message: json.message, link: json.link }
+  } catch (e) {
+    return { ok: false, message: String(e) }
+  }
+}
+
 // ── 원료 입고 ──────────────────────────────────────────────────
 export async function saveRawInbound(data: {
   item_name: string
@@ -249,6 +364,10 @@ export async function parseAndExecuteActions(text: string): Promise<{
   savedPkgInbound?: Record<string, unknown>
   savedPkgOutbound?: Record<string, unknown>
   savedPlanned?: Record<string, unknown>
+  savedPurchaseOrder?: Record<string, unknown>
+  savedCashFlow?: Record<string, unknown>
+  cashFlowCheck?: Record<string, unknown>
+  calendarEvent?: Record<string, unknown>
   stockWarning?: string
 }> {
   const result: {
@@ -260,6 +379,10 @@ export async function parseAndExecuteActions(text: string): Promise<{
     savedPkgInbound?: Record<string, unknown>
     savedPkgOutbound?: Record<string, unknown>
     savedPlanned?: Record<string, unknown>
+    savedPurchaseOrder?: Record<string, unknown>
+    savedCashFlow?: Record<string, unknown>
+    cashFlowCheck?: Record<string, unknown>
+    calendarEvent?: Record<string, unknown>
     stockWarning?: string
   } = {}
 
@@ -365,6 +488,48 @@ export async function parseAndExecuteActions(text: string): Promise<{
         .single()
       if (!error) result.savedPlanned = saved
     } catch (e) { console.error('SAVE_PLANNED 파싱 오류:', e) }
+  }
+
+  // ── Sprint 4: 발주 등록 ───────────────────────────────────
+  const purchaseOrderMatch = text.match(/\[ACTION:SAVE_PURCHASE_ORDER\]([\s\S]*?)\[\/ACTION\]/)
+  if (purchaseOrderMatch) {
+    try {
+      const data = JSON.parse(purchaseOrderMatch[1].trim())
+      const res = await savePurchaseOrder(data)
+      if (res.ok) result.savedPurchaseOrder = data
+      else console.error('발주 등록 오류:', res.error)
+    } catch (e) { console.error('SAVE_PURCHASE_ORDER 파싱 오류:', e) }
+  }
+
+  // ── Sprint 4: 자금 등록 ───────────────────────────────────
+  const cashFlowMatch = text.match(/\[ACTION:SAVE_CASH_FLOW\]([\s\S]*?)\[\/ACTION\]/)
+  if (cashFlowMatch) {
+    try {
+      const data = JSON.parse(cashFlowMatch[1].trim())
+      const res = await saveCashFlow(data)
+      if (res.ok) result.savedCashFlow = data
+      else console.error('자금 등록 오류:', res.error)
+    } catch (e) { console.error('SAVE_CASH_FLOW 파싱 오류:', e) }
+  }
+
+  // ── Sprint 4: 자금 확인 ───────────────────────────────────
+  const checkCashFlowMatch = text.match(/\[ACTION:CHECK_CASHFLOW\]([\s\S]*?)\[\/ACTION\]/)
+  if (checkCashFlowMatch) {
+    try {
+      const data = JSON.parse(checkCashFlowMatch[1].trim())
+      const res = await checkCashFlow(data.required_amount ?? 0)
+      result.cashFlowCheck = { ...res, item_name: data.item_name }
+    } catch (e) { console.error('CHECK_CASHFLOW 파싱 오류:', e) }
+  }
+
+  // ── Sprint 4: 구글 캘린더 이벤트 ─────────────────────────
+  const calendarMatch = text.match(/\[ACTION:SAVE_CALENDAR_EVENT\]([\s\S]*?)\[\/ACTION\]/)
+  if (calendarMatch) {
+    try {
+      const data = JSON.parse(calendarMatch[1].trim())
+      // 서버사이드에서는 accessToken 없이 기록만 남김 (실제 등록은 클라이언트에서 /api/calendar/event 호출)
+      result.calendarEvent = data
+    } catch (e) { console.error('SAVE_CALENDAR_EVENT 파싱 오류:', e) }
   }
 
   return result
