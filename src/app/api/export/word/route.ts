@@ -12,7 +12,7 @@ import {
   BorderStyle,
   WidthType,
 } from 'docx'
-import { getMonthlyTransactions } from '@/lib/actions'
+import { getMonthlyTransactions, getMonthlyProductions } from '@/lib/actions'
 
 export async function GET() {
   try {
@@ -20,8 +20,11 @@ export async function GET() {
     const year = now.getFullYear()
     const month = now.getMonth() + 1
 
-    // 현재 달 거래 내역 조회
-    const transactions = await getMonthlyTransactions()
+    // 거래 내역 + 생산 실적 병렬 조회
+    const [transactions, productions] = await Promise.all([
+      getMonthlyTransactions(),
+      getMonthlyProductions(),
+    ])
 
     const income = transactions.filter((t) => t.type === 'income')
     const expense = transactions.filter((t) => t.type === 'expense')
@@ -35,7 +38,7 @@ export async function GET() {
       color: '94a3b8',
     }
 
-    // 거래 목록 테이블 행 생성 헬퍼
+    // 테이블 행 생성 헬퍼
     const makeTableRow = (cells: string[], isHeader = false) =>
       new TableRow({
         children: cells.map(
@@ -68,7 +71,7 @@ export async function GET() {
       sections: [
         {
           children: [
-            // 제목
+            // ── 제목 ──────────────────────────────────────────
             new Paragraph({
               text: `${year}년 ${month}월 경영 보고서`,
               heading: HeadingLevel.HEADING_1,
@@ -86,7 +89,7 @@ export async function GET() {
             }),
             new Paragraph({ text: '' }),
 
-            // 손익 요약 섹션
+            // ── 1. 손익 요약 ───────────────────────────────────
             new Paragraph({
               text: '1. 손익 요약',
               heading: HeadingLevel.HEADING_2,
@@ -105,9 +108,45 @@ export async function GET() {
             }),
             new Paragraph({ text: '' }),
 
-            // 매출 상세
+            // ── 2. 생산 작업일지 ───────────────────────────────
             new Paragraph({
-              text: '2. 매출 상세 내역',
+              text: '2. 생산 작업일지',
+              heading: HeadingLevel.HEADING_2,
+            }),
+            productions.length > 0
+              ? new Table({
+                  width: { size: 100, type: WidthType.PERCENTAGE },
+                  rows: [
+                    makeTableRow(['날짜', '제품명', '생산량(kg)', '불량(kg)', '샘플(kg)', '시작', '종료', '담당자'], true),
+                    ...productions.map((p: {
+                      work_date: string
+                      product_name: string
+                      quantity_ok_g: number
+                      quantity_ng_g: number
+                      sample_quantity_g: number
+                      start_time: string
+                      end_time: string
+                      worker_name: string
+                    }) =>
+                      makeTableRow([
+                        p.work_date,
+                        p.product_name,
+                        p.quantity_ok_g ? (p.quantity_ok_g / 1000).toFixed(2) : '-',
+                        p.quantity_ng_g ? (p.quantity_ng_g / 1000).toFixed(2) : '-',
+                        p.sample_quantity_g ? (p.sample_quantity_g / 1000).toFixed(2) : '-',
+                        p.start_time ?? '-',
+                        p.end_time ?? '-',
+                        p.worker_name ?? '-',
+                      ])
+                    ),
+                  ],
+                })
+              : new Paragraph({ text: '이번 달 생산 실적이 없습니다.' }),
+            new Paragraph({ text: '' }),
+
+            // ── 3. 매출 상세 ───────────────────────────────────
+            new Paragraph({
+              text: '3. 매출 상세 내역',
               heading: HeadingLevel.HEADING_2,
             }),
             income.length > 0
@@ -128,9 +167,9 @@ export async function GET() {
               : new Paragraph({ text: '이번 달 매출 내역이 없습니다.' }),
             new Paragraph({ text: '' }),
 
-            // 매입 상세
+            // ── 4. 매입 상세 ───────────────────────────────────
             new Paragraph({
-              text: '3. 매입 상세 내역',
+              text: '4. 매입 상세 내역',
               heading: HeadingLevel.HEADING_2,
             }),
             expense.length > 0
@@ -151,7 +190,7 @@ export async function GET() {
               : new Paragraph({ text: '이번 달 매입 내역이 없습니다.' }),
             new Paragraph({ text: '' }),
 
-            // 푸터
+            // ── 푸터 ──────────────────────────────────────────
             new Paragraph({
               children: [
                 new TextRun({
@@ -170,7 +209,6 @@ export async function GET() {
 
     // Word 파일 버퍼 생성
     const buf = await Packer.toBuffer(doc)
-
     const filename = encodeURIComponent(`모니_경영보고서_${year}년${String(month).padStart(2, '0')}월.docx`)
 
     return new NextResponse(new Uint8Array(buf), {
