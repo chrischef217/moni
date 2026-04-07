@@ -3,7 +3,7 @@
  * /api/migrate 에서 한 번 실행
  * INSERT ... ON CONFLICT DO NOTHING 으로 중복 방지
  */
-import { supabase } from './supabase'
+import { supabaseAdmin as supabase } from './supabase'
 import { DOOBAE_DATA } from './doobae_data'
 
 export interface MigrateResult {

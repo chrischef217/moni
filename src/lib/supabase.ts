@@ -8,6 +8,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   db: { schema: 'public' },
 })
 
+// 서버사이드 전용 클라이언트 (스키마 캐시 강제 갱신, Service Role Key 사용)
+export const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    db: { schema: 'public' },
+    auth: { persistSession: false },
+  }
+)
+
 // Supabase 초기화 SQL (README용 — 직접 실행은 Supabase SQL Editor에서)
 export const INIT_SQL = `
 -- 거래 내역 (매출/매입)
