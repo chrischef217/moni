@@ -3,8 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Supabase 클라이언트 싱글톤
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Supabase 클라이언트 싱글톤 (public 스키마 명시)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  db: { schema: 'public' },
+})
 
 // Supabase 초기화 SQL (README용 — 직접 실행은 Supabase SQL Editor에서)
 export const INIT_SQL = `
