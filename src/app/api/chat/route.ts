@@ -1,14 +1,18 @@
-import Anthropic from '@anthropic-ai/sdk'
+/**
+ * Moni 채팅 API — Ollama + Gemma 4 로컬 모델 버전
+ * 엔드포인트: http://localhost:11434/api/chat
+ * 스트리밍: NDJSON (각 줄이 독립적인 JSON 객체)
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { parseAndExecuteActions } from '@/lib/actions'
 import { supabase } from '@/lib/supabase'
 import { runStockAlertEngine, getUnreadAlerts, markAlertsRead } from '@/lib/stock_alert_engine'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})
+// Ollama 설정
+const OLLAMA_URL = process.env.OLLAMA_URL ?? 'http://localhost:11434'
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? 'gemma4:26b'
 
-// 모니 시스템 프롬프트
+// 모니 시스템 프롬프트 (기존 그대로 유지)
 const SYSTEM_PROMPT = `당신은 "모니(Moni)"입니다. 한국 소규모 식품 제조 공장의 AI 경영 도우미입니다.
 
 ## 핵심 원칙
@@ -156,6 +160,22 @@ BOM 조회:
 - 경고: "⚠️ [경고내용]"
 - 발주 제안: "📦 [발주내용]"`
 
+// Ollama /api/chat 메시지 타입
+interface OllamaMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+  images?: string[]  // base64 이미지 (vision 지원 모델용)
+}
+
+// Ollama 스트리밍 응답 한 줄의 타입
+interface OllamaChunk {
+  model: string
+  created_at: string
+  message: { role: string; content: string }
+  done: boolean
+  done_reason?: string
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -165,7 +185,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '메시지가 없습니다.' }, { status: 400 })
     }
 
-    // DB 컨텍스트 + 재고 알림 수집
+    // ── DB 컨텍스트 + 재고 알림 수집 ──────────────────────────
     let dbContext = ''
     const lastUserMessage = messages[messages.length - 1]?.content ?? ''
     const isFirstMessage = messages.length === 1
@@ -193,7 +213,7 @@ export async function POST(req: NextRequest) {
       const now = new Date()
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-      // 첫 메시지 or 관련 키워드 → 재고 부족 알림 엔진 실행
+      // 첫 메시지 → 재고 부족 알림 엔진 실행
       if (isFirstMessage) {
         try {
           const [stockAlerts, unreadAlerts] = await Promise.all([
@@ -212,7 +232,6 @@ export async function POST(req: NextRequest) {
             dbContext += `\n\n[재고부족알림 - 오늘 확인 필요]\n${allAlerts.slice(0, 5).join('\n')}`
           }
 
-          // 알림 읽음 처리
           await markAlertsRead()
         } catch (e) {
           console.error('재고 알림 엔진 오류:', e)
@@ -285,7 +304,6 @@ export async function POST(req: NextRequest) {
           lastUserMessage.includes('원료 얼마') ||
           lastUserMessage.includes('원료 필요')
         ) {
-          // 언급된 제품명 추출 시도 후 해당 BOM 로드, 없으면 전체 로드
           const { data: bomItems } = await supabase
             .from('bom_items')
             .select('product_name, raw_name, ratio_percent, note')
@@ -294,7 +312,6 @@ export async function POST(req: NextRequest) {
             .limit(100)
 
           if (bomItems && bomItems.length > 0) {
-            // 제품별로 그룹핑하여 컨텍스트 생성
             const bomByProduct = new Map<string, typeof bomItems>()
             for (const b of bomItems) {
               const arr = bomByProduct.get(b.product_name) ?? []
@@ -331,90 +348,143 @@ export async function POST(req: NextRequest) {
       console.error('DB 컨텍스트 오류:', e)
     }
 
-    // Claude API 메시지 구성
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const claudeMessages: any[] = messages.slice(0, -1).map((m: { role: string; content: string }) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }))
+    // ── Ollama 메시지 배열 구성 ────────────────────────────────
+    // Ollama는 system 역할을 messages 배열 첫 번째 요소로 받음
+    const ollamaMessages: OllamaMessage[] = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      // 이전 대화 이력 (마지막 메시지 제외)
+      ...messages.slice(0, -1).map((m: { role: string; content: string }) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+    ]
 
+    // 마지막 사용자 메시지 + DB 컨텍스트 추가
     const lastMsg = messages[messages.length - 1]
     const lastContent = lastMsg.content + (dbContext || '')
 
     if (image) {
-      // 영수증/거래명세서 OCR: vision 모드
-      const { base64, mediaType } = image as { base64: string; mediaType: string }
-      claudeMessages.push({
+      // 영수증/거래명세서 OCR: Ollama vision 모드 (images 필드에 base64 전달)
+      const { base64 } = image as { base64: string; mediaType: string }
+      ollamaMessages.push({
         role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-          {
-            type: 'text',
-            text: lastContent +
-              '\n\n위 이미지는 거래명세서 또는 영수증입니다. 품목명, 수량, 단가, 공급업체, 날짜를 추출하여 표로 정리하고, "이렇게 인식했습니다. 원료 입고로 저장할까요?" 라고 확인을 요청해주세요.',
-          },
-        ],
+        content: lastContent +
+          '\n\n위 이미지는 거래명세서 또는 영수증입니다. 품목명, 수량, 단가, 공급업체, 날짜를 추출하여 표로 정리하고, "이렇게 인식했습니다. 원료 입고로 저장할까요?" 라고 확인을 요청해주세요.',
+        images: [base64],
       })
     } else {
-      claudeMessages.push({ role: 'user', content: lastContent })
+      ollamaMessages.push({ role: 'user', content: lastContent })
     }
 
-    // 스트리밍 응답
+    // ── Ollama 스트리밍 요청 ───────────────────────────────────
+    const ollamaRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        messages: ollamaMessages,
+        stream: true,
+      }),
+    })
+
+    if (!ollamaRes.ok || !ollamaRes.body) {
+      const errText = await ollamaRes.text().catch(() => '알 수 없는 오류')
+      console.error('Ollama 요청 실패:', errText)
+      return NextResponse.json(
+        { error: `Ollama 연결 실패 (${ollamaRes.status}): ${errText}` },
+        { status: 502 }
+      )
+    }
+
+    // ── NDJSON 스트림 → SSE 변환 ──────────────────────────────
     const encoder = new TextEncoder()
     let fullText = ''
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          const streamResponse = await anthropic.messages.stream({
-            model: 'claude-sonnet-4-5',
-            max_tokens: 2048,
-            system: SYSTEM_PROMPT,
-            messages: claudeMessages,
-          })
+          const reader = ollamaRes.body!.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
 
-          for await (const chunk of streamResponse) {
-            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-              const text = chunk.delta.text
-              fullText += text
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`))
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            // 버퍼에 청크 추가 후 줄 단위로 파싱
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            // 마지막 불완전한 줄은 다음 청크와 합치기 위해 보존
+            buffer = lines.pop() ?? ''
+
+            for (const line of lines) {
+              const trimmed = line.trim()
+              if (!trimmed) continue
+
+              try {
+                const chunk: OllamaChunk = JSON.parse(trimmed)
+                const text = chunk.message?.content ?? ''
+
+                if (text) {
+                  fullText += text
+                  // 기존 SSE 형식 그대로 유지 (클라이언트 코드 변경 불필요)
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`))
+                }
+
+                // done:true → 스트림 종료
+                if (chunk.done) {
+                  // ACTION 파싱 및 DB 저장
+                  try {
+                    const actions = await parseAndExecuteActions(fullText)
+                    const hasAction = Object.values(actions).some((v) => v !== undefined)
+                    if (hasAction) {
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ actions })}\n\n`))
+                    }
+                  } catch (e) {
+                    console.error('액션 처리 오류:', e)
+                  }
+
+                  // 엑셀/워드 내보내기 감지
+                  const exportType = fullText.includes('[EXCEL_EXPORT]')
+                    ? 'excel'
+                    : fullText.includes('[WORD_EXPORT]')
+                    ? 'word'
+                    : null
+
+                  if (exportType) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ export: exportType })}\n\n`))
+                  }
+
+                  controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+                  controller.close()
+                  return
+                }
+              } catch (parseErr) {
+                // JSON 파싱 실패한 줄은 무시
+                console.warn('NDJSON 파싱 오류 (무시):', trimmed, parseErr)
+              }
             }
           }
 
-          // ACTION 파싱 및 DB 저장
-          try {
-            const actions = await parseAndExecuteActions(fullText)
-            const hasAction = Object.values(actions).some((v) => v !== undefined)
-            if (hasAction) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ actions })}\n\n`))
-            }
-          } catch (e) {
-            console.error('액션 처리 오류:', e)
-          }
-
-          // 엑셀/워드 내보내기 감지
-          const exportType = fullText.includes('[EXCEL_EXPORT]')
-            ? 'excel'
-            : fullText.includes('[WORD_EXPORT]')
-            ? 'word'
-            : null
-
-          if (exportType) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ export: exportType })}\n\n`))
-          }
-
+          // reader가 done이 됐지만 chunk.done을 못 받은 경우 정상 종료
           controller.enqueue(encoder.encode('data: [DONE]\n\n'))
           controller.close()
         } catch (error) {
           console.error('스트리밍 오류:', error)
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: '응답 생성 중 오류가 발생했습니다.' })}\n\n`))
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ error: '응답 생성 중 오류가 발생했습니다.' })}\n\n`)
+          )
           controller.close()
         }
       },
     })
 
     return new Response(stream, {
-      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
     })
   } catch (error) {
     console.error('채팅 API 오류:', error)
