@@ -154,6 +154,14 @@ function isMissingAllowanceTableError(error: unknown) {
   )
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  const message = toStorageErrorMessage(error).toLowerCase()
+  return (
+    message.includes(columnName.toLowerCase()) &&
+    (message.includes('column') || message.includes('schema') || message.includes('pgrst'))
+  )
+}
+
 function encodePayload(value: object) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
 }
@@ -217,25 +225,50 @@ async function fetchStatePayload() {
 }
 
 async function readStateFromAuditFallback(): Promise<AllowanceState> {
-  const orderedResult = await moniAdmin
+  const readOrderedByBusiness = await moniAdmin
     .from(FALLBACK_STATE_TABLE)
     .select('memo')
     .eq('item_name', FALLBACK_STATE_MARKER)
+    .eq('business_id', FALLBACK_STATE_BUSINESS_ID)
     .order('created_at', { ascending: false })
     .limit(20)
 
-  let rows = orderedResult.data
-  if (orderedResult.error) {
-    const plainResult = await moniAdmin
+  let rows = readOrderedByBusiness.data
+  if (readOrderedByBusiness.error) {
+    const readPlainByBusiness = await moniAdmin
       .from(FALLBACK_STATE_TABLE)
       .select('memo')
       .eq('item_name', FALLBACK_STATE_MARKER)
+      .eq('business_id', FALLBACK_STATE_BUSINESS_ID)
       .limit(20)
 
-    if (plainResult.error) {
-      throw new Error(toStorageErrorMessage(plainResult.error))
+    if (!readPlainByBusiness.error) {
+      rows = readPlainByBusiness.data
+    } else if (isMissingColumnError(readOrderedByBusiness.error, 'business_id') || isMissingColumnError(readPlainByBusiness.error, 'business_id')) {
+      const readOrderedGlobal = await moniAdmin
+        .from(FALLBACK_STATE_TABLE)
+        .select('memo')
+        .eq('item_name', FALLBACK_STATE_MARKER)
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (!readOrderedGlobal.error) {
+        rows = readOrderedGlobal.data
+      } else {
+        const readPlainGlobal = await moniAdmin
+          .from(FALLBACK_STATE_TABLE)
+          .select('memo')
+          .eq('item_name', FALLBACK_STATE_MARKER)
+          .limit(20)
+
+        if (readPlainGlobal.error) {
+          throw new Error(toStorageErrorMessage(readPlainGlobal.error))
+        }
+        rows = readPlainGlobal.data
+      }
+    } else {
+      throw new Error(toStorageErrorMessage(readPlainByBusiness.error))
     }
-    rows = plainResult.data
   }
 
   for (const row of rows ?? []) {
@@ -258,12 +291,24 @@ async function readStateFromAuditFallback(): Promise<AllowanceState> {
 
 async function writeStateToAuditFallback(state: AllowanceState): Promise<void> {
   const encoded = encodeState(state)
-  const { error: purgeError } = await moniAdmin
+  const purgeByBusiness = await moniAdmin
     .from(FALLBACK_STATE_TABLE)
     .delete()
     .eq('item_name', FALLBACK_STATE_MARKER)
+    .eq('business_id', FALLBACK_STATE_BUSINESS_ID)
 
-  if (purgeError) throw new Error(toStorageErrorMessage(purgeError))
+  if (purgeByBusiness.error) {
+    if (!isMissingColumnError(purgeByBusiness.error, 'business_id')) {
+      throw new Error(toStorageErrorMessage(purgeByBusiness.error))
+    }
+
+    const purgeGlobal = await moniAdmin
+      .from(FALLBACK_STATE_TABLE)
+      .delete()
+      .eq('item_name', FALLBACK_STATE_MARKER)
+
+    if (purgeGlobal.error) throw new Error(toStorageErrorMessage(purgeGlobal.error))
+  }
 
   const basePayload = {
     action: FALLBACK_STATE_ACTION,
@@ -279,11 +324,7 @@ async function writeStateToAuditFallback(state: AllowanceState): Promise<void> {
   if (!error) return
 
   const message = toStorageErrorMessage(error)
-  const missingBusinessIdColumn =
-    message.toLowerCase().includes('business_id') &&
-    (message.toLowerCase().includes('column') || message.toLowerCase().includes('schema'))
-
-  if (!missingBusinessIdColumn) {
+  if (!isMissingColumnError(error, 'business_id')) {
     throw new Error(message)
   }
 
