@@ -341,7 +341,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
 
     if (!adminState) {
-      setCompanyNotice('관리 데이터를 먼저 불러와 주세요.')
+      setCompanyNotice(
+        moduleStatus.includes('DB에 연결')
+          ? '현재 DB 연결 오류로 저장할 수 없습니다. Supabase URL/키를 복구한 뒤 다시 시도해 주세요.'
+          : '관리 데이터를 먼저 불러와 주세요.',
+      )
       return
     }
 
@@ -381,7 +385,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
 
     if (!adminState) {
-      setAdminAccountNotice('관리 데이터를 먼저 불러와 주세요.')
+      setAdminAccountNotice(
+        moduleStatus.includes('DB에 연결')
+          ? '현재 DB 연결 오류로 저장할 수 없습니다. Supabase URL/키를 복구한 뒤 다시 시도해 주세요.'
+          : '관리 데이터를 먼저 불러와 주세요.',
+      )
       return
     }
 
@@ -495,7 +503,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         <button
           type="button"
           onClick={saveCompanyInfo}
-          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af]"
+          disabled={!adminState || stateLoading}
+          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af] disabled:cursor-not-allowed disabled:opacity-50"
         >
           저장
         </button>
@@ -540,7 +549,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         <button
           type="button"
           onClick={saveAdminAccountInfo}
-          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af]"
+          disabled={!adminState || stateLoading}
+          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af] disabled:cursor-not-allowed disabled:opacity-50"
         >
           저장
         </button>
