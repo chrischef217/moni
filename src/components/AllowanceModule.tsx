@@ -351,6 +351,7 @@ function StatementPaper({
 export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, companyInfo }: AllowanceModuleProps) {
   const [store, setStore] = useState<AllowanceStore>(DEFAULT_STORE);
   const [hydrated, setHydrated] = useState(false);
+  const [syncReady, setSyncReady] = useState(false);
   const [notice, setNotice] = useState('');
 
   const [freelancerForm, setFreelancerForm] = useState<Omit<Freelancer, 'id'>>(EMPTY_FREELANCER_FORM);
@@ -370,33 +371,88 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
   const [loadedDetailMap, setLoadedDetailMap] = useState<Record<number, number> | null>(null);
   const [previewPayId, setPreviewPayId] = useState<number | null>(null);
 
-  const [settingsTab, setSettingsTab] = useState<'payment' | 'admin' | 'freelancers'>('payment');
+  const [settingsTab, setSettingsTab] = useState<'payment' | 'freelancers'>('payment');
   const [paymentDayInput, setPaymentDayInput] = useState(DEFAULT_STORE.payment_day);
-  const [adminForm, setAdminForm] = useState<AdminAccount>(DEFAULT_STORE.admin_account);
   const [accountRows, setAccountRows] = useState<Array<{ id: number; name: string; login_id: string; password: string }>>([]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
+    let cancelled = false;
+
+    const loadServerState = async () => {
       try {
-        const loaded = parseStore(raw);
-        setStore(loaded);
-      } catch {
-        setStore(DEFAULT_STORE);
+        const response = await fetch('/api/allowance/admin/state', { cache: 'no-store' });
+        const payload = (await response.json().catch(() => null)) as
+          | { ok?: boolean; error?: string; state?: AllowanceStore }
+          | null;
+
+        if (!response.ok || !payload?.ok || !payload.state) {
+          throw new Error(payload?.error || '수당지급 관리 데이터를 불러오지 못했습니다.');
+        }
+
+        if (cancelled) return;
+
+        const serverStore = parseStore(JSON.stringify(payload.state));
+        let mergedStore = serverStore;
+
+        if (
+          typeof window !== 'undefined' &&
+          serverStore.freelancers.length === 0 &&
+          serverStore.clients.length === 0 &&
+          serverStore.products.length === 0 &&
+          serverStore.payRecords.length === 0
+        ) {
+          const legacyRaw = window.localStorage.getItem(STORAGE_KEY);
+          if (legacyRaw) {
+            try {
+              mergedStore = parseStore(legacyRaw);
+              setNotice('브라우저에 저장된 기존 데이터를 서버 저장소로 이전했습니다.');
+            } catch {
+              mergedStore = serverStore;
+            }
+          }
+        }
+
+        setStore(mergedStore);
+        setSyncReady(true);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '수당지급 관리 데이터 로딩 중 오류가 발생했습니다.';
+        if (!cancelled) setNotice(message);
+      } finally {
+        if (!cancelled) {
+          setHydrated(true);
+        }
       }
-    }
-    setHydrated(true);
+    };
+
+    void loadServerState();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!hydrated || typeof window === 'undefined') return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-  }, [store, hydrated]);
+    if (!hydrated || !syncReady) return;
+    const timeoutId = setTimeout(async () => {
+      try {
+        const response = await fetch('/api/allowance/admin/state', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state: store }),
+        });
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error || '서버 저장소 동기화에 실패했습니다.');
+        }
+      } catch {
+        setNotice('서버 저장소 동기화에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      }
+    }, 220);
+
+    return () => clearTimeout(timeoutId);
+  }, [store, hydrated, syncReady]);
 
   useEffect(() => {
     setPaymentDayInput(store.payment_day);
-    setAdminForm(store.admin_account);
     setAccountRows(store.freelancers.map((item) => ({ id: item.id, name: item.name, login_id: item.login_id, password: item.password })));
   }, [store]);
 
@@ -838,15 +894,6 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
     setInfo('지급일이 저장되었습니다.');
   };
 
-  const saveAdminAccount = () => {
-    if (!adminForm.login_id.trim() || !adminForm.password.trim()) {
-      setInfo('관리자 아이디/비밀번호를 입력해 주세요.');
-      return;
-    }
-    setStore((prev) => ({ ...prev, admin_account: adminForm }));
-    setInfo('관리자 계정이 변경되었습니다.');
-  };
-
   const saveFreelancerAccount = (id: number, login_id: string, password: string) => {
     if (!login_id.trim() || !password.trim()) {
       setInfo('아이디와 비밀번호를 입력해 주세요.');
@@ -1146,9 +1193,8 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
         회사 정보는 메인 메뉴의 관리자 &gt; 회사정보에서 관리합니다.
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2">
         <button className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'payment' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('payment')}>지급일 설정</button>
-        <button className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'admin' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('admin')}>관리자 계정</button>
         <button className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'freelancers' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('freelancers')}>프리랜서 계정</button>
       </div>
 
@@ -1160,17 +1206,6 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
           </label>
           <p className="mt-2 text-sm text-[#94a3b8]">예: 기준월 1월 + 설정일 10일 = 2월 10일</p>
           <button className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white" onClick={savePaymentDay}>저장</button>
-        </div>
-      ) : null}
-
-      {settingsTab === 'admin' ? (
-        <div className="rounded-2xl border border-[#334155] bg-[#0f172a] p-4">
-          <h4 className="mb-3 text-lg font-semibold text-white">관리자 계정 변경</h4>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="text-sm">아이디<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={adminForm.login_id} onChange={(e) => setAdminForm({ ...adminForm, login_id: e.target.value })} /></label>
-            <label className="text-sm">비밀번호<input type="password" className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={adminForm.password} onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })} /></label>
-          </div>
-          <button className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white" onClick={saveAdminAccount}>변경</button>
         </div>
       ) : null}
 
@@ -1203,7 +1238,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-3xl font-semibold text-white">수당지급 관리</h3>
-          <p className="mt-1 text-sm text-[#94a3b8]">실제 CRUD 데이터(브라우저 저장)로 동작하는 통합 관리 화면입니다.</p>
+          <p className="mt-1 text-sm text-[#94a3b8]">공유 데이터베이스 기반의 통합 관리 화면입니다.</p>
         </div>
         <button className="rounded-lg border border-[#334155] px-3 py-2 text-sm font-semibold text-[#cbd5e1] hover:bg-[#1e293b]" onClick={onMoveToChat}>AI 채팅으로 이동</button>
       </div>
@@ -1212,7 +1247,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
         <button className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('freelancer')}`} onClick={() => onChangeTab('freelancer')}>프리랜서 관리</button>
         <button className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('client-product')}`} onClick={() => onChangeTab('client-product')}>거래처/제품 관리</button>
         <button className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('pay')}`} onClick={() => onChangeTab('pay')}>수당 관리</button>
-        <button className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('settings')}`} onClick={() => onChangeTab('settings')}>관리자 설정</button>
+        <button className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('settings')}`} onClick={() => onChangeTab('settings')}>설정</button>
       </div>
 
       {notice ? <div className="no-print mt-4 rounded-lg border border-[#1e3a8a] bg-[#0f172a] px-4 py-3 text-sm text-[#bfdbfe]">{notice}</div> : null}
