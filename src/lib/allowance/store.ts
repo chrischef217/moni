@@ -10,9 +10,11 @@ const STATE_TABLE = 'allowance_platform_state'
 const USERS_TABLE = 'allowance_platform_users'
 const SESSIONS_TABLE = 'allowance_platform_sessions'
 const STATE_ID = 'main'
-const FALLBACK_AUDIT_TABLE = 'audit_logs'
-const FALLBACK_STATE_TABLE_NAME = 'allowance_state'
-const FALLBACK_STATE_ACTION = 'state_upsert'
+const FALLBACK_STATE_TABLE = 'inventory_logs'
+const FALLBACK_STATE_MARKER = '__allowance_state__'
+const FALLBACK_STATE_ACTION = 'in'
+const FALLBACK_STATE_UNIT = 'state'
+const FALLBACK_STATE_BUSINESS_ID = 'default'
 
 export const SESSION_COOKIE_NAME = 'moni_allowance_session'
 const SESSION_MINUTES = 30
@@ -216,21 +218,29 @@ async function fetchStatePayload() {
 
 async function readStateFromAuditFallback(): Promise<AllowanceState> {
   const { data, error } = await moniAdmin
-    .from(FALLBACK_AUDIT_TABLE)
-    .select('after_json, created_at')
-    .eq('table_name', FALLBACK_STATE_TABLE_NAME)
+    .from(FALLBACK_STATE_TABLE)
+    .select('memo, created_at')
+    .eq('item_name', FALLBACK_STATE_MARKER)
     .eq('action', FALLBACK_STATE_ACTION)
+    .eq('business_id', FALLBACK_STATE_BUSINESS_ID)
     .order('created_at', { ascending: false })
     .limit(1)
 
   if (error) throw new Error(toStorageErrorMessage(error))
 
   const row = Array.isArray(data) && data.length > 0
-    ? (data[0] as { after_json?: Partial<AllowanceState> | null })
+    ? (data[0] as { memo?: string | null })
     : null
 
-  if (row?.after_json && typeof row.after_json === 'object') {
-    return decodeState(row.after_json)
+  if (row?.memo) {
+    try {
+      const parsed = JSON.parse(row.memo) as Partial<AllowanceState>
+      if (parsed && typeof parsed === 'object') {
+        return decodeState(parsed)
+      }
+    } catch {
+      // ignore invalid legacy payload
+    }
   }
 
   const initial = DEFAULT_ALLOWANCE_STATE
@@ -240,14 +250,13 @@ async function readStateFromAuditFallback(): Promise<AllowanceState> {
 
 async function writeStateToAuditFallback(state: AllowanceState): Promise<void> {
   const encoded = encodeState(state)
-  const { error } = await moniAdmin.from(FALLBACK_AUDIT_TABLE).insert({
-    table_name: FALLBACK_STATE_TABLE_NAME,
-    record_id: 1,
+  const { error } = await moniAdmin.from(FALLBACK_STATE_TABLE).insert({
     action: FALLBACK_STATE_ACTION,
-    source_text_raw: 'allowance fallback state persist',
-    llm_parse_json: { source: 'allowance-fallback', ts: new Date().toISOString() },
-    after_json: encoded,
-    reason: 'allowance fallback storage',
+    item_name: FALLBACK_STATE_MARKER,
+    quantity: 0,
+    unit: FALLBACK_STATE_UNIT,
+    memo: JSON.stringify(encoded),
+    business_id: FALLBACK_STATE_BUSINESS_ID,
   })
 
   if (error) throw new Error(toStorageErrorMessage(error))
@@ -397,30 +406,32 @@ export async function verifyAllowanceLogin(loginId: string, password: string): P
     }
   } catch (error) {
     if (isMissingAllowanceTableError(error)) {
-      const state = await readAllowanceState()
-      const admin = state.admin_account
-      if (loginId.trim() === admin.login_id && password.trim() === admin.password) {
-        return {
-          role: 'admin',
-          loginId: admin.login_id,
-          freelancerId: null,
-          displayName: '관리자',
+      try {
+        const state = await readAllowanceState()
+        const admin = state.admin_account
+        if (loginId.trim() === admin.login_id && password.trim() === admin.password) {
+          return {
+            role: 'admin',
+            loginId: admin.login_id,
+            freelancerId: null,
+            displayName: '관리자',
+          }
         }
-      }
 
-      const freelancer = state.freelancers.find(
-        (item) => item.login_id.trim() === loginId.trim() && item.password.trim() === password.trim(),
-      )
-      if (freelancer) {
-        return {
-          role: 'freelancer',
-          loginId: freelancer.login_id,
-          freelancerId: freelancer.id,
-          displayName: freelancer.name || '프리랜서',
+        const freelancer = state.freelancers.find(
+          (item) => item.login_id.trim() === loginId.trim() && item.password.trim() === password.trim(),
+        )
+        if (freelancer) {
+          return {
+            role: 'freelancer',
+            loginId: freelancer.login_id,
+            freelancerId: freelancer.id,
+            displayName: freelancer.name || '프리랜서',
+          }
         }
+      } catch {
+        // ignore and fall through to admin emergency account
       }
-
-      return null
     }
 
     const isFallbackAdmin =
