@@ -185,6 +185,7 @@ function actionButtonClass(active: boolean) {
 
 export default function HomePage() {
   const [mainMenu, setMainMenu] = useState<MainMenuKey>('ai-chat')
+  const [openSubMenuFor, setOpenSubMenuFor] = useState<MainMenuKey | null>(null)
   const [subMenuByMain, setSubMenuByMain] = useState<Record<MainMenuKey, string>>(() => {
     return buildInitialSubMenuState()
   })
@@ -203,7 +204,6 @@ export default function HomePage() {
 
   const messages = activeConversation?.messages ?? []
   const currentSubMenu = subMenuByMain[mainMenu]
-  const subMenus = MENU_CONFIG[mainMenu].subMenus
 
   const selectMainMenu = (menu: MainMenuKey) => {
     setMainMenu(menu)
@@ -211,11 +211,18 @@ export default function HomePage() {
     if (!hasSelectedSub) {
       setSubMenuByMain((prev) => ({ ...prev, [menu]: MENU_CONFIG[menu].subMenus[0].key }))
     }
+    if (menu === 'ai-chat') {
+      setOpenSubMenuFor(null)
+    } else {
+      setOpenSubMenuFor((prev) => (prev === menu ? null : menu))
+    }
     setModuleStatus('')
   }
 
-  const selectSubMenu = (subKey: string) => {
-    setSubMenuByMain((prev) => ({ ...prev, [mainMenu]: subKey }))
+  const selectSubMenu = (menu: MainMenuKey, subKey: string) => {
+    setMainMenu(menu)
+    setSubMenuByMain((prev) => ({ ...prev, [menu]: subKey }))
+    setOpenSubMenuFor(null)
     setModuleStatus('')
     if (subKey === 'sales-allowance') setAllowanceTab('freelancer')
   }
@@ -381,13 +388,14 @@ export default function HomePage() {
         </div>
 
         <div className="p-4">
-          <button
-            type="button"
-            onClick={() => {
-              resetConversation()
-              selectMainMenu('ai-chat')
-            }}
-            className="w-full rounded-xl bg-[#10b981] px-4 py-3 text-left text-4xl font-bold text-white hover:bg-[#059669]"
+            <button
+              type="button"
+              onClick={() => {
+                resetConversation()
+                setMainMenu('ai-chat')
+                setOpenSubMenuFor(null)
+              }}
+            className="w-full rounded-xl bg-[#10b981] px-4 py-3 text-left text-2xl font-bold text-white hover:bg-[#059669]"
           >
             + 새 대화
           </button>
@@ -404,7 +412,8 @@ export default function HomePage() {
                   type="button"
                   onClick={() => {
                     setActiveConversationId(conversation.id)
-                    selectMainMenu('ai-chat')
+                    setMainMenu('ai-chat')
+                    setOpenSubMenuFor(null)
                   }}
                   className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
                     conversation.id === activeConversationId
@@ -429,38 +438,37 @@ export default function HomePage() {
         <header className="border-b border-[#1e293b] bg-[#0b1220] px-4 py-3 lg:px-6">
           <div className="flex flex-wrap gap-2">
             {(Object.keys(MENU_CONFIG) as MainMenuKey[]).map((menuKey) => (
-              <button
-                key={menuKey}
-                type="button"
-                onClick={() => selectMainMenu(menuKey)}
-                className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${menuButtonClass(mainMenu === menuKey)}`}
-              >
-                {MENU_CONFIG[menuKey].label}
-              </button>
-            ))}
-          </div>
+              <div key={menuKey} className="relative">
+                <button
+                  type="button"
+                  onClick={() => selectMainMenu(menuKey)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${menuButtonClass(mainMenu === menuKey)}`}
+                >
+                  {MENU_CONFIG[menuKey].label}
+                </button>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            {subMenus.map((sub) => (
-              <button
-                key={sub.key}
-                type="button"
-                onClick={() => selectSubMenu(sub.key)}
-                className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${menuButtonClass(currentSubMenu === sub.key)}`}
-              >
-                {sub.label}
-              </button>
+                {openSubMenuFor === menuKey && menuKey !== 'ai-chat' ? (
+                  <div className="absolute left-0 top-[calc(100%+8px)] z-40 w-[220px] rounded-xl border border-[#334155] bg-[#0f172a] p-2 shadow-[0_14px_28px_rgba(2,6,23,0.45)]">
+                    <div className="space-y-1">
+                      {MENU_CONFIG[menuKey].subMenus.map((sub) => (
+                        <button
+                          key={sub.key}
+                          type="button"
+                          onClick={() => selectSubMenu(menuKey, sub.key)}
+                          className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${
+                            subMenuByMain[menuKey] === sub.key
+                              ? 'border-[#10b981] bg-[#10b981] text-white'
+                              : 'border-[#334155] bg-transparent text-[#cbd5e1] hover:bg-[#1e293b]'
+                          }`}
+                        >
+                          {sub.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             ))}
-
-            {mainMenu === 'sales' && currentSubMenu !== 'sales-allowance' ? (
-              <button
-                type="button"
-                onClick={() => selectSubMenu('sales-allowance')}
-                className="rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#1e40af]"
-              >
-                수당지급 관리 열기
-              </button>
-            ) : null}
           </div>
         </header>
 
@@ -473,8 +481,8 @@ export default function HomePage() {
                     <div className="flex h-24 w-24 items-center justify-center rounded-full bg-[#10b981]/20">
                       <span className="text-5xl font-bold text-[#10b981]">M</span>
                     </div>
-                    <h2 className="mt-4 text-5xl font-bold text-white sm:text-6xl">안녕하세요! 모니입니다 🌿</h2>
-                    <p className="mt-2 text-xl text-[#94a3b8] sm:text-2xl">경영 고민? 모니한테 물어봐!</p>
+                    <h2 className="mt-4 text-4xl font-bold text-white sm:text-5xl">안녕하세요! 모니입니다 🌿</h2>
+                    <p className="mt-2 text-lg text-[#94a3b8] sm:text-xl">경영 고민? 모니한테 물어봐!</p>
 
                     <div className="mt-6 grid w-full max-w-4xl gap-3 sm:grid-cols-2">
                       {CHAT_EXAMPLES.map((example) => (
