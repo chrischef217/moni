@@ -982,6 +982,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
                   <div>
                     <p className="font-semibold text-white">{client.name}</p>
                     <p className="text-sm text-[#94a3b8]">{client.address} / {client.phone}</p>
+                    <p className="text-xs text-[#64748b]">제품 {orderedProducts.length}개 취급</p>
                   </div>
                   <div className="flex gap-2">
                     <button type="button" className="rounded-lg border border-[#334155] px-3 py-1.5 text-sm" onClick={() => startEditClient(client.id)}>수정</button>
@@ -1011,13 +1012,31 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
 
                     return (
                       <div key={p.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-[#334155] p-2">
-                        <span className="rounded-full border border-[#334155] px-2 py-1 text-xs text-[#94a3b8]">순서 {index + 1}</span>
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[#334155] text-xs font-semibold text-[#e2e8f0]">{index + 1}</span>
                         <span className="rounded-full bg-[#1e293b] px-2 py-1 text-sm">{p.name}</span>
                         <span className="text-sm text-[#94a3b8]">{Math.round(p.price_per_kg).toLocaleString('ko-KR')}원/kg</span>
                         <span className="text-sm text-[#94a3b8]">담당: {assignee?.name ?? '-'}</span>
                         <div className="ml-auto flex gap-2">
-                          <button type="button" disabled={index === 0} className="rounded border border-[#334155] px-2 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40" onClick={() => moveProductOrder(client.id, p.id, 'up')}>위로</button>
-                          <button type="button" disabled={index === orderedProducts.length - 1} className="rounded border border-[#334155] px-2 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40" onClick={() => moveProductOrder(client.id, p.id, 'down')}>아래로</button>
+                          <button
+                            type="button"
+                            title="위로 이동"
+                            aria-label="위로 이동"
+                            disabled={index === 0}
+                            className="rounded border border-[#334155] px-2 py-1 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                            onClick={() => moveProductOrder(client.id, p.id, 'up')}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            title="아래로 이동"
+                            aria-label="아래로 이동"
+                            disabled={index === orderedProducts.length - 1}
+                            className="rounded border border-[#334155] px-2 py-1 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                            onClick={() => moveProductOrder(client.id, p.id, 'down')}
+                          >
+                            ▼
+                          </button>
                           <button type="button" className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => startEditProduct(p)}>수정</button>
                           <button type="button" className="rounded border border-[#7f1d1d] px-2 py-1 text-sm text-[#fca5a5]" onClick={() => removeProduct(p.id)}>삭제</button>
                         </div>
