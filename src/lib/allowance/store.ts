@@ -261,6 +261,13 @@ async function writeStateToAuditFallback(state: AllowanceState): Promise<void> {
 }
 
 export async function readAllowanceState(): Promise<AllowanceState> {
+  // Always prefer the shared fallback document store for consistency across mixed DB schemas.
+  try {
+    return await readStateFromAuditFallback()
+  } catch {
+    // If fallback table is unavailable, try the dedicated allowance table.
+  }
+
   try {
     const payload = await fetchStatePayload()
     if (payload) return decodeState(payload)
@@ -292,6 +299,9 @@ export async function writeAllowanceState(nextState: AllowanceState): Promise<Al
   const normalized = normalizeAllowanceState(nextState)
   const encoded = encodeState(normalized)
 
+  // Primary write path: shared fallback store (available on restored Supabase project).
+  await writeStateToAuditFallback(normalized)
+
   try {
     const { error } = await moniAdmin.from(STATE_TABLE).upsert(
       {
@@ -305,14 +315,13 @@ export async function writeAllowanceState(nextState: AllowanceState): Promise<Al
     if (error) throw new Error(toStorageErrorMessage(error))
 
     await syncAllowanceUsers(normalized)
-    return normalized
   } catch (error) {
-    if (isMissingAllowanceTableError(error)) {
-      await writeStateToAuditFallback(normalized)
-      return normalized
+    if (!isMissingAllowanceTableError(error)) {
+      throw error
     }
-    throw error
   }
+
+  return normalized
 }
 
 export async function syncAllowanceUsers(state: AllowanceState) {
@@ -379,8 +388,31 @@ export async function syncAllowanceUsers(state: AllowanceState) {
 }
 
 export async function verifyAllowanceLogin(loginId: string, password: string): Promise<AllowanceSessionUser | null> {
+  // First check the canonical allowance state credentials.
+  const state = await readAllowanceState()
+  const admin = state.admin_account
+  if (loginId.trim() === admin.login_id && password.trim() === admin.password) {
+    return {
+      role: 'admin',
+      loginId: admin.login_id,
+      freelancerId: null,
+      displayName: '관리자',
+    }
+  }
+
+  const freelancer = state.freelancers.find(
+    (item) => item.login_id.trim() === loginId.trim() && item.password.trim() === password.trim(),
+  )
+  if (freelancer) {
+    return {
+      role: 'freelancer',
+      loginId: freelancer.login_id,
+      freelancerId: freelancer.id,
+      displayName: freelancer.name || '프리랜서',
+    }
+  }
+
   try {
-    const state = await readAllowanceState()
     await syncAllowanceUsers(state)
 
     const { data, error } = await moniAdmin
@@ -403,35 +435,6 @@ export async function verifyAllowanceLogin(loginId: string, password: string): P
       displayName: row.display_name ?? (row.role === 'admin' ? '관리자' : '프리랜서'),
     }
   } catch (error) {
-    if (isMissingAllowanceTableError(error)) {
-      try {
-        const state = await readAllowanceState()
-        const admin = state.admin_account
-        if (loginId.trim() === admin.login_id && password.trim() === admin.password) {
-          return {
-            role: 'admin',
-            loginId: admin.login_id,
-            freelancerId: null,
-            displayName: '관리자',
-          }
-        }
-
-        const freelancer = state.freelancers.find(
-          (item) => item.login_id.trim() === loginId.trim() && item.password.trim() === password.trim(),
-        )
-        if (freelancer) {
-          return {
-            role: 'freelancer',
-            loginId: freelancer.login_id,
-            freelancerId: freelancer.id,
-            displayName: freelancer.name || '프리랜서',
-          }
-        }
-      } catch {
-        // ignore and fall through to admin emergency account
-      }
-    }
-
     const isFallbackAdmin =
       loginId.trim() === FALLBACK_ADMIN_LOGIN_ID && password.trim() === FALLBACK_ADMIN_PASSWORD
 
