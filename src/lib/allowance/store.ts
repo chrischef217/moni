@@ -219,25 +219,36 @@ async function fetchStatePayload() {
 async function readStateFromAuditFallback(): Promise<AllowanceState> {
   const { data, error } = await moniAdmin
     .from(FALLBACK_STATE_TABLE)
-    .select('memo, created_at')
+    .select('id, memo, created_at')
     .eq('item_name', FALLBACK_STATE_MARKER)
-    .order('created_at', { ascending: false })
-    .limit(1)
+    .eq('business_id', FALLBACK_STATE_BUSINESS_ID)
+    .limit(200)
 
   if (error) throw new Error(toStorageErrorMessage(error))
 
-  const row = Array.isArray(data) && data.length > 0
-    ? (data[0] as { memo?: string | null })
-    : null
+  const rows = Array.isArray(data) ? (data as Array<{ id?: string | number | null; memo?: string | null; created_at?: string | null }>) : []
+  if (rows.length > 0) {
+    const sorted = [...rows].sort((a, b) => {
+      const aTime = a.created_at ? Date.parse(a.created_at) : 0
+      const bTime = b.created_at ? Date.parse(b.created_at) : 0
+      if (aTime !== bTime) return bTime - aTime
 
-  if (row?.memo) {
-    try {
-      const parsed = JSON.parse(row.memo) as Partial<AllowanceState>
-      if (parsed && typeof parsed === 'object') {
-        return decodeState(parsed)
+      const aId = a.id ? String(a.id) : ''
+      const bId = b.id ? String(b.id) : ''
+      if (aId === bId) return 0
+      return aId > bId ? -1 : 1
+    })
+
+    for (const row of sorted) {
+      if (!row.memo) continue
+      try {
+        const parsed = JSON.parse(row.memo) as Partial<AllowanceState>
+        if (parsed && typeof parsed === 'object') {
+          return decodeState(parsed)
+        }
+      } catch {
+        // ignore invalid legacy payload
       }
-    } catch {
-      // ignore invalid legacy payload
     }
   }
 
@@ -248,6 +259,14 @@ async function readStateFromAuditFallback(): Promise<AllowanceState> {
 
 async function writeStateToAuditFallback(state: AllowanceState): Promise<void> {
   const encoded = encodeState(state)
+  const { error: purgeError } = await moniAdmin
+    .from(FALLBACK_STATE_TABLE)
+    .delete()
+    .eq('item_name', FALLBACK_STATE_MARKER)
+    .eq('business_id', FALLBACK_STATE_BUSINESS_ID)
+
+  if (purgeError) throw new Error(toStorageErrorMessage(purgeError))
+
   const { error } = await moniAdmin.from(FALLBACK_STATE_TABLE).insert({
     action: FALLBACK_STATE_ACTION,
     item_name: FALLBACK_STATE_MARKER,
