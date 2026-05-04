@@ -1,15 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) {
-    throw new Error(`${name} is not configured`)
-  }
-  return value
-}
+const DEFAULT_SUPABASE_URL = 'https://nvzxlejpmsfzbpprgvfh.supabase.co'
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_dvlB9GtrobIRjRipY6G-dg_78hIy_EZ'
 
-const supabaseUrl = requiredEnv('NEXT_PUBLIC_SUPABASE_URL')
-const supabaseAnonKey = requiredEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || DEFAULT_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || DEFAULT_SUPABASE_PUBLISHABLE_KEY
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? supabaseAnonKey
 
 export const moniDb = createClient(supabaseUrl, supabaseAnonKey, {
