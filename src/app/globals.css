@@ -1,58 +1,128 @@
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --accent: #10b981;
-  --accent-hover: #059669;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --user-bubble: #10b981;
-  --ai-bubble: #1e293b;
+  color-scheme: light;
+  --moni-bg-primary: 248 250 252;
+  --moni-bg-secondary: 255 255 255;
+  --moni-bg-tertiary: 226 232 240;
+  --moni-surface: 255 255 255;
+  --moni-surface-soft: 241 245 249;
+  --moni-sidebar: 15 23 42;
+  --moni-sidebar-text: 248 250 252;
+  --moni-text-primary: 15 23 42;
+  --moni-text-secondary: 71 85 105;
+  --moni-text-muted: 100 116 139;
+  --moni-accent: 37 99 235;
+  --moni-accent-hover: 29 78 216;
+  --moni-success: 34 197 94;
+  --moni-warning: 245 158 11;
+  --moni-danger: 239 68 68;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --moni-bg-primary: 15 23 42;
+  --moni-bg-secondary: 17 24 39;
+  --moni-bg-tertiary: 30 41 59;
+  --moni-surface: 15 23 42;
+  --moni-surface-soft: 30 41 59;
+  --moni-sidebar: 2 6 23;
+  --moni-sidebar-text: 226 232 240;
+  --moni-text-primary: 241 245 249;
+  --moni-text-secondary: 148 163 184;
+  --moni-text-muted: 100 116 139;
+  --moni-accent: 52 211 153;
+  --moni-accent-hover: 16 185 129;
+  --moni-success: 52 211 153;
+  --moni-warning: 251 191 36;
+  --moni-danger: 248 113 113;
 }
 
 html,
 body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: 'Pretendard', system-ui, -apple-system, sans-serif;
+  min-height: 100%;
+  margin: 0;
+  background: rgb(var(--moni-bg-primary));
+  color: rgb(var(--moni-text-primary));
+  font-family: 'Pretendard', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-/* 스크롤바 숨김 유틸리티 */
-.scrollbar-none {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.scrollbar-none::-webkit-scrollbar {
-  display: none;
+body {
+  overflow-x: hidden;
 }
 
-/* 커스텀 스크롤바 (사이드바, 채팅창) */
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgb(var(--moni-accent) / 0.2);
+  color: rgb(var(--moni-text-primary));
+}
+
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 8px;
+  height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
-  border-radius: 2px;
+  background: rgb(var(--moni-text-muted) / 0.35);
+  border-radius: 999px;
 }
 
-/* prose 마크다운 스타일 오버라이드 */
-.prose-invert p {
-  margin: 0.3em 0;
+@keyframes moni-row-flash {
+  0% {
+    background-color: rgb(var(--moni-accent) / 0.22);
+  }
+  35% {
+    background-color: rgb(var(--moni-accent) / 0.14);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
-.prose-invert ul,
-.prose-invert ol {
-  margin: 0.3em 0;
-  padding-left: 1.2em;
+
+.moni-row-flash {
+  animation: moni-row-flash 1.2s ease-out both;
 }
-.prose-invert strong {
-  color: var(--text-primary);
+
+@media print {
+  body {
+    background: white !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-page {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .statement-print,
+  .statement-print * {
+    visibility: visible !important;
+  }
+
+  .statement-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none !important;
+    margin: 0 !important;
+  }
 }

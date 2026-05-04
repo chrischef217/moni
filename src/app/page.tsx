@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useMemo, useState } from 'react'
+import AllowanceModule, { type AllowanceTabKey } from '@/components/AllowanceModule'
 
 type MainMenuKey = 'ai-chat' | 'production' | 'accounting' | 'sales' | 'admin'
 type ChatRole = 'user' | 'assistant'
@@ -69,15 +70,6 @@ const CHAT_EXAMPLES = [
   '이번 달 손익 얼마야?',
   '엑셀로 뽑아줘',
 ]
-
-const ALLOWANCE_TABS = [
-  { key: 'freelancer', label: '프리랜서 관리' },
-  { key: 'client-product', label: '거래처/제품 관리' },
-  { key: 'pay', label: '수당 관리' },
-  { key: 'settings', label: '관리자 설정' },
-] as const
-
-type AllowanceTabKey = (typeof ALLOWANCE_TABS)[number]['key']
 
 const MODULE_CONTENT: Record<string, { title: string; description: string; actions: string[] }> = {
   'prod-overview': {
@@ -175,12 +167,6 @@ function menuButtonClass(active: boolean) {
   return active
     ? 'border-[#10b981] bg-[#10b981] text-white'
     : 'border-[#334155] bg-transparent text-[#cbd5e1] hover:bg-[#1e293b]'
-}
-
-function actionButtonClass(active: boolean) {
-  return active
-    ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white'
-    : 'border-[#334155] bg-[#111827] text-[#cbd5e1] hover:border-[#10b981]'
 }
 
 export default function HomePage() {
@@ -287,65 +273,14 @@ export default function HomePage() {
   const renderModuleContent = () => {
     if (mainMenu === 'sales' && currentSubMenu === 'sales-allowance') {
       return (
-        <div className="rounded-2xl border border-[#334155] bg-[#111827] p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-semibold text-white">수당지급 관리</h3>
-              <p className="mt-1 text-sm text-[#94a3b8]">메뉴는 유지하고 하단 콘텐츠만 전환되는 통합 화면입니다.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => selectMainMenu('ai-chat')}
-              className="rounded-lg border border-[#334155] px-3 py-2 text-sm font-semibold text-[#cbd5e1] hover:bg-[#1e293b]"
-            >
-              AI 채팅으로 이동
-            </button>
-          </div>
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {ALLOWANCE_TABS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setAllowanceTab(item.key)}
-                className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${actionButtonClass(allowanceTab === item.key)}`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4 rounded-xl border border-[#334155] bg-[#0f172a] p-4">
-            {allowanceTab === 'freelancer' ? <p className="text-sm text-[#cbd5e1]">프리랜서 목록/등록/수정/삭제 영역입니다.</p> : null}
-            {allowanceTab === 'client-product' ? <p className="text-sm text-[#cbd5e1]">거래처별 제품 목록 등록/수정/삭제 영역입니다.</p> : null}
-            {allowanceTab === 'pay' ? <p className="text-sm text-[#cbd5e1]">월별 수당 등록/수정/삭제 및 정산서 미리보기 영역입니다.</p> : null}
-            {allowanceTab === 'settings' ? <p className="text-sm text-[#cbd5e1]">회사정보/지급일/계정 설정 영역입니다.</p> : null}
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => clickModuleAction('저장')}
-              className="rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1e40af]"
-            >
-              저장
-            </button>
-            <button
-              type="button"
-              onClick={() => clickModuleAction('수정')}
-              className="rounded-lg border border-[#334155] px-3 py-2 text-sm font-semibold text-[#cbd5e1] hover:bg-[#1e293b]"
-            >
-              수정
-            </button>
-            <button
-              type="button"
-              onClick={() => clickModuleAction('삭제')}
-              className="rounded-lg border border-[#7f1d1d] px-3 py-2 text-sm font-semibold text-[#fca5a5] hover:bg-[#450a0a]"
-            >
-              삭제
-            </button>
-          </div>
-        </div>
+        <AllowanceModule
+          activeTab={allowanceTab}
+          onChangeTab={setAllowanceTab}
+          onMoveToChat={() => {
+            setMainMenu('ai-chat')
+            setOpenSubMenuFor(null)
+          }}
+        />
       )
     }
 
