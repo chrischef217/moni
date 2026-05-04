@@ -136,6 +136,9 @@ const MODULE_CONTENT: Record<string, { title: string; description: string; actio
   },
 }
 
+const COMPANY_FALLBACK_KEY = 'moni.admin.company.fallback.v1'
+const ADMIN_ACCOUNT_FALLBACK_KEY = 'moni.admin.account.fallback.v1'
+
 function uid() {
   return `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
 }
@@ -235,6 +238,30 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         const message = error instanceof Error ? error.message : '관리 데이터 로딩 중 오류가 발생했습니다.'
         if (!cancelled) {
           setModuleStatus(message)
+          if (typeof window !== 'undefined') {
+            try {
+              const rawCompany = window.localStorage.getItem(COMPANY_FALLBACK_KEY)
+              if (rawCompany) {
+                const parsed = JSON.parse(rawCompany) as Partial<CompanyInfo>
+                const nextCompany = { ...EMPTY_COMPANY_INFO, ...parsed }
+                setCompanyInfo(nextCompany)
+                setCompanyForm(nextCompany)
+                setCompanyNotice('DB 연결 장애 상태입니다. 현재 브라우저 임시 저장값을 불러왔습니다.')
+              }
+
+              const rawAdmin = window.localStorage.getItem(ADMIN_ACCOUNT_FALLBACK_KEY)
+              if (rawAdmin) {
+                const parsed = JSON.parse(rawAdmin) as Partial<{ login_id: string; password: string }>
+                setAdminAccountForm({
+                  login_id: parsed.login_id ?? 'admin',
+                  password: parsed.password ?? '1111',
+                })
+                setAdminAccountNotice('DB 연결 장애 상태입니다. 현재 브라우저 임시 저장값을 불러왔습니다.')
+              }
+            } catch {
+              // ignore local fallback parse errors
+            }
+          }
         }
       } finally {
         if (!cancelled) setStateLoading(false)
@@ -341,11 +368,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
 
     if (!adminState) {
-      setCompanyNotice(
-        moduleStatus.includes('DB에 연결')
-          ? '현재 DB 연결 오류로 저장할 수 없습니다. Supabase URL/키를 복구한 뒤 다시 시도해 주세요.'
-          : '관리 데이터를 먼저 불러와 주세요.',
-      )
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(COMPANY_FALLBACK_KEY, JSON.stringify(companyForm))
+      }
+      setCompanyInfo(companyForm)
+      setCompanyNotice('서버 DB 연결 장애로 현재 브라우저에 임시 저장했습니다. DB 복구 후 서버 저장이 필요합니다.')
       return
     }
 
@@ -372,6 +399,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setCompanyInfo(payload.state.company)
       setCompanyForm(payload.state.company)
       setCompanyNotice('회사 정보가 저장되었습니다. 영업관리 정산서에 즉시 반영됩니다.')
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(COMPANY_FALLBACK_KEY)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '회사 정보 저장 중 오류가 발생했습니다.'
       setCompanyNotice(message)
@@ -385,11 +415,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
 
     if (!adminState) {
-      setAdminAccountNotice(
-        moduleStatus.includes('DB에 연결')
-          ? '현재 DB 연결 오류로 저장할 수 없습니다. Supabase URL/키를 복구한 뒤 다시 시도해 주세요.'
-          : '관리 데이터를 먼저 불러와 주세요.',
-      )
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(ADMIN_ACCOUNT_FALLBACK_KEY, JSON.stringify(adminAccountForm))
+      }
+      setAdminAccountNotice('서버 DB 연결 장애로 현재 브라우저에 임시 저장했습니다. DB 복구 후 서버 저장이 필요합니다.')
       return
     }
 
@@ -415,6 +444,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setAdminState(payload.state)
       setAdminAccountForm(payload.state.admin_account)
       setAdminAccountNotice('관리자 계정이 저장되었습니다. 다음 로그인부터 적용됩니다.')
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(ADMIN_ACCOUNT_FALLBACK_KEY)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '관리자 계정 저장 중 오류가 발생했습니다.'
       setAdminAccountNotice(message)
@@ -503,8 +535,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         <button
           type="button"
           onClick={saveCompanyInfo}
-          disabled={!adminState || stateLoading}
-          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af] disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af]"
         >
           저장
         </button>
@@ -549,8 +580,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         <button
           type="button"
           onClick={saveAdminAccountInfo}
-          disabled={!adminState || stateLoading}
-          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af] disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af]"
         >
           저장
         </button>
