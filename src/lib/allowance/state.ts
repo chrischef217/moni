@@ -44,6 +44,8 @@ function toFiniteNumber(value: unknown, fallback = 0) {
 export function normalizeAllowanceState(raw: Partial<AllowanceState> | null | undefined): AllowanceState {
   const base = DEFAULT_ALLOWANCE_STATE
   const safe = raw ?? {}
+  const adminLoginIdRaw = String(safe.admin_account?.login_id ?? '').trim()
+  const adminPasswordRaw = String(safe.admin_account?.password ?? '').trim()
 
   const freelancers = Array.isArray(safe.freelancers)
     ? safe.freelancers.map((item, idx) => ({
@@ -113,8 +115,8 @@ export function normalizeAllowanceState(raw: Partial<AllowanceState> | null | un
     },
     payment_day: Math.min(31, Math.max(1, toFiniteNumber(safe.payment_day, base.payment_day))),
     admin_account: {
-      login_id: String(safe.admin_account?.login_id ?? base.admin_account.login_id),
-      password: String(safe.admin_account?.password ?? base.admin_account.password),
+      login_id: adminLoginIdRaw || base.admin_account.login_id,
+      password: adminPasswordRaw || base.admin_account.password,
     },
     freelancers,
     clients,

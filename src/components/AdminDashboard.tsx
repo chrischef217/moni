@@ -64,7 +64,6 @@ const MENU_CONFIG: Record<MainMenuKey, MenuConfig> = {
     label: '관리자',
     subMenus: [
       { key: 'admin-company', label: '회사정보' },
-      { key: 'admin-account', label: '관리자 계정' },
       { key: 'admin-user', label: '사용자 관리' },
       { key: 'admin-role', label: '권한 관리' },
       { key: 'admin-system', label: '환경 설정' },
@@ -272,7 +271,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setCompanyForm(companyInfo)
       setCompanyNotice('')
     }
-    if (subKey === 'admin-account' && adminState) {
+    if (subKey === 'admin-user' && adminState) {
       setAdminAccountForm(adminState.admin_account)
       setAdminAccountNotice('')
     }
@@ -504,12 +503,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     )
   }
 
-  const renderAdminAccountInfo = () => {
+  const renderAdminUserManagement = () => {
     return (
       <div className="rounded-2xl border border-[#334155] bg-[#111827] p-5">
-        <h3 className="text-2xl font-semibold text-white">관리자 계정</h3>
+        <h3 className="text-2xl font-semibold text-white">사용자 관리</h3>
         <p className="mt-1 text-sm text-[#94a3b8]">
-          메인 관리자 로그인 계정을 관리합니다.
+          마스터 관리자 로그인 계정을 관리합니다. 기본값은 `admin / 1111` 입니다.
         </p>
 
         {adminAccountNotice ? (
@@ -562,8 +561,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       return renderAdminCompanyInfo()
     }
 
-    if (mainMenu === 'admin' && currentSubMenu === 'admin-account') {
-      return renderAdminAccountInfo()
+    if (mainMenu === 'admin' && currentSubMenu === 'admin-user') {
+      return renderAdminUserManagement()
     }
 
     if (mainMenu === 'sales' && currentSubMenu === 'sales-allowance') {
