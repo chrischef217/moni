@@ -217,38 +217,37 @@ async function fetchStatePayload() {
 }
 
 async function readStateFromAuditFallback(): Promise<AllowanceState> {
-  const { data, error } = await moniAdmin
+  const orderedResult = await moniAdmin
     .from(FALLBACK_STATE_TABLE)
-    .select('id, memo, created_at')
+    .select('memo')
     .eq('item_name', FALLBACK_STATE_MARKER)
-    .eq('business_id', FALLBACK_STATE_BUSINESS_ID)
-    .limit(200)
+    .order('created_at', { ascending: false })
+    .limit(20)
 
-  if (error) throw new Error(toStorageErrorMessage(error))
+  let rows = orderedResult.data
+  if (orderedResult.error) {
+    const plainResult = await moniAdmin
+      .from(FALLBACK_STATE_TABLE)
+      .select('memo')
+      .eq('item_name', FALLBACK_STATE_MARKER)
+      .limit(20)
 
-  const rows = Array.isArray(data) ? (data as Array<{ id?: string | number | null; memo?: string | null; created_at?: string | null }>) : []
-  if (rows.length > 0) {
-    const sorted = [...rows].sort((a, b) => {
-      const aTime = a.created_at ? Date.parse(a.created_at) : 0
-      const bTime = b.created_at ? Date.parse(b.created_at) : 0
-      if (aTime !== bTime) return bTime - aTime
+    if (plainResult.error) {
+      throw new Error(toStorageErrorMessage(plainResult.error))
+    }
+    rows = plainResult.data
+  }
 
-      const aId = a.id ? String(a.id) : ''
-      const bId = b.id ? String(b.id) : ''
-      if (aId === bId) return 0
-      return aId > bId ? -1 : 1
-    })
-
-    for (const row of sorted) {
-      if (!row.memo) continue
-      try {
-        const parsed = JSON.parse(row.memo) as Partial<AllowanceState>
-        if (parsed && typeof parsed === 'object') {
-          return decodeState(parsed)
-        }
-      } catch {
-        // ignore invalid legacy payload
+  for (const row of rows ?? []) {
+    const memo = (row as { memo?: string | null }).memo
+    if (!memo) continue
+    try {
+      const parsed = JSON.parse(memo) as Partial<AllowanceState>
+      if (parsed && typeof parsed === 'object') {
+        return decodeState(parsed)
       }
+    } catch {
+      // ignore invalid legacy payload
     }
   }
 
@@ -263,20 +262,34 @@ async function writeStateToAuditFallback(state: AllowanceState): Promise<void> {
     .from(FALLBACK_STATE_TABLE)
     .delete()
     .eq('item_name', FALLBACK_STATE_MARKER)
-    .eq('business_id', FALLBACK_STATE_BUSINESS_ID)
 
   if (purgeError) throw new Error(toStorageErrorMessage(purgeError))
 
-  const { error } = await moniAdmin.from(FALLBACK_STATE_TABLE).insert({
+  const basePayload = {
     action: FALLBACK_STATE_ACTION,
     item_name: FALLBACK_STATE_MARKER,
     quantity: 0,
     unit: FALLBACK_STATE_UNIT,
     memo: JSON.stringify(encoded),
     business_id: FALLBACK_STATE_BUSINESS_ID,
-  })
+  }
 
-  if (error) throw new Error(toStorageErrorMessage(error))
+  const { error } = await moniAdmin.from(FALLBACK_STATE_TABLE).insert(basePayload)
+
+  if (!error) return
+
+  const message = toStorageErrorMessage(error)
+  const missingBusinessIdColumn =
+    message.toLowerCase().includes('business_id') &&
+    (message.toLowerCase().includes('column') || message.toLowerCase().includes('schema'))
+
+  if (!missingBusinessIdColumn) {
+    throw new Error(message)
+  }
+
+  const { business_id: _ignored, ...fallbackPayload } = basePayload
+  const { error: retryError } = await moniAdmin.from(FALLBACK_STATE_TABLE).insert(fallbackPayload)
+  if (retryError) throw new Error(toStorageErrorMessage(retryError))
 }
 
 export async function readAllowanceState(): Promise<AllowanceState> {
