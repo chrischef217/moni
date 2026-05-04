@@ -130,6 +130,9 @@ function toStorageErrorMessage(error: unknown) {
   if (message.includes('relation') && message.includes('does not exist')) {
     return '수당지급 관리 DB 테이블이 아직 생성되지 않았습니다. migration SQL 적용이 필요합니다.'
   }
+  if (message.includes('PGRST205') || message.includes("Could not find the table 'public.allowance_platform_state'")) {
+    return '수당지급 관리 DB 테이블이 아직 생성되지 않았습니다. migration SQL 적용이 필요합니다.'
+  }
   if (message.toLowerCase().includes('fetch failed') || message.includes('ENOTFOUND')) {
     return '수당지급 관리 DB에 연결할 수 없습니다. Supabase URL/키 설정을 확인해 주세요.'
   }
