@@ -47,6 +47,7 @@ type Product = {
   name: string;
   price_per_kg: number;
   freelancer_id: number;
+  sort_order: number;
 };
 
 type PayDetail = {
@@ -158,8 +159,48 @@ function safeNumber(value: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function sortProductsByOrder(products: Product[]) {
+  return [...products].sort((a, b) => {
+    const orderDiff = a.sort_order - b.sort_order;
+    if (orderDiff !== 0) return orderDiff;
+    return a.id - b.id;
+  });
+}
+
+function normalizeProductOrders(products: Product[]) {
+  const grouped = new Map<number, Product[]>();
+
+  products.forEach((product) => {
+    const current = grouped.get(product.client_id) ?? [];
+    current.push(product);
+    grouped.set(product.client_id, current);
+  });
+
+  const normalized: Product[] = [];
+  grouped.forEach((group) => {
+    sortProductsByOrder(group).forEach((product, index) => {
+      normalized.push({ ...product, sort_order: index + 1 });
+    });
+  });
+
+  return normalized;
+}
+
 function parseStore(raw: string): AllowanceStore {
   const parsed = JSON.parse(raw) as Partial<AllowanceStore>;
+  const rawProducts = Array.isArray(parsed.products) ? parsed.products : [];
+  const products: Product[] = rawProducts.map((item, index) => {
+    const fallbackOrder = index + 1;
+    const order = typeof item.sort_order === 'number' && Number.isFinite(item.sort_order) && item.sort_order > 0
+      ? item.sort_order
+      : fallbackOrder;
+
+    return {
+      ...(item as Product),
+      sort_order: order,
+    };
+  });
+
   return {
     ...DEFAULT_STORE,
     ...parsed,
@@ -167,7 +208,7 @@ function parseStore(raw: string): AllowanceStore {
     admin_account: { ...DEFAULT_STORE.admin_account, ...(parsed.admin_account ?? {}) },
     freelancers: Array.isArray(parsed.freelancers) ? parsed.freelancers : [],
     clients: Array.isArray(parsed.clients) ? parsed.clients : [],
-    products: Array.isArray(parsed.products) ? parsed.products : [],
+    products: normalizeProductOrders(products),
     payRecords: Array.isArray(parsed.payRecords) ? parsed.payRecords : [],
   };
 }
@@ -316,6 +357,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
   const [editingFreelancerId, setEditingFreelancerId] = useState<number | null>(null);
 
   const [clientForm, setClientForm] = useState<Omit<Client, 'id'>>(EMPTY_CLIENT_FORM);
+  const [editingClientId, setEditingClientId] = useState<number | null>(null);
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [productEditForm, setProductEditForm] = useState(EMPTY_PRODUCT_FORM);
@@ -366,7 +408,15 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
   const selectedFreelancerProducts = useMemo(() => {
     const id = Number(selectedFreelancerId || 0);
     if (!id) return [];
-    return store.products.filter((item) => item.freelancer_id === id);
+    return [...store.products]
+      .filter((item) => item.freelancer_id === id)
+      .sort((a, b) => {
+        const clientDiff = a.client_id - b.client_id;
+        if (clientDiff !== 0) return clientDiff;
+        const orderDiff = a.sort_order - b.sort_order;
+        if (orderDiff !== 0) return orderDiff;
+        return a.id - b.id;
+      });
   }, [selectedFreelancerId, store.products]);
 
   useEffect(() => {
@@ -509,12 +559,35 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
       return;
     }
 
-    setStore((prev) => ({
-      ...prev,
-      clients: [...prev.clients, { ...clientForm, id: nextId(prev.clients) }],
-    }));
+    if (editingClientId) {
+      setStore((prev) => ({
+        ...prev,
+        clients: prev.clients.map((item) => (item.id === editingClientId ? { ...item, ...clientForm } : item)),
+      }));
+      setInfo('거래처 정보가 수정되었습니다.');
+    } else {
+      setStore((prev) => ({
+        ...prev,
+        clients: [...prev.clients, { ...clientForm, id: nextId(prev.clients) }],
+      }));
+      setInfo('거래처가 등록되었습니다.');
+    }
+
+    setEditingClientId(null);
     setClientForm(EMPTY_CLIENT_FORM);
-    setInfo('거래처가 등록되었습니다.');
+  };
+
+  const startEditClient = (id: number) => {
+    const target = store.clients.find((item) => item.id === id);
+    if (!target) return;
+    setEditingClientId(id);
+    setClientForm({
+      name: target.name,
+      address: target.address,
+      phone: target.phone,
+      memo: target.memo,
+    });
+    setInfo('거래처 수정 모드입니다.');
   };
 
   const submitProduct = (event: FormEvent) => {
@@ -530,9 +603,10 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
       name: productForm.name,
       price_per_kg: safeNumber(productForm.price_per_kg),
       freelancer_id: Number(productForm.freelancer_id),
+      sort_order: store.products.filter((item) => item.client_id === Number(productForm.client_id)).length + 1,
     };
 
-    setStore((prev) => ({ ...prev, products: [...prev.products, payload] }));
+    setStore((prev) => ({ ...prev, products: normalizeProductOrders([...prev.products, payload]) }));
     setProductForm(EMPTY_PRODUCT_FORM);
     setInfo('제품이 등록되었습니다.');
   };
@@ -555,18 +629,27 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
       return;
     }
 
+    const nextClientId = Number(productEditForm.client_id);
     setStore((prev) => ({
       ...prev,
-      products: prev.products.map((item) =>
-        item.id === editingProductId
-          ? {
-              ...item,
-              client_id: Number(productEditForm.client_id),
-              name: productEditForm.name,
-              price_per_kg: safeNumber(productEditForm.price_per_kg),
-              freelancer_id: Number(productEditForm.freelancer_id),
-            }
-          : item,
+      products: normalizeProductOrders(
+        prev.products.map((item) => {
+          if (item.id !== editingProductId) return item;
+
+          const movedToAnotherClient = item.client_id !== nextClientId;
+          const nextSortOrder = movedToAnotherClient
+            ? prev.products.filter((product) => product.client_id === nextClientId && product.id !== editingProductId).length + 1
+            : item.sort_order;
+
+          return {
+            ...item,
+            client_id: nextClientId,
+            name: productEditForm.name,
+            price_per_kg: safeNumber(productEditForm.price_per_kg),
+            freelancer_id: Number(productEditForm.freelancer_id),
+            sort_order: nextSortOrder,
+          };
+        }),
       ),
     }));
     setEditingProductId(null);
@@ -581,7 +664,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
       return;
     }
 
-    setStore((prev) => ({ ...prev, products: prev.products.filter((item) => item.id !== id) }));
+    setStore((prev) => ({ ...prev, products: normalizeProductOrders(prev.products.filter((item) => item.id !== id)) }));
     if (editingProductId === id) {
       setEditingProductId(null);
       setProductEditForm(EMPTY_PRODUCT_FORM);
@@ -589,14 +672,71 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
     setInfo('제품이 삭제되었습니다.');
   };
 
+  const moveProductOrder = (clientId: number, productId: number, direction: 'up' | 'down') => {
+    setStore((prev) => {
+      const clientProducts = sortProductsByOrder(prev.products.filter((item) => item.client_id === clientId));
+      const index = clientProducts.findIndex((item) => item.id === productId);
+      if (index < 0) return prev;
+
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= clientProducts.length) return prev;
+
+      const reordered = [...clientProducts];
+      [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+
+      const nextOrderMap = new Map<number, number>();
+      reordered.forEach((item, orderIndex) => {
+        nextOrderMap.set(item.id, orderIndex + 1);
+      });
+
+      const nextProducts = prev.products.map((item) =>
+        item.client_id === clientId
+          ? { ...item, sort_order: nextOrderMap.get(item.id) ?? item.sort_order }
+          : item,
+      );
+
+      return { ...prev, products: normalizeProductOrders(nextProducts) };
+    });
+    setInfo(direction === 'up' ? '제품 순서를 위로 이동했습니다.' : '제품 순서를 아래로 이동했습니다.');
+  };
+
   const removeClient = (id: number) => {
-    const linked = store.products.some((item) => item.client_id === id);
-    if (linked) {
-      setInfo('연결된 제품이 있어 거래처를 삭제할 수 없습니다.');
+    const target = store.clients.find((item) => item.id === id);
+    if (!target) return;
+
+    const linkedProducts = store.products.filter((item) => item.client_id === id);
+    const usedProductIds = new Set(
+      store.payRecords.flatMap((record) => record.details.map((detail) => detail.product_id)),
+    );
+
+    const hasLockedProduct = linkedProducts.some((item) => usedProductIds.has(item.id));
+    if (hasLockedProduct) {
+      setInfo('수당 내역에 사용된 제품이 있어 거래처를 삭제할 수 없습니다.');
       return;
     }
 
-    setStore((prev) => ({ ...prev, clients: prev.clients.filter((item) => item.id !== id) }));
+    const warning = linkedProducts.length > 0
+      ? `${target.name} 거래처를 삭제하면 연결된 제품 ${linkedProducts.length}개도 함께 삭제됩니다. 계속하시겠습니까?`
+      : `${target.name} 거래처를 삭제하시겠습니까?`;
+
+    if (typeof window !== 'undefined' && !window.confirm(warning)) return;
+
+    const linkedProductIds = new Set(linkedProducts.map((item) => item.id));
+    setStore((prev) => ({
+      ...prev,
+      clients: prev.clients.filter((item) => item.id !== id),
+      products: normalizeProductOrders(prev.products.filter((item) => item.client_id !== id)),
+    }));
+
+    if (editingClientId === id) {
+      setEditingClientId(null);
+      setClientForm(EMPTY_CLIENT_FORM);
+    }
+    if (editingProductId && linkedProductIds.has(editingProductId)) {
+      setEditingProductId(null);
+      setProductEditForm(EMPTY_PRODUCT_FORM);
+    }
+
     setInfo('거래처가 삭제되었습니다.');
   };
 
@@ -781,14 +921,31 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-2">
         <form onSubmit={submitClient} className="rounded-2xl border border-[#334155] bg-[#0f172a] p-4">
-          <h4 className="mb-3 text-lg font-semibold text-white">거래처 등록</h4>
+          <h4 className="mb-3 text-lg font-semibold text-white">{editingClientId ? '거래처 수정' : '거래처 등록'}</h4>
           <div className="grid gap-3">
             <label className="text-sm">거래처명<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={clientForm.name} onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })} /></label>
             <label className="text-sm">주소<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={clientForm.address} onChange={(e) => setClientForm({ ...clientForm, address: e.target.value })} /></label>
             <label className="text-sm">연락처<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={clientForm.phone} onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })} /></label>
             <label className="text-sm">메모<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={clientForm.memo} onChange={(e) => setClientForm({ ...clientForm, memo: e.target.value })} /></label>
           </div>
-          <button className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white">거래처 저장</button>
+          <div className="mt-4 flex gap-2">
+            <button className="rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white">
+              {editingClientId ? '수정 저장' : '거래처 저장'}
+            </button>
+            {editingClientId ? (
+              <button
+                type="button"
+                className="rounded-lg border border-[#334155] px-3 py-2 text-sm"
+                onClick={() => {
+                  setEditingClientId(null);
+                  setClientForm(EMPTY_CLIENT_FORM);
+                  setInfo('거래처 수정 모드를 취소했습니다.');
+                }}
+              >
+                취소
+              </button>
+            ) : null}
+          </div>
         </form>
 
         <form onSubmit={submitProduct} className="rounded-2xl border border-[#334155] bg-[#0f172a] p-4">
@@ -818,6 +975,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
         <div className="space-y-3">
           {store.clients.map((client) => {
             const products = store.products.filter((item) => item.client_id === client.id);
+            const orderedProducts = sortProductsByOrder(products);
             return (
               <div key={client.id} className="rounded-xl border border-[#334155] bg-[#111827] p-3">
                 <div className="flex items-center justify-between gap-3">
@@ -825,11 +983,14 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
                     <p className="font-semibold text-white">{client.name}</p>
                     <p className="text-sm text-[#94a3b8]">{client.address} / {client.phone}</p>
                   </div>
-                  <button className="rounded-lg border border-[#7f1d1d] px-3 py-1.5 text-sm text-[#fca5a5]" onClick={() => removeClient(client.id)}>삭제</button>
+                  <div className="flex gap-2">
+                    <button type="button" className="rounded-lg border border-[#334155] px-3 py-1.5 text-sm" onClick={() => startEditClient(client.id)}>수정</button>
+                    <button type="button" className="rounded-lg border border-[#7f1d1d] px-3 py-1.5 text-sm text-[#fca5a5]" onClick={() => removeClient(client.id)}>삭제</button>
+                  </div>
                 </div>
 
                 <div className="mt-3 space-y-2">
-                  {products.map((p) => {
+                  {orderedProducts.map((p, index) => {
                     const assignee = store.freelancers.find((f) => f.id === p.freelancer_id);
                     if (editingProductId === p.id) {
                       return (
@@ -841,8 +1002,8 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
                             {salesFreelancers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                           </select>
                           <div className="flex gap-2">
-                            <button className="rounded border border-[#1d4ed8] bg-[#1d4ed8] px-2 py-1 text-sm" onClick={saveProductEdit}>저장</button>
-                            <button className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => { setEditingProductId(null); setProductEditForm(EMPTY_PRODUCT_FORM); }}>취소</button>
+                            <button type="button" className="rounded border border-[#1d4ed8] bg-[#1d4ed8] px-2 py-1 text-sm" onClick={saveProductEdit}>저장</button>
+                            <button type="button" className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => { setEditingProductId(null); setProductEditForm(EMPTY_PRODUCT_FORM); }}>취소</button>
                           </div>
                         </div>
                       );
@@ -850,12 +1011,15 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
 
                     return (
                       <div key={p.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-[#334155] p-2">
+                        <span className="rounded-full border border-[#334155] px-2 py-1 text-xs text-[#94a3b8]">순서 {index + 1}</span>
                         <span className="rounded-full bg-[#1e293b] px-2 py-1 text-sm">{p.name}</span>
                         <span className="text-sm text-[#94a3b8]">{Math.round(p.price_per_kg).toLocaleString('ko-KR')}원/kg</span>
                         <span className="text-sm text-[#94a3b8]">담당: {assignee?.name ?? '-'}</span>
                         <div className="ml-auto flex gap-2">
-                          <button className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => startEditProduct(p)}>수정</button>
-                          <button className="rounded border border-[#7f1d1d] px-2 py-1 text-sm text-[#fca5a5]" onClick={() => removeProduct(p.id)}>삭제</button>
+                          <button type="button" disabled={index === 0} className="rounded border border-[#334155] px-2 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40" onClick={() => moveProductOrder(client.id, p.id, 'up')}>위로</button>
+                          <button type="button" disabled={index === orderedProducts.length - 1} className="rounded border border-[#334155] px-2 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-40" onClick={() => moveProductOrder(client.id, p.id, 'down')}>아래로</button>
+                          <button type="button" className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => startEditProduct(p)}>수정</button>
+                          <button type="button" className="rounded border border-[#7f1d1d] px-2 py-1 text-sm text-[#fca5a5]" onClick={() => removeProduct(p.id)}>삭제</button>
                         </div>
                       </div>
                     );
