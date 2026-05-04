@@ -10,6 +10,9 @@ const STATE_TABLE = 'allowance_platform_state'
 const USERS_TABLE = 'allowance_platform_users'
 const SESSIONS_TABLE = 'allowance_platform_sessions'
 const STATE_ID = 'main'
+const FALLBACK_AUDIT_TABLE = 'audit_logs'
+const FALLBACK_STATE_TABLE_NAME = 'allowance_state'
+const FALLBACK_STATE_ACTION = 'state_upsert'
 
 export const SESSION_COOKIE_NAME = 'moni_allowance_session'
 const SESSION_MINUTES = 30
@@ -139,6 +142,16 @@ function toStorageErrorMessage(error: unknown) {
   return message
 }
 
+function isMissingAllowanceTableError(error: unknown) {
+  const message = toStorageErrorMessage(error)
+  return (
+    message.includes('수당지급 관리 DB 테이블이 아직 생성되지 않았습니다') ||
+    message.includes('allowance_platform_state') ||
+    message.includes('allowance_platform_users') ||
+    message.includes('allowance_platform_sessions')
+  )
+}
+
 function encodePayload(value: object) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
 }
@@ -201,45 +214,98 @@ async function fetchStatePayload() {
   return (data?.payload as Partial<AllowanceState> | null | undefined) ?? null
 }
 
-export async function readAllowanceState(): Promise<AllowanceState> {
-  const payload = await fetchStatePayload()
-  if (payload) return decodeState(payload)
-
-  const initial = DEFAULT_ALLOWANCE_STATE
-  const encoded = encodeState(initial)
-
-  const { error } = await moniAdmin.from(STATE_TABLE).upsert(
-    {
-      id: STATE_ID,
-      payload: encoded,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'id' },
-  )
+async function readStateFromAuditFallback(): Promise<AllowanceState> {
+  const { data, error } = await moniAdmin
+    .from(FALLBACK_AUDIT_TABLE)
+    .select('after_json, created_at')
+    .eq('table_name', FALLBACK_STATE_TABLE_NAME)
+    .eq('action', FALLBACK_STATE_ACTION)
+    .order('created_at', { ascending: false })
+    .limit(1)
 
   if (error) throw new Error(toStorageErrorMessage(error))
 
+  const row = Array.isArray(data) && data.length > 0
+    ? (data[0] as { after_json?: Partial<AllowanceState> | null })
+    : null
+
+  if (row?.after_json && typeof row.after_json === 'object') {
+    return decodeState(row.after_json)
+  }
+
+  const initial = DEFAULT_ALLOWANCE_STATE
+  await writeStateToAuditFallback(initial)
   return initial
+}
+
+async function writeStateToAuditFallback(state: AllowanceState): Promise<void> {
+  const encoded = encodeState(state)
+  const { error } = await moniAdmin.from(FALLBACK_AUDIT_TABLE).insert({
+    table_name: FALLBACK_STATE_TABLE_NAME,
+    record_id: 1,
+    action: FALLBACK_STATE_ACTION,
+    source_text_raw: 'allowance fallback state persist',
+    llm_parse_json: { source: 'allowance-fallback', ts: new Date().toISOString() },
+    after_json: encoded,
+    reason: 'allowance fallback storage',
+  })
+
+  if (error) throw new Error(toStorageErrorMessage(error))
+}
+
+export async function readAllowanceState(): Promise<AllowanceState> {
+  try {
+    const payload = await fetchStatePayload()
+    if (payload) return decodeState(payload)
+
+    const initial = DEFAULT_ALLOWANCE_STATE
+    const encoded = encodeState(initial)
+
+    const { error } = await moniAdmin.from(STATE_TABLE).upsert(
+      {
+        id: STATE_ID,
+        payload: encoded,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' },
+    )
+
+    if (error) throw new Error(toStorageErrorMessage(error))
+
+    return initial
+  } catch (error) {
+    if (isMissingAllowanceTableError(error)) {
+      return readStateFromAuditFallback()
+    }
+    throw error
+  }
 }
 
 export async function writeAllowanceState(nextState: AllowanceState): Promise<AllowanceState> {
   const normalized = normalizeAllowanceState(nextState)
   const encoded = encodeState(normalized)
 
-  const { error } = await moniAdmin.from(STATE_TABLE).upsert(
-    {
-      id: STATE_ID,
-      payload: encoded,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'id' },
-  )
+  try {
+    const { error } = await moniAdmin.from(STATE_TABLE).upsert(
+      {
+        id: STATE_ID,
+        payload: encoded,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' },
+    )
 
-  if (error) throw new Error(toStorageErrorMessage(error))
+    if (error) throw new Error(toStorageErrorMessage(error))
 
-  await syncAllowanceUsers(normalized)
-
-  return normalized
+    await syncAllowanceUsers(normalized)
+    return normalized
+  } catch (error) {
+    if (isMissingAllowanceTableError(error)) {
+      await writeStateToAuditFallback(normalized)
+      return normalized
+    }
+    throw error
+  }
 }
 
 export async function syncAllowanceUsers(state: AllowanceState) {
@@ -264,7 +330,10 @@ export async function syncAllowanceUsers(state: AllowanceState) {
     .from(USERS_TABLE)
     .select('login_id,password_hash')
 
-  if (existingError) throw new Error(toStorageErrorMessage(existingError))
+  if (existingError) {
+    if (isMissingAllowanceTableError(existingError)) return
+    throw new Error(toStorageErrorMessage(existingError))
+  }
 
   const existingMap = new Map<string, string>()
   ;(existingRows ?? []).forEach((row: { login_id: string; password_hash: string }) => {
@@ -327,6 +396,33 @@ export async function verifyAllowanceLogin(loginId: string, password: string): P
       displayName: row.display_name ?? (row.role === 'admin' ? '관리자' : '프리랜서'),
     }
   } catch (error) {
+    if (isMissingAllowanceTableError(error)) {
+      const state = await readAllowanceState()
+      const admin = state.admin_account
+      if (loginId.trim() === admin.login_id && password.trim() === admin.password) {
+        return {
+          role: 'admin',
+          loginId: admin.login_id,
+          freelancerId: null,
+          displayName: '관리자',
+        }
+      }
+
+      const freelancer = state.freelancers.find(
+        (item) => item.login_id.trim() === loginId.trim() && item.password.trim() === password.trim(),
+      )
+      if (freelancer) {
+        return {
+          role: 'freelancer',
+          loginId: freelancer.login_id,
+          freelancerId: freelancer.id,
+          displayName: freelancer.name || '프리랜서',
+        }
+      }
+
+      return null
+    }
+
     const isFallbackAdmin =
       loginId.trim() === FALLBACK_ADMIN_LOGIN_ID && password.trim() === FALLBACK_ADMIN_PASSWORD
 
@@ -376,7 +472,10 @@ export async function readAllowanceSession(token: string | null | undefined): Pr
     .eq('token', token)
     .maybeSingle()
 
-  if (error) throw new Error(toStorageErrorMessage(error))
+  if (error) {
+    if (isMissingAllowanceTableError(error)) return null
+    throw new Error(toStorageErrorMessage(error))
+  }
   if (!data) return null
 
   const row = data as SessionRow
@@ -404,12 +503,18 @@ export async function touchAllowanceSession(token: string) {
     .update({ expires_at: nextExpiryIso(), updated_at: new Date().toISOString() })
     .eq('token', token)
 
-  if (error) throw new Error(toStorageErrorMessage(error))
+  if (error) {
+    if (isMissingAllowanceTableError(error)) return
+    throw new Error(toStorageErrorMessage(error))
+  }
 }
 
 export async function destroyAllowanceSession(token: string | null | undefined) {
   if (!token) return
   if (token.startsWith(`${FALLBACK_SESSION_PREFIX}.`)) return
   const { error } = await moniAdmin.from(SESSIONS_TABLE).delete().eq('token', token)
-  if (error) throw new Error(toStorageErrorMessage(error))
+  if (error) {
+    if (isMissingAllowanceTableError(error)) return
+    throw new Error(toStorageErrorMessage(error))
+  }
 }
