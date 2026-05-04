@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 export type AllowanceTabKey = 'freelancer' | 'client-product' | 'pay' | 'settings';
 type FreelancerType = 'sales' | 'production';
 
-type CompanyInfo = {
+export type CompanyInfo = {
   company_name: string;
   representative: string;
   business_reg_number: string;
@@ -81,20 +81,22 @@ type AllowanceModuleProps = {
   activeTab: AllowanceTabKey;
   onChangeTab: (tab: AllowanceTabKey) => void;
   onMoveToChat: () => void;
+  companyInfo: CompanyInfo;
 };
 
 const STORAGE_KEY = 'moni.allowance.module.v2';
+export const EMPTY_COMPANY_INFO: CompanyInfo = {
+  company_name: '',
+  representative: '',
+  business_reg_number: '',
+  business_type: '',
+  business_sector: '',
+  address: '',
+  phone: '',
+};
 
 const DEFAULT_STORE: AllowanceStore = {
-  company: {
-    company_name: '',
-    representative: '',
-    business_reg_number: '',
-    business_type: '',
-    business_sector: '',
-    address: '',
-    phone: '',
-  },
+  company: { ...EMPTY_COMPANY_INFO },
   payment_day: 25,
   admin_account: {
     login_id: 'admin',
@@ -305,7 +307,7 @@ function StatementPaper({
   );
 }
 
-export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat }: AllowanceModuleProps) {
+export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, companyInfo }: AllowanceModuleProps) {
   const [store, setStore] = useState<AllowanceStore>(DEFAULT_STORE);
   const [hydrated, setHydrated] = useState(false);
   const [notice, setNotice] = useState('');
@@ -326,8 +328,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat }
   const [loadedDetailMap, setLoadedDetailMap] = useState<Record<number, number> | null>(null);
   const [previewPayId, setPreviewPayId] = useState<number | null>(null);
 
-  const [settingsTab, setSettingsTab] = useState<'company' | 'payment' | 'admin' | 'freelancers'>('company');
-  const [companyForm, setCompanyForm] = useState<CompanyInfo>(DEFAULT_STORE.company);
+  const [settingsTab, setSettingsTab] = useState<'payment' | 'admin' | 'freelancers'>('payment');
   const [paymentDayInput, setPaymentDayInput] = useState(DEFAULT_STORE.payment_day);
   const [adminForm, setAdminForm] = useState<AdminAccount>(DEFAULT_STORE.admin_account);
   const [accountRows, setAccountRows] = useState<Array<{ id: number; name: string; login_id: string; password: string }>>([]);
@@ -352,7 +353,6 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat }
   }, [store, hydrated]);
 
   useEffect(() => {
-    setCompanyForm(store.company);
     setPaymentDayInput(store.payment_day);
     setAdminForm(store.admin_account);
     setAccountRows(store.freelancers.map((item) => ({ id: item.id, name: item.name, login_id: item.login_id, password: item.password })));
@@ -419,13 +419,13 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat }
     });
 
     return {
-      company: store.company,
+      company: companyInfo,
       freelancer,
       payRecord: record,
       details,
       paymentDate: paymentDateText(record.year, record.month, store.payment_day),
     };
-  }, [previewPayId, store]);
+  }, [previewPayId, store, companyInfo]);
 
   const setInfo = (message: string) => {
     setNotice(message);
@@ -687,11 +687,6 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat }
     setTimeout(() => {
       window.print();
     }, 100);
-  };
-
-  const saveCompany = () => {
-    setStore((prev) => ({ ...prev, company: companyForm }));
-    setInfo('회사 정보가 저장되었습니다.');
   };
 
   const savePaymentDay = () => {
@@ -964,28 +959,15 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat }
 
   const renderSettingsTab = () => (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:grid-cols-4">
-        <button className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'company' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('company')}>회사 정보</button>
+      <div className="rounded-lg border border-[#1d4ed8] bg-[#0b1730] px-3 py-2 text-xs text-[#93c5fd]">
+        회사 정보는 메인 메뉴의 관리자 &gt; 회사정보에서 관리합니다.
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-3">
         <button className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'payment' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('payment')}>지급일 설정</button>
         <button className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'admin' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('admin')}>관리자 계정</button>
         <button className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'freelancers' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('freelancers')}>프리랜서 계정</button>
       </div>
-
-      {settingsTab === 'company' ? (
-        <div className="rounded-2xl border border-[#334155] bg-[#0f172a] p-4">
-          <h4 className="mb-3 text-lg font-semibold text-white">회사 정보</h4>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="text-sm">회사명<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={companyForm.company_name} onChange={(e) => setCompanyForm({ ...companyForm, company_name: e.target.value })} /></label>
-            <label className="text-sm">대표자<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={companyForm.representative} onChange={(e) => setCompanyForm({ ...companyForm, representative: e.target.value })} /></label>
-            <label className="text-sm">사업자등록번호<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={companyForm.business_reg_number} onChange={(e) => setCompanyForm({ ...companyForm, business_reg_number: e.target.value })} /></label>
-            <label className="text-sm">업태<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={companyForm.business_type} onChange={(e) => setCompanyForm({ ...companyForm, business_type: e.target.value })} /></label>
-            <label className="text-sm">업종<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={companyForm.business_sector} onChange={(e) => setCompanyForm({ ...companyForm, business_sector: e.target.value })} /></label>
-            <label className="text-sm">연락처<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={companyForm.phone} onChange={(e) => setCompanyForm({ ...companyForm, phone: e.target.value })} /></label>
-            <label className="text-sm md:col-span-2">주소<input className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={companyForm.address} onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })} /></label>
-          </div>
-          <button className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white" onClick={saveCompany}>저장</button>
-        </div>
-      ) : null}
 
       {settingsTab === 'payment' ? (
         <div className="rounded-2xl border border-[#334155] bg-[#0f172a] p-4">

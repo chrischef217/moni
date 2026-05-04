@@ -1,7 +1,11 @@
 ﻿'use client'
 
-import { useMemo, useState } from 'react'
-import AllowanceModule, { type AllowanceTabKey } from '@/components/AllowanceModule'
+import { useEffect, useMemo, useState } from 'react'
+import AllowanceModule, {
+  EMPTY_COMPANY_INFO,
+  type AllowanceTabKey,
+  type CompanyInfo,
+} from '@/components/AllowanceModule'
 
 type MainMenuKey = 'ai-chat' | 'production' | 'accounting' | 'sales' | 'admin'
 type ChatRole = 'user' | 'assistant'
@@ -57,12 +61,16 @@ const MENU_CONFIG: Record<MainMenuKey, MenuConfig> = {
   admin: {
     label: '관리자',
     subMenus: [
+      { key: 'admin-company', label: '회사정보' },
       { key: 'admin-user', label: '사용자 관리' },
       { key: 'admin-role', label: '권한 관리' },
       { key: 'admin-system', label: '환경 설정' },
     ],
   },
 }
+
+const COMPANY_STORAGE_KEY = 'moni.admin.company-info.v1'
+const LEGACY_ALLOWANCE_STORAGE_KEY = 'moni.allowance.module.v2'
 
 const CHAT_EXAMPLES = [
   '오늘 떡볶이소스 200개 팔았어, 개당 3500원',
@@ -125,7 +133,7 @@ const MODULE_CONTENT: Record<string, { title: string; description: string; actio
   'admin-system': {
     title: '환경 설정',
     description: '시스템 공통 환경값을 설정하는 임시 메뉴입니다.',
-    actions: ['회사 기본 정보 수정', '알림 설정 변경', '백업 스케줄 확인'],
+    actions: ['알림 설정 변경', '백업 스케줄 확인', '로그 보관 정책 변경'],
   },
 }
 
@@ -178,6 +186,9 @@ export default function HomePage() {
 
   const [allowanceTab, setAllowanceTab] = useState<AllowanceTabKey>('freelancer')
   const [moduleStatus, setModuleStatus] = useState('')
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo>(EMPTY_COMPANY_INFO)
+  const [companyForm, setCompanyForm] = useState<CompanyInfo>(EMPTY_COMPANY_INFO)
+  const [companyNotice, setCompanyNotice] = useState('')
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
@@ -190,6 +201,39 @@ export default function HomePage() {
 
   const messages = activeConversation?.messages ?? []
   const currentSubMenu = subMenuByMain[mainMenu]
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    let loadedCompany: CompanyInfo = { ...EMPTY_COMPANY_INFO }
+    const raw = window.localStorage.getItem(COMPANY_STORAGE_KEY)
+
+    if (raw) {
+      try {
+        loadedCompany = { ...EMPTY_COMPANY_INFO, ...(JSON.parse(raw) as Partial<CompanyInfo>) }
+      } catch {
+        loadedCompany = { ...EMPTY_COMPANY_INFO }
+      }
+    } else {
+      const legacyRaw = window.localStorage.getItem(LEGACY_ALLOWANCE_STORAGE_KEY)
+      if (legacyRaw) {
+        try {
+          const legacyParsed = JSON.parse(legacyRaw) as { company?: Partial<CompanyInfo> }
+          loadedCompany = { ...EMPTY_COMPANY_INFO, ...(legacyParsed.company ?? {}) }
+        } catch {
+          loadedCompany = { ...EMPTY_COMPANY_INFO }
+        }
+      }
+    }
+
+    setCompanyInfo(loadedCompany)
+    setCompanyForm(loadedCompany)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(COMPANY_STORAGE_KEY, JSON.stringify(companyInfo))
+  }, [companyInfo])
 
   const selectMainMenu = (menu: MainMenuKey) => {
     setMainMenu(menu)
@@ -211,6 +255,10 @@ export default function HomePage() {
     setOpenSubMenuFor(null)
     setModuleStatus('')
     if (subKey === 'sales-allowance') setAllowanceTab('freelancer')
+    if (subKey === 'admin-company') {
+      setCompanyForm(companyInfo)
+      setCompanyNotice('')
+    }
   }
 
   const resetConversation = () => {
@@ -270,7 +318,105 @@ export default function HomePage() {
     setModuleStatus(`"${label}" 버튼을 실행했습니다. (임시 동작)`)
   }
 
+  const saveCompanyInfo = () => {
+    if (!companyForm.company_name.trim()) {
+      setCompanyNotice('회사명을 입력해 주세요.')
+      return
+    }
+
+    setCompanyInfo({ ...companyForm })
+    setCompanyNotice('회사 정보가 저장되었습니다. 영업관리 정산서에 즉시 반영됩니다.')
+  }
+
+  const renderAdminCompanyInfo = () => {
+    return (
+      <div className="rounded-2xl border border-[#334155] bg-[#111827] p-5">
+        <h3 className="text-2xl font-semibold text-white">회사정보</h3>
+        <p className="mt-1 text-sm text-[#94a3b8]">
+          여기에서 저장한 회사 정보는 영업관리 &gt; 수당지급 관리의 정산서 지급자 섹션에 동일하게 표시됩니다.
+        </p>
+
+        {companyNotice ? (
+          <div className="mt-4 rounded-lg border border-[#1e3a8a] bg-[#0f172a] px-4 py-3 text-sm text-[#bfdbfe]">
+            {companyNotice}
+          </div>
+        ) : null}
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="text-sm text-[#cbd5e1]">
+            회사명
+            <input
+              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
+              value={companyForm.company_name}
+              onChange={(event) => setCompanyForm((prev) => ({ ...prev, company_name: event.target.value }))}
+            />
+          </label>
+          <label className="text-sm text-[#cbd5e1]">
+            대표자
+            <input
+              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
+              value={companyForm.representative}
+              onChange={(event) => setCompanyForm((prev) => ({ ...prev, representative: event.target.value }))}
+            />
+          </label>
+          <label className="text-sm text-[#cbd5e1]">
+            사업자등록번호
+            <input
+              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
+              value={companyForm.business_reg_number}
+              onChange={(event) => setCompanyForm((prev) => ({ ...prev, business_reg_number: event.target.value }))}
+            />
+          </label>
+          <label className="text-sm text-[#cbd5e1]">
+            업태
+            <input
+              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
+              value={companyForm.business_type}
+              onChange={(event) => setCompanyForm((prev) => ({ ...prev, business_type: event.target.value }))}
+            />
+          </label>
+          <label className="text-sm text-[#cbd5e1]">
+            업종
+            <input
+              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
+              value={companyForm.business_sector}
+              onChange={(event) => setCompanyForm((prev) => ({ ...prev, business_sector: event.target.value }))}
+            />
+          </label>
+          <label className="text-sm text-[#cbd5e1]">
+            연락처
+            <input
+              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
+              value={companyForm.phone}
+              onChange={(event) => setCompanyForm((prev) => ({ ...prev, phone: event.target.value }))}
+            />
+          </label>
+          <label className="text-sm text-[#cbd5e1] md:col-span-2">
+            주소
+            <input
+              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
+              value={companyForm.address}
+              onChange={(event) => setCompanyForm((prev) => ({ ...prev, address: event.target.value }))}
+            />
+          </label>
+        </div>
+
+        <button
+          type="button"
+          onClick={saveCompanyInfo}
+          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af]"
+        >
+          저장
+        </button>
+      </div>
+    )
+  }
+
   const renderModuleContent = () => {
+    if (mainMenu === 'admin' && currentSubMenu === 'admin-company') {
+      return renderAdminCompanyInfo()
+    }
+
     if (mainMenu === 'sales' && currentSubMenu === 'sales-allowance') {
       return (
         <AllowanceModule
@@ -280,6 +426,7 @@ export default function HomePage() {
             setMainMenu('ai-chat')
             setOpenSubMenuFor(null)
           }}
+          companyInfo={companyInfo}
         />
       )
     }
