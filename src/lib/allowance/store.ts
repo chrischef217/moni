@@ -221,8 +221,6 @@ async function readStateFromAuditFallback(): Promise<AllowanceState> {
     .from(FALLBACK_STATE_TABLE)
     .select('memo, created_at')
     .eq('item_name', FALLBACK_STATE_MARKER)
-    .eq('action', FALLBACK_STATE_ACTION)
-    .eq('business_id', FALLBACK_STATE_BUSINESS_ID)
     .order('created_at', { ascending: false })
     .limit(1)
 
