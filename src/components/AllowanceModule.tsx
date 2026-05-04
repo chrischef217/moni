@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
@@ -85,7 +85,6 @@ type AllowanceModuleProps = {
   companyInfo: CompanyInfo;
 };
 
-const STORAGE_KEY = 'moni.allowance.module.v2';
 export const EMPTY_COMPANY_INFO: CompanyInfo = {
   company_name: '',
   representative: '',
@@ -159,6 +158,11 @@ function safeNumber(value: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function safeInt(value: unknown, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+}
+
 function sortProductsByOrder(products: Product[]) {
   return [...products].sort((a, b) => {
     const orderDiff = a.sort_order - b.sort_order;
@@ -188,6 +192,31 @@ function normalizeProductOrders(products: Product[]) {
 
 function parseStore(raw: string): AllowanceStore {
   const parsed = JSON.parse(raw) as Partial<AllowanceStore>;
+  const freelancers: Freelancer[] = Array.isArray(parsed.freelancers)
+    ? parsed.freelancers.map((item, index) => ({
+        id: safeInt(item.id, index + 1),
+        name: String(item.name ?? ''),
+        rrn: String(item.rrn ?? ''),
+        type: item.type === 'production' ? 'production' : 'sales',
+        login_id: String(item.login_id ?? ''),
+        password: String(item.password ?? ''),
+        address: String(item.address ?? ''),
+        phone: String(item.phone ?? ''),
+        bank_name: String(item.bank_name ?? ''),
+        account_number: String(item.account_number ?? ''),
+      }))
+    : [];
+
+  const clients: Client[] = Array.isArray(parsed.clients)
+    ? parsed.clients.map((item, index) => ({
+        id: safeInt(item.id, index + 1),
+        name: String(item.name ?? ''),
+        address: String(item.address ?? ''),
+        phone: String(item.phone ?? ''),
+        memo: String(item.memo ?? ''),
+      }))
+    : [];
+
   const rawProducts = Array.isArray(parsed.products) ? parsed.products : [];
   const products: Product[] = rawProducts.map((item, index) => {
     const fallbackOrder = index + 1;
@@ -196,20 +225,57 @@ function parseStore(raw: string): AllowanceStore {
       : fallbackOrder;
 
     return {
-      ...(item as Product),
+      id: safeInt(item.id, index + 1),
+      client_id: safeInt(item.client_id, 0),
+      name: String(item.name ?? ''),
+      price_per_kg: safeNumber(String(item.price_per_kg ?? 0)),
+      freelancer_id: safeInt(item.freelancer_id, 0),
       sort_order: order,
     };
   });
+
+  const payRecords: PayRecord[] = Array.isArray(parsed.payRecords)
+    ? parsed.payRecords.map((record, index) => ({
+        id: safeInt(record.id, index + 1),
+        freelancer_id: safeInt(record.freelancer_id, 0),
+        year: safeInt(record.year, new Date().getFullYear()),
+        month: safeInt(record.month, new Date().getMonth() + 1),
+        total_amount: safeNumber(String(record.total_amount ?? 0)),
+        withholding_tax: safeNumber(String(record.withholding_tax ?? 0)),
+        net_amount: safeNumber(String(record.net_amount ?? 0)),
+        details: Array.isArray(record.details)
+          ? record.details.map((detail, detailIndex) => ({
+              id: safeInt(detail.id, detailIndex + 1),
+              product_id: safeInt(detail.product_id, 0),
+              quantity_kg: safeNumber(String(detail.quantity_kg ?? 0)),
+              amount: safeNumber(String(detail.amount ?? 0)),
+            }))
+          : [],
+      }))
+    : [];
 
   return {
     ...DEFAULT_STORE,
     ...parsed,
     company: { ...DEFAULT_STORE.company, ...(parsed.company ?? {}) },
     admin_account: { ...DEFAULT_STORE.admin_account, ...(parsed.admin_account ?? {}) },
-    freelancers: Array.isArray(parsed.freelancers) ? parsed.freelancers : [],
-    clients: Array.isArray(parsed.clients) ? parsed.clients : [],
+    freelancers,
+    clients,
     products: normalizeProductOrders(products),
-    payRecords: Array.isArray(parsed.payRecords) ? parsed.payRecords : [],
+    payRecords,
+  };
+}
+
+function recalcPayRecord(record: PayRecord, details: PayDetail[]) {
+  if (details.length === 0) return null;
+  const total = details.reduce((sum, item) => sum + item.amount, 0);
+  const withholding = Math.round(total * 0.033);
+  return {
+    ...record,
+    details,
+    total_amount: total,
+    withholding_tax: withholding,
+    net_amount: total - withholding,
   };
 }
 
@@ -392,27 +458,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
         if (cancelled) return;
 
         const serverStore = parseStore(JSON.stringify(payload.state));
-        let mergedStore = serverStore;
-
-        if (
-          typeof window !== 'undefined' &&
-          serverStore.freelancers.length === 0 &&
-          serverStore.clients.length === 0 &&
-          serverStore.products.length === 0 &&
-          serverStore.payRecords.length === 0
-        ) {
-          const legacyRaw = window.localStorage.getItem(STORAGE_KEY);
-          if (legacyRaw) {
-            try {
-              mergedStore = parseStore(legacyRaw);
-              setNotice('브라우저에 저장된 기존 데이터를 서버 저장소로 이전했습니다.');
-            } catch {
-              mergedStore = serverStore;
-            }
-          }
-        }
-
-        setStore(mergedStore);
+        setStore(serverStore);
         setSyncReady(true);
       } catch (error) {
         const message = error instanceof Error ? error.message : '수당지급 관리 데이터 로딩 중 오류가 발생했습니다.';
@@ -443,8 +489,9 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
           const payload = (await response.json().catch(() => null)) as { error?: string } | null;
           throw new Error(payload?.error || '서버 저장소 동기화에 실패했습니다.');
         }
-      } catch {
-        setNotice('서버 저장소 동기화에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '서버 저장소 동기화에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+        setNotice(message);
       }
     }, 220);
 
@@ -593,19 +640,51 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
   };
 
   const removeFreelancer = (id: number) => {
-    const hasProduct = store.products.some((item) => item.freelancer_id === id);
-    const hasPayRecord = store.payRecords.some((item) => item.freelancer_id === id);
-    if (hasProduct || hasPayRecord) {
-      setInfo('연결된 제품 또는 수당 내역이 있어 삭제할 수 없습니다.');
-      return;
+    const target = store.freelancers.find((item) => item.id === id);
+    if (!target) return;
+
+    const linkedProducts = store.products.filter((item) => item.freelancer_id === id);
+    const linkedPayRecords = store.payRecords.filter((item) => item.freelancer_id === id);
+    if (linkedProducts.length > 0 || linkedPayRecords.length > 0) {
+      const warning = `${target.name} 프리랜서를 삭제하면 연결된 제품 ${linkedProducts.length}개, 수당내역 ${linkedPayRecords.length}건이 함께 삭제됩니다. 계속하시겠습니까?`;
+      if (typeof window !== 'undefined' && !window.confirm(warning)) return;
     }
 
-    setStore((prev) => ({ ...prev, freelancers: prev.freelancers.filter((item) => item.id !== id) }));
+    setStore((prev) => {
+      const removedProductIds = new Set(
+        prev.products.filter((item) => item.freelancer_id === id).map((item) => item.id),
+      );
+
+      const nextPayRecords = prev.payRecords
+        .filter((item) => item.freelancer_id !== id)
+        .map((record) => {
+          const filteredDetails = record.details.filter((detail) => !removedProductIds.has(detail.product_id));
+          return recalcPayRecord(record, filteredDetails);
+        })
+        .filter((item): item is PayRecord => item !== null);
+
+      return {
+        ...prev,
+        freelancers: prev.freelancers.filter((item) => item.id !== id),
+        products: normalizeProductOrders(prev.products.filter((item) => item.freelancer_id !== id)),
+        payRecords: nextPayRecords,
+      };
+    });
+
+    if (selectedFreelancerId === String(id)) {
+      setSelectedFreelancerId('');
+      setQuantities({});
+    }
+    setEditingPayId(null);
+    setLoadedDetailMap(null);
+    setPreviewPayId(null);
     if (editingFreelancerId === id) {
       setEditingFreelancerId(null);
       setFreelancerForm(EMPTY_FREELANCER_FORM);
     }
-    setInfo('프리랜서가 삭제되었습니다.');
+    setEditingProductId(null);
+    setProductEditForm(EMPTY_PRODUCT_FORM);
+    setInfo('프리랜서를 삭제했습니다.');
   };
 
   const submitClient = (event: FormEvent) => {
@@ -714,18 +793,35 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
   };
 
   const removeProduct = (id: number) => {
-    const used = store.payRecords.some((record) => record.details.some((d) => d.product_id === id));
-    if (used) {
-      setInfo('지급 내역에 사용된 제품은 삭제할 수 없습니다.');
-      return;
+    const linkedPayCount = store.payRecords.filter((record) => record.details.some((d) => d.product_id === id)).length;
+    if (linkedPayCount > 0) {
+      const warning = `이 제품은 수당내역 ${linkedPayCount}건에 연결되어 있습니다. 삭제하면 해당 상세 항목이 함께 삭제됩니다. 계속하시겠습니까?`;
+      if (typeof window !== 'undefined' && !window.confirm(warning)) return;
     }
 
-    setStore((prev) => ({ ...prev, products: normalizeProductOrders(prev.products.filter((item) => item.id !== id)) }));
+    setStore((prev) => {
+      const nextPayRecords = prev.payRecords
+        .map((record) => {
+          const filteredDetails = record.details.filter((detail) => detail.product_id !== id);
+          return recalcPayRecord(record, filteredDetails);
+        })
+        .filter((item): item is PayRecord => item !== null);
+
+      return {
+        ...prev,
+        products: normalizeProductOrders(prev.products.filter((item) => item.id !== id)),
+        payRecords: nextPayRecords,
+      };
+    });
+
+    setEditingPayId(null);
+    setLoadedDetailMap(null);
+    setPreviewPayId(null);
     if (editingProductId === id) {
       setEditingProductId(null);
       setProductEditForm(EMPTY_PRODUCT_FORM);
     }
-    setInfo('제품이 삭제되었습니다.');
+    setInfo('제품을 삭제했습니다.');
   };
 
   const moveProductOrder = (clientId: number, productId: number, direction: 'up' | 'down') => {
@@ -761,28 +857,33 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
     if (!target) return;
 
     const linkedProducts = store.products.filter((item) => item.client_id === id);
-    const usedProductIds = new Set(
-      store.payRecords.flatMap((record) => record.details.map((detail) => detail.product_id)),
-    );
-
-    const hasLockedProduct = linkedProducts.some((item) => usedProductIds.has(item.id));
-    if (hasLockedProduct) {
-      setInfo('수당 내역에 사용된 제품이 있어 거래처를 삭제할 수 없습니다.');
-      return;
-    }
+    const linkedProductIds = new Set(linkedProducts.map((item) => item.id));
+    const affectedPayCount = store.payRecords.filter((record) =>
+      record.details.some((detail) => linkedProductIds.has(detail.product_id)),
+    ).length;
 
     const warning = linkedProducts.length > 0
-      ? `${target.name} 거래처를 삭제하면 연결된 제품 ${linkedProducts.length}개도 함께 삭제됩니다. 계속하시겠습니까?`
+      ? `${target.name} 거래처를 삭제하면 연결된 제품 ${linkedProducts.length}개와 관련 수당내역 상세(${affectedPayCount}건 영향)가 함께 정리됩니다. 계속하시겠습니까?`
       : `${target.name} 거래처를 삭제하시겠습니까?`;
 
     if (typeof window !== 'undefined' && !window.confirm(warning)) return;
 
-    const linkedProductIds = new Set(linkedProducts.map((item) => item.id));
-    setStore((prev) => ({
-      ...prev,
-      clients: prev.clients.filter((item) => item.id !== id),
-      products: normalizeProductOrders(prev.products.filter((item) => item.client_id !== id)),
-    }));
+    setStore((prev) => {
+      const productIdsToRemove = new Set(prev.products.filter((item) => item.client_id === id).map((item) => item.id));
+      const nextPayRecords = prev.payRecords
+        .map((record) => {
+          const filteredDetails = record.details.filter((detail) => !productIdsToRemove.has(detail.product_id));
+          return recalcPayRecord(record, filteredDetails);
+        })
+        .filter((item): item is PayRecord => item !== null);
+
+      return {
+        ...prev,
+        clients: prev.clients.filter((item) => item.id !== id),
+        products: normalizeProductOrders(prev.products.filter((item) => item.client_id !== id)),
+        payRecords: nextPayRecords,
+      };
+    });
 
     if (editingClientId === id) {
       setEditingClientId(null);
@@ -792,8 +893,11 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
       setEditingProductId(null);
       setProductEditForm(EMPTY_PRODUCT_FORM);
     }
+    setEditingPayId(null);
+    setLoadedDetailMap(null);
+    setPreviewPayId(null);
 
-    setInfo('거래처가 삭제되었습니다.');
+    setInfo('거래처를 삭제했습니다.');
   };
 
   const savePayRecord = () => {
@@ -953,8 +1057,8 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
               <p className="text-sm text-[#94a3b8]">아이디: {item.login_id} / 주민번호: {maskRrn(item.rrn)}</p>
               <p className="text-sm text-[#94a3b8]">{item.phone} / {item.bank_name} {item.account_number}</p>
               <div className="mt-2 flex gap-2">
-                <button className="rounded-lg border border-[#334155] px-3 py-1.5 text-sm" onClick={() => editFreelancer(item.id)}>수정</button>
-                <button className="rounded-lg border border-[#7f1d1d] px-3 py-1.5 text-sm text-[#fca5a5]" onClick={() => removeFreelancer(item.id)}>삭제</button>
+                <button type="button" className="rounded-lg border border-[#334155] px-3 py-1.5 text-sm" onClick={() => editFreelancer(item.id)}>수정</button>
+                <button type="button" className="rounded-lg border border-[#7f1d1d] px-3 py-1.5 text-sm text-[#fca5a5]" onClick={() => removeFreelancer(item.id)}>삭제</button>
               </div>
             </div>
           ))}
@@ -1145,8 +1249,8 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
         </div>
 
         <div className="mt-4 flex gap-2">
-          <button className="rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white" onClick={savePayRecord}>{editingPayId ? '수정 저장' : '정산 저장'}</button>
-          {editingPayId ? <button className="rounded-lg border border-[#334155] px-3 py-2 text-sm" onClick={cancelEditPay}>편집 취소</button> : null}
+          <button type="button" className="rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white" onClick={savePayRecord}>{editingPayId ? '수정 저장' : '정산 저장'}</button>
+          {editingPayId ? <button type="button" className="rounded-lg border border-[#334155] px-3 py-2 text-sm" onClick={cancelEditPay}>편집 취소</button> : null}
         </div>
       </div>
 
@@ -1159,11 +1263,11 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
               <div key={record.id} className="rounded-xl border border-[#334155] bg-[#111827] p-3">
                 <p className="font-semibold text-white">{record.year}년 {record.month}월 · {freelancer?.name ?? '-'} · 총 {toCurrency(record.total_amount)}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <button className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => startEditPay(record.id)}>수정</button>
-                  <button className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => openPreview(record.id)}>정산서 미리보기</button>
-                  <button className="rounded border border-[#1d4ed8] bg-[#1d4ed8] px-2 py-1 text-sm text-white" onClick={() => { openPreview(record.id); setInfo('인쇄 창에서 PDF로 저장할 수 있습니다.'); printStatement(record.id); }}>PDF 저장</button>
-                  <button className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => { openPreview(record.id); printStatement(record.id); }}>인쇄</button>
-                  <button className="rounded border border-[#7f1d1d] px-2 py-1 text-sm text-[#fca5a5]" onClick={() => removePay(record.id)}>삭제</button>
+                  <button type="button" className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => startEditPay(record.id)}>수정</button>
+                  <button type="button" className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => openPreview(record.id)}>정산서 미리보기</button>
+                  <button type="button" className="rounded border border-[#1d4ed8] bg-[#1d4ed8] px-2 py-1 text-sm text-white" onClick={() => { openPreview(record.id); setInfo('인쇄 창에서 PDF로 저장할 수 있습니다.'); printStatement(record.id); }}>PDF 저장</button>
+                  <button type="button" className="rounded border border-[#334155] px-2 py-1 text-sm" onClick={() => { openPreview(record.id); printStatement(record.id); }}>인쇄</button>
+                  <button type="button" className="rounded border border-[#7f1d1d] px-2 py-1 text-sm text-[#fca5a5]" onClick={() => removePay(record.id)}>삭제</button>
                 </div>
               </div>
             );
@@ -1194,8 +1298,8 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        <button className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'payment' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('payment')}>지급일 설정</button>
-        <button className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'freelancers' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('freelancers')}>프리랜서 계정</button>
+        <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'payment' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('payment')}>지급일 설정</button>
+        <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${settingsTab === 'freelancers' ? 'border-[#1d4ed8] bg-[#1d4ed8] text-white' : 'border-[#334155]'}`} onClick={() => setSettingsTab('freelancers')}>프리랜서 계정</button>
       </div>
 
       {settingsTab === 'payment' ? (
@@ -1205,7 +1309,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
             <input type="number" min={1} max={31} className="mt-1 w-full rounded-lg border border-[#334155] bg-[#111827] px-3 py-2" value={paymentDayInput} onChange={(e) => setPaymentDayInput(Number(e.target.value || 0))} />
           </label>
           <p className="mt-2 text-sm text-[#94a3b8]">예: 기준월 1월 + 설정일 10일 = 2월 10일</p>
-          <button className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white" onClick={savePaymentDay}>저장</button>
+          <button type="button" className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-3 py-2 text-sm font-semibold text-white" onClick={savePaymentDay}>저장</button>
         </div>
       ) : null}
 
@@ -1218,7 +1322,7 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
                 <span className="text-sm font-semibold text-white">{item.name}</span>
                 <input className="rounded border border-[#334155] bg-[#0f172a] px-2 py-1" value={item.login_id} onChange={(e) => setAccountRows((prev) => prev.map((row) => row.id === item.id ? { ...row, login_id: e.target.value } : row))} />
                 <input type="password" className="rounded border border-[#334155] bg-[#0f172a] px-2 py-1" value={item.password} onChange={(e) => setAccountRows((prev) => prev.map((row) => row.id === item.id ? { ...row, password: e.target.value } : row))} />
-                <button className="rounded border border-[#1d4ed8] bg-[#1d4ed8] px-2 py-1 text-sm text-white" onClick={() => saveFreelancerAccount(item.id, item.login_id, item.password)}>저장</button>
+                <button type="button" className="rounded border border-[#1d4ed8] bg-[#1d4ed8] px-2 py-1 text-sm text-white" onClick={() => saveFreelancerAccount(item.id, item.login_id, item.password)}>저장</button>
               </div>
             ))}
             {accountRows.length === 0 ? <p className="text-sm text-[#64748b]">프리랜서가 없습니다.</p> : null}
@@ -1240,14 +1344,14 @@ export default function AllowanceModule({ activeTab, onChangeTab, onMoveToChat, 
           <h3 className="text-3xl font-semibold text-white">수당지급 관리</h3>
           <p className="mt-1 text-sm text-[#94a3b8]">공유 데이터베이스 기반의 통합 관리 화면입니다.</p>
         </div>
-        <button className="rounded-lg border border-[#334155] px-3 py-2 text-sm font-semibold text-[#cbd5e1] hover:bg-[#1e293b]" onClick={onMoveToChat}>AI 채팅으로 이동</button>
+        <button type="button" className="rounded-lg border border-[#334155] px-3 py-2 text-sm font-semibold text-[#cbd5e1] hover:bg-[#1e293b]" onClick={onMoveToChat}>AI 채팅으로 이동</button>
       </div>
 
       <div className="no-print mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <button className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('freelancer')}`} onClick={() => onChangeTab('freelancer')}>프리랜서 관리</button>
-        <button className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('client-product')}`} onClick={() => onChangeTab('client-product')}>거래처/제품 관리</button>
-        <button className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('pay')}`} onClick={() => onChangeTab('pay')}>수당 관리</button>
-        <button className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('settings')}`} onClick={() => onChangeTab('settings')}>설정</button>
+        <button type="button" className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('freelancer')}`} onClick={() => onChangeTab('freelancer')}>프리랜서 관리</button>
+        <button type="button" className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('client-product')}`} onClick={() => onChangeTab('client-product')}>거래처/제품 관리</button>
+        <button type="button" className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('pay')}`} onClick={() => onChangeTab('pay')}>수당 관리</button>
+        <button type="button" className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${tabClass('settings')}`} onClick={() => onChangeTab('settings')}>설정</button>
       </div>
 
       {notice ? <div className="no-print mt-4 rounded-lg border border-[#1e3a8a] bg-[#0f172a] px-4 py-3 text-sm text-[#bfdbfe]">{notice}</div> : null}
