@@ -1,182 +1,759 @@
-﻿'use client'
+'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import AllowanceModule, {
   EMPTY_COMPANY_INFO,
   type AllowanceTabKey,
   type CompanyInfo,
 } from '@/components/AllowanceModule'
-import type { AllowanceSessionUser, AllowanceState } from '@/types/allowance'
+import ComplianceMonitor from '@/components/ComplianceMonitor'
+import type { AllowanceSessionUser } from '@/types/allowance'
 
-type MainMenuKey = 'ai-chat' | 'production' | 'accounting' | 'sales' | 'admin'
+type MainMenuKey = 'ai-chat' | 'production' | 'accounting' | 'sales' | 'admin' | 'audit'
+type ProductionSubTabKey =
+  | 'prod-overview'
+  | 'prod-work'
+  | 'prod-recipes'
+  | 'prod-materials'
+  | 'prod-sanitation'
+  | 'prod-quality'
+  | 'prod-compliance'
 type ChatRole = 'user' | 'assistant'
+type ValidationLevel = 'idle' | 'success' | 'warning' | 'error'
+
+type MenuItem = {
+  key: MainMenuKey
+  label: string
+}
+
+type SubMenuItem = {
+  key: ProductionSubTabKey
+  label: string
+}
 
 type ChatMessage = {
   id: string
   role: ChatRole
   content: string
-  timestamp: Date
+  timestamp: string
+  pending?: boolean
 }
 
 type Conversation = {
   id: string
   title: string
-  createdAt: Date
+  createdAt: string
   messages: ChatMessage[]
 }
 
-type MenuConfig = {
-  label: string
-  subMenus: Array<{ key: string; label: string }>
+type ProductionOverviewPayload = {
+  ok?: boolean
+  error?: string
+  sourceTable?: string
+  today?: {
+    products?: string[]
+    totalQuantity?: number
+    statusCounts?: {
+      completed?: number
+      inProgress?: number
+      scheduled?: number
+    }
+  }
 }
 
-const MENU_CONFIG: Record<MainMenuKey, MenuConfig> = {
-  'ai-chat': {
-    label: 'AI 채팅',
-    subMenus: [{ key: 'chat-main', label: '기본 채팅' }],
-  },
-  production: {
-    label: '생산관리',
-    subMenus: [
-      { key: 'prod-overview', label: '생산 개요' },
-      { key: 'prod-work', label: '작업 지시' },
-      { key: 'prod-quality', label: '품질 관리' },
-    ],
-  },
-  accounting: {
-    label: '회계관리',
-    subMenus: [
-      { key: 'acc-overview', label: '손익 요약' },
-      { key: 'acc-voucher', label: '전표 관리' },
-      { key: 'acc-tax', label: '세무 자료' },
-    ],
-  },
-  sales: {
-    label: '영업관리',
-    subMenus: [
-      { key: 'sales-order', label: '주문관리' },
-      { key: 'sales-revenue', label: '매출관리' },
-      { key: 'sales-allowance', label: '수당지급 관리' },
-    ],
-  },
-  admin: {
-    label: '관리자',
-    subMenus: [
-      { key: 'admin-company', label: '회사정보' },
-      { key: 'admin-user', label: '사용자 관리' },
-      { key: 'admin-role', label: '권한 관리' },
-      { key: 'admin-system', label: '환경 설정' },
-    ],
-  },
+type ProductOption = {
+  id: string
+  product_name: string
+  product_type?: string | null
+  report_number?: string | null
+  product_spec?: string | null
+  weight_g?: number | null
+  storage_type?: string | null
+  shelf_life_days?: number | null
+  shelf_life_standard?: string | null
+  packaging_material?: string | null
+  lot_rule?: string | null
+  allergens?: string | null
 }
 
-const CHAT_EXAMPLES = [
-  '오늘 떡볶이소스 200개 팔았어, 개당 3500원',
-  '밀가루 50kg 들어왔어, 80000원 줬어',
-  '이번 달 손익 얼마야?',
-  '엑셀로 뽑아줘',
+type ProductionRecord = {
+  id: string
+  lot_number: string
+  work_date: string
+  product_id: string | null
+  product_name: string
+  planned_quantity_g: number | null
+  actual_quantity_g: number | null
+  defect_quantity_g: number | null
+  worker_name: string | null
+  start_time: string | null
+  end_time: string | null
+  inspection_result: string | null
+  inspection_note: string | null
+  sanitation_check: boolean | null
+  note: string | null
+  status: string | null
+  business_id: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+type ProductionRecordsPayload = {
+  ok?: boolean
+  error?: string
+  records?: ProductionRecord[]
+  products?: ProductOption[]
+}
+
+type DeductionPreviewRow = {
+  material_id: string | null
+  item_code: string | null
+  material_name: string
+  food_type_name: string
+  required_g: number
+  current_stock_g: number
+  remaining_stock_g: number
+  insufficient: boolean
+}
+
+type ProductionActionPayload = {
+  ok?: boolean
+  error?: string
+  record?: ProductionRecord
+  preview?: {
+    materials?: DeductionPreviewRow[]
+    total_required_g?: number
+    has_insufficient?: boolean
+    has_missing_mapping?: boolean
+  }
+  deduction?: {
+    materials?: DeductionPreviewRow[]
+    total_required_g?: number
+  }
+}
+
+type FoodType = {
+  id: string
+  type_name: string
+}
+
+type RawMaterialMapping = {
+  id: string
+  food_type_id: string
+  raw_material_name: string
+  packing_unit?: string | null
+  packing_weight_g?: number | null
+}
+
+type RecipeRow = {
+  id: string
+  product_id: string
+  product_name: string
+  food_type_id: string
+  food_type_name: string
+  ratio_percent: number
+  sort_order: number
+  ingredient_type?: string | null
+  semi_product_id?: string | null
+}
+
+type RecipesPayload = {
+  ok?: boolean
+  error?: string
+  recipes?: RecipeRow[]
+  mappings?: RawMaterialMapping[]
+  products?: ProductOption[]
+  rawMaterials?: RawMaterialRow[]
+}
+
+type FoodTypesPayload = {
+  ok?: boolean
+  error?: string
+  foodTypes?: FoodType[]
+}
+
+type RawMaterialRow = {
+  id: string
+  item_name: string
+  food_type_name?: string | null
+  food_type?: string | null
+  country_of_origin?: string | null
+  spec?: string | null
+  storage_type?: string | null
+  shelf_life_days?: number | null
+  current_stock_g?: number | null
+  packing_unit?: string | null
+  packing_weight_g?: number | null
+  supplier?: string | null
+  supplier_contact?: string | null
+  supplier_address?: string | null
+  supplier_biz_number?: string | null
+}
+
+type RawMaterialsPayload = {
+  ok?: boolean
+  error?: string
+  materials?: RawMaterialRow[]
+}
+
+type SububuRow = {
+  food_type_name: string
+  total_usage_g: number
+  usage_count: number
+  products_used: string[]
+}
+
+type SububuPayload = {
+  ok?: boolean
+  error?: string
+  period?: {
+    from?: string
+    to?: string
+  }
+  materials?: SububuRow[]
+  total_production_g?: number
+}
+
+type SanitationLog = {
+  id: string
+  check_date: string
+  checker_name: string
+  workplace_clean?: boolean | null
+  workplace_note?: string | null
+  worker_hygiene?: boolean | null
+  worker_note?: string | null
+  material_storage?: boolean | null
+  material_note?: string | null
+  equipment_clean?: boolean | null
+  equipment_note?: string | null
+  pest_control?: boolean | null
+  pest_note?: string | null
+  water_hygiene?: boolean | null
+  water_note?: string | null
+  overall_result?: string | null
+  action_taken?: string | null
+}
+
+type SanitationPayload = {
+  ok?: boolean
+  error?: string
+  logs?: SanitationLog[]
+}
+
+type FieldValidation = {
+  level: ValidationLevel
+  valid: boolean
+  message: string
+  suggestion: string | null
+  loading: boolean
+}
+
+type ValidationPayload = {
+  ok?: boolean
+  error?: string
+  valid?: boolean
+  level?: ValidationLevel
+  message?: string
+  suggestion?: string | null
+}
+
+type UploadResult = {
+  success: number
+  skipped: number
+  errors: string[]
+}
+
+type ProductionFormState = {
+  work_date: string
+  product_id: string
+  product_name: string
+  planned_quantity_g: string
+  actual_quantity_g: string
+  worker_name: string
+  start_time: string
+  end_time: string
+  status: string
+  inspection_result: string
+  sanitation_check: boolean
+  note: string
+}
+
+type WorkOrderFormState = {
+  product_id: string
+  planned_quantity_kg: string
+}
+
+type CompletionFormState = {
+  record_id: string
+  actual_quantity_kg: string
+}
+
+type RecipeFormState = {
+  food_type_id: string
+  custom_food_type_name: string
+  ratio_percent: string
+  raw_material_id: string
+  custom_raw_material_name: string
+  packing_unit: string
+  packing_weight_g: string
+  ingredient_type: string
+  semi_product_id: string
+}
+
+type MaterialFormState = {
+  item_name: string
+  food_type: string
+  country_of_origin: string
+  spec: string
+  storage_type: string
+  shelf_life_days: string
+  supplier: string
+  supplier_contact: string
+  supplier_address: string
+  supplier_biz_number: string
+}
+
+type SanitationFormState = {
+  check_date: string
+  checker_name: string
+  workplace_clean: boolean
+  workplace_note: string
+  worker_hygiene: boolean
+  worker_note: string
+  material_storage: boolean
+  material_note: string
+  equipment_clean: boolean
+  equipment_note: string
+  pest_control: boolean
+  pest_note: string
+  water_hygiene: boolean
+  water_note: string
+  overall_result: string
+  action_taken: string
+}
+
+const MAIN_TABS: MenuItem[] = [
+  { key: 'ai-chat', label: 'AI 채팅' },
+  { key: 'production', label: '생산관리' },
+  { key: 'accounting', label: '회계관리' },
+  { key: 'sales', label: '영업관리' },
+  { key: 'admin', label: '관리자' },
+  { key: 'audit', label: '재무감사' },
 ]
 
-const MODULE_CONTENT: Record<string, { title: string; description: string; actions: string[] }> = {
-  'prod-overview': {
-    title: '생산 개요',
-    description: '오늘 생산 현황, 공정 상태, 이슈를 빠르게 확인하는 영역입니다.',
-    actions: ['생산 현황 새로고침', '금일 이슈 확인', '공정 보고서 생성'],
-  },
-  'prod-work': {
-    title: '작업 지시',
-    description: '작업 지시서 생성/배포를 위한 임시 메뉴입니다.',
-    actions: ['작업지시서 생성', '작업지시서 조회', '우선순위 변경'],
-  },
-  'prod-quality': {
-    title: '품질 관리',
-    description: '검사 항목/검사 결과를 관리하는 임시 메뉴입니다.',
-    actions: ['검사 항목 등록', '검사 결과 입력', '품질 이슈 등록'],
-  },
-  'acc-overview': {
-    title: '손익 요약',
-    description: '월별 매출/비용/손익 요약을 확인하는 임시 메뉴입니다.',
-    actions: ['당월 손익 조회', '전월 비교', 'PDF 보고서 생성'],
-  },
-  'acc-voucher': {
-    title: '전표 관리',
-    description: '매입/매출 전표를 등록/수정하는 임시 메뉴입니다.',
-    actions: ['전표 등록', '전표 수정', '전표 삭제'],
-  },
-  'acc-tax': {
-    title: '세무 자료',
-    description: '세무 신고용 자료를 정리하는 임시 메뉴입니다.',
-    actions: ['부가세 자료 준비', '원천세 자료 준비', '자료 내보내기'],
-  },
-  'sales-order': {
-    title: '주문관리',
-    description: '거래처 주문을 등록/조회하는 임시 메뉴입니다.',
-    actions: ['주문 등록', '주문 조회', '납기 확인'],
-  },
-  'sales-revenue': {
-    title: '매출관리',
-    description: '매출 현황 및 미수금 상태를 확인하는 임시 메뉴입니다.',
-    actions: ['매출 등록', '거래처별 매출 조회', '미수금 업데이트'],
-  },
-  'admin-user': {
-    title: '사용자 관리',
-    description: '사용자 계정 생성/수정/비활성화 임시 메뉴입니다.',
-    actions: ['사용자 추가', '사용자 비밀번호 초기화', '사용자 비활성화'],
-  },
-  'admin-role': {
-    title: '권한 관리',
-    description: '역할별 접근 권한을 설정하는 임시 메뉴입니다.',
-    actions: ['권한 템플릿 생성', '메뉴 권한 변경', '권한 감사 로그 확인'],
-  },
-  'admin-system': {
-    title: '환경 설정',
-    description: '시스템 공통 환경값을 설정하는 임시 메뉴입니다.',
-    actions: ['알림 설정 변경', '백업 스케줄 확인', '로그 보관 정책 변경'],
-  },
-}
+const PRODUCTION_TABS: SubMenuItem[] = [
+  { key: 'prod-overview', label: '생산 개요' },
+  { key: 'prod-work', label: '작업 지시' },
+  { key: 'prod-recipes', label: '레시피 관리' },
+  { key: 'prod-materials', label: '원재료 관리' },
+  { key: 'prod-sanitation', label: '위생점검' },
+  { key: 'prod-quality', label: '품질 관리' },
+  { key: 'prod-compliance', label: '규정준수 모니터' },
+]
 
-const COMPANY_FALLBACK_KEY = 'moni.admin.company.fallback.v1'
-const ADMIN_ACCOUNT_FALLBACK_KEY = 'moni.admin.account.fallback.v1'
+const CHAT_EXAMPLES = [
+  '오늘 생산 실적 요약해줘',
+  '최근 제조기록서에서 이상 수치가 있는지 봐줘',
+  '원재료 수불부에서 사용량이 큰 원료를 알려줘',
+  '위생점검 준비 체크리스트를 만들어줘',
+]
+
+const EMPTY_VALIDATION: FieldValidation = {
+  level: 'idle',
+  valid: true,
+  message: '',
+  suggestion: null,
+  loading: false,
+}
 
 function uid() {
   return `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
 }
 
+function todayValue() {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date())
+}
+
+function daysAgoValue(days: number) {
+  const date = new Date()
+  date.setDate(date.getDate() - days)
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(date)
+}
+
+function formatNumber(value: number | null | undefined) {
+  return new Intl.NumberFormat('ko-KR').format(Number(value ?? 0))
+}
+
+function formatKg(value: number | null | undefined) {
+  return new Intl.NumberFormat('ko-KR', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  }).format(Number(value ?? 0) / 1000)
+}
+
+function toNumber(value: string) {
+  const parsed = Number(String(value ?? '').replaceAll(',', '').trim())
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function kgToG(value: string) {
+  const kg = toNumber(value)
+  if (kg === null) return null
+  return kg * 1000
+}
+
+function normalizeStatusCode(status: string | null | undefined) {
+  const raw = String(status ?? '').trim().toLowerCase()
+  if (!raw) return ''
+  if (raw === 'planned' || raw === 'plan' || raw === 'scheduled' || raw === '예정') return 'planned'
+  if (raw === 'completed' || raw === 'done' || raw === '완료') return 'completed'
+  if (raw === 'confirmed' || raw === '확정') return 'confirmed'
+  if (raw === 'in_progress' || raw === 'inprogress' || raw === '진행중') return 'in_progress'
+  return raw
+}
+
 function titleFromMessage(text: string) {
   const trimmed = text.trim()
   if (!trimmed) return '새 대화'
-  return trimmed.length > 24 ? `${trimmed.slice(0, 24)}...` : trimmed
+  return trimmed.length > 26 ? `${trimmed.slice(0, 26)}...` : trimmed
 }
 
-function formatTime(date: Date) {
-  return date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+function formatClock(iso: string) {
+  return new Date(iso).toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
-function buildInitialSubMenuState() {
-  return Object.keys(MENU_CONFIG).reduce((acc, key) => {
-    const mainKey = key as MainMenuKey
-    acc[mainKey] = MENU_CONFIG[mainKey].subMenus[0].key
-    return acc
-  }, {} as Record<MainMenuKey, string>)
+function normalizeStatus(status: string | null | undefined) {
+  const raw = String(status ?? '').trim().toLowerCase()
+  if (!raw) return '-'
+  if (raw === 'completed' || raw === 'done' || raw === 'confirmed' || raw === '완료') return '완료'
+  if (raw === 'in_progress' || raw === 'inprogress' || raw === 'progress' || raw === '진행중') return '진행중'
+  if (raw === 'scheduled' || raw === 'plan' || raw === '예정') return '예정'
+  return String(status)
 }
 
-function fakeAssistantReply(text: string, mainMenu: MainMenuKey, subMenu: string) {
-  if (mainMenu === 'sales' && subMenu === 'sales-allowance') {
-    return '수당지급 관리는 현재 화면 안에서 하단 콘텐츠만 전환되도록 구성했습니다. 상단 메뉴는 그대로 유지됩니다.'
+function normalizeInspection(result: string | null | undefined) {
+  const raw = String(result ?? '').trim().toLowerCase()
+  if (!raw) return '-'
+  if (raw === 'pass' || raw === '적합') return '적합'
+  if (raw === 'fail' || raw === '부적합') return '부적합'
+  return String(result)
+}
+
+function validationTone(level: ValidationLevel) {
+  if (level === 'success') return 'border-green-700/70 bg-green-950/60 text-green-200'
+  if (level === 'warning') return 'border-amber-700/70 bg-amber-950/50 text-amber-200'
+  if (level === 'error') return 'border-red-800/70 bg-red-950/50 text-red-200'
+  return 'border-gray-700 bg-gray-900 text-gray-300'
+}
+
+function validationPrefix(level: ValidationLevel) {
+  if (level === 'success') return '정상'
+  if (level === 'warning') return '주의'
+  if (level === 'error') return '오류'
+  return ''
+}
+
+function messageToneClasses(tone: 'success' | 'error' | 'warning') {
+  if (tone === 'success') return 'border-green-700/60 bg-green-950/40 text-green-200'
+  if (tone === 'warning') return 'border-amber-700/60 bg-amber-950/40 text-amber-200'
+  return 'border-red-800/60 bg-red-950/40 text-red-200'
+}
+
+function emptyProductionForm(): ProductionFormState {
+  return {
+    work_date: todayValue(),
+    product_id: '',
+    product_name: '',
+    planned_quantity_g: '',
+    actual_quantity_g: '',
+    worker_name: '',
+    start_time: '',
+    end_time: '',
+    status: '완료',
+    inspection_result: '적합',
+    sanitation_check: true,
+    note: '',
+  }
+}
+
+function emptyRecipeForm(): RecipeFormState {
+  return {
+    food_type_id: '',
+    custom_food_type_name: '',
+    ratio_percent: '',
+    raw_material_id: '',
+    custom_raw_material_name: '',
+    packing_unit: '',
+    packing_weight_g: '',
+    ingredient_type: '원재료',
+    semi_product_id: '',
+  }
+}
+
+function emptyMaterialForm(material: RawMaterialRow | null): MaterialFormState {
+  return {
+    item_name: material?.item_name ?? '',
+    food_type: material?.food_type ?? material?.food_type_name ?? '',
+    country_of_origin: material?.country_of_origin ?? '',
+    spec: material?.spec ?? '',
+    storage_type: material?.storage_type ?? '',
+    shelf_life_days: material?.shelf_life_days ? String(material.shelf_life_days) : '',
+    supplier: material?.supplier ?? '',
+    supplier_contact: material?.supplier_contact ?? '',
+    supplier_address: material?.supplier_address ?? '',
+    supplier_biz_number: material?.supplier_biz_number ?? '',
+  }
+}
+
+function emptySanitationForm(): SanitationFormState {
+  return {
+    check_date: todayValue(),
+    checker_name: '',
+    workplace_clean: true,
+    workplace_note: '',
+    worker_hygiene: true,
+    worker_note: '',
+    material_storage: true,
+    material_note: '',
+    equipment_clean: true,
+    equipment_note: '',
+    pest_control: true,
+    pest_note: '',
+    water_hygiene: true,
+    water_note: '',
+    overall_result: '적합',
+    action_taken: '',
+  }
+}
+
+async function readJson<T>(url: string, init?: RequestInit) {
+  const response = await fetch(url, {
+    cache: 'no-store',
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  })
+  const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null
+  if (!response.ok) {
+    throw new Error(payload?.error || '요청을 처리하지 못했습니다.')
+  }
+  return payload as T
+}
+
+function LoadingBlock({ lines = 4 }: { lines?: number }) {
+  return (
+    <div className="rounded-2xl border border-gray-800 bg-gray-800/70 p-5">
+      <div className="animate-pulse space-y-3">
+        {Array.from({ length: lines }).map((_, index) => (
+          <div
+            key={index}
+            className={`rounded-lg bg-gray-700/70 ${index === 0 ? 'h-5 w-40' : 'h-4 w-full'}`}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function EmptyState({
+  title,
+  description,
+  action,
+}: {
+  title: string
+  description: string
+  action?: ReactNode
+}) {
+  return (
+    <div className="rounded-2xl border border-dashed border-gray-700 bg-gray-800/50 px-6 py-10 text-center">
+      <p className="text-lg font-semibold text-white">{title}</p>
+      <p className="mt-2 text-sm text-gray-400">{description}</p>
+      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
+    </div>
+  )
+}
+
+function SectionCard({
+  title,
+  description,
+  actions,
+  children,
+}: {
+  title: string
+  description?: string
+  actions?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="rounded-2xl border border-gray-800 bg-gray-800/80 p-5 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-white">{title}</h2>
+          {description ? <p className="mt-1 text-sm text-gray-400">{description}</p> : null}
+        </div>
+        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  )
+}
+
+function Field({
+  label,
+  children,
+  className = '',
+}: {
+  label: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <label className={`block text-sm text-gray-300 ${className}`}>
+      <span className="mb-1.5 block">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function Modal({
+  open,
+  title,
+  description,
+  onClose,
+  children,
+}: {
+  open: boolean
+  title: string
+  description?: string
+  onClose: () => void
+  children: ReactNode
+}) {
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-3xl border border-gray-700 bg-gray-900 shadow-2xl">
+        <div className="flex items-start justify-between border-b border-gray-800 px-6 py-4">
+          <div>
+            <h3 className="text-xl font-semibold text-white">{title}</h3>
+            {description ? <p className="mt-1 text-sm text-gray-400">{description}</p> : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:border-gray-500 hover:text-white"
+          >
+            닫기
+          </button>
+        </div>
+        <div className="max-h-[calc(92vh-88px)] overflow-y-auto px-6 py-5">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function ValidationMessage({
+  validation,
+  onApply,
+}: {
+  validation: FieldValidation
+  onApply?: (() => void) | null
+}) {
+  if (validation.level === 'idle' && !validation.loading) return null
+  return (
+    <div className={`mt-2 rounded-xl border px-3 py-2 text-xs ${validationTone(validation.level)}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span>
+          {validation.loading
+            ? '검증 중...'
+            : `${validationPrefix(validation.level)} ${validation.message}`.trim()}
+        </span>
+        {!validation.loading && validation.suggestion && onApply ? (
+          <button
+            type="button"
+            onClick={onApply}
+            className="rounded-md border border-current px-2 py-0.5 font-semibold"
+          >
+            제안값 적용
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+type DashboardTableProps = {
+  records: ProductionRecord[]
+  onOpenDetail: (record: ProductionRecord) => void
+  onOpenPdf: (url: string) => void
+}
+
+function ProductionRecordTable({ records, onOpenDetail, onOpenPdf }: DashboardTableProps) {
+  if (records.length === 0) {
+    return (
+      <EmptyState
+        title="표시할 생산 기록이 없습니다"
+        description="조회 기간을 조정하거나 빠른 실적 입력으로 새 제조기록서를 등록해 주세요."
+      />
+    )
   }
 
-  if (mainMenu === 'production') return `생산관리(${subMenu}) 요청을 확인했어요. 다음 기능을 연결할 수 있습니다.`
-  if (mainMenu === 'accounting') return `회계관리(${subMenu}) 요청을 확인했어요. 필요한 기능을 이어서 붙일게요.`
-  if (mainMenu === 'sales') return `영업관리(${subMenu}) 요청을 확인했어요. 데이터를 연결해 드릴 수 있습니다.`
-  if (mainMenu === 'admin') return `관리자(${subMenu}) 요청을 확인했어요. 설정 메뉴 확장 가능합니다.`
-  return `${text} 요청을 확인했습니다. 이어서 작업을 진행할 내용을 입력해 주세요.`
-}
-
-function menuButtonClass(active: boolean) {
-  return active
-    ? 'border-[#10b981] bg-[#10b981] text-white'
-    : 'border-[#334155] bg-transparent text-[#cbd5e1] hover:bg-[#1e293b]'
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-left text-sm">
+        <thead className="text-gray-400">
+          <tr className="border-b border-gray-700">
+            <th className="px-3 py-2 font-medium">제조번호</th>
+            <th className="px-3 py-2 font-medium">날짜</th>
+            <th className="px-3 py-2 font-medium">제품명</th>
+            <th className="px-3 py-2 font-medium">생산수량(g)</th>
+            <th className="px-3 py-2 font-medium">검사결과</th>
+            <th className="px-3 py-2 font-medium">상태</th>
+            <th className="px-3 py-2 font-medium">상세보기</th>
+            <th className="px-3 py-2 font-medium">PDF출력</th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((record) => (
+            <tr
+              key={record.id}
+              className="border-b border-gray-800/80 transition hover:bg-gray-700/20"
+            >
+              <td className="px-3 py-3 font-mono text-gray-300">{record.lot_number || '-'}</td>
+              <td className="px-3 py-3 text-gray-200">{record.work_date || '-'}</td>
+              <td className="px-3 py-3 text-white">{record.product_name || '-'}</td>
+              <td className="px-3 py-3 text-green-400">{formatNumber(record.actual_quantity_g)}g</td>
+              <td className="px-3 py-3 text-gray-200">{normalizeInspection(record.inspection_result)}</td>
+              <td className="px-3 py-3 text-gray-200">{normalizeStatus(record.status)}</td>
+              <td className="px-3 py-3">
+                <button
+                  type="button"
+                  onClick={() => onOpenDetail(record)}
+                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                >
+                  상세보기
+                </button>
+              </td>
+              <td className="px-3 py-3">
+                <button
+                  type="button"
+                  onClick={() => onOpenPdf(`/api/moni/production-records/${record.id}/pdf`)}
+                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                >
+                  PDF
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 type AdminDashboardProps = {
@@ -186,462 +763,1207 @@ type AdminDashboardProps = {
 export default function AdminDashboard({ session }: AdminDashboardProps) {
   const router = useRouter()
   const [mainMenu, setMainMenu] = useState<MainMenuKey>('ai-chat')
-  const [openSubMenuFor, setOpenSubMenuFor] = useState<MainMenuKey | null>(null)
-  const [subMenuByMain, setSubMenuByMain] = useState<Record<MainMenuKey, string>>(() => {
-    return buildInitialSubMenuState()
-  })
-
-  const [allowanceTab, setAllowanceTab] = useState<AllowanceTabKey>('freelancer')
-  const [moduleStatus, setModuleStatus] = useState('')
+  const [productionTab, setProductionTab] = useState<ProductionSubTabKey>('prod-overview')
+  const [allowanceTab, setAllowanceTab] = useState<AllowanceTabKey>('client-product')
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo>(EMPTY_COMPANY_INFO)
-  const [companyForm, setCompanyForm] = useState<CompanyInfo>(EMPTY_COMPANY_INFO)
-  const [companyNotice, setCompanyNotice] = useState('')
-  const [adminAccountForm, setAdminAccountForm] = useState({ login_id: 'admin', password: '1111' })
-  const [adminAccountNotice, setAdminAccountNotice] = useState('')
-  const [adminState, setAdminState] = useState<AllowanceState | null>(null)
-  const [stateLoading, setStateLoading] = useState(true)
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [composer, setComposer] = useState('')
+  const [chatBusy, setChatBusy] = useState(false)
+  const [isChatExpanded, setIsChatExpanded] = useState(false)
+
+  const [overviewLoading, setOverviewLoading] = useState(true)
+  const [overviewError, setOverviewError] = useState('')
+  const [overviewSourceTable, setOverviewSourceTable] = useState('')
+  const [todayProducts, setTodayProducts] = useState<string[]>([])
+  const [todayTotalQuantity, setTodayTotalQuantity] = useState(0)
+  const [todayStatusCounts, setTodayStatusCounts] = useState({
+    completed: 0,
+    inProgress: 0,
+    scheduled: 0,
+  })
+
+  const [productionDateFrom, setProductionDateFrom] = useState(daysAgoValue(29))
+  const [productionDateTo, setProductionDateTo] = useState(todayValue())
+  const [recordsLoading, setRecordsLoading] = useState(true)
+  const [recordsError, setRecordsError] = useState('')
+  const [records, setRecords] = useState<ProductionRecord[]>([])
+  const [products, setProducts] = useState<ProductOption[]>([])
+
+  const [selectedRecord, setSelectedRecord] = useState<ProductionRecord | null>(null)
+  const [showProductionModal, setShowProductionModal] = useState(false)
+  const [productionForm, setProductionForm] = useState<ProductionFormState>(emptyProductionForm())
+  const [productionSaving, setProductionSaving] = useState(false)
+  const [workOrderForm, setWorkOrderForm] = useState<WorkOrderFormState>({
+    product_id: '',
+    planned_quantity_kg: '',
+  })
+  const [completionForm, setCompletionForm] = useState<CompletionFormState>({
+    record_id: '',
+    actual_quantity_kg: '',
+  })
+  const [productionActionBusy, setProductionActionBusy] = useState(false)
+  const [productionActionMessage, setProductionActionMessage] = useState<{
+    tone: 'success' | 'error' | 'warning'
+    text: string
+  } | null>(null)
+  const [deductionPreviewRows, setDeductionPreviewRows] = useState<DeductionPreviewRow[]>([])
+  const [deductionPreviewRecordId, setDeductionPreviewRecordId] = useState<string | null>(null)
+  const [productionProductValidation, setProductionProductValidation] = useState<FieldValidation>(EMPTY_VALIDATION)
+  const [productionQuantityValidation, setProductionQuantityValidation] = useState<FieldValidation>(EMPTY_VALIDATION)
+  const [productionDateValidation, setProductionDateValidation] = useState<FieldValidation>(EMPTY_VALIDATION)
+
+  const [selectedRecipeProductId, setSelectedRecipeProductId] = useState('')
+  const [recipesLoading, setRecipesLoading] = useState(true)
+  const [recipesError, setRecipesError] = useState('')
+  const [recipes, setRecipes] = useState<RecipeRow[]>([])
+  const [recipeMappings, setRecipeMappings] = useState<RawMaterialMapping[]>([])
+  const [recipeProducts, setRecipeProducts] = useState<ProductOption[]>([])
+  const [recipeRawMaterials, setRecipeRawMaterials] = useState<RawMaterialRow[]>([])
+  const [foodTypes, setFoodTypes] = useState<FoodType[]>([])
+  const [recipeForm, setRecipeForm] = useState<RecipeFormState>(emptyRecipeForm())
+  const [recipeSaving, setRecipeSaving] = useState(false)
+  const [recipeRawMaterialValidation, setRecipeRawMaterialValidation] = useState<FieldValidation>(EMPTY_VALIDATION)
+
+  const [materialsLoading, setMaterialsLoading] = useState(true)
+  const [materialsError, setMaterialsError] = useState('')
+  const [materials, setMaterials] = useState<RawMaterialRow[]>([])
+  const [selectedMaterial, setSelectedMaterial] = useState<RawMaterialRow | null>(null)
+  const [showMaterialModal, setShowMaterialModal] = useState(false)
+  const [materialForm, setMaterialForm] = useState<MaterialFormState>(emptyMaterialForm(null))
+  const [materialSaving, setMaterialSaving] = useState(false)
+  const [showMaterialUpload, setShowMaterialUpload] = useState(false)
+  const [materialUploadBusy, setMaterialUploadBusy] = useState(false)
+  const [materialUploadResult, setMaterialUploadResult] = useState<UploadResult | null>(null)
+
+  const [sububuDateFrom, setSububuDateFrom] = useState(daysAgoValue(29))
+  const [sububuDateTo, setSububuDateTo] = useState(todayValue())
+  const [sububuLoading, setSububuLoading] = useState(true)
+  const [sububuError, setSububuError] = useState('')
+  const [sububuMaterials, setSububuMaterials] = useState<SububuRow[]>([])
+  const [sububuTotalProductionG, setSububuTotalProductionG] = useState(0)
+
+  const [sanitationDateFrom, setSanitationDateFrom] = useState(daysAgoValue(29))
+  const [sanitationDateTo, setSanitationDateTo] = useState(todayValue())
+  const [sanitationLoading, setSanitationLoading] = useState(true)
+  const [sanitationError, setSanitationError] = useState('')
+  const [sanitationLogs, setSanitationLogs] = useState<SanitationLog[]>([])
+  const [selectedSanitationLog, setSelectedSanitationLog] = useState<SanitationLog | null>(null)
+  const [showSanitationModal, setShowSanitationModal] = useState(false)
+  const [sanitationForm, setSanitationForm] = useState<SanitationFormState>(emptySanitationForm())
+  const [sanitationSaving, setSanitationSaving] = useState(false)
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
     [activeConversationId, conversations],
   )
 
-  const messages = activeConversation?.messages ?? []
-  const currentSubMenu = subMenuByMain[mainMenu]
+  const selectedRecipeProduct = useMemo(
+    () => recipeProducts.find((product) => String(product.id) === selectedRecipeProductId) ?? null,
+    [recipeProducts, selectedRecipeProductId],
+  )
+
+  const recipeMappingsByFoodType = useMemo(() => {
+    return recipeMappings.reduce((map, item) => {
+      const list = map.get(String(item.food_type_id)) ?? []
+      list.push(item)
+      map.set(String(item.food_type_id), list)
+      return map
+    }, new Map<string, RawMaterialMapping[]>())
+  }, [recipeMappings])
+
+  const recipeRatioTotal = useMemo(() => {
+    return recipes.reduce((sum, recipe) => sum + Number(recipe.ratio_percent ?? 0), 0)
+  }, [recipes])
+
+  const productionDefectQuantity = useMemo(() => {
+    const planned = toNumber(productionForm.planned_quantity_g)
+    const actual = toNumber(productionForm.actual_quantity_g)
+    if (planned === null || actual === null) return 0
+    return Math.max(planned - actual, 0)
+  }, [productionForm.actual_quantity_g, productionForm.planned_quantity_g])
+
+  const todayWorkOrders = useMemo(() => {
+    const today = todayValue()
+    return records.filter((record) => (record.work_date || '').slice(0, 10) === today)
+  }, [records])
+
+  const pendingCompletionOrders = useMemo(() => {
+    return records.filter((record) => {
+      const statusCode = normalizeStatusCode(record.status)
+      return statusCode === 'planned' || statusCode === 'in_progress'
+    })
+  }, [records])
+
+  const chatPreviewMessages = useMemo(() => {
+    return activeConversation?.messages.slice(-8) ?? []
+  }, [activeConversation])
+
+  const productionSaveBlocked =
+    productionSaving ||
+    productionProductValidation.level === 'error' ||
+    productionQuantityValidation.level === 'error' ||
+    productionDateValidation.level === 'error'
 
   useEffect(() => {
-    let cancelled = false
+    if (mainMenu === 'accounting') setAllowanceTab('pay')
+    if (mainMenu === 'sales') setAllowanceTab('client-product')
+    if (mainMenu === 'admin') setAllowanceTab('settings')
+  }, [mainMenu])
 
-    const loadAdminState = async () => {
-      setStateLoading(true)
+  useEffect(() => {
+    void loadCompanyInfo()
+    void loadOverview()
+    void loadProductionRecords(daysAgoValue(29), todayValue())
+    void loadRecipes()
+    void loadFoodTypes()
+    void loadMaterials()
+    void loadSububu(daysAgoValue(29), todayValue())
+    void loadSanitation(daysAgoValue(29), todayValue())
+  }, [])
+
+  useEffect(() => {
+    if (!selectedRecipeProductId && recipeProducts.length > 0) {
+      setSelectedRecipeProductId(String(recipeProducts[0].id))
+    }
+  }, [recipeProducts, selectedRecipeProductId])
+
+  useEffect(() => {
+    if (!selectedRecipeProductId) return
+    void loadRecipes(selectedRecipeProductId)
+  }, [selectedRecipeProductId])
+
+  useEffect(() => {
+    if (productionForm.product_id !== '__new__') {
+      setProductionProductValidation(EMPTY_VALIDATION)
+      return
+    }
+
+    const productName = productionForm.product_name.trim()
+    if (!productName) {
+      setProductionProductValidation(EMPTY_VALIDATION)
+      return
+    }
+
+    const timer = window.setTimeout(async () => {
+      setProductionProductValidation((prev) => ({ ...prev, loading: true }))
       try {
-        const response = await fetch('/api/allowance/admin/state', { cache: 'no-store' })
-        const payload = (await response.json().catch(() => null)) as
-          | { ok?: boolean; error?: string; state?: AllowanceState }
-          | null
-
-        if (!response.ok || !payload?.ok || !payload.state) {
-          throw new Error(payload?.error || '관리 데이터 로딩에 실패했습니다.')
-        }
-
-        if (cancelled) return
-
-        setAdminState(payload.state)
-        setCompanyInfo(payload.state.company)
-        setCompanyForm(payload.state.company)
-        setAdminAccountForm(payload.state.admin_account)
+        const payload = await readJson<ValidationPayload>('/api/moni/validate', {
+          method: 'POST',
+          body: JSON.stringify({ field: 'product_name', value: productName }),
+        })
+        setProductionProductValidation({
+          level: payload.level ?? 'idle',
+          valid: payload.valid ?? true,
+          message: payload.message ?? '',
+          suggestion: payload.suggestion ?? null,
+          loading: false,
+        })
       } catch (error) {
-        const message = error instanceof Error ? error.message : '관리 데이터 로딩 중 오류가 발생했습니다.'
-        if (!cancelled) {
-          setModuleStatus(message)
-          if (typeof window !== 'undefined') {
-            try {
-              const rawCompany = window.localStorage.getItem(COMPANY_FALLBACK_KEY)
-              if (rawCompany) {
-                const parsed = JSON.parse(rawCompany) as Partial<CompanyInfo>
-                const nextCompany = { ...EMPTY_COMPANY_INFO, ...parsed }
-                setCompanyInfo(nextCompany)
-                setCompanyForm(nextCompany)
-                setCompanyNotice('DB 연결 장애 상태입니다. 현재 브라우저 임시 저장값을 불러왔습니다.')
-              }
+        setProductionProductValidation({
+          level: 'error',
+          valid: false,
+          message: error instanceof Error ? error.message : '제품명 검증에 실패했습니다.',
+          suggestion: null,
+          loading: false,
+        })
+      }
+    }, 250)
 
-              const rawAdmin = window.localStorage.getItem(ADMIN_ACCOUNT_FALLBACK_KEY)
-              if (rawAdmin) {
-                const parsed = JSON.parse(rawAdmin) as Partial<{ login_id: string; password: string }>
-                setAdminAccountForm({
-                  login_id: parsed.login_id ?? 'admin',
-                  password: parsed.password ?? '1111',
-                })
-                setAdminAccountNotice('DB 연결 장애 상태입니다. 현재 브라우저 임시 저장값을 불러왔습니다.')
-              }
-            } catch {
-              // ignore local fallback parse errors
-            }
-          }
-        }
-      } finally {
-        if (!cancelled) setStateLoading(false)
+    return () => window.clearTimeout(timer)
+  }, [productionForm.product_id, productionForm.product_name])
+
+  useEffect(() => {
+    const value = productionForm.actual_quantity_g.trim()
+    if (!value) {
+      setProductionQuantityValidation(EMPTY_VALIDATION)
+      return
+    }
+
+    const timer = window.setTimeout(async () => {
+      setProductionQuantityValidation((prev) => ({ ...prev, loading: true }))
+      try {
+        const payload = await readJson<ValidationPayload>('/api/moni/validate', {
+          method: 'POST',
+          body: JSON.stringify({ field: 'quantity_g', value }),
+        })
+        setProductionQuantityValidation({
+          level: payload.level ?? 'idle',
+          valid: payload.valid ?? true,
+          message: payload.message ?? '',
+          suggestion: payload.suggestion ?? null,
+          loading: false,
+        })
+      } catch (error) {
+        setProductionQuantityValidation({
+          level: 'error',
+          valid: false,
+          message: error instanceof Error ? error.message : '수량 검증에 실패했습니다.',
+          suggestion: null,
+          loading: false,
+        })
+      }
+    }, 200)
+
+    return () => window.clearTimeout(timer)
+  }, [productionForm.actual_quantity_g])
+
+  useEffect(() => {
+    const value = productionForm.work_date.trim()
+    if (!value) {
+      setProductionDateValidation(EMPTY_VALIDATION)
+      return
+    }
+
+    const timer = window.setTimeout(async () => {
+      setProductionDateValidation((prev) => ({ ...prev, loading: true }))
+      try {
+        const payload = await readJson<ValidationPayload>('/api/moni/validate', {
+          method: 'POST',
+          body: JSON.stringify({ field: 'work_date', value }),
+        })
+        setProductionDateValidation({
+          level: payload.level ?? 'idle',
+          valid: payload.valid ?? true,
+          message: payload.message ?? '',
+          suggestion: payload.suggestion ?? null,
+          loading: false,
+        })
+      } catch (error) {
+        setProductionDateValidation({
+          level: 'error',
+          valid: false,
+          message: error instanceof Error ? error.message : '날짜 검증에 실패했습니다.',
+          suggestion: null,
+          loading: false,
+        })
+      }
+    }, 200)
+
+    return () => window.clearTimeout(timer)
+  }, [productionForm.work_date])
+
+  useEffect(() => {
+    if (recipeForm.raw_material_id !== '__new__') {
+      setRecipeRawMaterialValidation(EMPTY_VALIDATION)
+      return
+    }
+
+    const value = recipeForm.custom_raw_material_name.trim()
+    if (!value) {
+      setRecipeRawMaterialValidation(EMPTY_VALIDATION)
+      return
+    }
+
+    const timer = window.setTimeout(async () => {
+      setRecipeRawMaterialValidation((prev) => ({ ...prev, loading: true }))
+      try {
+        const payload = await readJson<ValidationPayload>('/api/moni/validate', {
+          method: 'POST',
+          body: JSON.stringify({ field: 'raw_material_name', value }),
+        })
+        setRecipeRawMaterialValidation({
+          level: payload.level ?? 'idle',
+          valid: payload.valid ?? true,
+          message: payload.message ?? '',
+          suggestion: payload.suggestion ?? null,
+          loading: false,
+        })
+      } catch (error) {
+        setRecipeRawMaterialValidation({
+          level: 'error',
+          valid: false,
+          message: error instanceof Error ? error.message : '원재료 검증에 실패했습니다.',
+          suggestion: null,
+          loading: false,
+        })
+      }
+    }, 250)
+
+    return () => window.clearTimeout(timer)
+  }, [recipeForm.custom_raw_material_name, recipeForm.raw_material_id])
+
+  async function loadCompanyInfo() {
+    try {
+      const payload = await readJson<{ ok?: boolean; state?: { company?: CompanyInfo } }>('/api/allowance/admin/state')
+      setCompanyInfo(payload.state?.company ?? EMPTY_COMPANY_INFO)
+    } catch {
+      setCompanyInfo(EMPTY_COMPANY_INFO)
+    }
+  }
+
+  async function loadOverview() {
+    setOverviewLoading(true)
+    setOverviewError('')
+    try {
+      const payload = await readJson<ProductionOverviewPayload>('/api/moni/production-overview')
+      setOverviewSourceTable(payload.sourceTable ?? '')
+      setTodayProducts(payload.today?.products ?? [])
+      setTodayTotalQuantity(Number(payload.today?.totalQuantity ?? 0))
+      setTodayStatusCounts({
+        completed: Number(payload.today?.statusCounts?.completed ?? 0),
+        inProgress: Number(payload.today?.statusCounts?.inProgress ?? 0),
+        scheduled: Number(payload.today?.statusCounts?.scheduled ?? 0),
+      })
+    } catch (error) {
+      setOverviewError(error instanceof Error ? error.message : '생산 개요를 불러오지 못했습니다.')
+    } finally {
+      setOverviewLoading(false)
+    }
+  }
+
+  async function loadProductionRecords(from: string, to: string) {
+    setRecordsLoading(true)
+    setRecordsError('')
+    try {
+      const params = new URLSearchParams()
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
+      params.set('limit', '300')
+      const payload = await readJson<ProductionRecordsPayload>(`/api/moni/production-records?${params.toString()}`)
+      setRecords(payload.records ?? [])
+      setProducts(payload.products ?? [])
+    } catch (error) {
+      setRecordsError(error instanceof Error ? error.message : '제조기록서를 불러오지 못했습니다.')
+    } finally {
+      setRecordsLoading(false)
+    }
+  }
+
+  async function loadRecipes(productId?: string) {
+    setRecipesLoading(true)
+    setRecipesError('')
+    try {
+      const query = productId ? `?product_id=${encodeURIComponent(productId)}` : ''
+      const payload = await readJson<RecipesPayload>(`/api/moni/recipes${query}`)
+      setRecipes(payload.recipes ?? [])
+      setRecipeMappings(payload.mappings ?? [])
+      setRecipeProducts(payload.products ?? [])
+      setRecipeRawMaterials(payload.rawMaterials ?? [])
+    } catch (error) {
+      setRecipesError(error instanceof Error ? error.message : '레시피 데이터를 불러오지 못했습니다.')
+    } finally {
+      setRecipesLoading(false)
+    }
+  }
+
+  async function loadFoodTypes() {
+    try {
+      const payload = await readJson<FoodTypesPayload>('/api/moni/food-types')
+      setFoodTypes(payload.foodTypes ?? [])
+    } catch {
+      setFoodTypes([])
+    }
+  }
+
+  async function loadMaterials() {
+    setMaterialsLoading(true)
+    setMaterialsError('')
+    try {
+      const payload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials')
+      setMaterials(payload.materials ?? [])
+    } catch (error) {
+      setMaterialsError(error instanceof Error ? error.message : '원재료 목록을 불러오지 못했습니다.')
+    } finally {
+      setMaterialsLoading(false)
+    }
+  }
+
+  async function loadSububu(from: string, to: string) {
+    setSububuLoading(true)
+    setSububuError('')
+    try {
+      const params = new URLSearchParams()
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
+      const payload = await readJson<SububuPayload>(`/api/moni/sububu?${params.toString()}`)
+      setSububuMaterials(payload.materials ?? [])
+      setSububuTotalProductionG(Number(payload.total_production_g ?? 0))
+    } catch (error) {
+      setSububuError(error instanceof Error ? error.message : '수불부 데이터를 불러오지 못했습니다.')
+    } finally {
+      setSububuLoading(false)
+    }
+  }
+
+  async function loadSanitation(from: string, to: string) {
+    setSanitationLoading(true)
+    setSanitationError('')
+    try {
+      const params = new URLSearchParams()
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
+      const payload = await readJson<SanitationPayload>(`/api/moni/sanitation-logs?${params.toString()}`)
+      setSanitationLogs(payload.logs ?? [])
+    } catch (error) {
+      setSanitationError(error instanceof Error ? error.message : '위생점검 일지를 불러오지 못했습니다.')
+    } finally {
+      setSanitationLoading(false)
+    }
+  }
+
+  async function requestChatReply(message: string) {
+    const body = JSON.stringify({
+      message,
+      context: {
+        mainMenu,
+        productionTab,
+      },
+    })
+
+    for (const url of ['/api/moni/chat', '/api/chat']) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        })
+        if (!response.ok) continue
+        const payload = (await response.json().catch(() => null)) as
+          | { reply?: string; content?: string; message?: string; answer?: string }
+          | null
+        const reply = payload?.reply || payload?.content || payload?.message || payload?.answer
+        if (reply) return reply
+      } catch {
+        continue
       }
     }
 
-    void loadAdminState()
-    return () => {
-      cancelled = true
+    if (mainMenu === 'production') {
+      if (productionTab === 'prod-overview') {
+        return '생산 개요 탭 기준으로 오늘 생산량, 상태별 건수, 최근 제조기록서를 함께 보면서 판단하는 흐름으로 정리해드릴게요.'
+      }
+      if (productionTab === 'prod-materials') {
+        return '원재료 관리 탭에서는 재고 현황과 수불부를 같이 보는 게 가장 빠릅니다. 사용량이 큰 원료부터 먼저 점검해보겠습니다.'
+      }
+      if (productionTab === 'prod-sanitation') {
+        return '위생점검 탭에서는 최근 점검 결과와 조치사항을 기준으로 필요한 대응 순서를 정리하는 쪽이 효율적입니다.'
+      }
+      return '생산관리 탭 기준으로 현재 화면 데이터에 맞춰 바로 정리해드릴게요.'
     }
-  }, [])
 
-  const selectMainMenu = (menu: MainMenuKey) => {
-    setMainMenu(menu)
-    const hasSelectedSub = MENU_CONFIG[menu].subMenus.some((item) => item.key === subMenuByMain[menu])
-    if (!hasSelectedSub) {
-      setSubMenuByMain((prev) => ({ ...prev, [menu]: MENU_CONFIG[menu].subMenus[0].key }))
+    if (mainMenu === 'sales') {
+      return '영업관리 흐름에 맞춰 거래처, 제품, 수당 정보를 같이 보면서 정리해드릴게요.'
     }
-    if (menu === 'ai-chat') {
-      setOpenSubMenuFor(null)
-    } else {
-      setOpenSubMenuFor((prev) => (prev === menu ? null : menu))
+
+    if (mainMenu === 'accounting') {
+      return '회계관리 흐름에 맞춰 지급 데이터와 정산 항목을 중심으로 확인해드릴게요.'
     }
-    setModuleStatus('')
+
+    if (mainMenu === 'admin') {
+      return '관리자 화면 기준으로 설정과 운영 이슈를 함께 정리해드릴게요.'
+    }
+
+    return `${message} 요청을 기준으로 바로 이어서 도와드릴게요.`
   }
 
-  const selectSubMenu = (menu: MainMenuKey, subKey: string) => {
-    setMainMenu(menu)
-    setSubMenuByMain((prev) => ({ ...prev, [menu]: subKey }))
-    setOpenSubMenuFor(null)
-    setModuleStatus('')
-    if (subKey === 'sales-allowance') setAllowanceTab('freelancer')
-    if (subKey === 'admin-company') {
-      setCompanyForm(companyInfo)
-      setCompanyNotice('')
-    }
-    if (subKey === 'admin-user' && adminState) {
-      setAdminAccountForm(adminState.admin_account)
-      setAdminAccountNotice('')
-    }
-  }
+  async function submitChat() {
+    const text = composer.trim()
+    if (!text || chatBusy) return
 
-  const resetConversation = () => {
-    setActiveConversationId(null)
-    setComposer('')
-  }
-
-  const pushChat = (text: string) => {
+    const conversationId = activeConversationId ?? uid()
+    const assistantId = uid()
     const userMessage: ChatMessage = {
       id: uid(),
       role: 'user',
       content: text,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     }
-
     const assistantMessage: ChatMessage = {
-      id: uid(),
+      id: assistantId,
       role: 'assistant',
-      content: fakeAssistantReply(text, mainMenu, currentSubMenu),
-      timestamp: new Date(),
+      content: '답변을 정리하고 있습니다...',
+      timestamp: new Date().toISOString(),
+      pending: true,
     }
 
-    const nextMessages = [...messages, userMessage, assistantMessage]
+    setComposer('')
+    setChatBusy(true)
+    setActiveConversationId(conversationId)
+    setConversations((prev) => {
+      const next = [...prev]
+      const existingIndex = next.findIndex((conversation) => conversation.id === conversationId)
+      if (existingIndex >= 0) {
+        next[existingIndex] = {
+          ...next[existingIndex],
+          messages: [...next[existingIndex].messages, userMessage, assistantMessage],
+        }
+        return next
+      }
+      return [
+        {
+          id: conversationId,
+          title: titleFromMessage(text),
+          createdAt: new Date().toISOString(),
+          messages: [userMessage, assistantMessage],
+        },
+        ...next,
+      ]
+    })
 
-    if (activeConversationId) {
+    try {
+      const reply = await requestChatReply(text)
       setConversations((prev) =>
         prev.map((conversation) =>
-          conversation.id === activeConversationId
-            ? { ...conversation, messages: nextMessages }
-            : conversation,
+          conversation.id !== conversationId
+            ? conversation
+            : {
+                ...conversation,
+                messages: conversation.messages.map((message) =>
+                  message.id === assistantId
+                    ? {
+                        ...message,
+                        content: reply,
+                        pending: false,
+                        timestamp: new Date().toISOString(),
+                      }
+                    : message,
+                ),
+              },
         ),
       )
-      return
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '응답 생성 중 오류가 발생했습니다.'
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.id !== conversationId
+            ? conversation
+            : {
+                ...conversation,
+                messages: conversation.messages.map((chatMessage) =>
+                  chatMessage.id === assistantId
+                    ? { ...chatMessage, content: message, pending: false }
+                    : chatMessage,
+                ),
+              },
+        ),
+      )
+    } finally {
+      setChatBusy(false)
     }
-
-    const newId = uid()
-    setConversations((prev) => [
-      {
-        id: newId,
-        title: titleFromMessage(text),
-        createdAt: new Date(),
-        messages: nextMessages,
-      },
-      ...prev,
-    ])
-    setActiveConversationId(newId)
   }
 
-  const submitChat = () => {
-    const text = composer.trim()
-    if (!text) return
-    pushChat(text)
+  function resetConversation() {
+    setActiveConversationId(null)
     setComposer('')
   }
 
-  const clickModuleAction = (label: string) => {
-    setModuleStatus(`"${label}" 버튼을 실행했습니다. (임시 동작)`)
-  }
-
-  const saveCompanyInfo = async () => {
-    if (!companyForm.company_name.trim()) {
-      setCompanyNotice('회사명을 입력해 주세요.')
-      return
-    }
-
-    if (!adminState) {
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(COMPANY_FALLBACK_KEY, JSON.stringify(companyForm))
-      }
-      setCompanyInfo(companyForm)
-      setCompanyNotice('서버 DB 연결 장애로 현재 브라우저에 임시 저장했습니다. DB 복구 후 서버 저장이 필요합니다.')
-      return
-    }
-
-    try {
-      const response = await fetch('/api/allowance/admin/state', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          state: {
-            ...adminState,
-            company: companyForm,
-          },
-        }),
-      })
-      const payload = (await response.json().catch(() => null)) as
-        | { ok?: boolean; error?: string; state?: AllowanceState }
-        | null
-
-      if (!response.ok || !payload?.ok || !payload.state) {
-        throw new Error(payload?.error || '회사 정보 저장에 실패했습니다.')
-      }
-
-      setAdminState(payload.state)
-      setCompanyInfo(payload.state.company)
-      setCompanyForm(payload.state.company)
-      setCompanyNotice('회사 정보가 저장되었습니다. 영업관리 정산서에 즉시 반영됩니다.')
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem(COMPANY_FALLBACK_KEY)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '회사 정보 저장 중 오류가 발생했습니다.'
-      setCompanyNotice(message)
+  function openWindow(path: string) {
+    if (typeof window !== 'undefined') {
+      window.open(path, '_blank', 'noopener,noreferrer')
     }
   }
 
-  const saveAdminAccountInfo = async () => {
-    if (!adminAccountForm.login_id.trim() || !adminAccountForm.password.trim()) {
-      setAdminAccountNotice('관리자 아이디와 비밀번호를 입력해 주세요.')
-      return
-    }
-
-    if (!adminState) {
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(ADMIN_ACCOUNT_FALLBACK_KEY, JSON.stringify(adminAccountForm))
-      }
-      setAdminAccountNotice('서버 DB 연결 장애로 현재 브라우저에 임시 저장했습니다. DB 복구 후 서버 저장이 필요합니다.')
-      return
-    }
-
-    try {
-      const response = await fetch('/api/allowance/admin/state', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          state: {
-            ...adminState,
-            admin_account: adminAccountForm,
-          },
-        }),
-      })
-      const payload = (await response.json().catch(() => null)) as
-        | { ok?: boolean; error?: string; state?: AllowanceState }
-        | null
-
-      if (!response.ok || !payload?.ok || !payload.state) {
-        throw new Error(payload?.error || '관리자 계정 저장에 실패했습니다.')
-      }
-
-      setAdminState(payload.state)
-      setAdminAccountForm(payload.state.admin_account)
-      setAdminAccountNotice('관리자 계정이 저장되었습니다. 다음 로그인부터 적용됩니다.')
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem(ADMIN_ACCOUNT_FALLBACK_KEY)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '관리자 계정 저장 중 오류가 발생했습니다.'
-      setAdminAccountNotice(message)
-    }
-  }
-
-  const logout = async () => {
+  async function handleLogout() {
     await fetch('/api/allowance/auth/logout', { method: 'POST' })
     router.replace('/login')
     router.refresh()
   }
 
-  const renderAdminCompanyInfo = () => {
+  async function saveProductionRecord() {
+    const selectedProduct =
+      productionForm.product_id && productionForm.product_id !== '__new__'
+        ? products.find((item) => String(item.id) === productionForm.product_id) ?? null
+        : null
+
+    const payload = {
+      work_date: productionForm.work_date,
+      product_id: productionForm.product_id === '__new__' ? '' : productionForm.product_id,
+      product_name:
+        productionForm.product_id === '__new__'
+          ? productionForm.product_name.trim()
+          : selectedProduct?.product_name ?? '',
+      planned_quantity_g: toNumber(productionForm.planned_quantity_g),
+      actual_quantity_g: toNumber(productionForm.actual_quantity_g),
+      defect_quantity_g: productionDefectQuantity,
+      worker_name: productionForm.worker_name.trim(),
+      start_time: productionForm.start_time,
+      end_time: productionForm.end_time,
+      status: productionForm.status,
+      inspection_result: productionForm.inspection_result,
+      sanitation_check: productionForm.sanitation_check,
+      note: productionForm.note.trim(),
+      business_id: '20220523011',
+    }
+
+    setProductionSaving(true)
+    try {
+      await readJson('/api/moni/production-records', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      setShowProductionModal(false)
+      setProductionForm(emptyProductionForm())
+      await Promise.all([
+        loadOverview(),
+        loadProductionRecords(productionDateFrom, productionDateTo),
+        loadSububu(sububuDateFrom, sububuDateTo),
+      ])
+    } finally {
+      setProductionSaving(false)
+    }
+  }
+
+  async function callProductionAction(body: Record<string, unknown>) {
+    const response = await fetch('/api/moni/production-records', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const payload = ((await response.json().catch(() => null)) ?? {}) as ProductionActionPayload
+    if (!response.ok) {
+      throw new Error(payload.error || '생산 처리 요청에 실패했습니다.')
+    }
+    return payload
+  }
+
+  async function createWorkOrder() {
+    const productId = workOrderForm.product_id
+    const plannedG = kgToG(workOrderForm.planned_quantity_kg)
+    if (!productId) {
+      setProductionActionMessage({ tone: 'error', text: '제품을 선택해 주세요.' })
+      return
+    }
+    if (plannedG === null || plannedG <= 0) {
+      setProductionActionMessage({ tone: 'error', text: '생산 예정량(kg)은 0보다 커야 합니다.' })
+      return
+    }
+
+    const selectedProduct = products.find((item) => String(item.id) === productId)
+    if (!selectedProduct) {
+      setProductionActionMessage({ tone: 'error', text: '선택한 제품 정보를 찾을 수 없습니다.' })
+      return
+    }
+
+    setProductionActionBusy(true)
+    try {
+      await readJson('/api/moni/production-records', {
+        method: 'POST',
+        body: JSON.stringify({
+          work_date: todayValue(),
+          product_id: productId,
+          product_name: selectedProduct.product_name,
+          planned_quantity_g: plannedG,
+          status: 'planned',
+          business_id: '20220523011',
+        }),
+      })
+
+      setWorkOrderForm({ product_id: '', planned_quantity_kg: '' })
+      setProductionActionMessage({ tone: 'success', text: '작업지시서가 생성되었습니다.' })
+      await Promise.all([
+        loadOverview(),
+        loadProductionRecords(productionDateFrom, productionDateTo),
+      ])
+    } catch (error) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '작업지시서 생성에 실패했습니다.',
+      })
+    } finally {
+      setProductionActionBusy(false)
+    }
+  }
+
+  async function completeWorkOrder() {
+    const recordId = completionForm.record_id
+    const actualG = kgToG(completionForm.actual_quantity_kg)
+    if (!recordId) {
+      setProductionActionMessage({ tone: 'error', text: '완료 처리할 작업지시서를 선택해 주세요.' })
+      return
+    }
+    if (actualG === null || actualG <= 0) {
+      setProductionActionMessage({ tone: 'error', text: '실제 완료량(kg)은 0보다 커야 합니다.' })
+      return
+    }
+
+    setProductionActionBusy(true)
+    try {
+      await callProductionAction({
+        action: 'complete',
+        record_id: recordId,
+        actual_quantity_g: actualG,
+      })
+
+      setCompletionForm({ record_id: '', actual_quantity_kg: '' })
+      setProductionActionMessage({ tone: 'success', text: '생산 완료가 저장되었습니다.' })
+      await Promise.all([
+        loadOverview(),
+        loadProductionRecords(productionDateFrom, productionDateTo),
+      ])
+    } catch (error) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '생산 완료 저장에 실패했습니다.',
+      })
+    } finally {
+      setProductionActionBusy(false)
+    }
+  }
+
+  async function previewDeduction(recordId: string) {
+    setProductionActionBusy(true)
+    try {
+      const payload = await callProductionAction({
+        action: 'preview_confirm',
+        record_id: recordId,
+      })
+
+      const rows = payload.preview?.materials ?? []
+      setDeductionPreviewRows(rows)
+      setDeductionPreviewRecordId(recordId)
+
+      if (rows.some((item) => item.insufficient)) {
+        setProductionActionMessage({
+          tone: 'warning',
+          text: '원재료 재고 부족 또는 미매핑 항목이 있어 확정 전에 확인이 필요합니다.',
+        })
+      } else {
+        setProductionActionMessage({ tone: 'success', text: '원재료 차감 미리보기를 불러왔습니다.' })
+      }
+    } catch (error) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '원재료 차감 미리보기 조회에 실패했습니다.',
+      })
+    } finally {
+      setProductionActionBusy(false)
+    }
+  }
+
+  async function confirmProduction(recordId: string) {
+    setProductionActionBusy(true)
+    try {
+      const payload = await callProductionAction({
+        action: 'confirm',
+        record_id: recordId,
+      })
+      setDeductionPreviewRows(payload.deduction?.materials ?? [])
+      setDeductionPreviewRecordId(recordId)
+      setProductionActionMessage({ tone: 'success', text: '생산이 확정되고 원재료가 자동 차감되었습니다.' })
+      await Promise.all([
+        loadOverview(),
+        loadProductionRecords(productionDateFrom, productionDateTo),
+        loadMaterials(),
+        loadSububu(sububuDateFrom, sububuDateTo),
+      ])
+    } catch (error) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '생산 확정 처리에 실패했습니다.',
+      })
+    } finally {
+      setProductionActionBusy(false)
+    }
+  }
+
+  async function saveRecipe() {
+    if (!selectedRecipeProduct) {
+      throw new Error('레시피를 저장할 제품을 먼저 선택해 주세요.')
+    }
+
+    const ratioPercent = toNumber(recipeForm.ratio_percent)
+    if (ratioPercent === null) {
+      throw new Error('배합비율을 입력해 주세요.')
+    }
+
+    setRecipeSaving(true)
+    try {
+      let foodTypeId = recipeForm.food_type_id
+      let foodTypeName =
+        foodTypes.find((item) => String(item.id) === recipeForm.food_type_id)?.type_name ??
+        recipeForm.custom_food_type_name.trim()
+
+      if (!foodTypeName) {
+        throw new Error('식품유형을 선택하거나 직접 입력해 주세요.')
+      }
+
+      if (!foodTypeId) {
+        const foodTypePayload = await readJson<{ foodType?: FoodType }>('/api/moni/food-types', {
+          method: 'POST',
+          body: JSON.stringify({ type_name: foodTypeName, business_id: '20220523011' }),
+        })
+        foodTypeId = String(foodTypePayload.foodType?.id ?? '')
+        foodTypeName = String(foodTypePayload.foodType?.type_name ?? foodTypeName)
+      }
+
+      let mappingName = ''
+      let mappingWeight: number | null = null
+      let mappingUnit = ''
+      let semiProductId = ''
+
+      if (recipeForm.ingredient_type === '반제품') {
+        semiProductId = recipeForm.semi_product_id
+        mappingName =
+          recipeProducts.find((item) => String(item.id) === semiProductId)?.product_name ?? ''
+      } else if (recipeForm.raw_material_id === '__new__') {
+        const createdMaterial = await readJson<{ material?: RawMaterialRow }>('/api/moni/raw-materials', {
+          method: 'POST',
+          body: JSON.stringify({
+            item_name: recipeForm.custom_raw_material_name.trim(),
+            packing_weight_g: toNumber(recipeForm.packing_weight_g),
+            business_id: '20220523011',
+          }),
+        })
+        mappingName = createdMaterial.material?.item_name ?? recipeForm.custom_raw_material_name.trim()
+        mappingWeight = toNumber(recipeForm.packing_weight_g)
+        mappingUnit = recipeForm.packing_unit.trim()
+      } else if (recipeForm.raw_material_id) {
+        const selectedMaterial = recipeRawMaterials.find(
+          (item) => String(item.id) === recipeForm.raw_material_id,
+        )
+        mappingName = selectedMaterial?.item_name ?? ''
+        mappingWeight = selectedMaterial?.packing_weight_g ?? null
+        mappingUnit = selectedMaterial?.packing_unit ?? ''
+      }
+
+      await readJson('/api/moni/recipes', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: String(selectedRecipeProduct.id),
+          product_name: selectedRecipeProduct.product_name,
+          food_type_id: foodTypeId,
+          food_type_name: foodTypeName,
+          ratio_percent: ratioPercent,
+          ingredient_type: recipeForm.ingredient_type,
+          semi_product_id: semiProductId || null,
+          sort_order: recipes.length + 1,
+          is_active: true,
+          business_id: '20220523011',
+        }),
+      })
+
+      if (mappingName && recipeForm.ingredient_type !== '부재료') {
+        await readJson('/api/moni/raw-material-mapping', {
+          method: 'POST',
+          body: JSON.stringify({
+            food_type_id: foodTypeId,
+            raw_material_name: mappingName,
+            packing_unit: mappingUnit || null,
+            packing_weight_g: mappingWeight,
+            is_default: true,
+            business_id: '20220523011',
+          }),
+        })
+      }
+
+      setRecipeForm(emptyRecipeForm())
+      await Promise.all([loadRecipes(selectedRecipeProductId), loadMaterials(), loadFoodTypes()])
+    } finally {
+      setRecipeSaving(false)
+    }
+  }
+
+  async function deleteRecipe(id: string) {
+    await readJson(`/api/moni/recipes?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
+    await loadRecipes(selectedRecipeProductId)
+  }
+
+  async function saveMaterialDetail() {
+    if (!selectedMaterial) return
+    setMaterialSaving(true)
+    try {
+      await readJson(`/api/moni/raw-materials/${selectedMaterial.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          item_name: materialForm.item_name.trim(),
+          food_type: materialForm.food_type.trim(),
+          country_of_origin: materialForm.country_of_origin.trim(),
+          spec: materialForm.spec.trim(),
+          storage_type: materialForm.storage_type.trim(),
+          shelf_life_days: toNumber(materialForm.shelf_life_days),
+          supplier: materialForm.supplier.trim(),
+          supplier_contact: materialForm.supplier_contact.trim(),
+          supplier_address: materialForm.supplier_address.trim(),
+          supplier_biz_number: materialForm.supplier_biz_number.trim(),
+        }),
+      })
+      setShowMaterialModal(false)
+      setSelectedMaterial(null)
+      await loadMaterials()
+    } finally {
+      setMaterialSaving(false)
+    }
+  }
+
+  async function uploadMaterialReceipt(file: File) {
+    setMaterialUploadBusy(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch('/api/moni/raw-materials/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      const payload = (await response.json().catch(() => null)) as UploadResult | { error?: string } | null
+      if (!response.ok) {
+        throw new Error((payload as { error?: string } | null)?.error || '원재료 입고 업로드에 실패했습니다.')
+      }
+      setMaterialUploadResult({
+        success: Number((payload as UploadResult | null)?.success ?? 0),
+        skipped: Number((payload as UploadResult | null)?.skipped ?? 0),
+        errors: Array.isArray((payload as UploadResult | null)?.errors)
+          ? (payload as UploadResult).errors
+          : [],
+      })
+      await Promise.all([loadMaterials(), loadSububu(sububuDateFrom, sububuDateTo)])
+    } finally {
+      setMaterialUploadBusy(false)
+    }
+  }
+
+  async function saveSanitationLog() {
+    setSanitationSaving(true)
+    try {
+      await readJson('/api/moni/sanitation-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...sanitationForm,
+          business_id: '20220523011',
+        }),
+      })
+      setShowSanitationModal(false)
+      setSanitationForm(emptySanitationForm())
+      await loadSanitation(sanitationDateFrom, sanitationDateTo)
+    } finally {
+      setSanitationSaving(false)
+    }
+  }
+
+  function openProductionModal() {
+    setProductionForm(emptyProductionForm())
+    setProductionProductValidation(EMPTY_VALIDATION)
+    setProductionQuantityValidation(EMPTY_VALIDATION)
+    setProductionDateValidation(EMPTY_VALIDATION)
+    setShowProductionModal(true)
+  }
+
+  function renderSidebar() {
     return (
-      <div className="rounded-2xl border border-[#334155] bg-[#111827] p-5">
-        <h3 className="text-2xl font-semibold text-white">회사정보</h3>
-        <p className="mt-1 text-sm text-[#94a3b8]">
-          여기에서 저장한 회사 정보는 영업관리 &gt; 수당지급 관리의 정산서 지급자 섹션에 동일하게 표시됩니다.
-        </p>
-
-        {companyNotice ? (
-          <div className="mt-4 rounded-lg border border-[#1e3a8a] bg-[#0f172a] px-4 py-3 text-sm text-[#bfdbfe]">
-            {companyNotice}
-          </div>
-        ) : null}
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="text-sm text-[#cbd5e1]">
-            회사명
-            <input
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
-              value={companyForm.company_name}
-              onChange={(event) => setCompanyForm((prev) => ({ ...prev, company_name: event.target.value }))}
-            />
-          </label>
-          <label className="text-sm text-[#cbd5e1]">
-            대표자
-            <input
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
-              value={companyForm.representative}
-              onChange={(event) => setCompanyForm((prev) => ({ ...prev, representative: event.target.value }))}
-            />
-          </label>
-          <label className="text-sm text-[#cbd5e1]">
-            사업자등록번호
-            <input
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
-              value={companyForm.business_reg_number}
-              onChange={(event) => setCompanyForm((prev) => ({ ...prev, business_reg_number: event.target.value }))}
-            />
-          </label>
-          <label className="text-sm text-[#cbd5e1]">
-            업태
-            <input
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
-              value={companyForm.business_type}
-              onChange={(event) => setCompanyForm((prev) => ({ ...prev, business_type: event.target.value }))}
-            />
-          </label>
-          <label className="text-sm text-[#cbd5e1]">
-            업종
-            <input
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
-              value={companyForm.business_sector}
-              onChange={(event) => setCompanyForm((prev) => ({ ...prev, business_sector: event.target.value }))}
-            />
-          </label>
-          <label className="text-sm text-[#cbd5e1]">
-            연락처
-            <input
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
-              value={companyForm.phone}
-              onChange={(event) => setCompanyForm((prev) => ({ ...prev, phone: event.target.value }))}
-            />
-          </label>
-          <label className="text-sm text-[#cbd5e1] md:col-span-2">
-            주소
-            <input
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
-              value={companyForm.address}
-              onChange={(event) => setCompanyForm((prev) => ({ ...prev, address: event.target.value }))}
-            />
-          </label>
+      <aside className="hidden w-72 shrink-0 border-r border-gray-800 bg-gray-900/95 md:flex md:flex-col">
+        <div className="border-b border-gray-800 px-5 py-5">
+          <p className="text-3xl font-bold text-white">Moni</p>
+          <p className="mt-1 text-sm text-gray-400">모든 메뉴에서 바로 질문할 수 있는 작업 사이드바입니다.</p>
         </div>
 
+        <div className="p-4">
+          <button
+            type="button"
+            onClick={() => {
+              resetConversation()
+              setMainMenu('ai-chat')
+            }}
+            className="w-full rounded-2xl bg-green-500 px-4 py-3 text-left text-base font-semibold text-white transition hover:bg-green-400"
+          >
+            + 새 대화
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4">
+          <div className="rounded-2xl border border-gray-800 bg-gray-800/70 p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">History</p>
+            <div className="mt-3 space-y-2">
+              {conversations.length === 0 ? (
+                <p className="rounded-xl bg-gray-900/70 px-3 py-3 text-sm text-gray-500">
+                  아직 대화 기록이 없습니다.
+                </p>
+              ) : (
+                conversations.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => setActiveConversationId(conversation.id)}
+                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
+                      conversation.id === activeConversationId
+                        ? 'border-green-500 bg-green-500/10 text-white'
+                        : 'border-gray-700 bg-gray-900/60 text-gray-300 hover:border-gray-500 hover:text-white'
+                    }`}
+                  >
+                    <p className="truncate font-medium">{conversation.title}</p>
+                    <p className="mt-1 truncate text-xs text-gray-500">
+                      {conversation.messages[conversation.messages.length - 1]?.content ?? '새 대화'}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-gray-800 bg-gray-800/60 p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">Active Chat</p>
+            <div className="mt-3 space-y-2">
+              {chatPreviewMessages.length === 0 ? (
+                <p className="rounded-xl bg-gray-900/70 px-3 py-3 text-sm text-gray-500">
+                  채팅을 시작하면 최근 대화가 여기에 표시됩니다.
+                </p>
+              ) : (
+                chatPreviewMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`rounded-xl px-3 py-2 text-sm ${
+                      message.role === 'user'
+                        ? 'bg-green-500/15 text-green-100'
+                        : 'bg-gray-900/80 text-gray-200'
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                    <p className="mt-1 text-[11px] text-gray-500">{formatClock(message.timestamp)}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-800 p-4">
+          <div className="rounded-2xl border border-gray-800 bg-gray-800/80 p-3">
+            <textarea
+              value={composer}
+              onChange={(event) => setComposer(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void submitChat()
+                }
+              }}
+              rows={3}
+              placeholder="모니에게 바로 질문..."
+              className="w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
+            />
+            <div className="mt-3 flex items-center justify-between">
+              <p className="text-xs text-gray-500">{companyInfo.company_name || '운영 사업장'}</p>
+              <button
+                type="button"
+                onClick={() => void submitChat()}
+                disabled={chatBusy}
+                className="rounded-lg bg-green-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-green-400 disabled:opacity-60"
+              >
+                전송
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    )
+  }
+
+  function renderMobileChatBar() {
+    return (
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-800 bg-gray-900/95 md:hidden">
         <button
           type="button"
-          onClick={saveCompanyInfo}
-          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af]"
+          onClick={() => setIsChatExpanded((prev) => !prev)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
         >
-          저장
+          <div>
+            <p className="text-sm font-semibold text-white">모니에게 바로 질문</p>
+            <p className="text-xs text-gray-400">
+              {activeConversation?.title || '새 대화'}
+            </p>
+          </div>
+          <span className="text-sm text-gray-300">{isChatExpanded ? '접기' : '펼치기'}</span>
         </button>
+        {isChatExpanded ? (
+          <div className="border-t border-gray-800 px-4 pb-4 pt-3">
+            <div className="max-h-48 space-y-2 overflow-y-auto pb-3">
+              {chatPreviewMessages.length === 0 ? (
+                <p className="rounded-xl bg-gray-800/80 px-3 py-3 text-sm text-gray-500">
+                  최근 대화가 없습니다.
+                </p>
+              ) : (
+                chatPreviewMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`rounded-xl px-3 py-2 text-sm ${
+                      message.role === 'user'
+                        ? 'bg-green-500/15 text-green-100'
+                        : 'bg-gray-800 text-gray-200'
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="rounded-2xl border border-gray-700 bg-gray-800/80 p-3">
+              <textarea
+                value={composer}
+                onChange={(event) => setComposer(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault()
+                    void submitChat()
+                  }
+                }}
+                rows={3}
+                placeholder="모니에게 바로 질문..."
+                className="w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
+              />
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => void submitChat()}
+                  disabled={chatBusy}
+                  className="rounded-lg bg-green-500 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  전송
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     )
   }
 
-  const renderAdminUserManagement = () => {
+  function renderMainTabs() {
     return (
-      <div className="rounded-2xl border border-[#334155] bg-[#111827] p-5">
-        <h3 className="text-2xl font-semibold text-white">사용자 관리</h3>
-        <p className="mt-1 text-sm text-[#94a3b8]">
-          마스터 관리자 로그인 계정을 관리합니다. 기본값은 `admin / 1111` 입니다.
-        </p>
+      <div className="flex flex-wrap gap-2">
+        {MAIN_TABS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => {
+              if (item.key === 'audit') {
+                router.push('/audit')
+                return
+              }
 
-        {adminAccountNotice ? (
-          <div className="mt-4 rounded-lg border border-[#1e3a8a] bg-[#0f172a] px-4 py-3 text-sm text-[#bfdbfe]">
-            {adminAccountNotice}
-          </div>
-        ) : null}
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="text-sm text-[#cbd5e1]">
-            관리자 아이디
-            <input
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
-              value={adminAccountForm.login_id}
-              onChange={(event) => setAdminAccountForm((prev) => ({ ...prev, login_id: event.target.value }))}
-            />
-          </label>
-          <label className="text-sm text-[#cbd5e1]">
-            관리자 비밀번호
-            <input
-              type="password"
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0f172a] px-3 py-2 text-white"
-              value={adminAccountForm.password}
-              onChange={(event) => setAdminAccountForm((prev) => ({ ...prev, password: event.target.value }))}
-            />
-          </label>
-        </div>
-
-        <button
-          type="button"
-          onClick={saveAdminAccountInfo}
-          className="mt-4 rounded-lg border border-[#1d4ed8] bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e40af]"
-        >
-          저장
-        </button>
+              setMainMenu(item.key)
+            }}
+            className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+              mainMenu === item.key
+                ? 'border-green-500 bg-green-500 text-white'
+                : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-500 hover:text-white'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
     )
   }
 
-  const renderModuleContent = () => {
-    if (stateLoading) {
-      return (
-        <div className="rounded-2xl border border-[#334155] bg-[#111827] p-6 text-sm text-[#94a3b8]">
-          수당지급 관리 데이터를 불러오는 중입니다...
-        </div>
-      )
-    }
-
-    if (mainMenu === 'admin' && currentSubMenu === 'admin-company') {
-      return renderAdminCompanyInfo()
-    }
-
-    if (mainMenu === 'admin' && currentSubMenu === 'admin-user') {
-      return renderAdminUserManagement()
-    }
-
-    if (mainMenu === 'sales' && currentSubMenu === 'sales-allowance') {
-      return (
-        <AllowanceModule
-          activeTab={allowanceTab}
-          onChangeTab={setAllowanceTab}
-          onMoveToChat={() => {
-            setMainMenu('ai-chat')
-            setOpenSubMenuFor(null)
-          }}
-          companyInfo={companyInfo}
-        />
-      )
-    }
-
-    const fallback = MODULE_CONTENT[currentSubMenu]
-    if (!fallback) {
-      return (
-        <div className="rounded-2xl border border-[#334155] bg-[#111827] p-5 text-sm text-[#94a3b8]">
-          준비 중인 메뉴입니다.
-        </div>
-      )
-    }
-
+  function renderProductionSubTabs() {
+    if (mainMenu !== 'production') return null
     return (
-      <div className="rounded-2xl border border-[#334155] bg-[#111827] p-5">
-        <h3 className="text-xl font-semibold text-white">{fallback.title}</h3>
-        <p className="mt-1 text-sm text-[#94a3b8]">{fallback.description}</p>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {fallback.actions.map((action) => (
+      <div className="overflow-x-auto border-b border-gray-800 bg-gray-800/70">
+        <div className="flex min-w-max gap-1 px-4 md:px-6">
+          {PRODUCTION_TABS.map((item) => (
             <button
-              key={action}
+              key={item.key}
               type="button"
-              onClick={() => clickModuleAction(action)}
-              className="rounded-xl border border-[#334155] bg-[#0f172a] px-3 py-2 text-left text-sm font-semibold text-[#cbd5e1] transition hover:border-[#10b981]"
+              onClick={() => setProductionTab(item.key)}
+              className={`h-10 border-b-2 px-4 text-sm font-medium transition ${
+                productionTab === item.key
+                  ? 'border-green-500 text-green-400'
+                  : 'border-transparent text-gray-400 hover:text-white'
+              }`}
             >
-              {action}
+              {item.label}
             </button>
           ))}
         </div>
@@ -649,193 +1971,1623 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     )
   }
 
-  return (
-    <div className="flex h-screen overflow-hidden bg-[#020617] text-[#e2e8f0]">
-      <aside className="hidden w-[300px] flex-col border-r border-[#1e293b] bg-[#0f172a] lg:flex">
-        <div className="border-b border-[#1e293b] px-5 py-6">
-          <p className="text-5xl font-extrabold text-[#10b981]">Moni</p>
-          <p className="mt-2 text-sm text-[#64748b]">경영 고민? 모니한테 물어봐</p>
-        </div>
+  function renderOverviewContent() {
+    const filteredRecords = records
 
-        <div className="p-4">
-            <button
-              type="button"
-              onClick={() => {
-                resetConversation()
-                setMainMenu('ai-chat')
-                setOpenSubMenuFor(null)
-              }}
-            className="w-full rounded-xl bg-[#10b981] px-4 py-3 text-left text-2xl font-bold text-white hover:bg-[#059669]"
+    if (overviewLoading && recordsLoading) {
+      return <LoadingBlock lines={6} />
+    }
+
+    if (overviewError || recordsError) {
+      return (
+        <EmptyState
+          title="생산 데이터를 불러오지 못했습니다"
+          description={overviewError || recordsError}
+        />
+      )
+    }
+
+    return (
+      <div className="space-y-5">
+        <div className="grid gap-4 xl:grid-cols-3">
+          <SectionCard
+            title="오늘 생산 제품"
+            description={overviewSourceTable ? `데이터 소스: ${overviewSourceTable}` : '오늘 생산된 제품 목록입니다.'}
           >
-            + 새 대화
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
-          {conversations.length === 0 ? (
-            <p className="pt-10 text-center text-2xl leading-snug text-[#64748b]">아직 대화 기록이 없어요.</p>
-          ) : (
-            <div className="space-y-2">
-              {conversations.map((conversation) => (
-                <button
-                  key={conversation.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveConversationId(conversation.id)
-                    setMainMenu('ai-chat')
-                    setOpenSubMenuFor(null)
-                  }}
-                  className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
-                    conversation.id === activeConversationId
-                      ? 'border-[#334155] bg-[#1e293b] text-white'
-                      : 'border-transparent text-[#94a3b8] hover:bg-[#1e293b]'
-                  }`}
-                >
-                  {conversation.title}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-[#1e293b] p-4">
-          <p className="text-sm text-[#94a3b8]">{companyInfo.company_name || '기본 사업장'}</p>
-          <p className="text-xs text-[#64748b]">{session.displayName}</p>
-        </div>
-      </aside>
-
-      <main className="flex min-w-0 flex-1 flex-col bg-[#020617]">
-        <header className="border-b border-[#1e293b] bg-[#0b1220] px-4 py-3 lg:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
-              {(Object.keys(MENU_CONFIG) as MainMenuKey[]).map((menuKey) => (
-                <div key={menuKey} className="relative">
-                  <button
-                    type="button"
-                    onClick={() => selectMainMenu(menuKey)}
-                    className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${menuButtonClass(mainMenu === menuKey)}`}
+            {todayProducts.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {todayProducts.map((product) => (
+                  <span
+                    key={product}
+                    className="rounded-full bg-green-500/15 px-3 py-1 text-sm text-green-300"
                   >
-                    {MENU_CONFIG[menuKey].label}
-                  </button>
+                    {product}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">오늘 생산된 제품이 없습니다.</p>
+            )}
+          </SectionCard>
 
-                  {openSubMenuFor === menuKey && menuKey !== 'ai-chat' ? (
-                    <div className="absolute left-0 top-[calc(100%+8px)] z-40 w-[220px] rounded-xl border border-[#334155] bg-[#0f172a] p-2 shadow-[0_14px_28px_rgba(2,6,23,0.45)]">
-                      <div className="space-y-1">
-                        {MENU_CONFIG[menuKey].subMenus.map((sub) => (
-                          <button
-                            key={sub.key}
-                            type="button"
-                            onClick={() => selectSubMenu(menuKey, sub.key)}
-                            className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${
-                              subMenuByMain[menuKey] === sub.key
-                                ? 'border-[#10b981] bg-[#10b981] text-white'
-                                : 'border-[#334155] bg-transparent text-[#cbd5e1] hover:bg-[#1e293b]'
-                            }`}
-                          >
-                            {sub.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
+          <SectionCard title="총 생산 수량" description="오늘 누적 생산 수량">
+            <p className="text-4xl font-bold text-green-400">{formatNumber(todayTotalQuantity)}g</p>
+          </SectionCard>
+
+          <SectionCard title="상태별 건수" description="완료 / 진행중 / 예정">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between rounded-xl bg-gray-900/70 px-3 py-2">
+                <span className="text-gray-300">완료</span>
+                <span className="font-semibold text-green-400">{todayStatusCounts.completed}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-gray-900/70 px-3 py-2">
+                <span className="text-gray-300">진행중</span>
+                <span className="font-semibold text-amber-300">{todayStatusCounts.inProgress}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-gray-900/70 px-3 py-2">
+                <span className="text-gray-300">예정</span>
+                <span className="font-semibold text-sky-300">{todayStatusCounts.scheduled}</span>
+              </div>
             </div>
+          </SectionCard>
+        </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-[#94a3b8]">{session.displayName}</span>
+        <SectionCard
+          title="생산 실적 / 제조기록서"
+          description="최근 제조기록서를 날짜 기준으로 확인합니다."
+          actions={
+            <>
+              <Field label="시작일" className="min-w-[140px]">
+                <input
+                  type="date"
+                  value={productionDateFrom}
+                  onChange={(event) => setProductionDateFrom(event.target.value)}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                />
+              </Field>
+              <Field label="종료일" className="min-w-[140px]">
+                <input
+                  type="date"
+                  value={productionDateTo}
+                  onChange={(event) => setProductionDateTo(event.target.value)}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                />
+              </Field>
               <button
                 type="button"
-                onClick={logout}
-                className="rounded-lg border border-[#7f1d1d] px-3 py-1.5 text-sm font-semibold text-[#fca5a5] hover:bg-[#3f1d1d]"
+                onClick={() => void loadProductionRecords(productionDateFrom, productionDateTo)}
+                className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
               >
-                로그아웃
+                조회
+              </button>
+              <button
+                type="button"
+                onClick={openProductionModal}
+                className="h-[42px] rounded-xl bg-green-500 px-4 text-sm font-semibold text-white hover:bg-green-400"
+              >
+                빠른 실적 입력
+              </button>
+            </>
+          }
+        >
+          {recordsLoading ? (
+            <LoadingBlock lines={5} />
+          ) : (
+            <ProductionRecordTable
+              records={filteredRecords}
+              onOpenDetail={setSelectedRecord}
+              onOpenPdf={openWindow}
+            />
+          )}
+        </SectionCard>
+      </div>
+    )
+  }
+
+  function renderWorkOrders() {
+    return (
+      <SectionCard title="작업 지시 / 제조기록서" description="생산 기록 목록과 상세 문서를 확인합니다.">
+        {recordsLoading ? (
+          <LoadingBlock lines={5} />
+        ) : recordsError ? (
+          <EmptyState title="생산 기록을 불러오지 못했습니다" description={recordsError} />
+        ) : (
+          <ProductionRecordTable records={records} onOpenDetail={setSelectedRecord} onOpenPdf={openWindow} />
+        )}
+      </SectionCard>
+    )
+  }
+
+  function renderWorkOrdersV2() {
+    const selectedCompletionRecord =
+      pendingCompletionOrders.find((item) => item.id === completionForm.record_id) ?? null
+
+    return (
+      <div className="space-y-5">
+        {productionActionMessage ? (
+          <div className={`rounded-xl border px-4 py-3 text-sm ${messageToneClasses(productionActionMessage.tone)}`}>
+            {productionActionMessage.text}
+          </div>
+        ) : null}
+
+        <SectionCard title="작업지시서 생성" description="제품 선택 후 계획 생산량(kg)을 입력하면 planned 상태로 저장됩니다.">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field label="제품 선택">
+              <select
+                value={workOrderForm.product_id}
+                onChange={(event) =>
+                  setWorkOrderForm((prev) => ({ ...prev, product_id: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="">제품 선택</option>
+                {products.map((product) => (
+                  <option key={product.id} value={String(product.id)}>
+                    {product.product_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="생산 예정량(kg)">
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                value={workOrderForm.planned_quantity_kg}
+                onChange={(event) =>
+                  setWorkOrderForm((prev) => ({ ...prev, planned_quantity_kg: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => void createWorkOrder()}
+                disabled={productionActionBusy}
+                className="h-[42px] w-full rounded-xl bg-green-500 px-4 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+              >
+                작업지시 생성
               </button>
             </div>
           </div>
-        </header>
+        </SectionCard>
 
-        <section className="flex-1 overflow-y-auto">
-          {mainMenu === 'ai-chat' ? (
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="flex-1 overflow-y-auto px-4 py-5 lg:px-6">
-                {messages.length === 0 ? (
-                  <div className="flex h-full flex-col items-center justify-center text-center">
-                    <div className="flex h-24 w-24 items-center justify-center rounded-full bg-[#10b981]/20">
-                      <span className="text-5xl font-bold text-[#10b981]">M</span>
-                    </div>
-                    <h2 className="mt-4 text-4xl font-bold text-white sm:text-5xl">안녕하세요! 모니입니다 🌿</h2>
-                    <p className="mt-2 text-lg text-[#94a3b8] sm:text-xl">경영 고민? 모니한테 물어봐!</p>
+        <SectionCard
+          title="오늘의 작업지시서 목록"
+          description="작업지시서 생성 → 생산 완료 입력 → 확정 순서로 처리합니다."
+        >
+          {recordsLoading ? (
+            <LoadingBlock lines={4} />
+          ) : todayWorkOrders.length === 0 ? (
+            <EmptyState title="오늘 작업지시서가 없습니다" description="상단에서 새 작업지시서를 먼저 생성해 주세요." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">제조번호</th>
+                    <th className="px-3 py-2 font-medium">제품명</th>
+                    <th className="px-3 py-2 font-medium">계획(g)</th>
+                    <th className="px-3 py-2 font-medium">완료(g)</th>
+                    <th className="px-3 py-2 font-medium">상태</th>
+                    <th className="px-3 py-2 font-medium">처리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {todayWorkOrders.map((record) => {
+                    const statusCode = normalizeStatusCode(record.status)
+                    const previewHasIssue =
+                      deductionPreviewRecordId === record.id && deductionPreviewRows.some((item) => item.insufficient)
 
-                    <div className="mt-6 grid w-full max-w-4xl gap-3 sm:grid-cols-2">
-                      {CHAT_EXAMPLES.map((example) => (
-                        <button
-                          key={example}
-                          type="button"
-                          onClick={() => pushChat(example)}
-                          className="rounded-xl border border-[#334155] bg-[#1e293b] px-4 py-3 text-left text-lg text-[#cbd5e1] transition hover:border-[#10b981]"
-                        >
-                          💬 {example}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mx-auto w-full max-w-5xl space-y-4">
-                    {messages.map((message) => (
-                      <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div
-                          className={`max-w-[84%] rounded-2xl px-4 py-3 ${
-                            message.role === 'user'
-                              ? 'bg-[#10b981] text-white'
-                              : 'border border-[#334155] bg-[#111827] text-[#e2e8f0]'
-                          }`}
-                        >
-                          <p className="whitespace-pre-wrap text-base leading-relaxed">{message.content}</p>
-                          <p className="mt-2 text-right text-xs opacity-70">{formatTime(message.timestamp)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                    return (
+                      <tr key={record.id} className="border-b border-gray-800/80">
+                        <td className="px-3 py-3 font-mono text-gray-300">{record.lot_number || '-'}</td>
+                        <td className="px-3 py-3 text-white">{record.product_name || '-'}</td>
+                        <td className="px-3 py-3 text-gray-200">{formatNumber(record.planned_quantity_g)}g</td>
+                        <td className="px-3 py-3 text-green-400">{formatNumber(record.actual_quantity_g)}g</td>
+                        <td className="px-3 py-3 text-gray-200">
+                          {statusCode === 'planned'
+                            ? '예정'
+                            : statusCode === 'in_progress'
+                              ? '진행중'
+                              : statusCode === 'completed'
+                                ? '완료'
+                                : statusCode === 'confirmed'
+                                  ? '확정'
+                                  : normalizeStatus(record.status)}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {(statusCode === 'planned' || statusCode === 'in_progress') && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCompletionForm({
+                                    record_id: record.id,
+                                    actual_quantity_kg:
+                                      record.actual_quantity_g && record.actual_quantity_g > 0
+                                        ? String(record.actual_quantity_g / 1000)
+                                        : '',
+                                  })
+                                }
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                완료 입력
+                              </button>
+                            )}
+
+                            {statusCode === 'completed' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void previewDeduction(record.id)}
+                                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                                >
+                                  차감 미리보기
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void confirmProduction(record.id)}
+                                  disabled={productionActionBusy || previewHasIssue}
+                                  className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+                                >
+                                  생산 확정
+                                </button>
+                              </>
+                            )}
+
+                            {statusCode === 'confirmed' && (
+                              <span className="rounded-lg border border-green-700/60 bg-green-950/40 px-3 py-1.5 text-xs text-green-300">
+                                확정 완료
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="생산 완료 입력" description="planned 작업지시서를 선택해 실제 완료량(kg)을 저장합니다.">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field label="작업지시서 선택">
+              <select
+                value={completionForm.record_id}
+                onChange={(event) =>
+                  setCompletionForm((prev) => ({ ...prev, record_id: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="">작업지시서 선택</option>
+                {pendingCompletionOrders.map((record) => (
+                  <option key={record.id} value={record.id}>
+                    {record.work_date} | {record.lot_number} | {record.product_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="실제 완료량(kg)">
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                value={completionForm.actual_quantity_kg}
+                onChange={(event) =>
+                  setCompletionForm((prev) => ({ ...prev, actual_quantity_kg: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => void completeWorkOrder()}
+                disabled={productionActionBusy}
+                className="h-[42px] w-full rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white disabled:opacity-60"
+              >
+                생산 완료 저장
+              </button>
+            </div>
+          </div>
+
+          {selectedCompletionRecord ? (
+            <div className="mt-4 rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3 text-sm text-gray-300">
+              <p>
+                선택된 지시서: <span className="text-white">{selectedCompletionRecord.lot_number}</span> /{' '}
+                <span className="text-white">{selectedCompletionRecord.product_name}</span>
+              </p>
+              <p className="mt-1">계획수량: {formatNumber(selectedCompletionRecord.planned_quantity_g)}g</p>
+            </div>
+          ) : null}
+        </SectionCard>
+
+        <SectionCard title="원재료 차감 미리보기" description="completed 상태에서 확정 전 원재료 차감량과 재고 부족 여부를 확인합니다.">
+          {deductionPreviewRows.length === 0 ? (
+            <EmptyState
+              title="미리보기 데이터가 없습니다"
+              description="작업지시서 목록에서 completed 항목의 '차감 미리보기'를 눌러 주세요."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">원재료</th>
+                    <th className="px-3 py-2 font-medium">식품유형</th>
+                    <th className="px-3 py-2 font-medium">차감예정(g)</th>
+                    <th className="px-3 py-2 font-medium">현재재고(g)</th>
+                    <th className="px-3 py-2 font-medium">차감후재고(g)</th>
+                    <th className="px-3 py-2 font-medium">상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deductionPreviewRows.map((item, index) => (
+                    <tr key={`${item.material_name}-${index}`} className="border-b border-gray-800/80">
+                      <td className="px-3 py-3 text-white">{item.material_name}</td>
+                      <td className="px-3 py-3 text-gray-200">{item.food_type_name || '-'}</td>
+                      <td className="px-3 py-3 text-green-400">{formatNumber(item.required_g)}g</td>
+                      <td className="px-3 py-3 text-gray-200">{formatNumber(item.current_stock_g)}g</td>
+                      <td className="px-3 py-3 text-gray-200">{formatNumber(item.remaining_stock_g)}g</td>
+                      <td className="px-3 py-3">
+                        {item.insufficient ? (
+                          <span className="rounded-md border border-red-800/60 bg-red-950/40 px-2 py-1 text-xs text-red-200">
+                            재고 부족/매핑 확인
+                          </span>
+                        ) : (
+                          <span className="rounded-md border border-green-700/60 bg-green-950/40 px-2 py-1 text-xs text-green-200">
+                            차감 가능
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="전체 생산기록" description="전체 제조기록서 조회 및 PDF 확인">
+          {recordsLoading ? (
+            <LoadingBlock lines={5} />
+          ) : recordsError ? (
+            <EmptyState title="생산 기록을 불러오지 못했습니다" description={recordsError} />
+          ) : (
+            <ProductionRecordTable records={records} onOpenDetail={setSelectedRecord} onOpenPdf={openWindow} />
+          )}
+        </SectionCard>
+      </div>
+    )
+  }
+
+  function renderRecipeManagement() {
+    return (
+      <div className="space-y-5">
+        <SectionCard
+          title="레시피 관리"
+          description="제품별 배합비율과 실제원료 매핑을 관리합니다."
+          actions={
+            <Field label="제품 선택" className="min-w-[240px]">
+              <select
+                value={selectedRecipeProductId}
+                onChange={(event) => setSelectedRecipeProductId(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="">제품 선택</option>
+                {recipeProducts.map((product) => (
+                  <option key={product.id} value={String(product.id)}>
+                    {product.product_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          }
+        >
+          {recipesLoading && !selectedRecipeProductId ? (
+            <LoadingBlock lines={5} />
+          ) : recipesError ? (
+            <EmptyState title="레시피 데이터를 불러오지 못했습니다" description={recipesError} />
+          ) : recipes.length === 0 ? (
+            <EmptyState
+              title="선택한 제품에 레시피가 없습니다"
+              description="아래 입력 폼에서 첫 레시피 항목을 추가해 주세요."
+            />
+          ) : (
+            <div className="space-y-4">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="text-gray-400">
+                    <tr className="border-b border-gray-700">
+                      <th className="px-3 py-2 font-medium">순서</th>
+                      <th className="px-3 py-2 font-medium">식품유형명</th>
+                      <th className="px-3 py-2 font-medium">배합비율(%)</th>
+                      <th className="px-3 py-2 font-medium">실제원료</th>
+                      <th className="px-3 py-2 font-medium">재료유형</th>
+                      <th className="px-3 py-2 font-medium">삭제</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recipes.map((recipe) => {
+                      const mappingList = recipeMappingsByFoodType.get(String(recipe.food_type_id)) ?? []
+                      const semiProductName =
+                        recipe.ingredient_type === '반제품' && recipe.semi_product_id
+                          ? recipeProducts.find((item) => String(item.id) === String(recipe.semi_product_id))
+                              ?.product_name ?? '-'
+                          : null
+                      const actualMaterial =
+                        semiProductName ||
+                        (mappingList.length > 0
+                          ? mappingList.map((item) => item.raw_material_name).join(', ')
+                          : '-')
+                      return (
+                        <tr key={recipe.id} className="border-b border-gray-800/80">
+                          <td className="px-3 py-3 text-gray-300">{recipe.sort_order}</td>
+                          <td className="px-3 py-3 text-white">{recipe.food_type_name}</td>
+                          <td className="px-3 py-3 text-green-400">{recipe.ratio_percent}%</td>
+                          <td className="px-3 py-3 text-gray-200">{actualMaterial}</td>
+                          <td className="px-3 py-3 text-gray-200">{recipe.ingredient_type || '원재료'}</td>
+                          <td className="px-3 py-3">
+                            <button
+                              type="button"
+                              onClick={() => void deleteRecipe(recipe.id)}
+                              className="rounded-lg border border-red-800 px-3 py-1.5 text-xs text-red-200 hover:bg-red-950/50"
+                            >
+                              삭제
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
 
-              <div className="border-t border-[#1e293b] bg-[#0b1220] px-4 py-4 lg:px-6">
-                <div className="mx-auto flex w-full max-w-5xl items-end gap-3 rounded-2xl border border-[#334155] bg-[#1e293b] px-4 py-3">
-                  <textarea
-                    value={composer}
-                    onChange={(event) => setComposer(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault()
-                        submitChat()
-                      }
-                    }}
-                    rows={1}
-                    placeholder="모니에게 물어보세요... 예) 오늘 매출 50만원이야"
-                    className="max-h-44 min-h-[26px] flex-1 resize-none bg-transparent text-base text-white outline-none placeholder:text-[#64748b]"
+              <div
+                className={`rounded-xl border px-4 py-3 text-sm ${
+                  recipeRatioTotal === 100
+                    ? 'border-green-700/60 bg-green-950/40 text-green-200'
+                    : recipeRatioTotal > 100
+                      ? 'border-red-800/60 bg-red-950/40 text-red-200'
+                      : 'border-amber-700/60 bg-amber-950/30 text-amber-200'
+                }`}
+              >
+                {recipeRatioTotal === 100
+                  ? '배합비율이 100%로 맞춰졌습니다.'
+                  : recipeRatioTotal > 100
+                    ? `총 ${recipeRatioTotal}% - ${recipeRatioTotal - 100}% 초과`
+                    : `총 ${recipeRatioTotal}% - ${100 - recipeRatioTotal}% 부족`}
+              </div>
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="레시피 항목 추가" description="식품유형과 실제원료를 연결해서 새 배합 항목을 만듭니다.">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="재료유형">
+              <select
+                value={recipeForm.ingredient_type}
+                onChange={(event) =>
+                  setRecipeForm((prev) => ({
+                    ...prev,
+                    ingredient_type: event.target.value,
+                    semi_product_id: '',
+                    raw_material_id: '',
+                    custom_raw_material_name: '',
+                  }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="원재료">원재료</option>
+                <option value="반제품">반제품</option>
+                <option value="부재료">부재료</option>
+              </select>
+            </Field>
+
+            <Field label="식품유형 선택">
+              <select
+                value={recipeForm.food_type_id}
+                onChange={(event) => setRecipeForm((prev) => ({ ...prev, food_type_id: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="">선택 또는 직접입력</option>
+                {foodTypes.map((foodType) => (
+                  <option key={foodType.id} value={foodType.id}>
+                    {foodType.type_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="새 식품유형명">
+              <input
+                value={recipeForm.custom_food_type_name}
+                onChange={(event) =>
+                  setRecipeForm((prev) => ({ ...prev, custom_food_type_name: event.target.value }))
+                }
+                placeholder="예: 양조간장"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+
+            <Field label="배합비율(%)">
+              <input
+                type="number"
+                step="0.1"
+                value={recipeForm.ratio_percent}
+                onChange={(event) => setRecipeForm((prev) => ({ ...prev, ratio_percent: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+
+            {recipeForm.ingredient_type === '반제품' ? (
+              <Field label="반제품 선택" className="md:col-span-2">
+                <select
+                  value={recipeForm.semi_product_id}
+                  onChange={(event) => setRecipeForm((prev) => ({ ...prev, semi_product_id: event.target.value }))}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                >
+                  <option value="">반제품 선택</option>
+                  {recipeProducts.map((product) => (
+                    <option key={product.id} value={String(product.id)}>
+                      {product.product_name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : (
+              <Field label="실제원료" className="md:col-span-2">
+                <select
+                  value={recipeForm.raw_material_id}
+                  onChange={(event) => setRecipeForm((prev) => ({ ...prev, raw_material_id: event.target.value }))}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                >
+                  <option value="">선택 안 함</option>
+                  {recipeRawMaterials.map((material) => (
+                    <option key={material.id} value={String(material.id)}>
+                      {material.item_name}
+                    </option>
+                  ))}
+                  <option value="__new__">+ 새 원재료 추가</option>
+                </select>
+              </Field>
+            )}
+
+            {recipeForm.raw_material_id === '__new__' ? (
+              <>
+                <Field label="새 원재료명">
+                  <input
+                    value={recipeForm.custom_raw_material_name}
+                    onChange={(event) =>
+                      setRecipeForm((prev) => ({ ...prev, custom_raw_material_name: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
                   />
-                  <button
-                    type="button"
-                    onClick={submitChat}
-                    className="rounded-lg bg-[#10b981] px-4 py-2 text-sm font-semibold text-white hover:bg-[#059669]"
-                  >
-                    전송
-                  </button>
+                  <ValidationMessage
+                    validation={recipeRawMaterialValidation}
+                    onApply={
+                      recipeRawMaterialValidation.suggestion
+                        ? () =>
+                            setRecipeForm((prev) => ({
+                              ...prev,
+                              custom_raw_material_name: recipeRawMaterialValidation.suggestion ?? prev.custom_raw_material_name,
+                            }))
+                        : null
+                    }
+                  />
+                </Field>
+                <Field label="패킹단위">
+                  <input
+                    value={recipeForm.packing_unit}
+                    onChange={(event) => setRecipeForm((prev) => ({ ...prev, packing_unit: event.target.value }))}
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="패킹중량(g)">
+                  <input
+                    type="number"
+                    value={recipeForm.packing_weight_g}
+                    onChange={(event) =>
+                      setRecipeForm((prev) => ({ ...prev, packing_weight_g: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+              </>
+            ) : null}
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void saveRecipe()}
+              disabled={recipeSaving || !selectedRecipeProductId}
+              className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+            >
+              {recipeSaving ? '저장 중...' : '레시피 추가'}
+            </button>
+          </div>
+        </SectionCard>
+      </div>
+    )
+  }
+
+  function renderMaterialsManagement() {
+    const sububuPdfUrl = `/api/moni/sububu/pdf?${new URLSearchParams({
+      from: sububuDateFrom,
+      to: sububuDateTo,
+    }).toString()}`
+
+    return (
+      <div className="space-y-5">
+        <SectionCard
+          title="원재료 관리"
+          description="원재료 재고와 규격 정보를 확인하고 수정합니다."
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => setShowMaterialUpload((prev) => !prev)}
+                className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+              >
+                원재료 입고 등록
+              </button>
+              <button
+                type="button"
+                onClick={() => window.alert('수동 입고 등록은 다음 단계에서 연결 예정입니다.')}
+                className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+              >
+                수동 입고 등록
+              </button>
+            </>
+          }
+        >
+          {showMaterialUpload ? (
+            <div className="mb-5 rounded-2xl border border-gray-700 bg-gray-900/70 p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => openWindow('/api/moni/raw-materials/template')}
+                  className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400"
+                >
+                  템플릿 다운로드
+                </button>
+                <label className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white">
+                  파일 업로드
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      if (file) void uploadMaterialReceipt(file)
+                      event.currentTarget.value = ''
+                    }}
+                  />
+                </label>
+                {materialUploadBusy ? <span className="text-sm text-gray-400">업로드 중...</span> : null}
+              </div>
+              {materialUploadResult ? (
+                <div className="mt-4 rounded-xl border border-gray-700 bg-gray-800/70 p-3 text-sm text-gray-200">
+                  <p>성공 {materialUploadResult.success}건 / 스킵 {materialUploadResult.skipped}건</p>
+                  {materialUploadResult.errors.length > 0 ? (
+                    <div className="mt-2 space-y-1 text-xs text-red-200">
+                      {materialUploadResult.errors.map((error, index) => (
+                        <p key={`${error}-${index}`}>{error}</p>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-                <p className="mt-2 text-center text-xs text-[#64748b]">Enter로 전송 · Shift+Enter로 줄바꿈</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {materialsLoading ? (
+            <LoadingBlock lines={6} />
+          ) : materialsError ? (
+            <EmptyState title="원재료 목록을 불러오지 못했습니다" description={materialsError} />
+          ) : materials.length === 0 ? (
+            <EmptyState title="등록된 원재료가 없습니다" description="원재료 입고 등록으로 첫 데이터를 넣어 주세요." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">원재료명</th>
+                    <th className="px-3 py-2 font-medium">식품유형</th>
+                    <th className="px-3 py-2 font-medium">원산지</th>
+                    <th className="px-3 py-2 font-medium">규격</th>
+                    <th className="px-3 py-2 font-medium">보관</th>
+                    <th className="px-3 py-2 font-medium">소비기한</th>
+                    <th className="px-3 py-2 font-medium">현재재고</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {materials.map((material) => (
+                    <tr
+                      key={material.id}
+                      className="cursor-pointer border-b border-gray-800/80 transition hover:bg-gray-700/20"
+                      onClick={() => {
+                        setSelectedMaterial(material)
+                        setMaterialForm(emptyMaterialForm(material))
+                        setShowMaterialModal(true)
+                      }}
+                    >
+                      <td className="px-3 py-3 text-white">{material.item_name}</td>
+                      <td className="px-3 py-3 text-gray-200">{material.food_type || material.food_type_name || '-'}</td>
+                      <td className="px-3 py-3 text-gray-200">{material.country_of_origin || '-'}</td>
+                      <td className="px-3 py-3 text-gray-200">{material.spec || material.packing_unit || '-'}</td>
+                      <td className="px-3 py-3 text-gray-200">{material.storage_type || '-'}</td>
+                      <td className="px-3 py-3 text-gray-200">
+                        {material.shelf_life_days ? `${material.shelf_life_days}일` : '-'}
+                      </td>
+                      <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock_g)}g</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          title="수불부 조회"
+          description="생산 기록과 레시피를 기준으로 원재료 사용량을 계산합니다."
+          actions={
+            <>
+              <Field label="시작일" className="min-w-[140px]">
+                <input
+                  type="date"
+                  value={sububuDateFrom}
+                  onChange={(event) => setSububuDateFrom(event.target.value)}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                />
+              </Field>
+              <Field label="종료일" className="min-w-[140px]">
+                <input
+                  type="date"
+                  value={sububuDateTo}
+                  onChange={(event) => setSububuDateTo(event.target.value)}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                />
+              </Field>
+              <button
+                type="button"
+                onClick={() => void loadSububu(sububuDateFrom, sububuDateTo)}
+                className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+              >
+                조회
+              </button>
+              <button
+                type="button"
+                onClick={() => openWindow(sububuPdfUrl)}
+                className="h-[42px] rounded-xl bg-green-500 px-4 text-sm font-semibold text-white hover:bg-green-400"
+              >
+                PDF 출력
+              </button>
+            </>
+          }
+        >
+          <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-gray-700 bg-gray-900/70 px-4 py-3 text-sm text-gray-300">
+            <span>
+              조회 기간: <strong className="text-white">{sububuDateFrom}</strong> ~ <strong className="text-white">{sububuDateTo}</strong>
+            </span>
+            <span>
+              총 생산량: <strong className="text-green-400">{formatNumber(sububuTotalProductionG)}g</strong>
+            </span>
+          </div>
+          {sububuLoading ? (
+            <LoadingBlock lines={4} />
+          ) : sububuError ? (
+            <EmptyState title="수불부를 불러오지 못했습니다" description={sububuError} />
+          ) : sububuMaterials.length === 0 ? (
+            <EmptyState title="해당 기간의 수불부 데이터가 없습니다" description="생산기록과 레시피가 있어야 계산됩니다." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">원재료명</th>
+                    <th className="px-3 py-2 font-medium">사용량(g)</th>
+                    <th className="px-3 py-2 font-medium">사용량(kg)</th>
+                    <th className="px-3 py-2 font-medium">투입 제품 수</th>
+                    <th className="px-3 py-2 font-medium">투입 횟수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sububuMaterials.map((material) => (
+                    <tr key={material.food_type_name} className="border-b border-gray-800/80">
+                      <td className="px-3 py-3 text-white">{material.food_type_name}</td>
+                      <td className="px-3 py-3 text-green-400">{formatNumber(material.total_usage_g)}g</td>
+                      <td className="px-3 py-3 text-gray-200">{formatKg(material.total_usage_g)}kg</td>
+                      <td className="px-3 py-3 text-gray-200">{material.products_used.length}</td>
+                      <td className="px-3 py-3 text-gray-200">{material.usage_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      </div>
+    )
+  }
+
+  function renderSanitation() {
+    return (
+      <SectionCard
+        title="위생점검"
+        description="위생점검 일지를 조회하고 오늘 기록을 바로 남길 수 있습니다."
+        actions={
+          <>
+            <Field label="시작일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={sanitationDateFrom}
+                onChange={(event) => setSanitationDateFrom(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="종료일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={sanitationDateTo}
+                onChange={(event) => setSanitationDateTo(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <button
+              type="button"
+              onClick={() => void loadSanitation(sanitationDateFrom, sanitationDateTo)}
+              className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+            >
+              조회
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSanitationForm(emptySanitationForm())
+                setShowSanitationModal(true)
+              }}
+              className="h-[42px] rounded-xl bg-green-500 px-4 text-sm font-semibold text-white hover:bg-green-400"
+            >
+              오늘 위생점검 기록
+            </button>
+          </>
+        }
+      >
+        {sanitationLoading ? (
+          <LoadingBlock lines={5} />
+        ) : sanitationError ? (
+          <EmptyState title="위생점검 일지를 불러오지 못했습니다" description={sanitationError} />
+        ) : sanitationLogs.length === 0 ? (
+          <EmptyState title="위생점검 기록이 없습니다" description="오늘 위생점검 기록 버튼으로 첫 기록을 남겨 주세요." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-gray-400">
+                <tr className="border-b border-gray-700">
+                  <th className="px-3 py-2 font-medium">날짜</th>
+                  <th className="px-3 py-2 font-medium">점검자</th>
+                  <th className="px-3 py-2 font-medium">종합결과</th>
+                  <th className="px-3 py-2 font-medium">상세보기</th>
+                  <th className="px-3 py-2 font-medium">PDF출력</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sanitationLogs.map((log) => (
+                  <tr key={log.id} className="border-b border-gray-800/80">
+                    <td className="px-3 py-3 text-white">{log.check_date}</td>
+                    <td className="px-3 py-3 text-gray-200">{log.checker_name}</td>
+                    <td className="px-3 py-3 text-gray-200">{log.overall_result || '-'}</td>
+                    <td className="px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSanitationLog(log)}
+                        className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                      >
+                        상세보기
+                      </button>
+                    </td>
+                    <td className="px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() => openWindow(`/api/moni/sanitation-logs/${log.id}/pdf`)}
+                        className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                      >
+                        PDF
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+    )
+  }
+
+  function renderQuality() {
+    const completed = records.filter((record) => normalizeInspection(record.inspection_result) === '적합').length
+    const failed = records.filter((record) => normalizeInspection(record.inspection_result) === '부적합').length
+
+    return (
+      <div className="grid gap-5 xl:grid-cols-3">
+        <SectionCard title="검사 결과 요약" description="최근 제조기록서 기준 상태 집계입니다.">
+          <div className="space-y-3">
+            <div className="rounded-xl bg-gray-900/70 px-4 py-3">
+              <p className="text-sm text-gray-400">적합</p>
+              <p className="mt-1 text-3xl font-bold text-green-400">{completed}</p>
+            </div>
+            <div className="rounded-xl bg-gray-900/70 px-4 py-3">
+              <p className="text-sm text-gray-400">부적합</p>
+              <p className="mt-1 text-3xl font-bold text-red-300">{failed}</p>
+            </div>
+          </div>
+        </SectionCard>
+        <SectionCard title="문서 바로가기" description="품질 관련 PDF를 바로 열 수 있습니다.">
+          <div className="space-y-2">
+            {records.slice(0, 5).map((record) => (
+              <button
+                key={record.id}
+                type="button"
+                onClick={() => openWindow(`/api/moni/production-records/${record.id}/pdf`)}
+                className="flex w-full items-center justify-between rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3 text-left text-sm text-gray-200 hover:border-green-500 hover:text-white"
+              >
+                <span>{record.product_name}</span>
+                <span className="text-gray-500">{record.lot_number}</span>
+              </button>
+            ))}
+          </div>
+        </SectionCard>
+        <SectionCard title="운영 메모" description="품질 관리 다음 단계 연결 전 임시 안내입니다.">
+          <div className="rounded-xl bg-gray-900/70 p-4 text-sm leading-6 text-gray-300">
+            검사결과가 부적합인 제조기록서는 생산 개요와 작업 지시 탭에서 바로 PDF를 열어 확인할 수 있습니다.
+            다음 단계에서는 품질 이슈 메모와 개선조치 추적을 이 영역에 연결하면 됩니다.
+          </div>
+        </SectionCard>
+      </div>
+    )
+  }
+
+  function renderCompliance() {
+    return (
+      <SectionCard title="규정준수 모니터" description="식약처 동기화와 규정 준수 현황을 확인합니다.">
+        <ComplianceMonitor />
+      </SectionCard>
+    )
+  }
+
+  function renderProductionSurface() {
+    if (productionTab === 'prod-overview') return renderOverviewContent()
+    if (productionTab === 'prod-work') return renderWorkOrdersV2()
+    if (productionTab === 'prod-recipes') return renderRecipeManagement()
+    if (productionTab === 'prod-materials') return renderMaterialsManagement()
+    if (productionTab === 'prod-sanitation') return renderSanitation()
+    if (productionTab === 'prod-quality') return renderQuality()
+    return renderCompliance()
+  }
+
+  function renderAiChatSurface() {
+    const messages = activeConversation?.messages ?? []
+
+    return (
+      <div className="flex h-full min-h-[calc(100vh-154px)] flex-col rounded-[28px] border border-gray-800 bg-gray-800/70">
+        <div className="border-b border-gray-800 px-6 py-5">
+          <h1 className="text-2xl font-semibold text-white">AI 채팅</h1>
+          <p className="mt-1 text-sm text-gray-400">
+            생산, 원재료, 위생점검 데이터를 보면서 바로 질문할 수 있습니다.
+          </p>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {messages.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              <div className="rounded-full border border-green-500/40 bg-green-500/10 px-5 py-2 text-sm font-semibold text-green-300">
+                Moni
+              </div>
+              <h2 className="mt-5 text-4xl font-bold text-white">지금 바로 같이 정리해봅시다.</h2>
+              <p className="mt-3 max-w-2xl text-base text-gray-400">
+                생산관리, 수불부, 위생점검 대응까지 현재 화면 문맥을 기준으로 바로 답을 이어갑니다.
+              </p>
+              <div className="mt-8 grid w-full max-w-4xl gap-3 md:grid-cols-2">
+                {CHAT_EXAMPLES.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => {
+                      setComposer(example)
+                      void submitChat()
+                    }}
+                    className="rounded-2xl border border-gray-700 bg-gray-900/60 px-4 py-4 text-left text-sm text-gray-200 transition hover:border-green-500 hover:text-white"
+                  >
+                    {example}
+                  </button>
+                ))}
               </div>
             </div>
           ) : (
-            <div className="p-4 lg:p-6">
-              {renderModuleContent()}
-              {moduleStatus ? (
-                <div className="mt-3 rounded-lg border border-[#1e3a8a] bg-[#1e293b] px-4 py-3 text-sm text-[#bfdbfe]">{moduleStatus}</div>
-              ) : null}
+            <div className="mx-auto w-full max-w-4xl space-y-4">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-3xl px-5 py-4 ${
+                      message.role === 'user'
+                        ? 'bg-green-500 text-white'
+                        : 'border border-gray-700 bg-gray-900 text-gray-100'
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.content}</p>
+                    <p className="mt-2 text-right text-[11px] opacity-70">{formatClock(message.timestamp)}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-        </section>
-      </main>
-    </div>
+        </div>
+      </div>
+    )
+  }
+
+  function renderAllowanceSurface() {
+    return (
+      <AllowanceModule
+        activeTab={allowanceTab}
+        onChangeTab={setAllowanceTab}
+        onMoveToChat={() => setMainMenu('ai-chat')}
+        companyInfo={companyInfo}
+      />
+    )
+  }
+
+  function renderContent() {
+    if (mainMenu === 'ai-chat') return renderAiChatSurface()
+    if (mainMenu === 'production') return renderProductionSurface()
+    return renderAllowanceSurface()
+  }
+
+  return (
+    <>
+      <div className="flex min-h-screen bg-gray-900 text-white">
+        {renderSidebar()}
+
+        <div className="min-w-0 flex-1">
+          <div className="sticky top-0 z-30 border-b border-gray-800 bg-gray-900/95 backdrop-blur">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-6">
+              {renderMainTabs()}
+              <div className="flex items-center gap-3">
+                <span className="hidden text-sm text-gray-400 md:inline">{session.displayName}</span>
+                <button
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  className="rounded-xl border border-red-900/70 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-950/40"
+                >
+                  로그아웃
+                </button>
+              </div>
+            </div>
+            {renderProductionSubTabs()}
+          </div>
+
+          <main className="px-4 py-5 pb-28 md:px-6 md:pb-6">{renderContent()}</main>
+        </div>
+      </div>
+
+      {renderMobileChatBar()}
+
+      <Modal
+        open={showProductionModal}
+        title="빠른 실적 입력"
+        description="제조기록서 초안을 바로 저장합니다."
+        onClose={() => setShowProductionModal(false)}
+      >
+        <div className="grid gap-5 xl:grid-cols-3">
+          <div className="space-y-4 xl:col-span-1">
+            <h4 className="text-base font-semibold text-white">기본정보</h4>
+            <Field label="제조일자">
+              <input
+                type="date"
+                value={productionForm.work_date}
+                onChange={(event) => setProductionForm((prev) => ({ ...prev, work_date: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+              <ValidationMessage validation={productionDateValidation} />
+            </Field>
+            <Field label="제품명">
+              <select
+                value={productionForm.product_id}
+                onChange={(event) => {
+                  const nextValue = event.target.value
+                  const nextProduct =
+                    products.find((item) => String(item.id) === nextValue)?.product_name ?? ''
+                  setProductionForm((prev) => ({
+                    ...prev,
+                    product_id: nextValue,
+                    product_name: nextValue === '__new__' ? prev.product_name : nextProduct,
+                  }))
+                }}
+                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="">제품 선택</option>
+                {products.map((product) => (
+                  <option key={product.id} value={String(product.id)}>
+                    {product.product_name}
+                  </option>
+                ))}
+                <option value="__new__">+ 새 제품 추가</option>
+              </select>
+            </Field>
+            {productionForm.product_id === '__new__' ? (
+              <Field label="새 제품명">
+                <input
+                  value={productionForm.product_name}
+                  onChange={(event) =>
+                    setProductionForm((prev) => ({ ...prev, product_name: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+                />
+                <ValidationMessage
+                  validation={productionProductValidation}
+                  onApply={
+                    productionProductValidation.suggestion
+                      ? () =>
+                          setProductionForm((prev) => ({
+                            ...prev,
+                            product_name: productionProductValidation.suggestion ?? prev.product_name,
+                          }))
+                      : null
+                  }
+                />
+              </Field>
+            ) : null}
+            <Field label="계획수량(g)">
+              <input
+                type="number"
+                value={productionForm.planned_quantity_g}
+                onChange={(event) =>
+                  setProductionForm((prev) => ({ ...prev, planned_quantity_g: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+          </div>
+
+          <div className="space-y-4 xl:col-span-1">
+            <h4 className="text-base font-semibold text-white">실적</h4>
+            <Field label="실제생산량(g)">
+              <input
+                type="number"
+                value={productionForm.actual_quantity_g}
+                onChange={(event) =>
+                  setProductionForm((prev) => ({ ...prev, actual_quantity_g: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+              <ValidationMessage validation={productionQuantityValidation} />
+            </Field>
+            <Field label="불량수량(g)">
+              <input
+                value={String(productionDefectQuantity)}
+                readOnly
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-gray-300"
+              />
+            </Field>
+            <Field label="작업자">
+              <input
+                value={productionForm.worker_name}
+                onChange={(event) => setProductionForm((prev) => ({ ...prev, worker_name: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="시작시간">
+                <input
+                  type="time"
+                  value={productionForm.start_time}
+                  onChange={(event) => setProductionForm((prev) => ({ ...prev, start_time: event.target.value }))}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+                />
+              </Field>
+              <Field label="종료시간">
+                <input
+                  type="time"
+                  value={productionForm.end_time}
+                  onChange={(event) => setProductionForm((prev) => ({ ...prev, end_time: event.target.value }))}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+                />
+              </Field>
+            </div>
+            <Field label="상태">
+              <select
+                value={productionForm.status}
+                onChange={(event) => setProductionForm((prev) => ({ ...prev, status: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="완료">완료</option>
+                <option value="진행중">진행중</option>
+                <option value="예정">예정</option>
+              </select>
+            </Field>
+          </div>
+
+          <div className="space-y-4 xl:col-span-1">
+            <h4 className="text-base font-semibold text-white">품질 / 위생</h4>
+            <Field label="검사결과">
+              <select
+                value={productionForm.inspection_result}
+                onChange={(event) =>
+                  setProductionForm((prev) => ({ ...prev, inspection_result: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="적합">적합</option>
+                <option value="부적합">부적합</option>
+              </select>
+            </Field>
+            <label className="flex items-center gap-3 rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                checked={productionForm.sanitation_check}
+                onChange={(event) =>
+                  setProductionForm((prev) => ({ ...prev, sanitation_check: event.target.checked }))
+                }
+                className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-green-500"
+              />
+              위생점검 여부 확인
+            </label>
+            <Field label="비고">
+              <textarea
+                rows={7}
+                value={productionForm.note}
+                onChange={(event) => setProductionForm((prev) => ({ ...prev, note: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setShowProductionModal(false)}
+            className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveProductionRecord()}
+            disabled={productionSaveBlocked}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+          >
+            {productionSaving ? '저장 중...' : '저장'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!selectedRecord}
+        title="제조기록서 상세"
+        description={selectedRecord?.lot_number || ''}
+        onClose={() => setSelectedRecord(null)}
+      >
+        {selectedRecord ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <SectionCard title="기본정보">
+              <div className="space-y-2 text-sm text-gray-200">
+                <p>제조번호: {selectedRecord.lot_number || '-'}</p>
+                <p>제조일자: {selectedRecord.work_date || '-'}</p>
+                <p>제품명: {selectedRecord.product_name || '-'}</p>
+                <p>상태: {normalizeStatus(selectedRecord.status)}</p>
+              </div>
+            </SectionCard>
+            <SectionCard title="생산수량">
+              <div className="space-y-2 text-sm text-gray-200">
+                <p>계획수량: {formatNumber(selectedRecord.planned_quantity_g)}g</p>
+                <p>실제생산량: {formatNumber(selectedRecord.actual_quantity_g)}g</p>
+                <p>불량수량: {formatNumber(selectedRecord.defect_quantity_g)}g</p>
+              </div>
+            </SectionCard>
+            <SectionCard title="작업정보">
+              <div className="space-y-2 text-sm text-gray-200">
+                <p>작업자: {selectedRecord.worker_name || '-'}</p>
+                <p>시작시간: {selectedRecord.start_time || '-'}</p>
+                <p>종료시간: {selectedRecord.end_time || '-'}</p>
+              </div>
+            </SectionCard>
+            <SectionCard title="품질 / 위생">
+              <div className="space-y-2 text-sm text-gray-200">
+                <p>검사결과: {normalizeInspection(selectedRecord.inspection_result)}</p>
+                <p>위생점검 여부: {selectedRecord.sanitation_check ? '확인' : '미확인'}</p>
+                <p>비고: {selectedRecord.note || '-'}</p>
+              </div>
+            </SectionCard>
+            <div className="md:col-span-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => openWindow(`/api/moni/production-records/${selectedRecord.id}/pdf`)}
+                className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400"
+              >
+                PDF 출력
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={showMaterialModal}
+        title="원재료 상세편집"
+        description={selectedMaterial?.item_name || ''}
+        onClose={() => setShowMaterialModal(false)}
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="원재료명">
+            <input
+              value={materialForm.item_name}
+              onChange={(event) => setMaterialForm((prev) => ({ ...prev, item_name: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="식품유형">
+            <input
+              value={materialForm.food_type}
+              onChange={(event) => setMaterialForm((prev) => ({ ...prev, food_type: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="원산지">
+            <input
+              value={materialForm.country_of_origin}
+              onChange={(event) =>
+                setMaterialForm((prev) => ({ ...prev, country_of_origin: event.target.value }))
+              }
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="규격">
+            <input
+              value={materialForm.spec}
+              onChange={(event) => setMaterialForm((prev) => ({ ...prev, spec: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="보관구분">
+            <select
+              value={materialForm.storage_type}
+              onChange={(event) => setMaterialForm((prev) => ({ ...prev, storage_type: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            >
+              <option value="">선택</option>
+              <option value="실온">실온</option>
+              <option value="상온">상온</option>
+              <option value="냉장">냉장</option>
+              <option value="냉동">냉동</option>
+            </select>
+          </Field>
+          <Field label="소비기한(일)">
+            <input
+              type="number"
+              value={materialForm.shelf_life_days}
+              onChange={(event) =>
+                setMaterialForm((prev) => ({ ...prev, shelf_life_days: event.target.value }))
+              }
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="공급업체명">
+            <input
+              value={materialForm.supplier}
+              onChange={(event) => setMaterialForm((prev) => ({ ...prev, supplier: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="연락처">
+            <input
+              value={materialForm.supplier_contact}
+              onChange={(event) =>
+                setMaterialForm((prev) => ({ ...prev, supplier_contact: event.target.value }))
+              }
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="주소" className="md:col-span-2">
+            <input
+              value={materialForm.supplier_address}
+              onChange={(event) =>
+                setMaterialForm((prev) => ({ ...prev, supplier_address: event.target.value }))
+              }
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="사업자번호" className="md:col-span-2">
+            <input
+              value={materialForm.supplier_biz_number}
+              onChange={(event) =>
+                setMaterialForm((prev) => ({ ...prev, supplier_biz_number: event.target.value }))
+              }
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setShowMaterialModal(false)}
+            className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveMaterialDetail()}
+            disabled={materialSaving}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+          >
+            {materialSaving ? '저장 중...' : '저장'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showSanitationModal}
+        title="오늘 위생점검 기록"
+        description="작업장, 작업자, 원재료, 설비, 방충방서, 급수 위생 상태를 기록합니다."
+        onClose={() => setShowSanitationModal(false)}
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="점검일자">
+            <input
+              type="date"
+              value={sanitationForm.check_date}
+              onChange={(event) => setSanitationForm((prev) => ({ ...prev, check_date: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="점검자">
+            <input
+              value={sanitationForm.checker_name}
+              onChange={(event) => setSanitationForm((prev) => ({ ...prev, checker_name: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          {[
+            ['workplace_clean', 'workplace_note', '작업장 청결'],
+            ['worker_hygiene', 'worker_note', '작업자 위생'],
+            ['material_storage', 'material_note', '원재료 보관'],
+            ['equipment_clean', 'equipment_note', '설비·기구'],
+            ['pest_control', 'pest_note', '방충·방서'],
+            ['water_hygiene', 'water_note', '급수 위생'],
+          ].map(([flagKey, noteKey, label]) => (
+            <div key={flagKey} className="rounded-2xl border border-gray-800 bg-gray-950/70 p-4">
+              <label className="flex items-center gap-3 text-sm text-gray-200">
+                <input
+                  type="checkbox"
+                  checked={Boolean(sanitationForm[flagKey as keyof SanitationFormState])}
+                  onChange={(event) =>
+                    setSanitationForm((prev) => ({
+                      ...prev,
+                      [flagKey]: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-green-500"
+                />
+                {label}
+              </label>
+              <textarea
+                rows={2}
+                value={String(sanitationForm[noteKey as keyof SanitationFormState] ?? '')}
+                onChange={(event) =>
+                  setSanitationForm((prev) => ({
+                    ...prev,
+                    [noteKey]: event.target.value,
+                  }))
+                }
+                placeholder="특이사항 입력"
+                className="mt-3 w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-green-500"
+              />
+            </div>
+          ))}
+          <Field label="종합결과">
+            <select
+              value={sanitationForm.overall_result}
+              onChange={(event) =>
+                setSanitationForm((prev) => ({ ...prev, overall_result: event.target.value }))
+              }
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            >
+              <option value="적합">적합</option>
+              <option value="부적합">부적합</option>
+              <option value="개선필요">개선필요</option>
+            </select>
+          </Field>
+          <Field label="조치사항">
+            <textarea
+              rows={4}
+              value={sanitationForm.action_taken}
+              onChange={(event) =>
+                setSanitationForm((prev) => ({ ...prev, action_taken: event.target.value }))
+              }
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSanitationModal(false)}
+            className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveSanitationLog()}
+            disabled={sanitationSaving}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+          >
+            {sanitationSaving ? '저장 중...' : '저장'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!selectedSanitationLog}
+        title="위생점검 상세"
+        description={selectedSanitationLog?.check_date || ''}
+        onClose={() => setSelectedSanitationLog(null)}
+      >
+        {selectedSanitationLog ? (
+          <div className="space-y-5">
+            <SectionCard title="기본정보">
+              <div className="space-y-2 text-sm text-gray-200">
+                <p>점검일자: {selectedSanitationLog.check_date}</p>
+                <p>점검자: {selectedSanitationLog.checker_name}</p>
+                <p>종합결과: {selectedSanitationLog.overall_result || '-'}</p>
+                <p>조치사항: {selectedSanitationLog.action_taken || '-'}</p>
+              </div>
+            </SectionCard>
+            <SectionCard title="항목별 결과">
+              <div className="grid gap-3 md:grid-cols-2">
+                {([
+                  ['작업장 청결', selectedSanitationLog.workplace_clean, selectedSanitationLog.workplace_note],
+                  ['작업자 위생', selectedSanitationLog.worker_hygiene, selectedSanitationLog.worker_note],
+                  ['원재료 보관', selectedSanitationLog.material_storage, selectedSanitationLog.material_note],
+                  ['설비·기구', selectedSanitationLog.equipment_clean, selectedSanitationLog.equipment_note],
+                  ['방충·방서', selectedSanitationLog.pest_control, selectedSanitationLog.pest_note],
+                  ['급수 위생', selectedSanitationLog.water_hygiene, selectedSanitationLog.water_note],
+                ] as Array<[string, boolean | null | undefined, string | null | undefined]>).map(([label, flag, note]) => (
+                  <div key={label} className="rounded-xl border border-gray-800 bg-gray-950/70 p-4 text-sm">
+                    <p className="font-semibold text-white">{label}</p>
+                    <p className="mt-2 text-gray-200">{flag ? '적합' : '부적합'}</p>
+                    <p className="mt-1 text-gray-400">{String(note || '-')}</p>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => openWindow(`/api/moni/sanitation-logs/${selectedSanitationLog.id}/pdf`)}
+                className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400"
+              >
+                PDF 출력
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+    </>
   )
 }
