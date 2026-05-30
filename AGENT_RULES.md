@@ -1,163 +1,128 @@
 # AGENT_RULES.md
-> Moni 프로젝트 AI 에이전트 최우선 참고사항
-> 어떤 AI 플랫폼에서 개발하든 반드시 이 파일을 먼저 숙지할 것
+> Moni 프로젝트 작업 기준 (현행화: 2026-05-31)
+> 이 문서는 현재 워크트리 기준 사실만 기록한다.
 
 ---
 
-## 에이전트 행동 규칙
+## 1) 작업 원칙
 
-1. 이미 읽은 파일은 다시 확인하지 않는다
-2. 불필요한 도구 호출은 하지 않는다
-3. 가능한 도구 호출은 동시에 실행한다
-4. 20줄 이상의 불필요한 출력은 서브에이전트에 위임한다
-
----
-
-## 프로젝트 개요
-
-- **서비스명:** Moni (모니)
-- **슬로건:** 경영 고민? 모니한테 물어봐
-- **목적:** 한국 소규모 식품 제조 공장을 위한 AI 경영관리 SaaS
-- **배포 URL:** https://moni-sigma.vercel.app
-- **GitHub:** https://github.com/chrischef217/moni
-- **로컬 경로:** c:\moni
+1. 없는 파일/기능을 존재한다고 기록하지 않는다.
+2. 코드/DB/기능 변경 지시가 없으면 점검과 보고만 수행한다.
+3. 불확실한 내용은 "확인 필요"로 명시한다.
+4. PMO 승인 전 범위 확장(특히 외부 연동 확장)은 금지한다.
 
 ---
 
-## 기술 스택
+## 2) 프로젝트 개요
 
-| 항목 | 내용 |
-|---|---|
-| Frontend | Next.js 14 (App Router) + TypeScript |
-| Styling | Tailwind CSS |
-| AI 엔진 | Gemini 2.0 Flash (Google AI Studio) — 무료 |
-| DB | Supabase (PostgreSQL) |
-| 배포 | Vercel |
-| 파일생성 | xlsx, docx |
-
----
-
-## 환경변수 (.env.local)
-
-```
-GOOGLE_AI_API_KEY=발급받은_구글AI키
-GEMMA_MODEL=gemini-2.0-flash-exp
-NEXT_PUBLIC_SUPABASE_URL=https://nvzxlejpmsfzbpprgvfh.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=발급받은_키
-```
+- 서비스명: Moni (모니)
+- 배포 URL: https://moni-sigma.vercel.app
+- GitHub: https://github.com/chrischef217/moni
+- 로컬 경로: `C:\moni`
+- 기본 스택:
+  - Frontend: Next.js 14 (App Router) + TypeScript
+  - Styling: Tailwind CSS
+  - DB: Supabase (PostgreSQL)
+  - 배포: Vercel
 
 ---
 
-## 핵심 파일 구조
+## 3) Sprint 4 상태 (중요)
 
-```
-c:\moni\src\
-├── app\
-│   ├── api\
-│   │   ├── chat\route.ts          ← AI 엔진 (Gemini 2.0 Flash)
-│   │   ├── export\excel\route.ts
-│   │   ├── export\word\route.ts
-│   │   ├── migrate\route.ts
-│   │   ├── migrate-bom\route.ts
-│   │   └── cron\morning-check\
-│   └── page.tsx
-├── components\
-│   ├── ChatWindow.tsx
-│   ├── ChatInput.tsx
-│   ├── Sidebar.tsx
-│   └── LogPalette.tsx
-└── lib\
-    ├── supabase.ts
-    ├── actions.ts                 ← ACTION 태그 파싱 핵심
-    ├── stock_alert_engine.ts      ← 재고 부족 감지 엔진
-    └── bom_data.ts
-```
+Sprint 4는 **과거 완료로 기록되어 있으나, 현재 일부 파일 위치 재확인 필요** 상태로 본다.
+
+현재 워크트리에서 아래 파일은 **없음**:
+
+- `src/lib/stock_alert_engine.ts`
+- `src/lib/bom_data.ts`
+- `src/app/api/export/excel/route.ts`
+- `src/app/api/export/word/route.ts`
+- `src/app/api/migrate-bom/route.ts`
+
+참고:
+
+- `src/app/api/export/` 및 `src/app/api/migrate-bom/` 경로는 디렉터리만 존재할 수 있으나, 핵심 `route.ts` 파일은 확인되지 않을 수 있다.
+- Sprint 4 관련 SQL 참고 파일: `src/lib/migration_sprint4.sql`
 
 ---
 
-## Supabase 테이블 목록
+## 4) MFDS 라우트 정책
 
-```
-transactions          매출/매입 내역
-inventory_logs        재고 내역
-inventory_summary     재고 현황 (뷰)
-products              제품 목록 (45개)
-raw_materials         원료 목록 (165개)
-raw_material_transactions  원료 수불
-packaging_materials   포장재 (14개)
-packaging_transactions     포장재 수불
-productions           생산 실적 (72건)
-planned_productions   생산 예정
-bom_items             BOM 배합표 (49개 항목)
-purchase_orders       발주 관리
-cash_flow             자금 현황
-ai_alerts             AI 알림 히스토리
-```
+현재 존재:
+
+- `/api/mfds/sync` (`src/app/api/mfds/sync/route.ts`)
+- `/api/mfds/test` (`src/app/api/mfds/test/route.ts`)
+
+현재 성격:
+
+- 연결 확인/초기 스텁 성격
+- 실데이터 동기화/저장의 완성 구현 단계 아님
+
+강제 정책:
+
+- **PMO 승인 전까지 실제 데이터 동기화/저장 구현 금지**
+- MFDS 기능 확장 작업 금지 (점검/보고만 허용)
 
 ---
 
-## AI 채팅 동작 방식
+## 5) Sprint 5 SQL 파일 기준 (총 6개)
 
-사용자가 채팅창에 자연어 입력 → Gemini AI가 응답 + ACTION 태그 생성 → actions.ts가 파싱 → Supabase DB 저장
+아래 6개를 현행 기준으로 관리한다:
 
-### ACTION 태그 형식
-
-```
-[ACTION:SAVE_TRANSACTION]
-{"type":"income|expense","description":"품목명","amount":금액}
-[/ACTION]
-
-[ACTION:SAVE_PRODUCTION]
-{"work_date":"YYYY-MM-DD","product_name":"제품명","quantity_ok_g":수량}
-[/ACTION]
-
-[ACTION:SAVE_RAW_INBOUND]
-{"item_name":"원료명","quantity_g":수량,"supplier":"업체"}
-[/ACTION]
-
-[ACTION:SAVE_PURCHASE_ORDER]
-{"item_name":"원료명","order_quantity_g":수량,"lead_time_days":일수}
-[/ACTION]
-```
+1. `docs/migration_sprint5.sql`
+2. `docs/migration_sprint5_recipe.sql`
+3. `docs/migration_sprint5_sanitation.sql`
+4. `docs/migration_sprint5_semifinished.sql`
+5. `docs/migration_sprint5_specs.sql`
+6. `docs/migration_sprint5_transactions.sql`
 
 ---
 
-## 완료된 Sprint 현황
+## 6) 환경변수 기준 (핵심)
 
-| Sprint | 내용 | 상태 |
-|---|---|---|
-| Sprint 1 | 채팅 UI + 회계(매출/매입/손익) + 엑셀 | ✅ 완료 |
-| Sprint 2 | 생산관리 + DOOBAE 데이터 이전 | ✅ 완료 |
-| Sprint 3 | 원료관리 + 포장재관리 + OCR | ✅ 완료 |
-| Sprint 4 | BOM + 재고감지엔진 + 서식보고서 + 구글캘린더 | ✅ 완료 |
+아래 키는 코드/서버 설정에서 중요하게 사용되므로 누락 여부를 항상 확인한다:
 
----
+- `GOOGLE_AI_API_KEY`
+- `GEMINI_API_KEY`
+- `MONI_PARSER_MODEL`
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `ALLOWANCE_SESSION_SECRET`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `MFDS_API_KEY`
+- `MFDS_COMPANY_ID`
 
-## 남은 개발 항목 (우선순위 순)
+원칙:
 
-1. **Google AI Studio API 연동** — Gemini 2.0 Flash로 chat/route.ts 교체
-2. **재고 부족 선제 알림** — 대화 시작 시 자동 체크
-3. **작업일지 서식 보고서** — DOOBAE 양식 기반 .docx 생성
-4. **구글 캘린더 연동** — 발주/생산 일정 자동 등록
-5. **자금 유동성 체크** — 발주 전 자금 상황 확인
-6. **사용자 로그인** — Supabase Auth
-7. **HACCP 문서 자동화**
+- 값 자체(시크릿)는 보고에 노출하지 않는다.
+- 존재 여부/참조 위치/용도만 보고한다.
 
 ---
 
-## 핵심 개발 원칙
+## 7) 개발 도구 역할 분담
 
-- 사용자는 메뉴를 클릭하지 않는다. **오직 채팅으로만** 모든 것을 처리
-- 불명확한 요청 → **반드시 되물어서 확인** 후 실행
-- AI가 먼저 **선제적으로** 재고 부족, 발주 필요, 자금 부족을 알림
-- 모든 코드에 **한국어 주석** 포함
+- GPT: PMO / 최종 승인
+- Claude: 설계 / 분석
+- Codex: 코드 실행 / 파일 수정
+- Gemini: Moni 앱 내 AI 엔진
 
 ---
 
-## 개발 도구 역할 분담
+## 8) 금지 사항 (상시)
 
-| 역할 | 도구 |
-|---|---|
-| 코딩 가이드·오류 의논 | Claude 채팅 |
-| 실제 코딩 작업 | Claude Code |
-| Moni 구동 AI 엔진 | Gemini 2.0 Flash (무료) |
+- 다른 파일 임의 수정 금지
+- 코드 수정 금지 (요청 없는 경우)
+- DB 수정 금지 (요청 없는 경우)
+- 신규 기능 구현 금지 (요청 없는 경우)
+- MFDS 기능 확장 금지 (PMO 승인 전)
+
+---
+
+## 9) 점검 보고 기본 포맷
+
+1. 파일 존재/누락 결과
+2. 빌드/타입/린트 결과
+3. API 라우트 목록 및 메서드
+4. 환경변수 참조 위치/용도 (값 비공개)
+5. PMO 결정 필요 사항
+
