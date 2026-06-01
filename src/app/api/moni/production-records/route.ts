@@ -249,6 +249,32 @@ async function ensureNoExistingOutboundConfirm(recordId: string, lotNumber: stri
   }
 }
 
+async function hasExistingOutboundConfirm(recordId: string, lotNumber: string) {
+  const supabase = createMoniServiceRoleClient()
+
+  const byRecord = await supabase
+    .from('raw_material_transactions')
+    .select('id')
+    .eq('txn_type', 'OUTBOUND')
+    .ilike('note', `%production_record_id=${recordId}%`)
+    .limit(1)
+  if (byRecord.error) {
+    throw new ApiError(500, byRecord.error.message || '취소 검증 조회에 실패했습니다.', 'validation.cancel.record')
+  }
+  if ((byRecord.data ?? []).length > 0) return true
+
+  const byLot = await supabase
+    .from('raw_material_transactions')
+    .select('id')
+    .eq('txn_type', 'OUTBOUND')
+    .ilike('note', `%lot_number=${lotNumber}%`)
+    .limit(1)
+  if (byLot.error) {
+    throw new ApiError(500, byLot.error.message || '취소 검증 조회에 실패했습니다.', 'validation.cancel.lot')
+  }
+  return (byLot.data ?? []).length > 0
+}
+
 async function updateRecordWithOptionalQuantityOk(
   id: string,
   patch: Record<string, unknown>,
@@ -616,6 +642,10 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ ok: false, error: '이미 확정된 생산기록입니다.' }, { status: 409 })
       }
 
+      if (recordStatus === 'cancelled') {
+        return NextResponse.json({ ok: false, error: '취소된 작업지시서는 완료 처리할 수 없습니다.' }, { status: 409 })
+      }
+
       const actualQuantityG = parseNumber(body.actual_quantity_g)
       if (actualQuantityG === null || actualQuantityG <= 0) {
         return NextResponse.json({ ok: false, error: 'actual_quantity_g는 0보다 커야 합니다.' }, { status: 400 })
@@ -639,6 +669,38 @@ export async function PATCH(request: NextRequest) {
 
       return NextResponse.json(
         { ok: true, record: toRecordRow(updated), message: '생산 완료로 처리했습니다.' },
+        { status: 200 },
+      )
+    }
+
+    if (action === 'cancel') {
+      if (isConfirmed(recordStatus)) {
+        return NextResponse.json({ ok: false, error: '확정된 작업지시서는 취소할 수 없습니다.' }, { status: 409 })
+      }
+
+      if (recordStatus === 'cancelled') {
+        return NextResponse.json(
+          { ok: true, record: toRecordRow(record), message: '이미 취소된 작업지시서입니다.' },
+          { status: 200 },
+        )
+      }
+
+      if (!(recordStatus === 'planned' || recordStatus === 'completed')) {
+        return NextResponse.json({ ok: false, error: 'planned 또는 completed 상태만 취소할 수 있습니다.' }, { status: 409 })
+      }
+
+      const lotNumber = toText(record.lot_number) || recordId
+      const hasOutbound = await hasExistingOutboundConfirm(recordId, lotNumber)
+      if (hasOutbound) {
+        return NextResponse.json(
+          { ok: false, error: '원재료 차감 이력이 있어 취소할 수 없습니다. (확정된 기록일 수 있습니다.)' },
+          { status: 409 },
+        )
+      }
+
+      const cancelled = await updateRecordWithOptionalQuantityOk(recordId, { status: 'cancelled' })
+      return NextResponse.json(
+        { ok: true, record: toRecordRow(cancelled), message: '작업지시서가 취소되었습니다.' },
         { status: 200 },
       )
     }

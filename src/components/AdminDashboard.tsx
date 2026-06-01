@@ -409,6 +409,7 @@ function normalizeStatusCode(status: string | null | undefined) {
   if (raw === 'planned' || raw === 'plan' || raw === 'scheduled' || raw === '예정') return 'planned'
   if (raw === 'completed' || raw === 'done' || raw === '완료') return 'completed'
   if (raw === 'confirmed' || raw === '확정') return 'confirmed'
+  if (raw === 'cancelled' || raw === 'canceled' || raw === '취소') return 'cancelled'
   if (raw === 'in_progress' || raw === 'inprogress' || raw === '진행중') return 'in_progress'
   return raw
 }
@@ -430,6 +431,7 @@ function normalizeStatus(status: string | null | undefined) {
   const raw = String(status ?? '').trim().toLowerCase()
   if (!raw) return '-'
   if (raw === 'completed' || raw === 'done' || raw === 'confirmed' || raw === '완료') return '완료'
+  if (raw === 'cancelled' || raw === 'canceled' || raw === '취소') return '취소'
   if (raw === 'in_progress' || raw === 'inprogress' || raw === 'progress' || raw === '진행중') return '진행중'
   if (raw === 'scheduled' || raw === 'plan' || raw === '예정') return '예정'
   return String(status)
@@ -892,7 +894,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const pendingCompletionOrders = useMemo(() => {
     return records.filter((record) => {
       const statusCode = normalizeStatusCode(record.status)
-      return statusCode === 'planned' || statusCode === 'in_progress'
+      return statusCode === 'planned' || statusCode === 'in_progress' || statusCode === 'completed'
     })
   }, [records])
 
@@ -1496,6 +1498,51 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setProductionActionMessage({
         tone: 'error',
         text: error instanceof Error ? error.message : '생산 완료 저장에 실패했습니다.',
+      })
+    } finally {
+      setProductionActionBusy(false)
+    }
+  }
+
+  async function cancelWorkOrder(record: ProductionRecord) {
+    const statusCode = normalizeStatusCode(record.status)
+    if (statusCode === 'confirmed') {
+      setProductionActionMessage({ tone: 'error', text: '확정된 작업지시서는 취소할 수 없습니다.' })
+      return
+    }
+    if (!(statusCode === 'planned' || statusCode === 'completed')) {
+      setProductionActionMessage({ tone: 'error', text: 'planned 또는 completed 상태만 취소할 수 있습니다.' })
+      return
+    }
+
+    const target = record.lot_number || record.id
+    const confirmed = window.confirm(`작업지시서 ${target}를 취소하시겠습니까?`)
+    if (!confirmed) return
+
+    setProductionActionBusy(true)
+    try {
+      await callProductionAction({
+        action: 'cancel',
+        record_id: record.id,
+      })
+
+      if (completionForm.record_id === record.id) {
+        setCompletionForm({ record_id: '', actual_quantity_kg: '' })
+      }
+      if (deductionPreviewRecordId === record.id) {
+        setDeductionPreviewRecordId(null)
+        setDeductionPreviewRows([])
+      }
+
+      setProductionActionMessage({ tone: 'success', text: '작업지시서가 취소되었습니다.' })
+      await Promise.all([
+        loadOverview(),
+        loadProductionRecords(productionDateFrom, productionDateTo),
+      ])
+    } catch (error) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '작업지시서 취소에 실패했습니다.',
       })
     } finally {
       setProductionActionBusy(false)
@@ -2197,11 +2244,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                                 ? '완료'
                                 : statusCode === 'confirmed'
                                   ? '확정'
-                                  : normalizeStatus(record.status)}
+                                  : statusCode === 'cancelled'
+                                    ? '취소'
+                                    : normalizeStatus(record.status)}
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex flex-wrap gap-2">
-                            {(statusCode === 'planned' || statusCode === 'in_progress') && (
+                            {(statusCode === 'planned' || statusCode === 'in_progress' || statusCode === 'completed') && (
                               <button
                                 type="button"
                                 onClick={() =>
@@ -2237,6 +2286,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                                   생산 확정
                                 </button>
                               </>
+                            )}
+
+                            {(statusCode === 'planned' || statusCode === 'completed') && (
+                              <button
+                                type="button"
+                                onClick={() => void cancelWorkOrder(record)}
+                                disabled={productionActionBusy}
+                                className="rounded-lg border border-red-800/70 px-3 py-1.5 text-xs text-red-200 hover:border-red-600 hover:text-red-100 disabled:opacity-60"
+                              >
+                                취소
+                              </button>
                             )}
 
                             {statusCode === 'confirmed' && (
