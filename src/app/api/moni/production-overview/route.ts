@@ -36,6 +36,11 @@ function toStatusBucket(statusRaw: string): 'completed' | 'inProgress' | 'schedu
   return 'scheduled'
 }
 
+function isCancelledStatus(statusRaw: string) {
+  const status = statusRaw.toLowerCase()
+  return status === 'cancelled' || status === 'canceled' || status === '취소'
+}
+
 function formatStatus(statusRaw: string) {
   const bucket = toStatusBucket(statusRaw)
   if (bucket === 'completed') return '완료'
@@ -135,11 +140,12 @@ export async function GET() {
       }
     }
 
+    const activeRows = rows.filter((row) => !isCancelledStatus(row.status))
     const todayKey = kstDateKey(new Date())
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6)
 
-    const todayRows = rows.filter((row) => row.dateLabel === todayKey)
+    const todayRows = activeRows.filter((row) => row.dateLabel === todayKey)
     const todayProducts = Array.from(new Set(todayRows.map((row) => row.productName)))
 
     const todaySummary = todayRows.reduce(
@@ -158,7 +164,7 @@ export async function GET() {
       },
     )
 
-    const recentRows = rows
+    const recentRows = activeRows
       .filter((row) => row.happenedAt >= sevenDaysAgo)
       .sort((a, b) => b.happenedAt.getTime() - a.happenedAt.getTime())
       .map((row) => ({

@@ -479,6 +479,8 @@ export async function GET(request: NextRequest) {
     const to = request.nextUrl.searchParams.get('to')?.trim() ?? ''
     const product = request.nextUrl.searchParams.get('product')?.trim() ?? ''
     const statusFilter = request.nextUrl.searchParams.get('status')?.trim() ?? ''
+    const includeCancelledRaw = request.nextUrl.searchParams.get('include_cancelled')?.trim().toLowerCase() ?? ''
+    const includeCancelled = includeCancelledRaw === '1' || includeCancelledRaw === 'true' || includeCancelledRaw === 'yes'
     const limitRaw = Number(request.nextUrl.searchParams.get('limit') ?? 200)
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 1000) : 200
 
@@ -492,7 +494,12 @@ export async function GET(request: NextRequest) {
     if (from) query = query.gte('work_date', from)
     if (to) query = query.lte('work_date', to)
     if (product) query = query.eq('product_id', product)
-    if (statusFilter) query = query.eq('status', normalizeStatus(statusFilter, statusFilter))
+    const normalizedStatusFilter = statusFilter ? normalizeStatus(statusFilter, statusFilter) : ''
+    if (normalizedStatusFilter) {
+      query = query.eq('status', normalizedStatusFilter)
+    } else if (!includeCancelled) {
+      query = query.or('status.is.null,status.not.in.(cancelled,canceled,취소)')
+    }
 
     const { data, error } = await query
     if (error) throw new ApiError(500, error.message || '제조기록 조회에 실패했습니다.', 'query.records')
