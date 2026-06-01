@@ -18,6 +18,7 @@ type RecordRow = {
   planned_quantity_g: number | null
   actual_quantity_g: number | null
   defect_quantity_g: number | null
+  sample_quantity_g: number | null
   worker_name: string | null
   start_time: string | null
   end_time: string | null
@@ -154,6 +155,7 @@ function toRecordRow(row: Record<string, unknown>): RecordRow {
     planned_quantity_g: parseNumber(row.planned_quantity_g),
     actual_quantity_g: parseNumber(row.actual_quantity_g),
     defect_quantity_g: parseNumber(row.defect_quantity_g),
+    sample_quantity_g: parseNumber(row.sample_quantity_g),
     worker_name: toText(row.worker_name) || null,
     start_time: toText(row.start_time) || null,
     end_time: toText(row.end_time) || null,
@@ -166,6 +168,12 @@ function toRecordRow(row: Record<string, unknown>): RecordRow {
     created_at: toText(row.created_at),
     updated_at: toText(row.updated_at) || null,
   }
+}
+
+function isMissingColumnError(message: string, columnName: string) {
+  const lower = message.toLowerCase()
+  const target = columnName.toLowerCase()
+  return lower.includes(target) && (lower.includes('column') || lower.includes('schema cache'))
 }
 
 function toApiError(error: unknown, fallbackMessage: string, fallbackStage: string) {
@@ -318,6 +326,46 @@ async function updateRecordWithOptionalQuantityOk(
     throw new ApiError(500, fallback.error.message || '생산기록 업데이트에 실패했습니다.', 'mutate.record.update')
   }
   return fallback.data as Record<string, unknown>
+}
+
+async function updateRecordWithResilientColumns(
+  id: string,
+  patch: Record<string, unknown>,
+  quantityOkG?: number | null,
+) {
+  const supabase = createMoniServiceRoleClient()
+  const workingPatch: Record<string, unknown> = {
+    ...patch,
+    updated_at: new Date().toISOString(),
+  }
+  const hasSampleField = Object.prototype.hasOwnProperty.call(workingPatch, 'sample_quantity_g')
+  let includeQuantityOk = quantityOkG !== undefined && quantityOkG !== null
+
+  while (true) {
+    const payload = {
+      ...workingPatch,
+      ...(includeQuantityOk && quantityOkG !== undefined && quantityOkG !== null ? { quantity_ok_g: quantityOkG } : {}),
+    }
+
+    const { data, error } = await supabase.from('production_records').update(payload).eq('id', id).select('*').single()
+    if (!error) return data as Record<string, unknown>
+
+    const message = error.message || '생산기록 업데이트에 실패했습니다.'
+    if (
+      hasSampleField &&
+      Object.prototype.hasOwnProperty.call(workingPatch, 'sample_quantity_g') &&
+      isMissingColumnError(message, 'sample_quantity_g')
+    ) {
+      delete workingPatch.sample_quantity_g
+      continue
+    }
+    if (includeQuantityOk && isMissingColumnError(message, 'quantity_ok_g')) {
+      includeQuantityOk = false
+      continue
+    }
+
+    throw new ApiError(500, message, 'mutate.record.update')
+  }
 }
 
 async function resolveRecipes(record: Record<string, unknown>) {
@@ -530,6 +578,7 @@ export async function POST(request: NextRequest) {
     let productId = toText(body.product_id) || null
     const planned = parseNumber(body.planned_quantity_g)
     const actual = parseNumber(body.actual_quantity_g)
+    const sample = parseNumber(body.sample_quantity_g) ?? 0
 
     if (planned !== null && planned < 0) {
       return NextResponse.json({ ok: false, error: '계획 수량은 0 이상이어야 합니다.' }, { status: 400 })
@@ -538,8 +587,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: '실제 수량은 0 이상이어야 합니다.' }, { status: 400 })
     }
 
+    if (sample < 0) {
+      return NextResponse.json({ ok: false, error: '샘플수량은 0 이상이어야 합니다.' }, { status: 400 })
+    }
+
     const defectAuto = planned !== null && actual !== null ? Math.max(planned - actual, 0) : 0
     const defect = parseNumber(body.defect_quantity_g) ?? defectAuto
+    if (defect < 0) {
+      return NextResponse.json({ ok: false, error: '불량수량은 0 이상이어야 합니다.' }, { status: 400 })
+    }
+    if (planned !== null && actual !== null && actual + defect + sample > planned) {
+      return NextResponse.json(
+        { ok: false, error: '실제 완료량 + 불량수량 + 샘플수량 합계가 예정수량을 초과할 수 없습니다.' },
+        { status: 400 },
+      )
+    }
 
     let productName = toText(body.product_name)
     if (!productName && productId) {
@@ -600,6 +662,7 @@ export async function POST(request: NextRequest) {
       planned_quantity_g: planned,
       actual_quantity_g: actual,
       defect_quantity_g: defect,
+      sample_quantity_g: sample,
       worker_name: toText(body.worker_name) || null,
       start_time: toText(body.start_time) || null,
       end_time: toText(body.end_time) || null,
@@ -612,13 +675,19 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }
 
-    const { data, error } = await supabase.from('production_records').insert(payload).select('*').single()
-    if (error) throw new ApiError(500, error.message || '제조기록 저장에 실패했습니다.', 'mutate.record.insert')
+    let insertResult = await supabase.from('production_records').insert(payload).select('*').single()
+    if (insertResult.error && isMissingColumnError(insertResult.error.message || '', 'sample_quantity_g')) {
+      const { sample_quantity_g, ...payloadWithoutSample } = payload
+      insertResult = await supabase.from('production_records').insert(payloadWithoutSample).select('*').single()
+    }
+    if (insertResult.error) {
+      throw new ApiError(500, insertResult.error.message || '제조기록 저장에 실패했습니다.', 'mutate.record.insert')
+    }
 
     return NextResponse.json(
       {
         ok: true,
-        record: toRecordRow((data as Record<string, unknown>) ?? {}),
+        record: toRecordRow((insertResult.data as Record<string, unknown>) ?? {}),
       },
       { status: 201 },
     )
@@ -644,6 +713,28 @@ export async function PATCH(request: NextRequest) {
     const record = await fetchRecordById(recordId)
     const recordStatus = normalizeStatus(record.status, '')
 
+    if (action === 'update_planned') {
+      if (isConfirmed(recordStatus)) {
+        return NextResponse.json({ ok: false, error: '확정된 작업지시서는 예정수량을 수정할 수 없습니다.' }, { status: 409 })
+      }
+      if (recordStatus !== 'planned') {
+        return NextResponse.json({ ok: false, error: 'planned 상태에서만 예정수량을 수정할 수 있습니다.' }, { status: 409 })
+      }
+
+      const plannedQuantityG = parseNumber(body.planned_quantity_g)
+      if (plannedQuantityG === null || plannedQuantityG <= 0) {
+        return NextResponse.json({ ok: false, error: 'planned_quantity_g는 0보다 커야 합니다.' }, { status: 400 })
+      }
+
+      const updated = await updateRecordWithResilientColumns(recordId, {
+        planned_quantity_g: plannedQuantityG,
+      })
+      return NextResponse.json(
+        { ok: true, record: toRecordRow(updated), message: '예정수량이 수정되었습니다.' },
+        { status: 200 },
+      )
+    }
+
     if (action === 'complete') {
       if (isConfirmed(recordStatus)) {
         return NextResponse.json({ ok: false, error: '이미 확정된 생산기록입니다.' }, { status: 409 })
@@ -653,22 +744,40 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ ok: false, error: '취소된 작업지시서는 완료 처리할 수 없습니다.' }, { status: 409 })
       }
 
+      if (!(recordStatus === 'planned' || recordStatus === 'completed')) {
+        return NextResponse.json({ ok: false, error: 'planned 또는 completed 상태에서만 완료 입력이 가능합니다.' }, { status: 409 })
+      }
+
       const actualQuantityG = parseNumber(body.actual_quantity_g)
-      if (actualQuantityG === null || actualQuantityG <= 0) {
-        return NextResponse.json({ ok: false, error: 'actual_quantity_g는 0보다 커야 합니다.' }, { status: 400 })
+      const defectQuantityG = parseNumber(body.defect_quantity_g) ?? 0
+      const sampleQuantityG = parseNumber(body.sample_quantity_g) ?? 0
+      if (actualQuantityG === null || actualQuantityG < 0) {
+        return NextResponse.json({ ok: false, error: 'actual_quantity_g는 0 이상이어야 합니다.' }, { status: 400 })
+      }
+
+      if (defectQuantityG < 0 || sampleQuantityG < 0) {
+        return NextResponse.json({ ok: false, error: '불량수량/샘플수량은 0 이상이어야 합니다.' }, { status: 400 })
       }
 
       const plannedCandidate = parseNumber(body.planned_quantity_g)
       const plannedQuantityG = plannedCandidate ?? parseNumber(record.planned_quantity_g)
-      const defectQuantityG =
-        plannedQuantityG !== null ? Math.max(plannedQuantityG - actualQuantityG, 0) : parseNumber(record.defect_quantity_g) ?? 0
+      if (plannedQuantityG === null || plannedQuantityG <= 0) {
+        return NextResponse.json({ ok: false, error: '예정수량이 없어 완료 입력을 진행할 수 없습니다.' }, { status: 422 })
+      }
+      if (actualQuantityG + defectQuantityG + sampleQuantityG > plannedQuantityG) {
+        return NextResponse.json(
+          { ok: false, error: '실제 완료량 + 불량수량 + 샘플수량 합계가 예정수량을 초과할 수 없습니다.' },
+          { status: 400 },
+        )
+      }
 
-      const updated = await updateRecordWithOptionalQuantityOk(
+      const updated = await updateRecordWithResilientColumns(
         recordId,
         {
           actual_quantity_g: actualQuantityG,
           planned_quantity_g: plannedQuantityG,
           defect_quantity_g: defectQuantityG,
+          sample_quantity_g: sampleQuantityG,
           status: 'completed',
         },
         actualQuantityG,
@@ -705,9 +814,16 @@ export async function PATCH(request: NextRequest) {
         )
       }
 
-      const cancelled = await updateRecordWithOptionalQuantityOk(recordId, { status: 'cancelled' })
+      const cancelled = await (async () => {
+        const supabase = createMoniServiceRoleClient()
+        const { error: deleteError } = await supabase.from('production_records').delete().eq('id', recordId)
+        if (deleteError) {
+          throw new ApiError(500, deleteError.message || '작업지시서 삭제에 실패했습니다.', 'mutate.record.delete')
+        }
+        return record
+      })()
       return NextResponse.json(
-        { ok: true, record: toRecordRow(cancelled), message: '작업지시서가 취소되었습니다.' },
+        { ok: true, record: toRecordRow(cancelled), message: '작업지시서가 삭제되었습니다.' },
         { status: 200 },
       )
     }
@@ -729,6 +845,9 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (action === 'confirm') {
+      if (recordStatus === 'cancelled') {
+        return NextResponse.json({ ok: false, error: '취소된 작업지시서는 확정할 수 없습니다.' }, { status: 409 })
+      }
       if (isConfirmed(recordStatus)) {
         return NextResponse.json({ ok: false, error: '이미 확정된 생산기록입니다.' }, { status: 409 })
       }
@@ -840,7 +959,7 @@ export async function PATCH(request: NextRequest) {
       let updatedRecord: Record<string, unknown>
       try {
         const actualQuantityG = parseNumber(record.actual_quantity_g)
-        updatedRecord = await updateRecordWithOptionalQuantityOk(
+        updatedRecord = await updateRecordWithResilientColumns(
           recordId,
           { status: 'confirmed' },
           actualQuantityG !== null ? actualQuantityG : undefined,

@@ -86,6 +86,7 @@ type ProductionRecord = {
   planned_quantity_g: number | null
   actual_quantity_g: number | null
   defect_quantity_g: number | null
+  sample_quantity_g: number | null
   worker_name: string | null
   start_time: string | null
   end_time: string | null
@@ -287,6 +288,8 @@ type WorkOrderFormState = {
 type CompletionFormState = {
   record_id: string
   actual_quantity_kg: string
+  defect_quantity_kg: string
+  sample_quantity_kg: string
 }
 
 type RecipeFormState = {
@@ -804,10 +807,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [completionForm, setCompletionForm] = useState<CompletionFormState>({
     record_id: '',
     actual_quantity_kg: '',
+    defect_quantity_kg: '',
+    sample_quantity_kg: '',
   })
   const [showCompletionModal, setShowCompletionModal] = useState(false)
   const [completionTargetRecord, setCompletionTargetRecord] = useState<ProductionRecord | null>(null)
-  const [showCancelledOrders, setShowCancelledOrders] = useState(false)
+  const [showPlannedEditModal, setShowPlannedEditModal] = useState(false)
+  const [plannedEditRecord, setPlannedEditRecord] = useState<ProductionRecord | null>(null)
+  const [plannedEditKg, setPlannedEditKg] = useState('')
   const [productionActionBusy, setProductionActionBusy] = useState(false)
   const [productionActionMessage, setProductionActionMessage] = useState<{
     tone: 'success' | 'error' | 'warning'
@@ -897,10 +904,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     const today = todayValue()
     return records.filter((record) => {
       if ((record.work_date || '').slice(0, 10) !== today) return false
-      if (showCancelledOrders) return true
       return normalizeStatusCode(record.status) !== 'cancelled'
     })
-  }, [records, showCancelledOrders])
+  }, [records])
 
   const chatPreviewMessages = useMemo(() => {
     return activeConversation?.messages.slice(-8) ?? []
@@ -934,10 +940,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setSelectedRecipeProductId(String(recipeProducts[0].id))
     }
   }, [recipeProducts, selectedRecipeProductId])
-
-  useEffect(() => {
-    void loadProductionRecords(productionDateFrom, productionDateTo)
-  }, [showCancelledOrders])
 
   useEffect(() => {
     if (!selectedRecipeProductId) return
@@ -1131,7 +1133,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       if (from) params.set('from', from)
       if (to) params.set('to', to)
       params.set('limit', '300')
-      if (showCancelledOrders) params.set('include_cancelled', 'true')
       const payload = await readJson<ProductionRecordsPayload>(`/api/moni/production-records?${params.toString()}`)
       setRecords(payload.records ?? [])
       setProducts(payload.products ?? [])
@@ -1446,7 +1447,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setProductionActionMessage({ tone: 'error', text: '선택한 제품 정보를 찾을 수 없습니다.' })
       return
     }
-
     setProductionActionBusy(true)
     try {
       await readJson('/api/moni/production-records', {
@@ -1480,12 +1480,34 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   async function completeWorkOrder() {
     const recordId = completionForm.record_id
     const actualG = kgToG(completionForm.actual_quantity_kg)
+    const defectG = kgToG(completionForm.defect_quantity_kg)
+    const sampleG = kgToG(completionForm.sample_quantity_kg)
+    const plannedG = completionTargetRecord?.planned_quantity_g ?? 0
     if (!recordId) {
       setProductionActionMessage({ tone: 'error', text: '완료 처리할 작업지시서를 선택해 주세요.' })
       return
     }
-    if (actualG === null || actualG <= 0) {
-      setProductionActionMessage({ tone: 'error', text: '실제 완료량(kg)은 0보다 커야 합니다.' })
+    if (actualG === null) {
+      setProductionActionMessage({ tone: 'error', text: '실제 완료량(kg)을 입력해 주세요.' })
+      return
+    }
+    if (defectG === null || sampleG === null) {
+      setProductionActionMessage({ tone: 'error', text: '완료량/불량수량/샘플수량을 입력해 주세요.' })
+      return
+    }
+    if (actualG < 0 || defectG < 0 || sampleG < 0) {
+      setProductionActionMessage({ tone: 'error', text: '완료량/불량수량/샘플수량은 0 이상이어야 합니다.' })
+      return
+    }
+    if (plannedG <= 0) {
+      setProductionActionMessage({ tone: 'error', text: '예정수량이 없어 완료 입력을 진행할 수 없습니다.' })
+      return
+    }
+    if (actualG + defectG + sampleG > plannedG) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: '실제 완료량 + 불량수량 + 샘플수량 합계가 예정수량을 초과할 수 없습니다.',
+      })
       return
     }
 
@@ -1495,11 +1517,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         action: 'complete',
         record_id: recordId,
         actual_quantity_g: actualG,
+        defect_quantity_g: defectG,
+        sample_quantity_g: sampleG,
       })
 
       setShowCompletionModal(false)
       setCompletionTargetRecord(null)
-      setCompletionForm({ record_id: '', actual_quantity_kg: '' })
+      setCompletionForm({ record_id: '', actual_quantity_kg: '', defect_quantity_kg: '', sample_quantity_kg: '' })
       setProductionActionMessage({ tone: 'success', text: '생산 완료가 저장되었습니다.' })
       await Promise.all([
         loadOverview(),
@@ -1530,8 +1554,58 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setCompletionForm({
       record_id: record.id,
       actual_quantity_kg: record.actual_quantity_g && record.actual_quantity_g > 0 ? String(record.actual_quantity_g / 1000) : '',
+      defect_quantity_kg: record.defect_quantity_g && record.defect_quantity_g > 0 ? String(record.defect_quantity_g / 1000) : '',
+      sample_quantity_kg: record.sample_quantity_g && record.sample_quantity_g > 0 ? String(record.sample_quantity_g / 1000) : '',
     })
     setShowCompletionModal(true)
+  }
+
+  function openPlannedEditModal(record: ProductionRecord) {
+    const statusCode = normalizeStatusCode(record.status)
+    if (statusCode !== 'planned') {
+      setProductionActionMessage({ tone: 'warning', text: 'planned 상태에서만 예정수량을 수정할 수 있습니다.' })
+      return
+    }
+    setPlannedEditRecord(record)
+    setPlannedEditKg(record.planned_quantity_g && record.planned_quantity_g > 0 ? String(record.planned_quantity_g / 1000) : '')
+    setShowPlannedEditModal(true)
+  }
+
+  async function savePlannedQuantity() {
+    if (!plannedEditRecord) return
+    const plannedG = kgToG(plannedEditKg)
+    if (plannedG === null || plannedG <= 0) {
+      setProductionActionMessage({ tone: 'error', text: '예정 생산량은 0보다 커야 합니다.' })
+      return
+    }
+
+    setProductionActionBusy(true)
+    try {
+      await callProductionAction({
+        action: 'update_planned',
+        record_id: plannedEditRecord.id,
+        planned_quantity_g: plannedG,
+      })
+      setShowPlannedEditModal(false)
+      setPlannedEditRecord(null)
+      setPlannedEditKg('')
+      setProductionActionMessage({ tone: 'success', text: '예정수량이 수정되었습니다.' })
+      await Promise.all([
+        loadOverview(),
+        loadProductionRecords(productionDateFrom, productionDateTo),
+      ])
+    } catch (error) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '예정수량 수정에 실패했습니다.',
+      })
+    } finally {
+      setProductionActionBusy(false)
+    }
+  }
+
+  function printWorkOrder(record: ProductionRecord) {
+    openWindow(`/api/moni/production-records/${record.id}/pdf`)
   }
 
   async function cancelWorkOrder(record: ProductionRecord) {
@@ -1546,7 +1620,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
 
     const target = record.lot_number || record.id
-    const confirmed = window.confirm(`작업지시서 ${target}를 취소하시겠습니까?`)
+    const confirmed = window.confirm(`작업지시서 ${target}를 삭제하시겠습니까?`)
     if (!confirmed) return
 
     setProductionActionBusy(true)
@@ -1557,14 +1631,19 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       })
 
       if (completionForm.record_id === record.id) {
-        setCompletionForm({ record_id: '', actual_quantity_kg: '' })
+        setCompletionForm({ record_id: '', actual_quantity_kg: '', defect_quantity_kg: '', sample_quantity_kg: '' })
+      }
+      if (plannedEditRecord?.id === record.id) {
+        setShowPlannedEditModal(false)
+        setPlannedEditRecord(null)
+        setPlannedEditKg('')
       }
       if (deductionPreviewRecordId === record.id) {
         setDeductionPreviewRecordId(null)
         setDeductionPreviewRows([])
       }
 
-      setProductionActionMessage({ tone: 'success', text: '작업지시서가 취소되었습니다.' })
+      setProductionActionMessage({ tone: 'success', text: '작업지시서가 삭제되었습니다.' })
       await Promise.all([
         loadOverview(),
         loadProductionRecords(productionDateFrom, productionDateTo),
@@ -2235,17 +2314,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         <SectionCard
           title="오늘의 작업지시서 목록"
           description="작업지시서 생성 → 생산 완료 입력 → 확정 순서로 처리합니다."
-          actions={
-            <label className="flex items-center gap-2 text-xs text-gray-300">
-              <input
-                type="checkbox"
-                checked={showCancelledOrders}
-                onChange={(event) => setShowCancelledOrders(event.target.checked)}
-                className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-green-500"
-              />
-              취소된 작업지시서 보기
-            </label>
-          }
         >
           {recordsLoading ? (
             <LoadingBlock lines={4} />
@@ -2260,6 +2328,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     <th className="px-3 py-2 font-medium">제품명</th>
                     <th className="px-3 py-2 font-medium">계획(g)</th>
                     <th className="px-3 py-2 font-medium">완료(g)</th>
+                    <th className="px-3 py-2 font-medium">불량(g)</th>
+                    <th className="px-3 py-2 font-medium">샘플(g)</th>
                     <th className="px-3 py-2 font-medium">상태</th>
                     <th className="px-3 py-2 font-medium">처리</th>
                   </tr>
@@ -2274,6 +2344,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         <td className="px-3 py-3 text-white">{record.product_name || '-'}</td>
                         <td className="px-3 py-3 text-gray-200">{formatNumber(record.planned_quantity_g)}g</td>
                         <td className="px-3 py-3 text-green-400">{formatNumber(record.actual_quantity_g)}g</td>
+                        <td className="px-3 py-3 text-amber-300">{formatNumber(record.defect_quantity_g)}g</td>
+                        <td className="px-3 py-3 text-blue-300">{formatNumber(record.sample_quantity_g)}g</td>
                         <td className="px-3 py-3 text-gray-200">
                           {statusCode === 'planned'
                             ? '예정'
@@ -2289,6 +2361,29 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex flex-wrap gap-2">
+                            {(statusCode === 'planned' ||
+                              statusCode === 'in_progress' ||
+                              statusCode === 'completed' ||
+                              statusCode === 'confirmed') && (
+                              <button
+                                type="button"
+                                onClick={() => printWorkOrder(record)}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                작업지시서 출력
+                              </button>
+                            )}
+
+                            {(statusCode === 'planned' || statusCode === 'in_progress') && (
+                              <button
+                                type="button"
+                                onClick={() => openPlannedEditModal(record)}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                예정수량 수정
+                              </button>
+                            )}
+
                             {(statusCode === 'planned' || statusCode === 'in_progress') && (
                               <button
                                 type="button"
@@ -2313,14 +2408,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                                   onClick={() => void openDeductionModal(record)}
                                   className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                                 >
-                                  상세 보기
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void openDeductionModal(record)}
-                                  className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-400 disabled:opacity-60"
-                                >
-                                  생산 확정
+                                  차감 확인
                                 </button>
                               </>
                             )}
@@ -2352,15 +2440,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           )}
         </SectionCard>
 
-        <SectionCard title="전체 생산기록" description="전체 제조기록서 조회 및 PDF 확인">
-          {recordsLoading ? (
-            <LoadingBlock lines={5} />
-          ) : recordsError ? (
-            <EmptyState title="생산 기록을 불러오지 못했습니다" description={recordsError} />
-          ) : (
-            <ProductionRecordTable records={records} onOpenDetail={setSelectedRecord} onOpenPdf={openWindow} />
-          )}
-        </SectionCard>
       </div>
     )
   }
@@ -3089,7 +3168,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         onClose={() => {
           setShowCompletionModal(false)
           setCompletionTargetRecord(null)
-          setCompletionForm({ record_id: '', actual_quantity_kg: '' })
+          setCompletionForm({ record_id: '', actual_quantity_kg: '', defect_quantity_kg: '', sample_quantity_kg: '' })
         }}
       >
         <div className="grid gap-4 md:grid-cols-2">
@@ -3118,6 +3197,38 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
               />
             </Field>
+            <Field label="불량수량(kg)">
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                value={completionForm.defect_quantity_kg}
+                onChange={(event) =>
+                  setCompletionForm((prev) => ({ ...prev, defect_quantity_kg: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="샘플수량(kg)">
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                value={completionForm.sample_quantity_kg}
+                onChange={(event) =>
+                  setCompletionForm((prev) => ({ ...prev, sample_quantity_kg: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs text-gray-300">
+              합계(kg):{' '}
+              {(
+                (toNumber(completionForm.actual_quantity_kg) ?? 0) +
+                (toNumber(completionForm.defect_quantity_kg) ?? 0) +
+                (toNumber(completionForm.sample_quantity_kg) ?? 0)
+              ).toFixed(3)}
+            </div>
           </SectionCard>
         </div>
         <div className="mt-6 flex justify-end gap-2">
@@ -3126,6 +3237,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             onClick={() => {
               setShowCompletionModal(false)
               setCompletionTargetRecord(null)
+              setCompletionForm({ record_id: '', actual_quantity_kg: '', defect_quantity_kg: '', sample_quantity_kg: '' })
             }}
             className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
           >
@@ -3138,6 +3250,62 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
           >
             생산 완료 저장
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showPlannedEditModal}
+        title="예정수량 수정"
+        description={plannedEditRecord?.lot_number || ''}
+        onClose={() => {
+          setShowPlannedEditModal(false)
+          setPlannedEditRecord(null)
+          setPlannedEditKg('')
+        }}
+      >
+        <div className="space-y-4">
+          <SectionCard title="작업지시서 정보">
+            {plannedEditRecord ? (
+              <div className="space-y-2 text-sm text-gray-200">
+                <p>LOT: {plannedEditRecord.lot_number || '-'}</p>
+                <p>제품명: {plannedEditRecord.product_name || '-'}</p>
+                <p>현재 예정량: {formatKg(plannedEditRecord.planned_quantity_g)}kg</p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">선택된 작업지시서가 없습니다.</p>
+            )}
+          </SectionCard>
+          <Field label="수정 예정량(kg)">
+            <input
+              type="number"
+              min="0"
+              step="0.001"
+              value={plannedEditKg}
+              onChange={(event) => setPlannedEditKg(event.target.value)}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowPlannedEditModal(false)
+              setPlannedEditRecord(null)
+              setPlannedEditKg('')
+            }}
+            className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+          >
+            닫기
+          </button>
+          <button
+            type="button"
+            onClick={() => void savePlannedQuantity()}
+            disabled={productionActionBusy}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+          >
+            예정수량 저장
           </button>
         </div>
       </Modal>
@@ -3162,6 +3330,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           <EmptyState title="차감 미리보기 데이터가 없습니다" description="레시피/매핑/완료량을 확인해 주세요." />
         ) : (
           <div className="space-y-4">
+            <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-4 py-3 text-sm text-gray-200">
+              <p>
+                제품명: <span className="text-white">{deductionModalRecord?.product_name || '-'}</span>
+              </p>
+              <p>
+                LOT: <span className="font-mono text-white">{deductionModalRecord?.lot_number || '-'}</span>
+              </p>
+              <p>
+                완료량: <span className="text-green-400">{formatNumber(deductionModalRecord?.actual_quantity_g)}g</span>
+              </p>
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-gray-400">
@@ -3234,7 +3413,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             }
             className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
           >
-            생산 확정
+            원재료 차감 후 생산 확정
           </button>
         </div>
       </Modal>
