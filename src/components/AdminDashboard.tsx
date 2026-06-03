@@ -349,6 +349,13 @@ type CompletionFormState = {
   sample_quantity_g: string
 }
 
+type SampleInputRow = {
+  id: string
+  label: string
+  value: string
+  unit: 'kg' | 'g'
+}
+
 type RecipeFormState = {
   food_type_id: string
   custom_food_type_name: string
@@ -505,6 +512,23 @@ function quantityToGrams(valueText: string, unit: 'ea' | 'kg' | 'g', unitWeightG
     ea: unitWeightG !== null && unitWeightG > 0 ? Math.floor(value / unitWeightG) : null,
     invalidEa: false,
   }
+}
+
+function makeSampleRow(index: number, value = '', unit: 'kg' | 'g' = 'g'): SampleInputRow {
+  return {
+    id: `sample-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+    label: `샘플 ${index + 1}`,
+    value,
+    unit,
+  }
+}
+
+function normalizeSampleRows(rows: SampleInputRow[]): SampleInputRow[] {
+  if (!rows.length) return [makeSampleRow(0)]
+  return rows.map((row, index) => ({
+    ...row,
+    label: `샘플 ${index + 1}`,
+  }))
 }
 
 function formatEaRemainder(ea: number | null | undefined, remainderG: number | null | undefined) {
@@ -977,6 +1001,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     text: string
   } | null>(null)
   const [completionForm, setCompletionForm] = useState<CompletionFormState>(emptyCompletionForm())
+  const [sampleInputRows, setSampleInputRows] = useState<SampleInputRow[]>([makeSampleRow(0)])
   const [showCompletionModal, setShowCompletionModal] = useState(false)
   const [completionTargetRecord, setCompletionTargetRecord] = useState<ProductionRecord | null>(null)
   const [showPlannedEditModal, setShowPlannedEditModal] = useState(false)
@@ -1091,6 +1116,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     return parsed
   }, [completionTargetRecord?.production_unit_weight_g])
 
+  const sampleRowPreviews = useMemo(() => {
+    return normalizeSampleRows(sampleInputRows).map((row) => {
+      const converted = quantityToGrams(row.value, row.unit, completionUnitWeightG)
+      return { ...row, ...converted }
+    })
+  }, [completionUnitWeightG, sampleInputRows])
+
+  const sampleTotalG = useMemo(() => {
+    return sampleRowPreviews.reduce((sum, row) => sum + (row.grams ?? 0), 0)
+  }, [sampleRowPreviews])
+
   const completionPreview = useMemo(() => {
     const actual = quantityToGrams(
       completionForm.actual_input_value,
@@ -1102,15 +1138,16 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       completionForm.defect_input_unit,
       completionUnitWeightG,
     )
-    const sample = quantityToGrams(
-      completionForm.sample_input_value,
-      completionForm.sample_input_unit,
-      completionUnitWeightG,
-    )
+    const sample = {
+      value: sampleTotalG,
+      grams: sampleTotalG,
+      ea: completionUnitWeightG !== null && completionUnitWeightG > 0 ? Math.floor(sampleTotalG / completionUnitWeightG) : null,
+      invalidEa: false,
+    }
 
     const actualG = actual.grams
     const defectG = defect.grams
-    const sampleG = sample.grams
+    const sampleG = sampleTotalG
     const allReady = actualG !== null && defectG !== null && sampleG !== null
     const enteredTotalG = allReady ? actualG + defectG + sampleG : null
     const plannedG = completionTargetRecord?.planned_quantity_g ?? null
@@ -1147,10 +1184,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     completionForm.actual_input_value,
     completionForm.defect_input_unit,
     completionForm.defect_input_value,
-    completionForm.sample_input_unit,
-    completionForm.sample_input_value,
     completionTargetRecord?.planned_quantity_g,
     completionUnitWeightG,
+    sampleTotalG,
   ])
 
   const recipeMappingsByFoodType = useMemo(() => {
@@ -2124,6 +2160,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setShowCompletionModal(false)
       setCompletionTargetRecord(null)
       setCompletionForm(emptyCompletionForm())
+      setSampleInputRows([makeSampleRow(0)])
       setProductionActionMessage({ tone: 'success', text: '생산 완료가 저장되었습니다.' })
       await Promise.all([
         loadOverview(),
@@ -2205,7 +2242,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       defect_input_unit: hasUnit ? 'g' : 'kg',
       defect_input_value: hasUnit ? (defectG > 0 ? String(defectG) : '0') : defectG > 0 ? String(defectG / 1000) : '0',
       sample_input_unit: hasUnit ? 'g' : 'kg',
-      sample_input_value: hasUnit ? (sampleG > 0 ? String(sampleG) : '0') : sampleG > 0 ? String(sampleG / 1000) : '0',
+      sample_input_value: hasUnit ? String(sampleG) : String(sampleG / 1000),
       input_unit: hasUnit ? 'ea' : 'kg',
       actual_quantity_ea: hasUnit ? String(actualEaDefault ?? 0) : '',
       defect_quantity_ea: hasUnit ? String(Math.floor(defectG / (unitWeightG ?? 1))) : '',
@@ -2217,7 +2254,27 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       defect_quantity_g: defectG > 0 ? String(defectG) : '',
       sample_quantity_g: sampleG > 0 ? String(sampleG) : '',
     })
+    setSampleInputRows([
+      makeSampleRow(0, hasUnit ? (sampleG > 0 ? String(sampleG) : '') : sampleG > 0 ? String(sampleG / 1000) : '', hasUnit ? 'g' : 'kg'),
+    ])
     setShowCompletionModal(true)
+  }
+
+  function addSampleInputRow() {
+    setSampleInputRows((prev) => normalizeSampleRows([...prev, makeSampleRow(prev.length)]))
+  }
+
+  function removeSampleInputRow(rowId: string) {
+    setSampleInputRows((prev) => {
+      const next = prev.filter((row) => row.id !== rowId)
+      return normalizeSampleRows(next)
+    })
+  }
+
+  function updateSampleInputRow(rowId: string, patch: Partial<Pick<SampleInputRow, 'value' | 'unit'>>) {
+    setSampleInputRows((prev) =>
+      normalizeSampleRows(prev.map((row) => (row.id === rowId ? { ...row, ...patch } : row))),
+    )
   }
 
   async function completeWorkOrderV2() {
@@ -2242,17 +2299,16 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       completionForm.defect_input_unit,
       completionUnitWeightG,
     )
-    const sample = quantityToGrams(
-      completionForm.sample_input_value,
-      completionForm.sample_input_unit,
-      completionUnitWeightG,
+    const hasInvalidSampleRow = sampleRowPreviews.some(
+      (row) => (row.value !== null && row.value < 0) || row.grams === null,
     )
+    const sampleGTotal = sampleTotalG
 
     if (actual.value === null) {
       setProductionActionMessage({ tone: 'error', text: '?꾨즺?섎웾???낅젰??二쇱꽭??' })
       return
     }
-    if (actual.grams === null || defect.grams === null || sample.grams === null) {
+    if (actual.grams === null || defect.grams === null || hasInvalidSampleRow) {
       setProductionActionMessage({ tone: 'error', text: '?낅젰?⑥쐞??媛믪쓣 ?뺤씤??二쇱꽭??' })
       return
     }
@@ -2264,14 +2320,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setProductionActionMessage({ tone: 'error', text: '?앹궛?⑥쐞 以묐웾 ?뺣낫媛 ?놁뼱 ea ?낅젰???ъ슜?????놁뒿?덈떎.' })
       return
     }
-    if (actual.value < 0 || (defect.value ?? 0) < 0 || (sample.value ?? 0) < 0) {
+    if (actual.value < 0 || (defect.value ?? 0) < 0 || sampleGTotal < 0) {
       setProductionActionMessage({ tone: 'error', text: '?꾨즺??遺덈웾?섎웾/?섑뵆?섎웾? 0 ?댁긽?댁뼱???⑸땲??' })
       return
     }
 
     const actualG = actual.grams
     const defectG = defect.grams
-    const sampleG = sample.grams
+    const sampleG = sampleGTotal
     const enteredTotal = actualG + defectG + sampleG
     const lossG = plannedG - enteredTotal
     if (lossG < 0) {
@@ -2298,8 +2354,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         actual_input_value: actual.value,
         defect_input_unit: completionForm.defect_input_unit,
         defect_input_value: defect.value ?? 0,
-        sample_input_unit: completionForm.sample_input_unit,
-        sample_input_value: sample.value ?? 0,
+        sample_input_unit: 'g',
+        sample_input_value: sampleGTotal,
         input_unit: completionForm.actual_input_unit,
         actual_quantity_ea: actualEa,
         actual_quantity_g: actualG,
@@ -2397,6 +2453,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
       if (completionForm.record_id === record.id) {
         setCompletionForm(emptyCompletionForm())
+        setSampleInputRows([makeSampleRow(0)])
       }
       if (plannedEditRecord?.id === record.id) {
         setShowPlannedEditModal(false)
@@ -4558,6 +4615,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           setShowCompletionModal(false)
           setCompletionTargetRecord(null)
           setCompletionForm(emptyCompletionForm())
+          setSampleInputRows([makeSampleRow(0)])
         }}
       >
         <div className="grid gap-4 md:grid-cols-[minmax(220px,0.35fr)_minmax(0,0.65fr)]">
@@ -4604,7 +4662,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
             <div className="space-y-3">
               <Field label="완료수량">
-                <div className="grid grid-cols-[1fr_110px] gap-2">
+                <div className="hidden grid-cols-[1fr_110px] gap-2">
                   <input
                     type="number"
                     min="0"
@@ -4697,9 +4755,53 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     <option value="kg">kg</option>
                   </select>
                 </div>
-                <p className="mt-1 text-xs text-blue-300">
+                <p className="hidden mt-1 text-xs text-blue-300">
                   g 환산: {completionPreview.sampleG !== null ? `${formatNumber(completionPreview.sampleG)}g` : '-'}
                 </p>
+                <div className="mt-2 space-y-2 rounded-xl border border-gray-700/60 bg-gray-900/40 p-2">
+                  {sampleRowPreviews.map((row) => (
+                    <div key={row.id} className="rounded-lg border border-gray-700 bg-gray-900/70 p-2">
+                      <div className="grid grid-cols-[86px_1fr_96px_70px] gap-2">
+                        <div className="flex items-center text-xs text-gray-300">{row.label}</div>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.001"
+                          value={row.value ?? ''}
+                          onChange={(event) => updateSampleInputRow(row.id, { value: event.target.value })}
+                          className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                        />
+                        <select
+                          value={row.unit}
+                          onChange={(event) => updateSampleInputRow(row.id, { unit: event.target.value as 'kg' | 'g' })}
+                          className="rounded-xl border border-gray-700 bg-gray-900 px-2 py-2 text-white outline-none focus:border-green-500"
+                        >
+                          <option value="g">g</option>
+                          <option value="kg">kg</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => removeSampleInputRow(row.id)}
+                          disabled={sampleRowPreviews.length <= 1}
+                          className="rounded-xl border border-gray-700 px-2 py-2 text-xs text-gray-300 hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                      <p className="mt-1 text-xs text-blue-300">g 환산: {row.grams !== null ? `${formatNumber(row.grams)}g` : '-'}</p>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={addSampleInputRow}
+                      className="rounded-xl border border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-200 hover:border-gray-500 hover:text-white"
+                    >
+                      샘플 추가
+                    </button>
+                    <p className="text-xs text-blue-300">샘플 합계: {formatNumber(sampleTotalG)}g</p>
+                  </div>
+                </div>
               </Field>
 
               <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-3 text-xs text-gray-200">
@@ -4731,6 +4833,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               setShowCompletionModal(false)
               setCompletionTargetRecord(null)
               setCompletionForm(emptyCompletionForm())
+              setSampleInputRows([makeSampleRow(0)])
             }}
             className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
           >

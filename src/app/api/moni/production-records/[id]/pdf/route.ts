@@ -258,9 +258,22 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
           <tr>
             <th>샘플수량</th>
             <td class="input-cell">
-              <div class="entry-wrap">
-                <div class="entry-space"></div>
-                <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <div class="entry-wrap">
+                  <div class="entry-space">샘플 1: ______</div>
+                  <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+                </div>
+                <div class="entry-wrap">
+                  <div class="entry-space">샘플 2: ______</div>
+                  <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+                </div>
+                <div class="entry-wrap">
+                  <div class="entry-space">샘플 3: ______</div>
+                  <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+                </div>
+                <div class="entry-wrap">
+                  <div class="entry-space">샘플 합계: ______ g</div>
+                </div>
               </div>
             </td>
           </tr>
