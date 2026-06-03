@@ -316,9 +316,16 @@ type ProductionUnitFormState = {
 
 type CompletionFormState = {
   record_id: string
+  input_unit: 'ea' | 'kg' | 'g'
+  actual_quantity_ea: string
+  defect_quantity_ea: string
+  sample_quantity_ea: string
   actual_quantity_kg: string
   defect_quantity_kg: string
   sample_quantity_kg: string
+  actual_quantity_g: string
+  defect_quantity_g: string
+  sample_quantity_g: string
 }
 
 type RecipeFormState = {
@@ -435,6 +442,13 @@ function kgToG(value: string) {
   return kg * 1000
 }
 
+function parseInteger(value: string) {
+  const parsed = toNumber(value)
+  if (parsed === null) return null
+  if (!Number.isInteger(parsed)) return null
+  return parsed
+}
+
 function formatEaRemainder(ea: number | null | undefined, remainderG: number | null | undefined) {
   if (ea === null || ea === undefined) return '-'
   const remainder = Number(remainderG ?? 0)
@@ -534,6 +548,22 @@ function emptyProductionForm(): ProductionFormState {
     inspection_result: '적합',
     sanitation_check: true,
     note: '',
+  }
+}
+
+function emptyCompletionForm(inputUnit: 'ea' | 'kg' | 'g' = 'kg'): CompletionFormState {
+  return {
+    record_id: '',
+    input_unit: inputUnit,
+    actual_quantity_ea: '',
+    defect_quantity_ea: '',
+    sample_quantity_ea: '',
+    actual_quantity_kg: '',
+    defect_quantity_kg: '',
+    sample_quantity_kg: '',
+    actual_quantity_g: '',
+    defect_quantity_g: '',
+    sample_quantity_g: '',
   }
 }
 
@@ -875,12 +905,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     tone: 'success' | 'error' | 'warning'
     text: string
   } | null>(null)
-  const [completionForm, setCompletionForm] = useState<CompletionFormState>({
-    record_id: '',
-    actual_quantity_kg: '',
-    defect_quantity_kg: '',
-    sample_quantity_kg: '',
-  })
+  const [completionForm, setCompletionForm] = useState<CompletionFormState>(emptyCompletionForm())
   const [showCompletionModal, setShowCompletionModal] = useState(false)
   const [completionTargetRecord, setCompletionTargetRecord] = useState<ProductionRecord | null>(null)
   const [showPlannedEditModal, setShowPlannedEditModal] = useState(false)
@@ -986,6 +1011,75 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     workOrderForm.planned_quantity_kg,
     workOrderForm.product_id,
     workOrderForm.production_unit_id,
+  ])
+
+  const completionUnitWeightG = useMemo(() => {
+    const parsed = toNumber(String(completionTargetRecord?.production_unit_weight_g ?? ''))
+    if (parsed === null || parsed <= 0) return null
+    return parsed
+  }, [completionTargetRecord?.production_unit_weight_g])
+
+  const completionPreview = useMemo(() => {
+    if (completionForm.input_unit === 'ea') {
+      const actualEa = parseInteger(completionForm.actual_quantity_ea)
+      const defectEa = parseInteger(completionForm.defect_quantity_ea)
+      const sampleEa = parseInteger(completionForm.sample_quantity_ea)
+      const actualG = actualEa !== null && completionUnitWeightG !== null ? actualEa * completionUnitWeightG : null
+      const defectG = defectEa !== null && completionUnitWeightG !== null ? defectEa * completionUnitWeightG : null
+      const sampleG = sampleEa !== null && completionUnitWeightG !== null ? sampleEa * completionUnitWeightG : null
+      return {
+        unit: 'ea' as const,
+        actualEa,
+        defectEa,
+        sampleEa,
+        actualG,
+        defectG,
+        sampleG,
+        totalInput: (actualEa ?? 0) + (defectEa ?? 0) + (sampleEa ?? 0),
+      }
+    }
+
+    if (completionForm.input_unit === 'g') {
+      const actualG = toNumber(completionForm.actual_quantity_g)
+      const defectG = toNumber(completionForm.defect_quantity_g)
+      const sampleG = toNumber(completionForm.sample_quantity_g)
+      return {
+        unit: 'g' as const,
+        actualEa: null,
+        defectEa: null,
+        sampleEa: null,
+        actualG,
+        defectG,
+        sampleG,
+        totalInput: (actualG ?? 0) + (defectG ?? 0) + (sampleG ?? 0),
+      }
+    }
+
+    const actualKg = toNumber(completionForm.actual_quantity_kg)
+    const defectKg = toNumber(completionForm.defect_quantity_kg)
+    const sampleKg = toNumber(completionForm.sample_quantity_kg)
+    return {
+      unit: 'kg' as const,
+      actualEa: null,
+      defectEa: null,
+      sampleEa: null,
+      actualG: actualKg === null ? null : actualKg * 1000,
+      defectG: defectKg === null ? null : defectKg * 1000,
+      sampleG: sampleKg === null ? null : sampleKg * 1000,
+      totalInput: (actualKg ?? 0) + (defectKg ?? 0) + (sampleKg ?? 0),
+    }
+  }, [
+    completionForm.actual_quantity_ea,
+    completionForm.actual_quantity_g,
+    completionForm.actual_quantity_kg,
+    completionForm.defect_quantity_ea,
+    completionForm.defect_quantity_g,
+    completionForm.defect_quantity_kg,
+    completionForm.input_unit,
+    completionForm.sample_quantity_ea,
+    completionForm.sample_quantity_g,
+    completionForm.sample_quantity_kg,
+    completionUnitWeightG,
   ])
 
   const recipeMappingsByFoodType = useMemo(() => {
@@ -1864,16 +1958,62 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
   async function completeWorkOrder() {
     const recordId = completionForm.record_id
-    const actualG = kgToG(completionForm.actual_quantity_kg)
-    const defectG = kgToG(completionForm.defect_quantity_kg)
-    const sampleG = kgToG(completionForm.sample_quantity_kg)
+    const inputUnit = completionForm.input_unit
+    const unitWeightG = toNumber(String(completionTargetRecord?.production_unit_weight_g ?? ''))
+    let actualG: number | null = null
+    let defectG: number | null = null
+    let sampleG: number | null = null
+    let actualEa: number | null = null
+    let defectEa: number | null = null
+    let sampleEa: number | null = null
+
+    if (inputUnit === 'ea') {
+      if (unitWeightG === null || unitWeightG <= 0) {
+        setProductionActionMessage({ tone: 'error', text: '생산단위 중량 정보가 없어 ea 입력을 사용할 수 없습니다.' })
+        return
+      }
+
+      actualEa = parseInteger(completionForm.actual_quantity_ea)
+      defectEa = parseInteger(completionForm.defect_quantity_ea)
+      sampleEa = parseInteger(completionForm.sample_quantity_ea)
+
+      if (actualEa === null || defectEa === null || sampleEa === null) {
+        setProductionActionMessage({ tone: 'error', text: 'ea 입력은 정수만 가능합니다.' })
+        return
+      }
+      if (actualEa < 0 || defectEa < 0 || sampleEa < 0) {
+        setProductionActionMessage({ tone: 'error', text: '완료량/불량수량/샘플수량은 0 이상이어야 합니다.' })
+        return
+      }
+
+      actualG = actualEa * unitWeightG
+      defectG = defectEa * unitWeightG
+      sampleG = sampleEa * unitWeightG
+    } else if (inputUnit === 'g') {
+      actualG = toNumber(completionForm.actual_quantity_g)
+      defectG = toNumber(completionForm.defect_quantity_g)
+      sampleG = toNumber(completionForm.sample_quantity_g)
+    } else {
+      actualG = kgToG(completionForm.actual_quantity_kg)
+      defectG = kgToG(completionForm.defect_quantity_kg)
+      sampleG = kgToG(completionForm.sample_quantity_kg)
+    }
+
     const plannedG = completionTargetRecord?.planned_quantity_g ?? 0
     if (!recordId) {
       setProductionActionMessage({ tone: 'error', text: '완료 처리할 작업지시서를 선택해 주세요.' })
       return
     }
     if (actualG === null) {
-      setProductionActionMessage({ tone: 'error', text: '실제 완료량(kg)을 입력해 주세요.' })
+      setProductionActionMessage({
+        tone: 'error',
+        text:
+          inputUnit === 'ea'
+            ? '실제 완료량(ea)을 입력해 주세요.'
+            : inputUnit === 'g'
+              ? '실제 완료량(g)을 입력해 주세요.'
+              : '실제 완료량(kg)을 입력해 주세요.',
+      })
       return
     }
     if (defectG === null || sampleG === null) {
@@ -1901,6 +2041,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       await callProductionAction({
         action: 'complete',
         record_id: recordId,
+        input_unit: inputUnit,
+        actual_quantity_ea: actualEa,
+        defect_quantity_ea: defectEa,
+        sample_quantity_ea: sampleEa,
         actual_quantity_g: actualG,
         defect_quantity_g: defectG,
         sample_quantity_g: sampleG,
@@ -1908,7 +2052,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
       setShowCompletionModal(false)
       setCompletionTargetRecord(null)
-      setCompletionForm({ record_id: '', actual_quantity_kg: '', defect_quantity_kg: '', sample_quantity_kg: '' })
+      setCompletionForm(emptyCompletionForm())
       setProductionActionMessage({ tone: 'success', text: '생산 완료가 저장되었습니다.' })
       await Promise.all([
         loadOverview(),
@@ -1936,11 +2080,27 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
 
     setCompletionTargetRecord(record)
+    const unitWeightG = toNumber(String(record.production_unit_weight_g ?? ''))
+    const defaultInputUnit: 'ea' | 'kg' | 'g' = unitWeightG !== null && unitWeightG > 0 ? 'ea' : 'kg'
+    const actualG = toNumber(String(record.actual_quantity_g ?? '')) ?? 0
+    const defectG = toNumber(String(record.defect_quantity_g ?? '')) ?? 0
+    const sampleG = toNumber(String(record.sample_quantity_g ?? '')) ?? 0
+    const storedActualEa = parseInteger(String(record.actual_quantity_ea ?? ''))
     setCompletionForm({
       record_id: record.id,
+      input_unit: defaultInputUnit,
+      actual_quantity_ea:
+        unitWeightG !== null && unitWeightG > 0
+          ? String(storedActualEa ?? Math.floor(actualG / unitWeightG))
+          : '',
+      defect_quantity_ea: unitWeightG !== null && unitWeightG > 0 ? String(Math.floor(defectG / unitWeightG)) : '',
+      sample_quantity_ea: unitWeightG !== null && unitWeightG > 0 ? String(Math.floor(sampleG / unitWeightG)) : '',
       actual_quantity_kg: record.actual_quantity_g && record.actual_quantity_g > 0 ? String(record.actual_quantity_g / 1000) : '',
       defect_quantity_kg: record.defect_quantity_g && record.defect_quantity_g > 0 ? String(record.defect_quantity_g / 1000) : '',
       sample_quantity_kg: record.sample_quantity_g && record.sample_quantity_g > 0 ? String(record.sample_quantity_g / 1000) : '',
+      actual_quantity_g: record.actual_quantity_g && record.actual_quantity_g > 0 ? String(record.actual_quantity_g) : '',
+      defect_quantity_g: record.defect_quantity_g && record.defect_quantity_g > 0 ? String(record.defect_quantity_g) : '',
+      sample_quantity_g: record.sample_quantity_g && record.sample_quantity_g > 0 ? String(record.sample_quantity_g) : '',
     })
     setShowCompletionModal(true)
   }
@@ -2016,7 +2176,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       })
 
       if (completionForm.record_id === record.id) {
-        setCompletionForm({ record_id: '', actual_quantity_kg: '', defect_quantity_kg: '', sample_quantity_kg: '' })
+        setCompletionForm(emptyCompletionForm())
       }
       if (plannedEditRecord?.id === record.id) {
         setShowPlannedEditModal(false)
@@ -4156,7 +4316,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         onClose={() => {
           setShowCompletionModal(false)
           setCompletionTargetRecord(null)
-          setCompletionForm({ record_id: '', actual_quantity_kg: '', defect_quantity_kg: '', sample_quantity_kg: '' })
+          setCompletionForm(emptyCompletionForm())
         }}
       >
         <div className="grid gap-4 md:grid-cols-2">
@@ -4173,49 +4333,196 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             )}
           </SectionCard>
           <SectionCard title="완료량 입력">
-            <Field label="실제 완료량(kg)">
-              <input
-                type="number"
-                min="0"
-                step="0.001"
-                value={completionForm.actual_quantity_kg}
-                onChange={(event) =>
-                  setCompletionForm((prev) => ({ ...prev, actual_quantity_kg: event.target.value }))
-                }
-                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-              />
+            <Field label="입력 방식">
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCompletionForm((prev) => ({ ...prev, input_unit: 'ea' }))}
+                  disabled={completionUnitWeightG === null}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    completionForm.input_unit === 'ea'
+                      ? 'border-green-500 bg-green-500/20 text-green-200'
+                      : 'border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white'
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
+                >
+                  ea 입력
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompletionForm((prev) => ({ ...prev, input_unit: 'kg' }))}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    completionForm.input_unit === 'kg'
+                      ? 'border-green-500 bg-green-500/20 text-green-200'
+                      : 'border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white'
+                  }`}
+                >
+                  kg 입력
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompletionForm((prev) => ({ ...prev, input_unit: 'g' }))}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    completionForm.input_unit === 'g'
+                      ? 'border-green-500 bg-green-500/20 text-green-200'
+                      : 'border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white'
+                  }`}
+                >
+                  g 입력
+                </button>
+              </div>
+              {completionUnitWeightG !== null ? (
+                <p className="mt-2 text-xs text-gray-400">생산단위 중량: {formatNumber(completionUnitWeightG)}g</p>
+              ) : (
+                <p className="mt-2 text-xs text-amber-300">생산단위 중량이 없어 ea 입력은 사용할 수 없습니다.</p>
+              )}
             </Field>
-            <Field label="불량수량(kg)">
-              <input
-                type="number"
-                min="0"
-                step="0.001"
-                value={completionForm.defect_quantity_kg}
-                onChange={(event) =>
-                  setCompletionForm((prev) => ({ ...prev, defect_quantity_kg: event.target.value }))
-                }
-                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-              />
-            </Field>
-            <Field label="샘플수량(kg)">
-              <input
-                type="number"
-                min="0"
-                step="0.001"
-                value={completionForm.sample_quantity_kg}
-                onChange={(event) =>
-                  setCompletionForm((prev) => ({ ...prev, sample_quantity_kg: event.target.value }))
-                }
-                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-              />
-            </Field>
+
+            {completionForm.input_unit === 'ea' ? (
+              <>
+                <Field label="완료 수량(ea)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={completionForm.actual_quantity_ea}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, actual_quantity_ea: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="불량 수량(ea)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={completionForm.defect_quantity_ea}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, defect_quantity_ea: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="샘플 수량(ea)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={completionForm.sample_quantity_ea}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, sample_quantity_ea: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs text-gray-300">
+                  <p>
+                    완료 {formatNumber(completionPreview.actualEa)}ea × {formatNumber(completionUnitWeightG)}g ={' '}
+                    <span className="text-green-300">{formatNumber(completionPreview.actualG)}g</span>
+                  </p>
+                  <p>
+                    불량 {formatNumber(completionPreview.defectEa)}ea × {formatNumber(completionUnitWeightG)}g ={' '}
+                    <span className="text-amber-300">{formatNumber(completionPreview.defectG)}g</span>
+                  </p>
+                  <p>
+                    샘플 {formatNumber(completionPreview.sampleEa)}ea × {formatNumber(completionUnitWeightG)}g ={' '}
+                    <span className="text-blue-300">{formatNumber(completionPreview.sampleG)}g</span>
+                  </p>
+                </div>
+              </>
+            ) : completionForm.input_unit === 'g' ? (
+              <>
+                <Field label="실제 완료량(g)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={completionForm.actual_quantity_g}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, actual_quantity_g: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="불량수량(g)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={completionForm.defect_quantity_g}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, defect_quantity_g: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="샘플수량(g)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={completionForm.sample_quantity_g}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, sample_quantity_g: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+              </>
+            ) : (
+              <>
+                <Field label="실제 완료량(kg)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    value={completionForm.actual_quantity_kg}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, actual_quantity_kg: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="불량수량(kg)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    value={completionForm.defect_quantity_kg}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, defect_quantity_kg: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="샘플수량(kg)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    value={completionForm.sample_quantity_kg}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, sample_quantity_kg: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+              </>
+            )}
             <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs text-gray-300">
-              합계(kg):{' '}
-              {(
-                (toNumber(completionForm.actual_quantity_kg) ?? 0) +
-                (toNumber(completionForm.defect_quantity_kg) ?? 0) +
-                (toNumber(completionForm.sample_quantity_kg) ?? 0)
-              ).toFixed(3)}
+              {completionPreview.unit === 'ea'
+                ? `합계(ea): ${formatNumber(completionPreview.totalInput)}`
+                : completionPreview.unit === 'kg'
+                  ? `합계(kg): ${completionPreview.totalInput.toFixed(3)}`
+                  : `합계(g): ${formatNumber(completionPreview.totalInput)}`}
+              <div className="mt-1">
+                환산 합계(g):{' '}
+                {completionPreview.actualG !== null &&
+                completionPreview.defectG !== null &&
+                completionPreview.sampleG !== null
+                  ? formatNumber(completionPreview.actualG + completionPreview.defectG + completionPreview.sampleG)
+                  : '-'}
+              </div>
             </div>
           </SectionCard>
         </div>
@@ -4225,7 +4532,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             onClick={() => {
               setShowCompletionModal(false)
               setCompletionTargetRecord(null)
-              setCompletionForm({ record_id: '', actual_quantity_kg: '', defect_quantity_kg: '', sample_quantity_kg: '' })
+              setCompletionForm(emptyCompletionForm())
             }}
             className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
           >

@@ -837,15 +837,73 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ ok: false, error: 'planned 또는 completed 상태에서만 완료 입력이 가능합니다.' }, { status: 409 })
       }
 
-      const actualQuantityG = parseNumber(body.actual_quantity_g)
-      const defectQuantityG = parseNumber(body.defect_quantity_g) ?? 0
-      const sampleQuantityG = parseNumber(body.sample_quantity_g) ?? 0
-      if (actualQuantityG === null || actualQuantityG < 0) {
-        return NextResponse.json({ ok: false, error: 'actual_quantity_g는 0 이상이어야 합니다.' }, { status: 400 })
+      const inputUnitRaw = toText(body.input_unit).toLowerCase()
+      if (inputUnitRaw && !['ea', 'kg', 'g'].includes(inputUnitRaw)) {
+        return NextResponse.json({ ok: false, error: 'input_unit은 ea, kg, g 중 하나여야 합니다.' }, { status: 400 })
+      }
+      const inputUnit = inputUnitRaw || 'g'
+      const productionUnitWeightG = parseNumber(record.production_unit_weight_g)
+
+      let actualQuantityG: number | null = null
+      let defectQuantityG = 0
+      let sampleQuantityG = 0
+      let actualQuantityEa: number | null = null
+
+      if (inputUnit === 'ea') {
+        if (productionUnitWeightG === null || productionUnitWeightG <= 0) {
+          return NextResponse.json(
+            { ok: false, error: 'production_unit_weight_g가 없어 ea 입력을 처리할 수 없습니다.' },
+            { status: 400 },
+          )
+        }
+
+        const actualQuantityEaRaw = parseNumber(body.actual_quantity_ea)
+        const defectQuantityEaRaw = parseNumber(body.defect_quantity_ea)
+        const sampleQuantityEaRaw = parseNumber(body.sample_quantity_ea)
+
+        if (actualQuantityEaRaw === null || !Number.isInteger(actualQuantityEaRaw)) {
+          return NextResponse.json({ ok: false, error: 'actual_quantity_ea는 정수여야 합니다.' }, { status: 400 })
+        }
+        if (actualQuantityEaRaw < 0) {
+          return NextResponse.json({ ok: false, error: 'actual_quantity_ea는 0 이상이어야 합니다.' }, { status: 400 })
+        }
+        if (defectQuantityEaRaw !== null && !Number.isInteger(defectQuantityEaRaw)) {
+          return NextResponse.json({ ok: false, error: 'defect_quantity_ea는 정수여야 합니다.' }, { status: 400 })
+        }
+        if (sampleQuantityEaRaw !== null && !Number.isInteger(sampleQuantityEaRaw)) {
+          return NextResponse.json({ ok: false, error: 'sample_quantity_ea는 정수여야 합니다.' }, { status: 400 })
+        }
+
+        const defectQuantityEa = defectQuantityEaRaw ?? 0
+        const sampleQuantityEa = sampleQuantityEaRaw ?? 0
+        if (defectQuantityEa < 0 || sampleQuantityEa < 0) {
+          return NextResponse.json({ ok: false, error: '불량수량/샘플수량은 0 이상이어야 합니다.' }, { status: 400 })
+        }
+
+        actualQuantityEa = actualQuantityEaRaw
+        actualQuantityG = actualQuantityEaRaw * productionUnitWeightG
+        defectQuantityG = defectQuantityEa * productionUnitWeightG
+        sampleQuantityG = sampleQuantityEa * productionUnitWeightG
+      } else {
+        actualQuantityG = parseNumber(body.actual_quantity_g)
+        defectQuantityG = parseNumber(body.defect_quantity_g) ?? 0
+        sampleQuantityG = parseNumber(body.sample_quantity_g) ?? 0
+        if (actualQuantityG === null || actualQuantityG < 0) {
+          return NextResponse.json({ ok: false, error: 'actual_quantity_g는 0 이상이어야 합니다.' }, { status: 400 })
+        }
+
+        if (defectQuantityG < 0 || sampleQuantityG < 0) {
+          return NextResponse.json({ ok: false, error: '불량수량/샘플수량은 0 이상이어야 합니다.' }, { status: 400 })
+        }
+
+        actualQuantityEa =
+          productionUnitWeightG !== null && productionUnitWeightG > 0
+            ? Math.floor(actualQuantityG / productionUnitWeightG)
+            : null
       }
 
-      if (defectQuantityG < 0 || sampleQuantityG < 0) {
-        return NextResponse.json({ ok: false, error: '불량수량/샘플수량은 0 이상이어야 합니다.' }, { status: 400 })
+      if (actualQuantityG === null) {
+        return NextResponse.json({ ok: false, error: 'actual_quantity_g가 없어 완료 입력을 처리할 수 없습니다.' }, { status: 400 })
       }
 
       const plannedCandidate = parseNumber(body.planned_quantity_g)
@@ -860,11 +918,6 @@ export async function PATCH(request: NextRequest) {
         )
       }
 
-      const productionUnitWeightG = parseNumber(record.production_unit_weight_g)
-      const actualQuantityEa =
-        productionUnitWeightG !== null && productionUnitWeightG > 0
-          ? Math.floor(actualQuantityG / productionUnitWeightG)
-          : null
       const plannedQuantityEa =
         productionUnitWeightG !== null && productionUnitWeightG > 0
           ? Math.floor(plannedQuantityG / productionUnitWeightG)
