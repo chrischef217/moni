@@ -333,9 +333,9 @@ type CompletionFormState = {
   record_id: string
   actual_input_unit: 'ea' | 'kg' | 'g'
   actual_input_value: string
-  defect_input_unit: 'ea' | 'kg' | 'g'
+  defect_input_unit: 'kg' | 'g'
   defect_input_value: string
-  sample_input_unit: 'ea' | 'kg' | 'g'
+  sample_input_unit: 'kg' | 'g'
   sample_input_value: string
   input_unit: 'ea' | 'kg' | 'g'
   actual_quantity_ea: string
@@ -744,14 +744,20 @@ function SectionCard({
   description,
   actions,
   children,
+  className,
 }: {
   title: string
   description?: string
   actions?: ReactNode
   children: ReactNode
+  className?: string
 }) {
   return (
-    <section className="rounded-2xl border border-gray-800 bg-gray-800/80 p-5 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
+    <section
+      className={`rounded-2xl border border-gray-800 bg-gray-800/80 p-5 shadow-[0_18px_40px_rgba(2,6,23,0.28)] ${
+        className ?? ''
+      }`}
+    >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-white">{title}</h2>
@@ -1131,12 +1137,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             ? ((actualG ?? 0) + (defectG ?? 0) + (sampleG ?? 0)) / 1000
             : (actualG ?? 0) + (defectG ?? 0) + (sampleG ?? 0),
       exceedsPlanned: lossG !== null ? lossG < 0 : false,
-      hasInvalidEa: actual.invalidEa || defect.invalidEa || sample.invalidEa,
+      hasInvalidEa: actual.invalidEa,
       hasMissingUnitWeightForEa:
-        completionUnitWeightG === null &&
-        (completionForm.actual_input_unit === 'ea' ||
-          completionForm.defect_input_unit === 'ea' ||
-          completionForm.sample_input_unit === 'ea'),
+        completionUnitWeightG === null && completionForm.actual_input_unit === 'ea',
     }
   }, [
     completionForm.input_unit,
@@ -2253,16 +2256,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setProductionActionMessage({ tone: 'error', text: '?낅젰?⑥쐞??媛믪쓣 ?뺤씤??二쇱꽭??' })
       return
     }
-    if (actual.invalidEa || defect.invalidEa || sample.invalidEa) {
+    if (actual.invalidEa) {
       setProductionActionMessage({ tone: 'error', text: 'ea ?낅젰? ?뺤닔濡??낅젰??二쇱꽭??' })
       return
     }
-    if (
-      (completionForm.actual_input_unit === 'ea' ||
-        completionForm.defect_input_unit === 'ea' ||
-        completionForm.sample_input_unit === 'ea') &&
-      (completionUnitWeightG === null || completionUnitWeightG <= 0)
-    ) {
+    if (completionForm.actual_input_unit === 'ea' && (completionUnitWeightG === null || completionUnitWeightG <= 0)) {
       setProductionActionMessage({ tone: 'error', text: '?앹궛?⑥쐞 以묐웾 ?뺣낫媛 ?놁뼱 ea ?낅젰???ъ슜?????놁뒿?덈떎.' })
       return
     }
@@ -4562,14 +4560,36 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           setCompletionForm(emptyCompletionForm())
         }}
       >
-        <div className="grid gap-4 md:grid-cols-2">
-          <SectionCard title="대상 작업지시서">
+        <div className="grid gap-4 md:grid-cols-[minmax(220px,0.35fr)_minmax(0,0.65fr)]">
+          <SectionCard title="대상 작업지시서" className="space-y-2">
             {completionTargetRecord ? (
-              <div className="space-y-2 text-sm text-gray-200">
-                <p>LOT: {completionTargetRecord.lot_number || '-'}</p>
-                <p>제품명: {completionTargetRecord.product_name || '-'}</p>
-                <p>예정량: {formatNumber(completionTargetRecord.planned_quantity_g)}g</p>
-                <p>현재 완료량: {formatNumber(completionTargetRecord.actual_quantity_g)}g</p>
+              <div className="space-y-1.5 text-xs text-gray-300">
+                <p>
+                  <span className="text-gray-500">LOT</span>{' '}
+                  <span className="text-gray-100">{completionTargetRecord.lot_number || '-'}</span>
+                </p>
+                <p>
+                  <span className="text-gray-500">제품명</span>{' '}
+                  <span className="text-gray-100">{completionTargetRecord.product_name || '-'}</span>
+                </p>
+                <p>
+                  <span className="text-gray-500">예정량</span>{' '}
+                  <span className="text-gray-100">{formatNumber(completionTargetRecord.planned_quantity_g)}g</span>
+                </p>
+                <p>
+                  <span className="text-gray-500">생산단위</span>{' '}
+                  <span className="text-gray-100">
+                    {completionTargetRecord.production_unit_name
+                      ? `${completionTargetRecord.production_unit_name} (${formatNumber(completionTargetRecord.production_unit_weight_g)}g)`
+                      : completionUnitWeightG !== null
+                        ? `${formatNumber(completionUnitWeightG)}g`
+                        : '-'}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-gray-500">현재 완료량</span>{' '}
+                  <span className="text-gray-100">{formatNumber(completionTargetRecord.actual_quantity_g)}g</span>
+                </p>
               </div>
             ) : (
               <p className="text-sm text-gray-400">선택된 작업지시서가 없습니다.</p>
@@ -4625,7 +4645,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   <input
                     type="number"
                     min="0"
-                    step={completionForm.defect_input_unit === 'ea' ? '1' : '0.001'}
+                    step="0.001"
                     value={completionForm.defect_input_value}
                     onChange={(event) =>
                       setCompletionForm((prev) => ({ ...prev, defect_input_value: event.target.value }))
@@ -4637,14 +4657,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     onChange={(event) =>
                       setCompletionForm((prev) => ({
                         ...prev,
-                        defect_input_unit: event.target.value as 'ea' | 'kg' | 'g',
+                        defect_input_unit: event.target.value as 'kg' | 'g',
                       }))
                     }
                     className="rounded-xl border border-gray-700 bg-gray-900 px-2 py-2 text-white outline-none focus:border-green-500"
                   >
                     <option value="g">g</option>
                     <option value="kg">kg</option>
-                    <option value="ea">ea</option>
                   </select>
                 </div>
                 <p className="mt-1 text-xs text-amber-300">
@@ -4657,7 +4676,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   <input
                     type="number"
                     min="0"
-                    step={completionForm.sample_input_unit === 'ea' ? '1' : '0.001'}
+                    step="0.001"
                     value={completionForm.sample_input_value}
                     onChange={(event) =>
                       setCompletionForm((prev) => ({ ...prev, sample_input_value: event.target.value }))
@@ -4669,14 +4688,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     onChange={(event) =>
                       setCompletionForm((prev) => ({
                         ...prev,
-                        sample_input_unit: event.target.value as 'ea' | 'kg' | 'g',
+                        sample_input_unit: event.target.value as 'kg' | 'g',
                       }))
                     }
                     className="rounded-xl border border-gray-700 bg-gray-900 px-2 py-2 text-white outline-none focus:border-green-500"
                   >
                     <option value="g">g</option>
                     <option value="kg">kg</option>
-                    <option value="ea">ea</option>
                   </select>
                 </div>
                 <p className="mt-1 text-xs text-blue-300">

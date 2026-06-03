@@ -115,10 +115,17 @@ function toInteger(value: unknown): number | null {
 }
 
 type InputUnit = 'ea' | 'kg' | 'g'
+type MassInputUnit = 'kg' | 'g'
 
 function normalizeInputUnit(value: unknown): InputUnit | null {
   const raw = toText(value).toLowerCase()
   if (raw === 'ea' || raw === 'kg' || raw === 'g') return raw
+  return null
+}
+
+function normalizeMassInputUnit(value: unknown): MassInputUnit | null {
+  const raw = toText(value).toLowerCase()
+  if (raw === 'kg' || raw === 'g') return raw
   return null
 }
 
@@ -894,9 +901,17 @@ export async function PATCH(request: NextRequest) {
 
       if (hasPerFieldInput) {
         const productionUnitWeightG = parseNumber(record.production_unit_weight_g)
+        const defectUnitRaw = toText(body.defect_input_unit).toLowerCase()
+        const sampleUnitRaw = toText(body.sample_input_unit).toLowerCase()
+        if (defectUnitRaw === 'ea' || sampleUnitRaw === 'ea') {
+          return NextResponse.json(
+            { ok: false, error: '불량수량과 샘플수량은 g 또는 kg 단위로 입력해야 합니다.' },
+            { status: 400 },
+          )
+        }
         const actualInputUnit = normalizeInputUnit(body.actual_input_unit)
-        const defectInputUnit = normalizeInputUnit(body.defect_input_unit)
-        const sampleInputUnit = normalizeInputUnit(body.sample_input_unit)
+        const defectInputUnit = normalizeMassInputUnit(body.defect_input_unit)
+        const sampleInputUnit = normalizeMassInputUnit(body.sample_input_unit)
 
         if (!actualInputUnit || !defectInputUnit || !sampleInputUnit) {
           return NextResponse.json(
@@ -1027,6 +1042,12 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ ok: false, error: 'input_unit은 ea, kg, g 중 하나여야 합니다.' }, { status: 400 })
       }
       const inputUnit = inputUnitRaw || 'g'
+      if (inputUnit === 'ea') {
+        return NextResponse.json(
+          { ok: false, error: '불량수량과 샘플수량은 g 또는 kg 단위로 입력해야 합니다.' },
+          { status: 400 },
+        )
+      }
       const productionUnitWeightG = parseNumber(record.production_unit_weight_g)
 
       let actualQuantityG: number | null = null

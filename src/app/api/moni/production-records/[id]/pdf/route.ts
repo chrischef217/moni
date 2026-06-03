@@ -146,7 +146,10 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     .fill-table { table-layout: fixed; margin-top: 0; height: 100%; }
     .fill-table col.label-col { width: 26%; }
     .fill-table col.input-col { width: 74%; }
-    .fill-table td.input-cell { height: 42px; background: #fff; }
+    .fill-table td.input-cell { height: 48px; background: #fff; }
+    .entry-wrap { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; }
+    .entry-space { flex: 1 1 auto; min-height: 26px; }
+    .unit-hints { flex: 0 0 auto; color: #374151; font-size: 12px; white-space: nowrap; }
     .sign-table { margin-top: 0; height: 100%; table-layout: fixed; }
     .sign-table th { width: 46%; }
     .sign-table td { height: 62px; vertical-align: bottom; text-align: right; padding-bottom: 10px; }
@@ -234,9 +237,33 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
           <col class="input-col" />
         </colgroup>
         <tbody>
-          <tr><th>완료수량(g)</th><td class="input-cell"></td></tr>
-          <tr><th>불량수량(g)</th><td class="input-cell"></td></tr>
-          <tr><th>샘플수량(g)</th><td class="input-cell"></td></tr>
+          <tr>
+            <th>완료수량</th>
+            <td class="input-cell">
+              <div class="entry-wrap">
+                <div class="entry-space"></div>
+                <div class="unit-hints">□ ea&nbsp;&nbsp;□ kg&nbsp;&nbsp;□ g</div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <th>불량수량</th>
+            <td class="input-cell">
+              <div class="entry-wrap">
+                <div class="entry-space"></div>
+                <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <th>샘플수량</th>
+            <td class="input-cell">
+              <div class="entry-wrap">
+                <div class="entry-space"></div>
+                <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+              </div>
+            </td>
+          </tr>
         </tbody>
       </table>
       <table class="sign-table">
