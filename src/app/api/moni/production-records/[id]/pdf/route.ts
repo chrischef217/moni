@@ -13,18 +13,38 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#39;')
 }
 
-function formatNumber(value: unknown) {
-  const parsed = Number(value ?? 0)
-  return Number.isFinite(parsed) ? new Intl.NumberFormat('ko-KR').format(parsed) : '-'
-}
-
-function parseNumber(value: unknown) {
+function parseNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string') {
     const parsed = Number(value.trim())
     if (Number.isFinite(parsed)) return parsed
   }
-  return 0
+  return null
+}
+
+function formatNumber(value: unknown) {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? new Intl.NumberFormat('ko-KR').format(parsed) : '-'
+}
+
+function formatGram(value: unknown) {
+  const parsed = parseNumber(value)
+  if (parsed === null) return '-'
+  return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(parsed)}g`
+}
+
+function formatRequiredGram(value: number) {
+  if (!Number.isFinite(value)) return '-'
+  const abs = Math.abs(value)
+
+  if (abs >= 1) {
+    return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Math.round(value))}g`
+  }
+
+  return `${new Intl.NumberFormat('ko-KR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)}g`
 }
 
 type RecipeRow = {
@@ -36,12 +56,12 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   try {
     const supabase = createMoniServiceRoleClient()
     const { data, error } = await supabase.from('production_records').select('*').eq('id', params.id).maybeSingle()
-    if (error) throw new Error(error.message || '제조기록서 조회 실패')
+    if (error) throw new Error(error.message || '제조기록서 조회에 실패했습니다.')
     if (!data) return NextResponse.json({ ok: false, error: '제조기록서를 찾을 수 없습니다.' }, { status: 404 })
 
     const productId = String(data.product_id ?? '').trim()
     const productName = String(data.product_name ?? '').trim()
-    const plannedQuantityG = parseNumber(data.planned_quantity_g)
+    const plannedQuantityG = parseNumber(data.planned_quantity_g) ?? 0
     let recipeRows: RecipeRow[] = []
 
     if (productId) {
@@ -68,7 +88,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 
     const requirementRows = recipeRows
       .map((row) => {
-        const ratio = parseNumber(row.ratio_percent)
+        const ratio = parseNumber(row.ratio_percent) ?? 0
         return {
           foodTypeName: String(row.food_type_name ?? '').trim(),
           ratioPercent: ratio,
@@ -83,21 +103,27 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   <meta charset="utf-8" />
   <title>작업지시서 ${escapeHtml(data.lot_number)}</title>
   <style>
-    @page { size: A4; margin: 16mm; }
+    @page { size: A4; margin: 14mm; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Arial, "Malgun Gothic", sans-serif; color: #111827; background: #f3f4f6; }
-    .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: white; padding: 18mm; }
-    h1 { margin: 0 0 16px; text-align: center; font-size: 26px; letter-spacing: 0; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 12px; }
-    th, td { border: 1px solid #111827; padding: 10px; vertical-align: top; }
-    th { background: #e5e7eb; text-align: left; }
-    .section-title { margin-top: 22px; font-size: 17px; font-weight: 700; }
-    .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 40px; }
+    .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 14mm; }
+    h1 { margin: 0 0 10px; text-align: center; font-size: 24px; letter-spacing: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+    th, td { border: 1px solid #111827; padding: 7px 8px; vertical-align: middle; }
+    th { background: #e5e7eb; text-align: left; white-space: nowrap; }
+    .section-title { margin-top: 14px; font-size: 16px; font-weight: 700; }
+    .compact { table-layout: fixed; }
+    .compact col.label { width: 18%; }
+    .compact col.value { width: 32%; }
+    .compact td.value { word-break: break-word; }
+    .number { text-align: right; white-space: nowrap; }
+    .note-box { height: 72px; vertical-align: top; }
+    .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
     .sign div { height: 80px; border: 1px solid #111827; padding: 10px; text-align: right; }
     .no-print { margin: 16px auto; width: 210mm; text-align: right; }
-    .no-print button { padding: 10px 14px; border: 1px solid #111827; background: #111827; color: white; cursor: pointer; }
+    .no-print button { padding: 10px 14px; border: 1px solid #111827; background: #111827; color: #fff; cursor: pointer; }
     @media print {
-      body { background: white; }
+      body { background: #fff; }
       .page { width: auto; min-height: auto; margin: 0; padding: 0; }
       .no-print { display: none; }
     }
@@ -107,30 +133,47 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   <div class="no-print"><button onclick="window.print()">인쇄 / PDF 저장</button></div>
   <main class="page">
     <h1>작업지시서 / 제조기록서</h1>
-    <table>
+
+    <table class="compact">
+      <colgroup>
+        <col class="label" />
+        <col class="value" />
+        <col class="label" />
+        <col class="value" />
+      </colgroup>
       <tbody>
-        <tr><th>제조번호(LOT)</th><td>${escapeHtml(data.lot_number)}</td><th>생산일자</th><td>${escapeHtml(data.work_date)}</td></tr>
-        <tr><th>제품명</th><td colspan="3">${escapeHtml(data.product_name)}</td></tr>
+        <tr>
+          <th>LOT</th>
+          <td class="value">${escapeHtml(data.lot_number)}</td>
+          <th>생산일자</th>
+          <td class="value">${escapeHtml(data.work_date)}</td>
+        </tr>
+        <tr>
+          <th>제품명</th>
+          <td class="value">${escapeHtml(data.product_name)}</td>
+          <th>예정수량</th>
+          <td class="value number">${formatGram(data.planned_quantity_g)}</td>
+        </tr>
       </tbody>
     </table>
 
     <div class="section-title">생산량 정보</div>
     <table>
       <tbody>
-        <tr><th>예정 생산량(g)</th><td>${formatNumber(data.planned_quantity_g)}</td></tr>
-        <tr><th>실제 완료량(g)</th><td>${formatNumber(data.actual_quantity_g)}</td></tr>
-        <tr><th>불량수량(g)</th><td>${formatNumber(data.defect_quantity_g)}</td></tr>
-        <tr><th>샘플수량(g)</th><td>${formatNumber(data.sample_quantity_g)}</td></tr>
+        <tr><th>예정 생산량(g)</th><td class="number">${formatNumber(data.planned_quantity_g)}</td></tr>
+        <tr><th>실제 완료량(g)</th><td class="number">${formatNumber(data.actual_quantity_g)}</td></tr>
+        <tr><th>불량수량(g)</th><td class="number">${formatNumber(data.defect_quantity_g)}</td></tr>
+        <tr><th>샘플수량(g)</th><td class="number">${formatNumber(data.sample_quantity_g)}</td></tr>
       </tbody>
     </table>
 
-    <div class="section-title">원재료 필요량 (예정 기준)</div>
+    <div class="section-title">원재료 필요량(예정 기준)</div>
     <table>
       <thead>
         <tr>
           <th>원재료명(식품유형)</th>
-          <th>배합비율(%)</th>
-          <th>필요량(g)</th>
+          <th class="number">배합비율(%)</th>
+          <th class="number">필요량(g)</th>
         </tr>
       </thead>
       <tbody>
@@ -140,8 +183,8 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
                 .map(
                   (row) => `<tr>
                     <td>${escapeHtml(row.foodTypeName)}</td>
-                    <td>${formatNumber(row.ratioPercent)}</td>
-                    <td>${formatNumber(row.requiredG)}</td>
+                    <td class="number">${formatNumber(row.ratioPercent)}</td>
+                    <td class="number">${formatRequiredGram(row.requiredG)}</td>
                   </tr>`,
                 )
                 .join('')
@@ -153,16 +196,16 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     <div class="section-title">비고란</div>
     <table>
       <tbody>
-        <tr><th>비고</th><td style="height:120px;">${escapeHtml(data.note || '')}</td></tr>
+        <tr><th>비고</th><td class="note-box">${escapeHtml(data.note || '')}</td></tr>
       </tbody>
     </table>
 
     <div class="section-title">생산 완료 후 기입란</div>
     <table>
       <tbody>
-        <tr><th>실제 완료량(g)</th><td>${formatNumber(data.actual_quantity_g)}</td></tr>
-        <tr><th>불량수량(g)</th><td>${formatNumber(data.defect_quantity_g)}</td></tr>
-        <tr><th>샘플수량(g)</th><td>${formatNumber(data.sample_quantity_g)}</td></tr>
+        <tr><th>실제 완료량(g)</th><td class="number">${formatNumber(data.actual_quantity_g)}</td></tr>
+        <tr><th>불량수량(g)</th><td class="number">${formatNumber(data.defect_quantity_g)}</td></tr>
+        <tr><th>샘플수량(g)</th><td class="number">${formatNumber(data.sample_quantity_g)}</td></tr>
       </tbody>
     </table>
 
