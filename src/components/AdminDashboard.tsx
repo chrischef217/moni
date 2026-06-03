@@ -308,6 +308,12 @@ type WorkOrderFormState = {
   planned_quantity_kg: string
 }
 
+type ProductionUnitFormState = {
+  unit_name: string
+  unit_weight_g: string
+  is_default: boolean
+}
+
 type CompletionFormState = {
   record_id: string
   actual_quantity_kg: string
@@ -578,6 +584,14 @@ function emptySanitationForm(): SanitationFormState {
     water_note: '',
     overall_result: '적합',
     action_taken: '',
+  }
+}
+
+function emptyProductionUnitForm(): ProductionUnitFormState {
+  return {
+    unit_name: '',
+    unit_weight_g: '',
+    is_default: false,
   }
 }
 
@@ -853,6 +867,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   })
   const [productionUnitsLoading, setProductionUnitsLoading] = useState(false)
   const [productionUnits, setProductionUnits] = useState<ProductionUnit[]>([])
+  const [showProductionUnitManager, setShowProductionUnitManager] = useState(false)
+  const [productionUnitForm, setProductionUnitForm] = useState<ProductionUnitFormState>(emptyProductionUnitForm())
+  const [editingProductionUnitId, setEditingProductionUnitId] = useState<string | null>(null)
+  const [productionUnitSaving, setProductionUnitSaving] = useState(false)
+  const [productionUnitMessage, setProductionUnitMessage] = useState<{
+    tone: 'success' | 'error' | 'warning'
+    text: string
+  } | null>(null)
   const [completionForm, setCompletionForm] = useState<CompletionFormState>({
     record_id: '',
     actual_quantity_kg: '',
@@ -946,6 +968,26 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     return { plannedG, ea, remainderG }
   }, [selectedWorkOrderUnit?.unit_weight_g, workOrderForm.planned_quantity_kg])
 
+  const canCreateWorkOrder = useMemo(() => {
+    const plannedG = kgToG(workOrderForm.planned_quantity_kg)
+    return (
+      !!workOrderForm.product_id &&
+      !!workOrderForm.production_unit_id &&
+      productionUnits.length > 0 &&
+      plannedG !== null &&
+      plannedG > 0 &&
+      !productionUnitsLoading &&
+      !productionActionBusy
+    )
+  }, [
+    productionActionBusy,
+    productionUnits.length,
+    productionUnitsLoading,
+    workOrderForm.planned_quantity_kg,
+    workOrderForm.product_id,
+    workOrderForm.production_unit_id,
+  ])
+
   const recipeMappingsByFoodType = useMemo(() => {
     return recipeMappings.reduce((map, item) => {
       const list = map.get(String(item.food_type_id)) ?? []
@@ -1017,6 +1059,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     if (!productId) {
       setProductionUnits([])
       setWorkOrderForm((prev) => ({ ...prev, production_unit_id: '' }))
+      setShowProductionUnitManager(false)
+      setEditingProductionUnitId(null)
+      setProductionUnitForm(emptyProductionUnitForm())
+      setProductionUnitMessage(null)
       return
     }
     void loadProductionUnits(productId)
@@ -1219,7 +1265,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
   }
 
-  async function loadProductionUnits(productId: string) {
+  async function loadProductionUnits(productId: string, options?: { forceDefaultSelection?: boolean }) {
     if (!productId) {
       setProductionUnits([])
       return
@@ -1237,6 +1283,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
       setWorkOrderForm((prev) => {
         if (prev.product_id !== productId) return prev
+        if (options?.forceDefaultSelection) {
+          const defaultUnit = units.find((unit) => unit.is_default) ?? units[0]
+          return {
+            ...prev,
+            production_unit_id: defaultUnit ? String(defaultUnit.id) : '',
+          }
+        }
         const stillExists = units.some((unit) => String(unit.id) === prev.production_unit_id)
         if (stillExists) return prev
         const defaultUnit = units.find((unit) => unit.is_default) ?? units[0]
@@ -1250,6 +1303,214 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setWorkOrderForm((prev) => ({ ...prev, production_unit_id: '' }))
     } finally {
       setProductionUnitsLoading(false)
+    }
+  }
+
+  function resetProductionUnitEditor() {
+    setEditingProductionUnitId(null)
+    setProductionUnitForm(emptyProductionUnitForm())
+  }
+
+  function startEditProductionUnit(unit: ProductionUnit) {
+    setEditingProductionUnitId(String(unit.id))
+    setProductionUnitForm({
+      unit_name: unit.unit_name ?? '',
+      unit_weight_g: unit.unit_weight_g !== null && unit.unit_weight_g !== undefined ? String(unit.unit_weight_g) : '',
+      is_default: Boolean(unit.is_default),
+    })
+    setShowProductionUnitManager(true)
+    setProductionUnitMessage(null)
+  }
+
+  async function saveProductionUnit() {
+    const productId = workOrderForm.product_id
+    if (!productId) {
+      setProductionUnitMessage({ tone: 'error', text: '먼저 제품을 선택해 주세요.' })
+      return
+    }
+
+    const unitName = productionUnitForm.unit_name.trim()
+    if (!unitName) {
+      setProductionUnitMessage({ tone: 'error', text: '단위명을 입력해 주세요.' })
+      return
+    }
+
+    const unitWeightG = toNumber(productionUnitForm.unit_weight_g)
+    if (unitWeightG === null || unitWeightG <= 0) {
+      setProductionUnitMessage({ tone: 'error', text: '단위중량(g)은 0보다 큰 숫자여야 합니다.' })
+      return
+    }
+
+    setProductionUnitSaving(true)
+    try {
+      if (editingProductionUnitId) {
+        await readJson<{ ok?: boolean; error?: string }>(
+          `/api/moni/products/${encodeURIComponent(productId)}/production-units/${encodeURIComponent(editingProductionUnitId)}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              unit_name: unitName,
+              unit_weight_g: unitWeightG,
+              is_default: productionUnitForm.is_default,
+            }),
+          },
+        )
+        setProductionUnitMessage({ tone: 'success', text: '생산단위를 수정했습니다.' })
+      } else {
+        await readJson<{ ok?: boolean; error?: string }>(
+          `/api/moni/products/${encodeURIComponent(productId)}/production-units`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              unit_name: unitName,
+              unit_weight_g: unitWeightG,
+              is_default: productionUnitForm.is_default,
+              sort_order: productionUnits.length,
+              business_id: '20220523011',
+            }),
+          },
+        )
+        setProductionUnitMessage({ tone: 'success', text: '생산단위를 추가했습니다.' })
+      }
+
+      resetProductionUnitEditor()
+      await loadProductionUnits(productId, { forceDefaultSelection: true })
+    } catch (error) {
+      setProductionUnitMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '생산단위 저장에 실패했습니다.',
+      })
+    } finally {
+      setProductionUnitSaving(false)
+    }
+  }
+
+  async function deleteProductionUnit(unit: ProductionUnit) {
+    const productId = workOrderForm.product_id
+    if (!productId) {
+      setProductionUnitMessage({ tone: 'error', text: '먼저 제품을 선택해 주세요.' })
+      return
+    }
+
+    const confirmed = window.confirm(`생산단위 "${unit.unit_name}"를 삭제하시겠습니까?`)
+    if (!confirmed) return
+
+    setProductionUnitSaving(true)
+    try {
+      await readJson<{ ok?: boolean; error?: string }>(
+        `/api/moni/products/${encodeURIComponent(productId)}/production-units/${encodeURIComponent(String(unit.id))}`,
+        { method: 'DELETE' },
+      )
+
+      if (editingProductionUnitId === String(unit.id)) {
+        resetProductionUnitEditor()
+      }
+
+      setProductionUnitMessage({ tone: 'success', text: '생산단위를 삭제했습니다.' })
+      await loadProductionUnits(productId, { forceDefaultSelection: true })
+    } catch (error) {
+      setProductionUnitMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '생산단위 삭제에 실패했습니다.',
+      })
+    } finally {
+      setProductionUnitSaving(false)
+    }
+  }
+
+  async function saveProductionUnitLegacy() {
+    const productId = workOrderForm.product_id
+    if (!productId) {
+      setProductionUnitMessage({ tone: 'error', text: '제품을 먼저 선택해 주세요.' })
+      return
+    }
+
+    const unitName = productionUnitForm.unit_name.trim()
+    if (!unitName) {
+      setProductionUnitMessage({ tone: 'error', text: '단위명을 입력해 주세요.' })
+      return
+    }
+
+    const unitWeightG = toNumber(productionUnitForm.unit_weight_g)
+    if (unitWeightG === null || unitWeightG <= 0) {
+      setProductionUnitMessage({ tone: 'error', text: '단위중량(g)은 0보다 큰 숫자여야 합니다.' })
+      return
+    }
+
+    setProductionUnitSaving(true)
+    try {
+      if (editingProductionUnitId) {
+        await readJson<{ ok?: boolean; error?: string }>(
+          `/api/moni/products/${encodeURIComponent(productId)}/production-units/${encodeURIComponent(editingProductionUnitId)}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              unit_name: unitName,
+              unit_weight_g: unitWeightG,
+              is_default: productionUnitForm.is_default,
+            }),
+          },
+        )
+        setProductionUnitMessage({ tone: 'success', text: '생산단위를 수정했습니다.' })
+      } else {
+        await readJson<{ ok?: boolean; error?: string }>(
+          `/api/moni/products/${encodeURIComponent(productId)}/production-units`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              unit_name: unitName,
+              unit_weight_g: unitWeightG,
+              is_default: productionUnitForm.is_default,
+              sort_order: productionUnits.length,
+              business_id: '20220523011',
+            }),
+          },
+        )
+        setProductionUnitMessage({ tone: 'success', text: '생산단위를 추가했습니다.' })
+      }
+
+      resetProductionUnitEditor()
+      await loadProductionUnits(productId, { forceDefaultSelection: true })
+    } catch (error) {
+      setProductionUnitMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '생산단위 저장에 실패했습니다.',
+      })
+    } finally {
+      setProductionUnitSaving(false)
+    }
+  }
+
+  async function deleteProductionUnitLegacy(unit: ProductionUnit) {
+    const productId = workOrderForm.product_id
+    if (!productId) {
+      setProductionUnitMessage({ tone: 'error', text: '제품을 먼저 선택해 주세요.' })
+      return
+    }
+
+    const confirmed = window.confirm(`생산단위 "${unit.unit_name}"를 삭제하시겠습니까?`)
+    if (!confirmed) return
+
+    setProductionUnitSaving(true)
+    try {
+      await readJson<{ ok?: boolean; error?: string }>(
+        `/api/moni/products/${encodeURIComponent(productId)}/production-units/${encodeURIComponent(String(unit.id))}`,
+        { method: 'DELETE' },
+      )
+
+      if (editingProductionUnitId === String(unit.id)) {
+        resetProductionUnitEditor()
+      }
+
+      setProductionUnitMessage({ tone: 'success', text: '생산단위를 삭제했습니다.' })
+      await loadProductionUnits(productId, { forceDefaultSelection: true })
+    } catch (error) {
+      setProductionUnitMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '생산단위 삭제에 실패했습니다.',
+      })
+    } finally {
+      setProductionUnitSaving(false)
     }
   }
 
@@ -1559,7 +1820,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setProductionActionMessage({ tone: 'error', text: '선택한 제품 정보를 찾을 수 없습니다.' })
       return
     }
-    if (productionUnits.length > 0 && !selectedUnit) {
+    if (productionUnits.length === 0) {
+      setProductionActionMessage({ tone: 'error', text: '등록된 생산단위가 없습니다. 먼저 생산단위를 추가하세요.' })
+      return
+    }
+    if (!selectedUnit) {
       setProductionActionMessage({ tone: 'error', text: '생산 단위를 선택해 주세요.' })
       return
     }
@@ -2378,6 +2643,404 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   function renderWorkOrdersV2() {
+    const hasUnitsForSelectedProduct = productionUnits.length > 0
+
+    return (
+      <div className="space-y-5">
+        {productionActionMessage ? (
+          <div className={`rounded-xl border px-4 py-3 text-sm ${messageToneClasses(productionActionMessage.tone)}`}>
+            {productionActionMessage.text}
+          </div>
+        ) : null}
+
+        <SectionCard
+          title="작업지시서 생성"
+          description="제품을 선택하고 생산단위를 등록/선택한 뒤 예정 생산량(kg)을 입력하면 작업지시서를 생성할 수 있습니다."
+        >
+          {productionUnitMessage ? (
+            <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${messageToneClasses(productionUnitMessage.tone)}`}>
+              {productionUnitMessage.text}
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="제품 선택">
+              <select
+                value={workOrderForm.product_id}
+                onChange={(event) =>
+                  setWorkOrderForm((prev) => ({ ...prev, product_id: event.target.value, production_unit_id: '' }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="">제품 선택</option>
+                {products.map((product) => (
+                  <option key={product.id} value={String(product.id)}>
+                    {product.product_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="생산단위 선택">
+              <select
+                value={workOrderForm.production_unit_id}
+                onChange={(event) =>
+                  setWorkOrderForm((prev) => ({ ...prev, production_unit_id: event.target.value }))
+                }
+                disabled={!workOrderForm.product_id || productionUnitsLoading || !hasUnitsForSelectedProduct}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">
+                  {productionUnitsLoading
+                    ? '생산단위 로딩 중...'
+                    : hasUnitsForSelectedProduct
+                      ? '생산단위 선택'
+                      : '등록된 생산단위 없음'}
+                </option>
+                {productionUnits.map((unit) => (
+                  <option key={unit.id} value={String(unit.id)}>
+                    {unit.unit_name} ({formatNumber(unit.unit_weight_g)}g)
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProductionUnitManager((prev) => !prev)
+                  setProductionUnitMessage(null)
+                }}
+                disabled={!workOrderForm.product_id}
+                className="h-[42px] w-full rounded-xl border border-gray-700 bg-gray-900 px-4 text-sm font-semibold text-gray-100 hover:border-green-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {showProductionUnitManager ? '생산단위 관리 닫기' : '생산단위 관리'}
+              </button>
+            </div>
+
+            <Field label="예정 생산량 (kg)">
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                value={workOrderForm.planned_quantity_kg}
+                onChange={(event) =>
+                  setWorkOrderForm((prev) => ({ ...prev, planned_quantity_kg: event.target.value }))
+                }
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+          </div>
+
+          {workOrderForm.product_id && !hasUnitsForSelectedProduct && !productionUnitsLoading ? (
+            <p className="mt-3 rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+              등록된 생산단위가 없습니다. 먼저 생산단위를 추가하세요.
+            </p>
+          ) : null}
+
+          {workOrderUnitPreview && selectedWorkOrderUnit ? (
+            <div className="mt-3 rounded-lg border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs text-gray-300">
+              {formatNumber(workOrderUnitPreview.plannedG)}g / {selectedWorkOrderUnit.unit_name}(
+              {formatNumber(selectedWorkOrderUnit.unit_weight_g)}g) ={' '}
+              <span className="font-semibold text-green-400">
+                {formatEaRemainder(workOrderUnitPreview.ea, workOrderUnitPreview.remainderG)}
+              </span>
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void createWorkOrder()}
+              disabled={!canCreateWorkOrder || !hasUnitsForSelectedProduct}
+              className="h-[42px] rounded-xl bg-green-500 px-5 text-sm font-semibold text-white hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              작업지시서 생성
+            </button>
+          </div>
+
+          {showProductionUnitManager ? (
+            <div className="mt-4 space-y-4 rounded-xl border border-gray-700 bg-gray-900/60 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-white">생산단위 관리</h3>
+                <button
+                  type="button"
+                  onClick={resetProductionUnitEditor}
+                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-500 hover:text-white"
+                >
+                  입력 초기화
+                </button>
+              </div>
+
+              {!workOrderForm.product_id ? (
+                <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+                  생산단위를 관리하려면 먼저 제품을 선택하세요.
+                </p>
+              ) : productionUnits.length === 0 ? (
+                <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+                  등록된 생산단위가 없습니다. 아래에서 새 생산단위를 추가하세요.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="text-gray-400">
+                      <tr className="border-b border-gray-700">
+                        <th className="px-3 py-2 font-medium">단위명</th>
+                        <th className="px-3 py-2 font-medium">단위중량(g)</th>
+                        <th className="px-3 py-2 font-medium">기본단위</th>
+                        <th className="px-3 py-2 font-medium">처리</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {productionUnits.map((unit) => (
+                        <tr key={unit.id} className="border-b border-gray-800/70">
+                          <td className="px-3 py-2 text-white">{unit.unit_name}</td>
+                          <td className="px-3 py-2 text-gray-200">{formatNumber(unit.unit_weight_g)}g</td>
+                          <td className="px-3 py-2 text-gray-200">
+                            {unit.is_default ? (
+                              <span className="rounded-md border border-green-700/60 bg-green-950/40 px-2 py-1 text-xs text-green-300">
+                                기본
+                              </span>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditProductionUnit(unit)}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                수정
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void deleteProductionUnit(unit)}
+                                disabled={productionUnitSaving}
+                                className="rounded-lg border border-red-800/70 px-3 py-1.5 text-xs text-red-200 hover:border-red-600 hover:text-red-100 disabled:opacity-60"
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="단위명">
+                  <input
+                    value={productionUnitForm.unit_name}
+                    onChange={(event) =>
+                      setProductionUnitForm((prev) => ({ ...prev, unit_name: event.target.value }))
+                    }
+                    placeholder="예: 1kg 파우치"
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+
+                <Field label="단위중량(g)">
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.1"
+                    value={productionUnitForm.unit_weight_g}
+                    onChange={(event) =>
+                      setProductionUnitForm((prev) => ({ ...prev, unit_weight_g: event.target.value }))
+                    }
+                    placeholder="예: 1000"
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+
+                <Field label="기본단위 설정">
+                  <label className="flex h-[42px] items-center gap-2 rounded-xl border border-gray-700 bg-gray-900 px-3 text-sm text-gray-200">
+                    <input
+                      type="checkbox"
+                      checked={productionUnitForm.is_default}
+                      onChange={(event) =>
+                        setProductionUnitForm((prev) => ({ ...prev, is_default: event.target.checked }))
+                      }
+                      className="size-4 rounded border-gray-600 bg-gray-800 text-green-500"
+                    />
+                    <span>기본단위로 사용</span>
+                  </label>
+                </Field>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                {editingProductionUnitId ? (
+                  <button
+                    type="button"
+                    onClick={resetProductionUnitEditor}
+                    className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-white"
+                  >
+                    수정 취소
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void saveProductionUnit()}
+                  disabled={productionUnitSaving || !workOrderForm.product_id}
+                  className="rounded-lg bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {productionUnitSaving
+                    ? editingProductionUnitId
+                      ? '생산단위 수정 저장 중...'
+                      : '생산단위 추가 중...'
+                    : editingProductionUnitId
+                      ? '수정 저장'
+                      : '생산단위 추가'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </SectionCard>
+
+        <SectionCard
+          title="오늘의 작업지시서 목록"
+          description="작업지시서 생성 후 완료 입력, 차감 확인, 확정 순서로 진행합니다."
+        >
+          {recordsLoading ? (
+            <LoadingBlock lines={4} />
+          ) : todayWorkOrders.length === 0 ? (
+            <EmptyState title="오늘 작업지시서가 없습니다" description="상단에서 먼저 작업지시서를 생성하세요." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">LOT</th>
+                    <th className="px-3 py-2 font-medium">제품명</th>
+                    <th className="px-3 py-2 font-medium">예정량</th>
+                    <th className="px-3 py-2 font-medium">완료량(g)</th>
+                    <th className="px-3 py-2 font-medium">불량량(g)</th>
+                    <th className="px-3 py-2 font-medium">샘플량(g)</th>
+                    <th className="px-3 py-2 font-medium">상태</th>
+                    <th className="px-3 py-2 font-medium">처리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {todayWorkOrders.map((record) => {
+                    const statusCode = normalizeStatusCode(record.status)
+                    const plannedUnitText = formatPlannedUnitForRecord(record)
+
+                    return (
+                      <tr key={record.id} className="border-b border-gray-800/80">
+                        <td className="px-3 py-3 font-mono text-gray-300">{record.lot_number || '-'}</td>
+                        <td className="px-3 py-3 text-white">{record.product_name || '-'}</td>
+                        <td className="px-3 py-3 text-gray-200">
+                          <div>{formatNumber(record.planned_quantity_g)}g</div>
+                          {plannedUnitText ? (
+                            <div className="mt-1 text-xs text-gray-400">{plannedUnitText}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-3 text-green-400">{formatNumber(record.actual_quantity_g)}g</td>
+                        <td className="px-3 py-3 text-amber-300">{formatNumber(record.defect_quantity_g)}g</td>
+                        <td className="px-3 py-3 text-blue-300">{formatNumber(record.sample_quantity_g)}g</td>
+                        <td className="px-3 py-3 text-gray-200">
+                          {statusCode === 'planned'
+                            ? '예정'
+                            : statusCode === 'in_progress'
+                              ? '진행중'
+                              : statusCode === 'completed'
+                                ? '완료'
+                                : statusCode === 'confirmed'
+                                  ? '확정'
+                                  : statusCode === 'cancelled'
+                                    ? '취소'
+                                    : normalizeStatus(record.status)}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {(statusCode === 'planned' ||
+                              statusCode === 'in_progress' ||
+                              statusCode === 'completed' ||
+                              statusCode === 'confirmed') && (
+                              <button
+                                type="button"
+                                onClick={() => printWorkOrder(record)}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                작업지시서 출력
+                              </button>
+                            )}
+
+                            {(statusCode === 'planned' || statusCode === 'in_progress') && (
+                              <button
+                                type="button"
+                                onClick={() => openPlannedEditModal(record)}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                예정수량 수정
+                              </button>
+                            )}
+
+                            {(statusCode === 'planned' || statusCode === 'in_progress') && (
+                              <button
+                                type="button"
+                                onClick={() => openCompletionModal(record)}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                완료 입력
+                              </button>
+                            )}
+
+                            {statusCode === 'completed' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => openCompletionModal(record)}
+                                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                                >
+                                  완료량 수정
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void openDeductionModal(record)}
+                                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                                >
+                                  차감 확인
+                                </button>
+                              </>
+                            )}
+
+                            {(statusCode === 'planned' || statusCode === 'completed') && (
+                              <button
+                                type="button"
+                                onClick={() => void cancelWorkOrder(record)}
+                                disabled={productionActionBusy}
+                                className="rounded-lg border border-red-800/70 px-3 py-1.5 text-xs text-red-200 hover:border-red-600 hover:text-red-100 disabled:opacity-60"
+                              >
+                                취소
+                              </button>
+                            )}
+
+                            {statusCode === 'confirmed' && (
+                              <span className="rounded-lg border border-green-700/60 bg-green-950/40 px-3 py-1.5 text-xs text-green-300">
+                                확정 완료
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      </div>
+    )
+  }
+
+  function renderWorkOrdersV2Legacy() {
     return (
       <div className="space-y-5">
         {productionActionMessage ? (
@@ -2387,7 +3050,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         ) : null}
 
         <SectionCard title="작업지시서 생성" description="제품 선택 후 계획 생산량(kg)을 입력하면 planned 상태로 저장됩니다.">
-          <div className="grid gap-4 md:grid-cols-4">
+          {productionUnitMessage ? (
+            <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${messageToneClasses(productionUnitMessage.tone)}`}>
+              {productionUnitMessage.text}
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Field label="제품 선택">
               <select
                 value={workOrderForm.product_id}
@@ -2424,7 +3093,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 onChange={(event) =>
                   setWorkOrderForm((prev) => ({ ...prev, production_unit_id: event.target.value }))
                 }
-                disabled={!workOrderForm.product_id || productionUnitsLoading}
+                disabled={!workOrderForm.product_id || productionUnitsLoading || productionUnits.length === 0}
                 className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <option value="">
@@ -2445,10 +3114,16 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             <div className="flex items-end">
               <button
                 type="button"
-                onClick={() => void createWorkOrder()}
-                disabled={productionActionBusy}
-                className="h-[42px] w-full rounded-xl bg-green-500 px-4 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+                onClick={() => {
+                  setShowProductionUnitManager((prev) => !prev)
+                  setProductionUnitMessage(null)
+                }}
+                disabled={!workOrderForm.product_id}
+                className="relative h-[42px] w-full rounded-xl border border-gray-700 bg-gray-900 px-4 text-sm font-semibold text-transparent hover:border-green-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
+                <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-gray-100">
+                  {showProductionUnitManager ? '생산단위 관리 닫기' : '생산단위 관리'}
+                </span>
                 작업지시 생성
               </button>
             </div>
@@ -2460,6 +3135,160 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               <span className="font-semibold text-green-400">
                 {formatEaRemainder(workOrderUnitPreview.ea, workOrderUnitPreview.remainderG)}
               </span>
+            </div>
+          ) : null}
+
+          {workOrderForm.product_id && productionUnits.length === 0 && !productionUnitsLoading ? (
+            <p className="mt-3 rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+              등록된 생산단위가 없습니다. 먼저 생산단위를 추가하세요.
+            </p>
+          ) : null}
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void createWorkOrder()}
+              disabled={!canCreateWorkOrder}
+              className="h-[42px] rounded-xl bg-green-500 px-5 text-sm font-semibold text-white hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              작업지시서 생성
+            </button>
+          </div>
+
+          {showProductionUnitManager ? (
+            <div className="mt-4 space-y-4 rounded-xl border border-gray-700 bg-gray-900/60 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-white">생산단위 관리</h3>
+                <button
+                  type="button"
+                  onClick={resetProductionUnitEditor}
+                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-500 hover:text-white"
+                >
+                  입력 초기화
+                </button>
+              </div>
+
+              {productionUnits.length === 0 ? (
+                <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+                  등록된 생산단위가 없습니다. 먼저 생산단위를 추가하세요.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="text-gray-400">
+                      <tr className="border-b border-gray-700">
+                        <th className="px-3 py-2 font-medium">단위명</th>
+                        <th className="px-3 py-2 font-medium">단위중량(g)</th>
+                        <th className="px-3 py-2 font-medium">기본단위</th>
+                        <th className="px-3 py-2 font-medium">처리</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {productionUnits.map((unit) => (
+                        <tr key={unit.id} className="border-b border-gray-800/70">
+                          <td className="px-3 py-2 text-white">{unit.unit_name}</td>
+                          <td className="px-3 py-2 text-gray-200">{formatNumber(unit.unit_weight_g)}g</td>
+                          <td className="px-3 py-2 text-gray-200">
+                            {unit.is_default ? (
+                              <span className="rounded-md border border-green-700/60 bg-green-950/40 px-2 py-1 text-xs text-green-300">
+                                기본
+                              </span>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditProductionUnit(unit)}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                수정
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void deleteProductionUnit(unit)}
+                                disabled={productionUnitSaving}
+                                className="rounded-lg border border-red-800/70 px-3 py-1.5 text-xs text-red-200 hover:border-red-600 hover:text-red-100 disabled:opacity-60"
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="단위명">
+                  <input
+                    value={productionUnitForm.unit_name}
+                    onChange={(event) =>
+                      setProductionUnitForm((prev) => ({ ...prev, unit_name: event.target.value }))
+                    }
+                    placeholder="예: 1kg 파우치"
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+
+                <Field label="단위중량(g)">
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.1"
+                    value={productionUnitForm.unit_weight_g}
+                    onChange={(event) =>
+                      setProductionUnitForm((prev) => ({ ...prev, unit_weight_g: event.target.value }))
+                    }
+                    placeholder="예: 1000"
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+
+                <Field label="기본단위 설정">
+                  <label className="flex h-[42px] items-center gap-2 rounded-xl border border-gray-700 bg-gray-900 px-3 text-sm text-gray-200">
+                    <input
+                      type="checkbox"
+                      checked={productionUnitForm.is_default}
+                      onChange={(event) =>
+                        setProductionUnitForm((prev) => ({ ...prev, is_default: event.target.checked }))
+                      }
+                      className="size-4 rounded border-gray-600 bg-gray-800 text-green-500"
+                    />
+                    <span>기본단위로 사용</span>
+                  </label>
+                </Field>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                {editingProductionUnitId ? (
+                  <button
+                    type="button"
+                    onClick={resetProductionUnitEditor}
+                    className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-white"
+                  >
+                    수정 취소
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void saveProductionUnit()}
+                  disabled={productionUnitSaving || !workOrderForm.product_id}
+                  className="rounded-lg bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {productionUnitSaving
+                    ? editingProductionUnitId
+                      ? '생산단위 수정 저장 중...'
+                      : '생산단위 저장 중...'
+                    : editingProductionUnitId
+                      ? '수정 저장'
+                      : '생산단위 추가'}
+                </button>
+              </div>
             </div>
           ) : null}
         </SectionCard>
