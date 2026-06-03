@@ -38,17 +38,17 @@ function formatRequiredGram(value: number) {
   const abs = Math.abs(value)
 
   if (abs >= 1) {
-    return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Math.round(value))}g`
+    return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Math.round(value))
   }
 
-  return `${new Intl.NumberFormat('ko-KR', {
+  return new Intl.NumberFormat('ko-KR', {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
-  }).format(value)}g`
+  }).format(value)
 }
 
 function formatEaRemainder(ea: number, remainderG: number) {
-  return `${new Intl.NumberFormat('ko-KR').format(ea)}ea + 잔량 ${formatRequiredGram(remainderG)}`
+  return `${new Intl.NumberFormat('ko-KR').format(ea)}ea + 잔량 ${formatGram(remainderG)}`
 }
 
 type RecipeRow = {
@@ -86,6 +86,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       plannedEa !== null && plannedRemainderG !== null ? formatEaRemainder(plannedEa, plannedRemainderG) : ''
     const productionUnitLabel =
       productionUnitName || (productionUnitWeightG !== null && productionUnitWeightG > 0 ? `${formatGram(productionUnitWeightG)} 단위` : '')
+
     let recipeRows: RecipeRow[] = []
 
     if (productId) {
@@ -141,9 +142,14 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     .compact col.value { width: 32%; }
     .compact td.value { word-break: break-word; }
     .number { text-align: right; white-space: nowrap; }
-    .note-box { height: 72px; vertical-align: top; }
-    .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
-    .sign div { height: 80px; border: 1px solid #111827; padding: 10px; text-align: right; }
+    .fill-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-top: 8px; align-items: stretch; }
+    .fill-table { table-layout: fixed; margin-top: 0; height: 100%; }
+    .fill-table col.label-col { width: 26%; }
+    .fill-table col.input-col { width: 74%; }
+    .fill-table td.input-cell { height: 42px; background: #fff; }
+    .sign-table { margin-top: 0; height: 100%; table-layout: fixed; }
+    .sign-table th { width: 46%; }
+    .sign-table td { height: 62px; vertical-align: bottom; text-align: right; padding-bottom: 10px; }
     .no-print { margin: 16px auto; width: 210mm; text-align: right; }
     .no-print button { padding: 10px 14px; border: 1px solid #111827; background: #111827; color: #fff; cursor: pointer; }
     @media print {
@@ -194,16 +200,6 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       </tbody>
     </table>
 
-    <div class="section-title">생산량 정보</div>
-    <table>
-      <tbody>
-        <tr><th>예정 생산량(g)</th><td class="number">${formatNumber(data.planned_quantity_g)}</td></tr>
-        <tr><th>실제 완료량(g)</th><td class="number">${formatNumber(data.actual_quantity_g)}</td></tr>
-        <tr><th>불량수량(g)</th><td class="number">${formatNumber(data.defect_quantity_g)}</td></tr>
-        <tr><th>샘플수량(g)</th><td class="number">${formatNumber(data.sample_quantity_g)}</td></tr>
-      </tbody>
-    </table>
-
     <div class="section-title">원재료 필요량(예정 기준)</div>
     <table>
       <thead>
@@ -230,26 +226,26 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       </tbody>
     </table>
 
-    <div class="section-title">비고란</div>
-    <table>
-      <tbody>
-        <tr><th>비고</th><td class="note-box">${escapeHtml(data.note || '')}</td></tr>
-      </tbody>
-    </table>
-
     <div class="section-title">생산 완료 후 기입란</div>
-    <table>
-      <tbody>
-        <tr><th>실제 완료량(g)</th><td class="number">${formatNumber(data.actual_quantity_g)}</td></tr>
-        <tr><th>불량수량(g)</th><td class="number">${formatNumber(data.defect_quantity_g)}</td></tr>
-        <tr><th>샘플수량(g)</th><td class="number">${formatNumber(data.sample_quantity_g)}</td></tr>
-      </tbody>
-    </table>
-
-    <section class="sign">
-      <div>작성자 서명: __________________</div>
-      <div>확인자 서명: __________________</div>
-    </section>
+    <div class="fill-grid">
+      <table class="fill-table">
+        <colgroup>
+          <col class="label-col" />
+          <col class="input-col" />
+        </colgroup>
+        <tbody>
+          <tr><th>완료수량(g)</th><td class="input-cell"></td></tr>
+          <tr><th>불량수량(g)</th><td class="input-cell"></td></tr>
+          <tr><th>샘플수량(g)</th><td class="input-cell"></td></tr>
+        </tbody>
+      </table>
+      <table class="sign-table">
+        <tbody>
+          <tr><th>작성자 서명</th><td>__________________</td></tr>
+          <tr><th>확인자 서명</th><td>__________________</td></tr>
+        </tbody>
+      </table>
+    </div>
   </main>
   <script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>
 </body>
