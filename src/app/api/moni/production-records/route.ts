@@ -15,6 +15,12 @@ type RecordRow = {
   work_date: string
   product_id: string | null
   product_name: string
+  production_unit_id: string | null
+  production_unit_name: string | null
+  production_unit_weight_g: number | null
+  planned_quantity_ea: number | null
+  planned_remainder_g: number | null
+  actual_quantity_ea: number | null
   planned_quantity_g: number | null
   actual_quantity_g: number | null
   defect_quantity_g: number | null
@@ -98,6 +104,12 @@ function toText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function toInteger(value: unknown): number | null {
+  const parsed = parseNumber(value)
+  if (parsed === null) return null
+  return Math.trunc(parsed)
+}
+
 function normalizeStatus(value: unknown, fallback: string) {
   const raw = toText(value).toLowerCase()
   if (!raw) return fallback
@@ -152,6 +164,12 @@ function toRecordRow(row: Record<string, unknown>): RecordRow {
     work_date: toText(row.work_date),
     product_id: toText(row.product_id) || null,
     product_name: toText(row.product_name),
+    production_unit_id: toText(row.production_unit_id) || null,
+    production_unit_name: toText(row.production_unit_name) || null,
+    production_unit_weight_g: parseNumber(row.production_unit_weight_g),
+    planned_quantity_ea: toInteger(row.planned_quantity_ea),
+    planned_remainder_g: parseNumber(row.planned_remainder_g),
+    actual_quantity_ea: toInteger(row.actual_quantity_ea),
     planned_quantity_g: parseNumber(row.planned_quantity_g),
     actual_quantity_g: parseNumber(row.actual_quantity_g),
     defect_quantity_g: parseNumber(row.defect_quantity_g),
@@ -338,7 +356,15 @@ async function updateRecordWithResilientColumns(
     ...patch,
     updated_at: new Date().toISOString(),
   }
-  const hasSampleField = Object.prototype.hasOwnProperty.call(workingPatch, 'sample_quantity_g')
+  const optionalColumns = [
+    'sample_quantity_g',
+    'production_unit_id',
+    'production_unit_name',
+    'production_unit_weight_g',
+    'planned_quantity_ea',
+    'planned_remainder_g',
+    'actual_quantity_ea',
+  ]
   let includeQuantityOk = quantityOkG !== undefined && quantityOkG !== null
 
   while (true) {
@@ -351,12 +377,13 @@ async function updateRecordWithResilientColumns(
     if (!error) return data as Record<string, unknown>
 
     const message = error.message || '생산기록 업데이트에 실패했습니다.'
-    if (
-      hasSampleField &&
-      Object.prototype.hasOwnProperty.call(workingPatch, 'sample_quantity_g') &&
-      isMissingColumnError(message, 'sample_quantity_g')
-    ) {
-      delete workingPatch.sample_quantity_g
+    const missingColumn = optionalColumns.find(
+      (columnName) =>
+        Object.prototype.hasOwnProperty.call(workingPatch, columnName) &&
+        isMissingColumnError(message, columnName),
+    )
+    if (missingColumn) {
+      delete workingPatch[missingColumn]
       continue
     }
     if (includeQuantityOk && isMissingColumnError(message, 'quantity_ok_g')) {
@@ -365,6 +392,41 @@ async function updateRecordWithResilientColumns(
     }
 
     throw new ApiError(500, message, 'mutate.record.update')
+  }
+}
+
+async function insertRecordWithResilientColumns(payload: Record<string, unknown>) {
+  const supabase = createMoniServiceRoleClient()
+  const workingPayload: Record<string, unknown> = { ...payload }
+  const optionalColumns = [
+    'sample_quantity_g',
+    'production_unit_id',
+    'production_unit_name',
+    'production_unit_weight_g',
+    'planned_quantity_ea',
+    'planned_remainder_g',
+    'actual_quantity_ea',
+  ]
+
+  while (true) {
+    const insertResult = await supabase.from('production_records').insert(workingPayload).select('*').single()
+    if (!insertResult.error) {
+      return insertResult.data as Record<string, unknown>
+    }
+
+    const message = insertResult.error.message || '제조기록 저장에 실패했습니다.'
+    const missingColumn = optionalColumns.find(
+      (columnName) =>
+        Object.prototype.hasOwnProperty.call(workingPayload, columnName) &&
+        isMissingColumnError(message, columnName),
+    )
+
+    if (missingColumn) {
+      delete workingPayload[missingColumn]
+      continue
+    }
+
+    throw new ApiError(500, message, 'mutate.record.insert')
   }
 }
 
@@ -579,6 +641,9 @@ export async function POST(request: NextRequest) {
     const planned = parseNumber(body.planned_quantity_g)
     const actual = parseNumber(body.actual_quantity_g)
     const sample = parseNumber(body.sample_quantity_g) ?? 0
+    const productionUnitId = toText(body.production_unit_id) || null
+    const productionUnitName = toText(body.production_unit_name) || null
+    const productionUnitWeightG = parseNumber(body.production_unit_weight_g)
 
     if (planned !== null && planned < 0) {
       return NextResponse.json({ ok: false, error: '계획 수량은 0 이상이어야 합니다.' }, { status: 400 })
@@ -653,12 +718,30 @@ export async function POST(request: NextRequest) {
 
     const lotNumber = await generateLotNumber(workDate)
     const status = normalizeStatus(body.status, actual && actual > 0 ? 'completed' : 'planned')
+    const plannedQuantityEa =
+      planned !== null && productionUnitWeightG !== null && productionUnitWeightG > 0
+        ? Math.floor(planned / productionUnitWeightG)
+        : null
+    const plannedRemainderG =
+      planned !== null && productionUnitWeightG !== null && productionUnitWeightG > 0
+        ? planned - Math.floor(planned / productionUnitWeightG) * productionUnitWeightG
+        : 0
+    const actualQuantityEa =
+      actual !== null && productionUnitWeightG !== null && productionUnitWeightG > 0
+        ? Math.floor(actual / productionUnitWeightG)
+        : null
 
     const payload = {
       lot_number: lotNumber,
       work_date: workDate,
       product_id: productId,
       product_name: productName,
+      production_unit_id: productionUnitId,
+      production_unit_name: productionUnitName,
+      production_unit_weight_g: productionUnitWeightG,
+      planned_quantity_ea: plannedQuantityEa,
+      planned_remainder_g: plannedRemainderG,
+      actual_quantity_ea: actualQuantityEa,
       planned_quantity_g: planned,
       actual_quantity_g: actual,
       defect_quantity_g: defect,
@@ -675,19 +758,12 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }
 
-    let insertResult = await supabase.from('production_records').insert(payload).select('*').single()
-    if (insertResult.error && isMissingColumnError(insertResult.error.message || '', 'sample_quantity_g')) {
-      const { sample_quantity_g, ...payloadWithoutSample } = payload
-      insertResult = await supabase.from('production_records').insert(payloadWithoutSample).select('*').single()
-    }
-    if (insertResult.error) {
-      throw new ApiError(500, insertResult.error.message || '제조기록 저장에 실패했습니다.', 'mutate.record.insert')
-    }
+    const inserted = await insertRecordWithResilientColumns(payload)
 
     return NextResponse.json(
       {
         ok: true,
-        record: toRecordRow((insertResult.data as Record<string, unknown>) ?? {}),
+        record: toRecordRow(inserted),
       },
       { status: 201 },
     )
@@ -726,8 +802,21 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ ok: false, error: 'planned_quantity_g는 0보다 커야 합니다.' }, { status: 400 })
       }
 
+      const productionUnitWeightG =
+        parseNumber(body.production_unit_weight_g) ?? parseNumber(record.production_unit_weight_g)
+      const plannedQuantityEa =
+        productionUnitWeightG !== null && productionUnitWeightG > 0
+          ? Math.floor(plannedQuantityG / productionUnitWeightG)
+          : null
+      const plannedRemainderG =
+        productionUnitWeightG !== null && productionUnitWeightG > 0
+          ? plannedQuantityG - Math.floor(plannedQuantityG / productionUnitWeightG) * productionUnitWeightG
+          : 0
+
       const updated = await updateRecordWithResilientColumns(recordId, {
         planned_quantity_g: plannedQuantityG,
+        planned_quantity_ea: plannedQuantityEa,
+        planned_remainder_g: plannedRemainderG,
       })
       return NextResponse.json(
         { ok: true, record: toRecordRow(updated), message: '예정수량이 수정되었습니다.' },
@@ -771,11 +860,28 @@ export async function PATCH(request: NextRequest) {
         )
       }
 
+      const productionUnitWeightG = parseNumber(record.production_unit_weight_g)
+      const actualQuantityEa =
+        productionUnitWeightG !== null && productionUnitWeightG > 0
+          ? Math.floor(actualQuantityG / productionUnitWeightG)
+          : null
+      const plannedQuantityEa =
+        productionUnitWeightG !== null && productionUnitWeightG > 0
+          ? Math.floor(plannedQuantityG / productionUnitWeightG)
+          : null
+      const plannedRemainderG =
+        productionUnitWeightG !== null && productionUnitWeightG > 0
+          ? plannedQuantityG - Math.floor(plannedQuantityG / productionUnitWeightG) * productionUnitWeightG
+          : 0
+
       const updated = await updateRecordWithResilientColumns(
         recordId,
         {
           actual_quantity_g: actualQuantityG,
           planned_quantity_g: plannedQuantityG,
+          actual_quantity_ea: actualQuantityEa,
+          planned_quantity_ea: plannedQuantityEa,
+          planned_remainder_g: plannedRemainderG,
           defect_quantity_g: defectQuantityG,
           sample_quantity_g: sampleQuantityG,
           status: 'completed',

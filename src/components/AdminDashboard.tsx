@@ -83,6 +83,12 @@ type ProductionRecord = {
   work_date: string
   product_id: string | null
   product_name: string
+  production_unit_id?: string | null
+  production_unit_name?: string | null
+  production_unit_weight_g?: number | null
+  planned_quantity_ea?: number | null
+  planned_remainder_g?: number | null
+  actual_quantity_ea?: number | null
   planned_quantity_g: number | null
   actual_quantity_g: number | null
   defect_quantity_g: number | null
@@ -105,6 +111,22 @@ type ProductionRecordsPayload = {
   error?: string
   records?: ProductionRecord[]
   products?: ProductOption[]
+}
+
+type ProductionUnit = {
+  id: string
+  product_id: string
+  unit_name: string
+  unit_weight_g: number | null
+  is_default?: boolean
+  sort_order?: number
+}
+
+type ProductionUnitsPayload = {
+  ok?: boolean
+  error?: string
+  warning?: string
+  units?: ProductionUnit[]
 }
 
 type DeductionPreviewRow = {
@@ -282,6 +304,7 @@ type ProductionFormState = {
 
 type WorkOrderFormState = {
   product_id: string
+  production_unit_id: string
   planned_quantity_kg: string
 }
 
@@ -404,6 +427,29 @@ function kgToG(value: string) {
   const kg = toNumber(value)
   if (kg === null) return null
   return kg * 1000
+}
+
+function formatEaRemainder(ea: number | null | undefined, remainderG: number | null | undefined) {
+  if (ea === null || ea === undefined) return '-'
+  const remainder = Number(remainderG ?? 0)
+  return `${formatNumber(ea)}ea + 잔량 ${formatNumber(remainder)}g`
+}
+
+function formatPlannedUnitForRecord(record: ProductionRecord) {
+  const storedEa = Number(record.planned_quantity_ea ?? NaN)
+  if (Number.isFinite(storedEa)) {
+    return formatEaRemainder(storedEa, Number(record.planned_remainder_g ?? 0))
+  }
+
+  const plannedG = Number(record.planned_quantity_g ?? NaN)
+  const unitWeightG = Number(record.production_unit_weight_g ?? NaN)
+  if (!Number.isFinite(plannedG) || plannedG < 0 || !Number.isFinite(unitWeightG) || unitWeightG <= 0) {
+    return null
+  }
+
+  const ea = Math.floor(plannedG / unitWeightG)
+  const remainderG = plannedG - ea * unitWeightG
+  return formatEaRemainder(ea, remainderG)
 }
 
 function normalizeStatusCode(status: string | null | undefined) {
@@ -802,8 +848,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [productionSaving, setProductionSaving] = useState(false)
   const [workOrderForm, setWorkOrderForm] = useState<WorkOrderFormState>({
     product_id: '',
+    production_unit_id: '',
     planned_quantity_kg: '',
   })
+  const [productionUnitsLoading, setProductionUnitsLoading] = useState(false)
+  const [productionUnits, setProductionUnits] = useState<ProductionUnit[]>([])
   const [completionForm, setCompletionForm] = useState<CompletionFormState>({
     record_id: '',
     actual_quantity_kg: '',
@@ -880,6 +929,23 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     [recipeProducts, selectedRecipeProductId],
   )
 
+  const selectedWorkOrderUnit = useMemo(
+    () => productionUnits.find((unit) => String(unit.id) === workOrderForm.production_unit_id) ?? null,
+    [productionUnits, workOrderForm.production_unit_id],
+  )
+
+  const workOrderUnitPreview = useMemo(() => {
+    const plannedG = kgToG(workOrderForm.planned_quantity_kg)
+    const unitWeightG = selectedWorkOrderUnit?.unit_weight_g ?? null
+    if (plannedG === null || plannedG < 0 || unitWeightG === null || unitWeightG <= 0) {
+      return null
+    }
+
+    const ea = Math.floor(plannedG / unitWeightG)
+    const remainderG = plannedG - ea * unitWeightG
+    return { plannedG, ea, remainderG }
+  }, [selectedWorkOrderUnit?.unit_weight_g, workOrderForm.planned_quantity_kg])
+
   const recipeMappingsByFoodType = useMemo(() => {
     return recipeMappings.reduce((map, item) => {
       const list = map.get(String(item.food_type_id)) ?? []
@@ -945,6 +1011,16 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     if (!selectedRecipeProductId) return
     void loadRecipes(selectedRecipeProductId)
   }, [selectedRecipeProductId])
+
+  useEffect(() => {
+    const productId = workOrderForm.product_id
+    if (!productId) {
+      setProductionUnits([])
+      setWorkOrderForm((prev) => ({ ...prev, production_unit_id: '' }))
+      return
+    }
+    void loadProductionUnits(productId)
+  }, [workOrderForm.product_id])
 
   useEffect(() => {
     if (productionForm.product_id !== '__new__') {
@@ -1140,6 +1216,40 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setRecordsError(error instanceof Error ? error.message : '제조기록서를 불러오지 못했습니다.')
     } finally {
       setRecordsLoading(false)
+    }
+  }
+
+  async function loadProductionUnits(productId: string) {
+    if (!productId) {
+      setProductionUnits([])
+      return
+    }
+
+    setProductionUnitsLoading(true)
+    try {
+      const payload = await readJson<ProductionUnitsPayload>(
+        `/api/moni/products/${encodeURIComponent(productId)}/production-units`,
+      )
+      const units = (payload.units ?? []).filter(
+        (unit) => Number(unit.unit_weight_g ?? 0) > 0 && String(unit.id ?? '').trim().length > 0,
+      )
+      setProductionUnits(units)
+
+      setWorkOrderForm((prev) => {
+        if (prev.product_id !== productId) return prev
+        const stillExists = units.some((unit) => String(unit.id) === prev.production_unit_id)
+        if (stillExists) return prev
+        const defaultUnit = units.find((unit) => unit.is_default) ?? units[0]
+        return {
+          ...prev,
+          production_unit_id: defaultUnit ? String(defaultUnit.id) : '',
+        }
+      })
+    } catch {
+      setProductionUnits([])
+      setWorkOrderForm((prev) => ({ ...prev, production_unit_id: '' }))
+    } finally {
+      setProductionUnitsLoading(false)
     }
   }
 
@@ -1433,6 +1543,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   async function createWorkOrder() {
     const productId = workOrderForm.product_id
     const plannedG = kgToG(workOrderForm.planned_quantity_kg)
+    const selectedUnit =
+      productionUnits.find((unit) => String(unit.id) === workOrderForm.production_unit_id) ?? null
     if (!productId) {
       setProductionActionMessage({ tone: 'error', text: '제품을 선택해 주세요.' })
       return
@@ -1447,6 +1559,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setProductionActionMessage({ tone: 'error', text: '선택한 제품 정보를 찾을 수 없습니다.' })
       return
     }
+    if (productionUnits.length > 0 && !selectedUnit) {
+      setProductionActionMessage({ tone: 'error', text: '생산 단위를 선택해 주세요.' })
+      return
+    }
+
     setProductionActionBusy(true)
     try {
       await readJson('/api/moni/production-records', {
@@ -1456,12 +1573,15 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           product_id: productId,
           product_name: selectedProduct.product_name,
           planned_quantity_g: plannedG,
+          production_unit_id: selectedUnit?.id ?? null,
+          production_unit_name: selectedUnit?.unit_name ?? null,
+          production_unit_weight_g: selectedUnit?.unit_weight_g ?? null,
           status: 'planned',
           business_id: '20220523011',
         }),
       })
 
-      setWorkOrderForm({ product_id: '', planned_quantity_kg: '' })
+      setWorkOrderForm({ product_id: '', production_unit_id: '', planned_quantity_kg: '' })
       setProductionActionMessage({ tone: 'success', text: '작업지시서가 생성되었습니다.' })
       await Promise.all([
         loadOverview(),
@@ -2267,12 +2387,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         ) : null}
 
         <SectionCard title="작업지시서 생성" description="제품 선택 후 계획 생산량(kg)을 입력하면 planned 상태로 저장됩니다.">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <Field label="제품 선택">
               <select
                 value={workOrderForm.product_id}
                 onChange={(event) =>
-                  setWorkOrderForm((prev) => ({ ...prev, product_id: event.target.value }))
+                  setWorkOrderForm((prev) => ({ ...prev, product_id: event.target.value, production_unit_id: '' }))
                 }
                 className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
               >
@@ -2298,6 +2418,30 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               />
             </Field>
 
+            <Field label="생산 단위">
+              <select
+                value={workOrderForm.production_unit_id}
+                onChange={(event) =>
+                  setWorkOrderForm((prev) => ({ ...prev, production_unit_id: event.target.value }))
+                }
+                disabled={!workOrderForm.product_id || productionUnitsLoading}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">
+                  {productionUnitsLoading
+                    ? '단위 로딩 중...'
+                    : productionUnits.length > 0
+                      ? '생산 단위 선택'
+                      : '등록된 단위 없음'}
+                </option>
+                {productionUnits.map((unit) => (
+                  <option key={unit.id} value={String(unit.id)}>
+                    {unit.unit_name} ({formatNumber(unit.unit_weight_g)}g)
+                  </option>
+                ))}
+              </select>
+            </Field>
+
             <div className="flex items-end">
               <button
                 type="button"
@@ -2309,6 +2453,15 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               </button>
             </div>
           </div>
+          {workOrderUnitPreview && selectedWorkOrderUnit ? (
+            <div className="mt-3 rounded-lg border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs text-gray-300">
+              {formatNumber(workOrderUnitPreview.plannedG)}g / {selectedWorkOrderUnit.unit_name}(
+              {formatNumber(selectedWorkOrderUnit.unit_weight_g)}g) ={' '}
+              <span className="font-semibold text-green-400">
+                {formatEaRemainder(workOrderUnitPreview.ea, workOrderUnitPreview.remainderG)}
+              </span>
+            </div>
+          ) : null}
         </SectionCard>
 
         <SectionCard
@@ -2337,12 +2490,18 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 <tbody>
                   {todayWorkOrders.map((record) => {
                     const statusCode = normalizeStatusCode(record.status)
+                    const plannedUnitText = formatPlannedUnitForRecord(record)
 
                     return (
                       <tr key={record.id} className="border-b border-gray-800/80">
                         <td className="px-3 py-3 font-mono text-gray-300">{record.lot_number || '-'}</td>
                         <td className="px-3 py-3 text-white">{record.product_name || '-'}</td>
-                        <td className="px-3 py-3 text-gray-200">{formatNumber(record.planned_quantity_g)}g</td>
+                        <td className="px-3 py-3 text-gray-200">
+                          <div>{formatNumber(record.planned_quantity_g)}g</div>
+                          {plannedUnitText ? (
+                            <div className="mt-1 text-xs text-gray-400">{plannedUnitText}</div>
+                          ) : null}
+                        </td>
                         <td className="px-3 py-3 text-green-400">{formatNumber(record.actual_quantity_g)}g</td>
                         <td className="px-3 py-3 text-amber-300">{formatNumber(record.defect_quantity_g)}g</td>
                         <td className="px-3 py-3 text-blue-300">{formatNumber(record.sample_quantity_g)}g</td>

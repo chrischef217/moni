@@ -47,6 +47,10 @@ function formatRequiredGram(value: number) {
   }).format(value)}g`
 }
 
+function formatEaRemainder(ea: number, remainderG: number) {
+  return `${new Intl.NumberFormat('ko-KR').format(ea)}ea + 잔량 ${formatRequiredGram(remainderG)}`
+}
+
 type RecipeRow = {
   food_type_name?: string | null
   ratio_percent?: number | string | null
@@ -62,6 +66,26 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     const productId = String(data.product_id ?? '').trim()
     const productName = String(data.product_name ?? '').trim()
     const plannedQuantityG = parseNumber(data.planned_quantity_g) ?? 0
+    const productionUnitName = String(data.production_unit_name ?? '').trim()
+    const productionUnitWeightG = parseNumber(data.production_unit_weight_g)
+    const storedPlannedEa = parseNumber(data.planned_quantity_ea)
+    const storedPlannedRemainderG = parseNumber(data.planned_remainder_g)
+    const plannedEa =
+      storedPlannedEa !== null
+        ? Math.floor(storedPlannedEa)
+        : plannedQuantityG > 0 && productionUnitWeightG !== null && productionUnitWeightG > 0
+          ? Math.floor(plannedQuantityG / productionUnitWeightG)
+          : null
+    const plannedRemainderG =
+      storedPlannedRemainderG !== null
+        ? storedPlannedRemainderG
+        : plannedEa !== null && productionUnitWeightG !== null && productionUnitWeightG > 0
+          ? plannedQuantityG - plannedEa * productionUnitWeightG
+          : null
+    const plannedEaRemainderText =
+      plannedEa !== null && plannedRemainderG !== null ? formatEaRemainder(plannedEa, plannedRemainderG) : ''
+    const productionUnitLabel =
+      productionUnitName || (productionUnitWeightG !== null && productionUnitWeightG > 0 ? `${formatGram(productionUnitWeightG)} 단위` : '')
     let recipeRows: RecipeRow[] = []
 
     if (productId) {
@@ -152,8 +176,21 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
           <th>제품명</th>
           <td class="value">${escapeHtml(data.product_name)}</td>
           <th>예정수량</th>
-          <td class="value number">${formatGram(data.planned_quantity_g)}</td>
+          <td class="value number">
+            ${formatGram(data.planned_quantity_g)}
+            ${plannedEaRemainderText ? `<div style="margin-top:4px;font-size:12px;color:#374151;">${escapeHtml(plannedEaRemainderText)}</div>` : ''}
+          </td>
         </tr>
+        ${
+          productionUnitLabel
+            ? `<tr>
+          <th>생산단위</th>
+          <td class="value">${escapeHtml(productionUnitLabel)}</td>
+          <th>예정수량(ea)</th>
+          <td class="value number">${plannedEaRemainderText ? escapeHtml(plannedEaRemainderText) : '-'}</td>
+        </tr>`
+            : ''
+        }
       </tbody>
     </table>
 
