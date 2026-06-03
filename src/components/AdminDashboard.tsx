@@ -149,11 +149,26 @@ type ProductionActionPayload = {
     total_required_g?: number
     has_insufficient?: boolean
     has_missing_mapping?: boolean
+    deduction_basis_g?: number
+    entered_quantity_g?: number
+    loss_quantity_g?: number
+    planned_quantity_g?: number | null
   }
   deduction?: {
     materials?: DeductionPreviewRow[]
     total_required_g?: number
+    deduction_basis_g?: number
+    entered_quantity_g?: number
+    loss_quantity_g?: number
+    planned_quantity_g?: number | null
   }
+}
+
+type DeductionPreviewSummary = {
+  deduction_basis_g: number
+  entered_quantity_g: number
+  loss_quantity_g: number
+  planned_quantity_g: number | null
 }
 
 type FoodType = {
@@ -316,6 +331,12 @@ type ProductionUnitFormState = {
 
 type CompletionFormState = {
   record_id: string
+  actual_input_unit: 'ea' | 'kg' | 'g'
+  actual_input_value: string
+  defect_input_unit: 'ea' | 'kg' | 'g'
+  defect_input_value: string
+  sample_input_unit: 'ea' | 'kg' | 'g'
+  sample_input_value: string
   input_unit: 'ea' | 'kg' | 'g'
   actual_quantity_ea: string
   defect_quantity_ea: string
@@ -449,6 +470,43 @@ function parseInteger(value: string) {
   return parsed
 }
 
+function quantityToGrams(valueText: string, unit: 'ea' | 'kg' | 'g', unitWeightG: number | null) {
+  const value = toNumber(valueText)
+  if (value === null) {
+    return { value: null as number | null, grams: null as number | null, ea: null as number | null, invalidEa: false }
+  }
+  if (value < 0) {
+    return { value, grams: null as number | null, ea: null as number | null, invalidEa: false }
+  }
+
+  if (unit === 'ea') {
+    if (!Number.isInteger(value)) {
+      return { value, grams: null as number | null, ea: null as number | null, invalidEa: true }
+    }
+    if (unitWeightG === null || unitWeightG <= 0) {
+      return { value, grams: null as number | null, ea: value, invalidEa: false }
+    }
+    return { value, grams: value * unitWeightG, ea: value, invalidEa: false }
+  }
+
+  if (unit === 'kg') {
+    const grams = value * 1000
+    return {
+      value,
+      grams,
+      ea: unitWeightG !== null && unitWeightG > 0 ? Math.floor(grams / unitWeightG) : null,
+      invalidEa: false,
+    }
+  }
+
+  return {
+    value,
+    grams: value,
+    ea: unitWeightG !== null && unitWeightG > 0 ? Math.floor(value / unitWeightG) : null,
+    invalidEa: false,
+  }
+}
+
 function formatEaRemainder(ea: number | null | undefined, remainderG: number | null | undefined) {
   if (ea === null || ea === undefined) return '-'
   const remainder = Number(remainderG ?? 0)
@@ -551,9 +609,16 @@ function emptyProductionForm(): ProductionFormState {
   }
 }
 
-function emptyCompletionForm(inputUnit: 'ea' | 'kg' | 'g' = 'kg'): CompletionFormState {
+function emptyCompletionForm(hasProductionUnit = false): CompletionFormState {
+  const inputUnit = hasProductionUnit ? 'ea' : 'kg'
   return {
     record_id: '',
+    actual_input_unit: hasProductionUnit ? 'ea' : 'kg',
+    actual_input_value: '',
+    defect_input_unit: hasProductionUnit ? 'g' : 'kg',
+    defect_input_value: '',
+    sample_input_unit: hasProductionUnit ? 'g' : 'kg',
+    sample_input_value: '',
     input_unit: inputUnit,
     actual_quantity_ea: '',
     defect_quantity_ea: '',
@@ -917,6 +982,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     text: string
   } | null>(null)
   const [deductionPreviewRows, setDeductionPreviewRows] = useState<DeductionPreviewRow[]>([])
+  const [deductionPreviewSummary, setDeductionPreviewSummary] = useState<DeductionPreviewSummary | null>(null)
   const [deductionPreviewRecordId, setDeductionPreviewRecordId] = useState<string | null>(null)
   const [showDeductionModal, setShowDeductionModal] = useState(false)
   const [deductionModalRecord, setDeductionModalRecord] = useState<ProductionRecord | null>(null)
@@ -1020,65 +1086,67 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }, [completionTargetRecord?.production_unit_weight_g])
 
   const completionPreview = useMemo(() => {
-    if (completionForm.input_unit === 'ea') {
-      const actualEa = parseInteger(completionForm.actual_quantity_ea)
-      const defectEa = parseInteger(completionForm.defect_quantity_ea)
-      const sampleEa = parseInteger(completionForm.sample_quantity_ea)
-      const actualG = actualEa !== null && completionUnitWeightG !== null ? actualEa * completionUnitWeightG : null
-      const defectG = defectEa !== null && completionUnitWeightG !== null ? defectEa * completionUnitWeightG : null
-      const sampleG = sampleEa !== null && completionUnitWeightG !== null ? sampleEa * completionUnitWeightG : null
-      return {
-        unit: 'ea' as const,
-        actualEa,
-        defectEa,
-        sampleEa,
-        actualG,
-        defectG,
-        sampleG,
-        totalInput: (actualEa ?? 0) + (defectEa ?? 0) + (sampleEa ?? 0),
-      }
-    }
+    const actual = quantityToGrams(
+      completionForm.actual_input_value,
+      completionForm.actual_input_unit,
+      completionUnitWeightG,
+    )
+    const defect = quantityToGrams(
+      completionForm.defect_input_value,
+      completionForm.defect_input_unit,
+      completionUnitWeightG,
+    )
+    const sample = quantityToGrams(
+      completionForm.sample_input_value,
+      completionForm.sample_input_unit,
+      completionUnitWeightG,
+    )
 
-    if (completionForm.input_unit === 'g') {
-      const actualG = toNumber(completionForm.actual_quantity_g)
-      const defectG = toNumber(completionForm.defect_quantity_g)
-      const sampleG = toNumber(completionForm.sample_quantity_g)
-      return {
-        unit: 'g' as const,
-        actualEa: null,
-        defectEa: null,
-        sampleEa: null,
-        actualG,
-        defectG,
-        sampleG,
-        totalInput: (actualG ?? 0) + (defectG ?? 0) + (sampleG ?? 0),
-      }
-    }
+    const actualG = actual.grams
+    const defectG = defect.grams
+    const sampleG = sample.grams
+    const allReady = actualG !== null && defectG !== null && sampleG !== null
+    const enteredTotalG = allReady ? actualG + defectG + sampleG : null
+    const plannedG = completionTargetRecord?.planned_quantity_g ?? null
+    const lossG = enteredTotalG !== null && plannedG !== null ? plannedG - enteredTotalG : null
 
-    const actualKg = toNumber(completionForm.actual_quantity_kg)
-    const defectKg = toNumber(completionForm.defect_quantity_kg)
-    const sampleKg = toNumber(completionForm.sample_quantity_kg)
     return {
-      unit: 'kg' as const,
-      actualEa: null,
-      defectEa: null,
-      sampleEa: null,
-      actualG: actualKg === null ? null : actualKg * 1000,
-      defectG: defectKg === null ? null : defectKg * 1000,
-      sampleG: sampleKg === null ? null : sampleKg * 1000,
-      totalInput: (actualKg ?? 0) + (defectKg ?? 0) + (sampleKg ?? 0),
+      actual,
+      defect,
+      sample,
+      unit: completionForm.input_unit,
+      actualEa: actual.ea,
+      defectEa: defect.ea,
+      sampleEa: sample.ea,
+      actualG,
+      defectG,
+      sampleG,
+      enteredTotalG,
+      plannedG,
+      lossG,
+      totalInput:
+        completionForm.input_unit === 'ea'
+          ? (actual.ea ?? 0) + (defect.ea ?? 0) + (sample.ea ?? 0)
+          : completionForm.input_unit === 'kg'
+            ? ((actualG ?? 0) + (defectG ?? 0) + (sampleG ?? 0)) / 1000
+            : (actualG ?? 0) + (defectG ?? 0) + (sampleG ?? 0),
+      exceedsPlanned: lossG !== null ? lossG < 0 : false,
+      hasInvalidEa: actual.invalidEa || defect.invalidEa || sample.invalidEa,
+      hasMissingUnitWeightForEa:
+        completionUnitWeightG === null &&
+        (completionForm.actual_input_unit === 'ea' ||
+          completionForm.defect_input_unit === 'ea' ||
+          completionForm.sample_input_unit === 'ea'),
     }
   }, [
-    completionForm.actual_quantity_ea,
-    completionForm.actual_quantity_g,
-    completionForm.actual_quantity_kg,
-    completionForm.defect_quantity_ea,
-    completionForm.defect_quantity_g,
-    completionForm.defect_quantity_kg,
     completionForm.input_unit,
-    completionForm.sample_quantity_ea,
-    completionForm.sample_quantity_g,
-    completionForm.sample_quantity_kg,
+    completionForm.actual_input_unit,
+    completionForm.actual_input_value,
+    completionForm.defect_input_unit,
+    completionForm.defect_input_value,
+    completionForm.sample_input_unit,
+    completionForm.sample_input_value,
+    completionTargetRecord?.planned_quantity_g,
     completionUnitWeightG,
   ])
 
@@ -2087,6 +2155,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     const sampleG = toNumber(String(record.sample_quantity_g ?? '')) ?? 0
     const storedActualEa = parseInteger(String(record.actual_quantity_ea ?? ''))
     setCompletionForm({
+      ...emptyCompletionForm(unitWeightG !== null && unitWeightG > 0),
       record_id: record.id,
       input_unit: defaultInputUnit,
       actual_quantity_ea:
@@ -2103,6 +2172,159 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       sample_quantity_g: record.sample_quantity_g && record.sample_quantity_g > 0 ? String(record.sample_quantity_g) : '',
     })
     setShowCompletionModal(true)
+  }
+
+  function openCompletionModalV2(record: ProductionRecord) {
+    const statusCode = normalizeStatusCode(record.status)
+    if (statusCode === 'confirmed') {
+      setProductionActionMessage({ tone: 'error', text: '?뺤젙???묒뾽吏?쒖꽌???꾨즺?됱쓣 ?섏젙?????놁뒿?덈떎.' })
+      return
+    }
+    if (statusCode === 'cancelled') {
+      setProductionActionMessage({ tone: 'error', text: '痍⑥냼???묒뾽吏?쒖꽌???꾨즺 ?낅젰/?섏젙??遺덇??⑸땲??' })
+      return
+    }
+
+    setCompletionTargetRecord(record)
+    const unitWeightG = toNumber(String(record.production_unit_weight_g ?? ''))
+    const hasUnit = unitWeightG !== null && unitWeightG > 0
+    const actualG = toNumber(String(record.actual_quantity_g ?? '')) ?? 0
+    const defectG = toNumber(String(record.defect_quantity_g ?? '')) ?? 0
+    const sampleG = toNumber(String(record.sample_quantity_g ?? '')) ?? 0
+    const storedActualEa = parseInteger(String(record.actual_quantity_ea ?? ''))
+    const actualEaDefault = hasUnit ? storedActualEa ?? Math.floor(actualG / (unitWeightG ?? 1)) : null
+
+    setCompletionForm({
+      ...emptyCompletionForm(hasUnit),
+      record_id: record.id,
+      actual_input_unit: hasUnit ? 'ea' : 'kg',
+      actual_input_value: hasUnit ? String(actualEaDefault ?? 0) : actualG > 0 ? String(actualG / 1000) : '',
+      defect_input_unit: hasUnit ? 'g' : 'kg',
+      defect_input_value: hasUnit ? (defectG > 0 ? String(defectG) : '0') : defectG > 0 ? String(defectG / 1000) : '0',
+      sample_input_unit: hasUnit ? 'g' : 'kg',
+      sample_input_value: hasUnit ? (sampleG > 0 ? String(sampleG) : '0') : sampleG > 0 ? String(sampleG / 1000) : '0',
+      input_unit: hasUnit ? 'ea' : 'kg',
+      actual_quantity_ea: hasUnit ? String(actualEaDefault ?? 0) : '',
+      defect_quantity_ea: hasUnit ? String(Math.floor(defectG / (unitWeightG ?? 1))) : '',
+      sample_quantity_ea: hasUnit ? String(Math.floor(sampleG / (unitWeightG ?? 1))) : '',
+      actual_quantity_kg: actualG > 0 ? String(actualG / 1000) : '',
+      defect_quantity_kg: defectG > 0 ? String(defectG / 1000) : '',
+      sample_quantity_kg: sampleG > 0 ? String(sampleG / 1000) : '',
+      actual_quantity_g: actualG > 0 ? String(actualG) : '',
+      defect_quantity_g: defectG > 0 ? String(defectG) : '',
+      sample_quantity_g: sampleG > 0 ? String(sampleG) : '',
+    })
+    setShowCompletionModal(true)
+  }
+
+  async function completeWorkOrderV2() {
+    const recordId = completionForm.record_id
+    const plannedG = completionTargetRecord?.planned_quantity_g ?? 0
+    if (!recordId) {
+      setProductionActionMessage({ tone: 'error', text: '?꾨즺 泥섎━???묒뾽吏?쒖꽌瑜??좏깮??二쇱꽭??' })
+      return
+    }
+    if (plannedG <= 0) {
+      setProductionActionMessage({ tone: 'error', text: '?덉젙?섎웾???놁뼱 ?꾨즺 ?낅젰??吏꾪뻾?????놁뒿?덈떎.' })
+      return
+    }
+
+    const actual = quantityToGrams(
+      completionForm.actual_input_value,
+      completionForm.actual_input_unit,
+      completionUnitWeightG,
+    )
+    const defect = quantityToGrams(
+      completionForm.defect_input_value,
+      completionForm.defect_input_unit,
+      completionUnitWeightG,
+    )
+    const sample = quantityToGrams(
+      completionForm.sample_input_value,
+      completionForm.sample_input_unit,
+      completionUnitWeightG,
+    )
+
+    if (actual.value === null) {
+      setProductionActionMessage({ tone: 'error', text: '?꾨즺?섎웾???낅젰??二쇱꽭??' })
+      return
+    }
+    if (actual.grams === null || defect.grams === null || sample.grams === null) {
+      setProductionActionMessage({ tone: 'error', text: '?낅젰?⑥쐞??媛믪쓣 ?뺤씤??二쇱꽭??' })
+      return
+    }
+    if (actual.invalidEa || defect.invalidEa || sample.invalidEa) {
+      setProductionActionMessage({ tone: 'error', text: 'ea ?낅젰? ?뺤닔濡??낅젰??二쇱꽭??' })
+      return
+    }
+    if (
+      (completionForm.actual_input_unit === 'ea' ||
+        completionForm.defect_input_unit === 'ea' ||
+        completionForm.sample_input_unit === 'ea') &&
+      (completionUnitWeightG === null || completionUnitWeightG <= 0)
+    ) {
+      setProductionActionMessage({ tone: 'error', text: '?앹궛?⑥쐞 以묐웾 ?뺣낫媛 ?놁뼱 ea ?낅젰???ъ슜?????놁뒿?덈떎.' })
+      return
+    }
+    if (actual.value < 0 || (defect.value ?? 0) < 0 || (sample.value ?? 0) < 0) {
+      setProductionActionMessage({ tone: 'error', text: '?꾨즺??遺덈웾?섎웾/?섑뵆?섎웾? 0 ?댁긽?댁뼱???⑸땲??' })
+      return
+    }
+
+    const actualG = actual.grams
+    const defectG = defect.grams
+    const sampleG = sample.grams
+    const enteredTotal = actualG + defectG + sampleG
+    const lossG = plannedG - enteredTotal
+    if (lossG < 0) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: '?ㅼ젣 ?꾨즺??+ 遺덈웾?섎웾 + ?섑뵆?섎웾 ?⑷퀎媛 ?덉젙?섎웾??珥덇낵?????놁뒿?덈떎.',
+      })
+      return
+    }
+
+    const actualEa =
+      completionForm.actual_input_unit === 'ea'
+        ? actual.ea
+        : completionUnitWeightG !== null && completionUnitWeightG > 0
+          ? Math.floor(actualG / completionUnitWeightG)
+          : null
+
+    setProductionActionBusy(true)
+    try {
+      await callProductionAction({
+        action: 'complete',
+        record_id: recordId,
+        actual_input_unit: completionForm.actual_input_unit,
+        actual_input_value: actual.value,
+        defect_input_unit: completionForm.defect_input_unit,
+        defect_input_value: defect.value ?? 0,
+        sample_input_unit: completionForm.sample_input_unit,
+        sample_input_value: sample.value ?? 0,
+        input_unit: completionForm.actual_input_unit,
+        actual_quantity_ea: actualEa,
+        actual_quantity_g: actualG,
+        defect_quantity_g: defectG,
+        sample_quantity_g: sampleG,
+      })
+
+      setShowCompletionModal(false)
+      setCompletionTargetRecord(null)
+      setCompletionForm(emptyCompletionForm())
+      setProductionActionMessage({ tone: 'success', text: '?앹궛 ?꾨즺媛 ??λ릺?덉뒿?덈떎.' })
+      await Promise.all([
+        loadOverview(),
+        loadProductionRecords(productionDateFrom, productionDateTo),
+      ])
+    } catch (error) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '?앹궛 ?꾨즺 ??μ뿉 ?ㅽ뙣?덉뒿?덈떎.',
+      })
+    } finally {
+      setProductionActionBusy(false)
+    }
   }
 
   function openPlannedEditModal(record: ProductionRecord) {
@@ -2186,6 +2408,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       if (deductionPreviewRecordId === record.id) {
         setDeductionPreviewRecordId(null)
         setDeductionPreviewRows([])
+        setDeductionPreviewSummary(null)
       }
 
       setProductionActionMessage({ tone: 'success', text: '작업지시서가 삭제되었습니다.' })
@@ -2215,6 +2438,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setDeductionModalError('')
     setDeductionModalLoading(true)
     setDeductionPreviewRows([])
+    setDeductionPreviewSummary(null)
     setDeductionPreviewRecordId(record.id)
 
     try {
@@ -2225,6 +2449,15 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
       const rows = payload.preview?.materials ?? []
       setDeductionPreviewRows(rows)
+      setDeductionPreviewSummary({
+        deduction_basis_g: Number(payload.preview?.deduction_basis_g ?? 0),
+        entered_quantity_g: Number(payload.preview?.entered_quantity_g ?? 0),
+        loss_quantity_g: Number(payload.preview?.loss_quantity_g ?? 0),
+        planned_quantity_g:
+          payload.preview?.planned_quantity_g === null || payload.preview?.planned_quantity_g === undefined
+            ? null
+            : Number(payload.preview.planned_quantity_g),
+      })
       if (rows.length === 0) setDeductionModalError('차감 대상 원재료가 없습니다.')
     } catch (error) {
       setDeductionModalError(error instanceof Error ? error.message : '원재료 차감 미리보기 조회에 실패했습니다.')
@@ -2241,10 +2474,20 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         record_id: recordId,
       })
       setDeductionPreviewRows(payload.deduction?.materials ?? [])
+      setDeductionPreviewSummary({
+        deduction_basis_g: Number(payload.deduction?.deduction_basis_g ?? 0),
+        entered_quantity_g: Number(payload.deduction?.entered_quantity_g ?? 0),
+        loss_quantity_g: Number(payload.deduction?.loss_quantity_g ?? 0),
+        planned_quantity_g:
+          payload.deduction?.planned_quantity_g === null || payload.deduction?.planned_quantity_g === undefined
+            ? null
+            : Number(payload.deduction.planned_quantity_g),
+      })
       setDeductionPreviewRecordId(recordId)
       setShowDeductionModal(false)
       setDeductionModalRecord(null)
       setDeductionModalError('')
+      setDeductionPreviewSummary(null)
       setProductionActionMessage({ tone: 'success', text: '생산이 확정되고 원재료가 자동 차감되었습니다.' })
       await Promise.all([
         loadOverview(),
@@ -3144,7 +3387,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             {(statusCode === 'planned' || statusCode === 'in_progress') && (
                               <button
                                 type="button"
-                                onClick={() => openCompletionModal(record)}
+                                onClick={() => openCompletionModalV2(record)}
                                 className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                               >
                                 완료 입력
@@ -3155,7 +3398,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               <>
                                 <button
                                   type="button"
-                                  onClick={() => openCompletionModal(record)}
+                                  onClick={() => openCompletionModalV2(record)}
                                   className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                                 >
                                   완료량 수정
@@ -3535,7 +3778,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             {(statusCode === 'planned' || statusCode === 'in_progress') && (
                               <button
                                 type="button"
-                                onClick={() => openCompletionModal(record)}
+                                onClick={() => openCompletionModalV2(record)}
                                 className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                               >
                                 완료 입력
@@ -3546,7 +3789,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               <>
                                 <button
                                   type="button"
-                                  onClick={() => openCompletionModal(record)}
+                                  onClick={() => openCompletionModalV2(record)}
                                   className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                                 >
                                   완료량 수정
@@ -4333,195 +4576,132 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             )}
           </SectionCard>
           <SectionCard title="완료량 입력">
-            <Field label="입력 방식">
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCompletionForm((prev) => ({ ...prev, input_unit: 'ea' }))}
-                  disabled={completionUnitWeightG === null}
-                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                    completionForm.input_unit === 'ea'
-                      ? 'border-green-500 bg-green-500/20 text-green-200'
-                      : 'border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white'
-                  } disabled:cursor-not-allowed disabled:opacity-40`}
-                >
-                  ea 입력
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCompletionForm((prev) => ({ ...prev, input_unit: 'kg' }))}
-                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                    completionForm.input_unit === 'kg'
-                      ? 'border-green-500 bg-green-500/20 text-green-200'
-                      : 'border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white'
-                  }`}
-                >
-                  kg 입력
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCompletionForm((prev) => ({ ...prev, input_unit: 'g' }))}
-                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                    completionForm.input_unit === 'g'
-                      ? 'border-green-500 bg-green-500/20 text-green-200'
-                      : 'border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white'
-                  }`}
-                >
-                  g 입력
-                </button>
-              </div>
-              {completionUnitWeightG !== null ? (
-                <p className="mt-2 text-xs text-gray-400">생산단위 중량: {formatNumber(completionUnitWeightG)}g</p>
-              ) : (
-                <p className="mt-2 text-xs text-amber-300">생산단위 중량이 없어 ea 입력은 사용할 수 없습니다.</p>
-              )}
-            </Field>
-
-            {completionForm.input_unit === 'ea' ? (
-              <>
-                <Field label="완료 수량(ea)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={completionForm.actual_quantity_ea}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, actual_quantity_ea: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                </Field>
-                <Field label="불량 수량(ea)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={completionForm.defect_quantity_ea}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, defect_quantity_ea: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                </Field>
-                <Field label="샘플 수량(ea)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={completionForm.sample_quantity_ea}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, sample_quantity_ea: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                </Field>
-                <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs text-gray-300">
-                  <p>
-                    완료 {formatNumber(completionPreview.actualEa)}ea × {formatNumber(completionUnitWeightG)}g ={' '}
-                    <span className="text-green-300">{formatNumber(completionPreview.actualG)}g</span>
-                  </p>
-                  <p>
-                    불량 {formatNumber(completionPreview.defectEa)}ea × {formatNumber(completionUnitWeightG)}g ={' '}
-                    <span className="text-amber-300">{formatNumber(completionPreview.defectG)}g</span>
-                  </p>
-                  <p>
-                    샘플 {formatNumber(completionPreview.sampleEa)}ea × {formatNumber(completionUnitWeightG)}g ={' '}
-                    <span className="text-blue-300">{formatNumber(completionPreview.sampleG)}g</span>
-                  </p>
-                </div>
-              </>
-            ) : completionForm.input_unit === 'g' ? (
-              <>
-                <Field label="실제 완료량(g)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={completionForm.actual_quantity_g}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, actual_quantity_g: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                </Field>
-                <Field label="불량수량(g)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={completionForm.defect_quantity_g}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, defect_quantity_g: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                </Field>
-                <Field label="샘플수량(g)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={completionForm.sample_quantity_g}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, sample_quantity_g: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                </Field>
-              </>
+            {completionUnitWeightG !== null ? (
+              <p className="mb-3 text-xs text-gray-400">생산단위 중량: {formatNumber(completionUnitWeightG)}g</p>
             ) : (
-              <>
-                <Field label="실제 완료량(kg)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.001"
-                    value={completionForm.actual_quantity_kg}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, actual_quantity_kg: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                </Field>
-                <Field label="불량수량(kg)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.001"
-                    value={completionForm.defect_quantity_kg}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, defect_quantity_kg: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                </Field>
-                <Field label="샘플수량(kg)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.001"
-                    value={completionForm.sample_quantity_kg}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, sample_quantity_kg: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                </Field>
-              </>
+              <p className="mb-3 text-xs text-amber-300">생산단위 중량이 없어 ea 입력은 사용할 수 없습니다.</p>
             )}
-            <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs text-gray-300">
-              {completionPreview.unit === 'ea'
-                ? `합계(ea): ${formatNumber(completionPreview.totalInput)}`
-                : completionPreview.unit === 'kg'
-                  ? `합계(kg): ${completionPreview.totalInput.toFixed(3)}`
-                  : `합계(g): ${formatNumber(completionPreview.totalInput)}`}
-              <div className="mt-1">
-                환산 합계(g):{' '}
-                {completionPreview.actualG !== null &&
-                completionPreview.defectG !== null &&
-                completionPreview.sampleG !== null
-                  ? formatNumber(completionPreview.actualG + completionPreview.defectG + completionPreview.sampleG)
-                  : '-'}
+
+            <div className="space-y-3">
+              <Field label="완료수량">
+                <div className="grid grid-cols-[1fr_110px] gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step={completionForm.actual_input_unit === 'ea' ? '1' : '0.001'}
+                    value={completionForm.actual_input_value}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({
+                        ...prev,
+                        actual_input_value: event.target.value,
+                        input_unit: prev.actual_input_unit,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                  <select
+                    value={completionForm.actual_input_unit}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({
+                        ...prev,
+                        actual_input_unit: event.target.value as 'ea' | 'kg' | 'g',
+                        input_unit: event.target.value as 'ea' | 'kg' | 'g',
+                      }))
+                    }
+                    className="rounded-xl border border-gray-700 bg-gray-900 px-2 py-2 text-white outline-none focus:border-green-500"
+                  >
+                    <option value="ea">ea</option>
+                    <option value="kg">kg</option>
+                    <option value="g">g</option>
+                  </select>
+                </div>
+                <p className="mt-1 text-xs text-green-300">
+                  g 환산: {completionPreview.actualG !== null ? `${formatNumber(completionPreview.actualG)}g` : '-'}
+                </p>
+              </Field>
+
+              <Field label="불량수량">
+                <div className="grid grid-cols-[1fr_110px] gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step={completionForm.defect_input_unit === 'ea' ? '1' : '0.001'}
+                    value={completionForm.defect_input_value}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, defect_input_value: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                  <select
+                    value={completionForm.defect_input_unit}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({
+                        ...prev,
+                        defect_input_unit: event.target.value as 'ea' | 'kg' | 'g',
+                      }))
+                    }
+                    className="rounded-xl border border-gray-700 bg-gray-900 px-2 py-2 text-white outline-none focus:border-green-500"
+                  >
+                    <option value="g">g</option>
+                    <option value="kg">kg</option>
+                    <option value="ea">ea</option>
+                  </select>
+                </div>
+                <p className="mt-1 text-xs text-amber-300">
+                  g 환산: {completionPreview.defectG !== null ? `${formatNumber(completionPreview.defectG)}g` : '-'}
+                </p>
+              </Field>
+
+              <Field label="샘플수량">
+                <div className="grid grid-cols-[1fr_110px] gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step={completionForm.sample_input_unit === 'ea' ? '1' : '0.001'}
+                    value={completionForm.sample_input_value}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({ ...prev, sample_input_value: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                  <select
+                    value={completionForm.sample_input_unit}
+                    onChange={(event) =>
+                      setCompletionForm((prev) => ({
+                        ...prev,
+                        sample_input_unit: event.target.value as 'ea' | 'kg' | 'g',
+                      }))
+                    }
+                    className="rounded-xl border border-gray-700 bg-gray-900 px-2 py-2 text-white outline-none focus:border-green-500"
+                  >
+                    <option value="g">g</option>
+                    <option value="kg">kg</option>
+                    <option value="ea">ea</option>
+                  </select>
+                </div>
+                <p className="mt-1 text-xs text-blue-300">
+                  g 환산: {completionPreview.sampleG !== null ? `${formatNumber(completionPreview.sampleG)}g` : '-'}
+                </p>
+              </Field>
+
+              <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-3 text-xs text-gray-200">
+                <p>입력 합계(g): {completionPreview.enteredTotalG !== null ? `${formatNumber(completionPreview.enteredTotalG)}g` : '-'}</p>
+                <p className={completionPreview.exceedsPlanned ? 'mt-1 text-red-300' : 'mt-1 text-gray-300'}>
+                  로스량(g): {completionPreview.lossG !== null ? `${formatNumber(completionPreview.lossG)}g` : '-'}
+                </p>
+                <p className="mt-1 text-gray-300">
+                  완료 + 불량 + 샘플 + 로스 = 예정수량(
+                  {completionPreview.plannedG !== null ? `${formatNumber(completionPreview.plannedG)}g` : '-'})
+                </p>
+                {completionPreview.hasInvalidEa ? (
+                  <p className="mt-2 text-red-300">ea 입력값은 정수만 가능합니다.</p>
+                ) : null}
+                {completionPreview.hasMissingUnitWeightForEa ? (
+                  <p className="mt-2 text-amber-300">생산단위 중량 정보가 없어 ea 입력을 사용할 수 없습니다.</p>
+                ) : null}
+                {completionPreview.exceedsPlanned ? (
+                  <p className="mt-2 text-red-300">합계가 예정수량을 초과했습니다.</p>
+                ) : null}
               </div>
             </div>
           </SectionCard>
@@ -4540,7 +4720,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           </button>
           <button
             type="button"
-            onClick={() => void completeWorkOrder()}
+            onClick={() => void completeWorkOrderV2()}
             disabled={productionActionBusy}
             className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
           >
@@ -4613,6 +4793,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           setShowDeductionModal(false)
           setDeductionModalRecord(null)
           setDeductionModalError('')
+          setDeductionPreviewSummary(null)
         }}
       >
         {deductionModalLoading ? (
@@ -4633,7 +4814,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 LOT: <span className="font-mono text-white">{deductionModalRecord?.lot_number || '-'}</span>
               </p>
               <p>
-                완료량: <span className="text-green-400">{formatNumber(deductionModalRecord?.actual_quantity_g)}g</span>
+                입력 합계(g):{' '}
+                <span className="text-green-400">
+                  {formatNumber(deductionPreviewSummary?.entered_quantity_g ?? deductionModalRecord?.actual_quantity_g)}g
+                </span>
+              </p>
+              <p>
+                로스량(g): <span className="text-amber-300">{formatNumber(deductionPreviewSummary?.loss_quantity_g ?? 0)}g</span>
+              </p>
+              <p>
+                차감 기준량(g):{' '}
+                <span className="text-emerald-300">{formatNumber(deductionPreviewSummary?.deduction_basis_g ?? 0)}g</span>
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -4688,6 +4879,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               setShowDeductionModal(false)
               setDeductionModalRecord(null)
               setDeductionModalError('')
+              setDeductionPreviewSummary(null)
             }}
             className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
           >

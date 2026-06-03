@@ -78,6 +78,10 @@ type DeductionPreview = {
   totalRequiredG: number
   hasInsufficient: boolean
   hasMissingMapping: boolean
+  deductionBasisG: number
+  enteredQuantityG: number
+  lossQuantityG: number
+  plannedQuantityG: number | null
 }
 
 class ApiError extends Error {
@@ -108,6 +112,14 @@ function toInteger(value: unknown): number | null {
   const parsed = parseNumber(value)
   if (parsed === null) return null
   return Math.trunc(parsed)
+}
+
+type InputUnit = 'ea' | 'kg' | 'g'
+
+function normalizeInputUnit(value: unknown): InputUnit | null {
+  const raw = toText(value).toLowerCase()
+  if (raw === 'ea' || raw === 'kg' || raw === 'g') return raw
+  return null
 }
 
 function normalizeStatus(value: unknown, fallback: string) {
@@ -467,8 +479,39 @@ async function resolveRecipes(record: Record<string, unknown>) {
 async function buildDeductionPreview(record: Record<string, unknown>): Promise<DeductionPreview> {
   const supabase = createMoniServiceRoleClient()
   const actualQuantityG = parseNumber(record.actual_quantity_g) ?? 0
-  if (actualQuantityG <= 0) {
-    throw new ApiError(400, 'actual_quantity_g가 없거나 0 이하입니다.', 'validation.actual_quantity')
+  const defectQuantityG = parseNumber(record.defect_quantity_g) ?? 0
+  const sampleQuantityG = parseNumber(record.sample_quantity_g) ?? 0
+  const plannedQuantityG = parseNumber(record.planned_quantity_g)
+
+  if (actualQuantityG < 0 || defectQuantityG < 0 || sampleQuantityG < 0) {
+    throw new ApiError(400, '완료/불량/샘플 수량은 0 이상이어야 합니다.', 'validation.actual_quantity')
+  }
+
+  const enteredQuantityG = actualQuantityG + defectQuantityG + sampleQuantityG
+  if (enteredQuantityG <= 0) {
+    throw new ApiError(400, '완료/불량/샘플 합계가 0 이하입니다.', 'validation.actual_quantity')
+  }
+
+  let lossQuantityG = 0
+  let deductionBasisG = enteredQuantityG
+
+  if (plannedQuantityG !== null) {
+    if (plannedQuantityG <= 0) {
+      throw new ApiError(422, '예정수량이 없어 차감 기준량을 계산할 수 없습니다.', 'validation.planned_quantity')
+    }
+    if (enteredQuantityG > plannedQuantityG) {
+      throw new ApiError(
+        409,
+        '완료/불량/샘플 합계가 예정수량을 초과하여 차감 미리보기를 계산할 수 없습니다.',
+        'validation.deduction_basis',
+      )
+    }
+    lossQuantityG = plannedQuantityG - enteredQuantityG
+    deductionBasisG = enteredQuantityG + lossQuantityG
+  }
+
+  if (deductionBasisG <= 0) {
+    throw new ApiError(400, '차감 기준량이 0 이하입니다.', 'validation.deduction_basis')
   }
 
   const allRecipes = await resolveRecipes(record)
@@ -527,7 +570,7 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
     const ratio = parseNumber(recipe.ratio_percent) ?? 0
     if (ratio <= 0) continue
 
-    const requiredG = (actualQuantityG * ratio) / 100
+    const requiredG = (deductionBasisG * ratio) / 100
     if (requiredG <= 0) continue
 
     const foodTypeId = toText(recipe.food_type_id)
@@ -577,6 +620,10 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
     totalRequiredG: materialsPreview.reduce((sum, item) => sum + item.required_g, 0),
     hasInsufficient: materialsPreview.some((item) => item.insufficient),
     hasMissingMapping: materialsPreview.some((item) => !item.material_id),
+    deductionBasisG,
+    enteredQuantityG,
+    lossQuantityG,
+    plannedQuantityG,
   }
 }
 
@@ -837,6 +884,144 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ ok: false, error: 'planned 또는 completed 상태에서만 완료 입력이 가능합니다.' }, { status: 409 })
       }
 
+      const hasPerFieldInput =
+        body.actual_input_unit !== undefined ||
+        body.defect_input_unit !== undefined ||
+        body.sample_input_unit !== undefined ||
+        body.actual_input_value !== undefined ||
+        body.defect_input_value !== undefined ||
+        body.sample_input_value !== undefined
+
+      if (hasPerFieldInput) {
+        const productionUnitWeightG = parseNumber(record.production_unit_weight_g)
+        const actualInputUnit = normalizeInputUnit(body.actual_input_unit)
+        const defectInputUnit = normalizeInputUnit(body.defect_input_unit)
+        const sampleInputUnit = normalizeInputUnit(body.sample_input_unit)
+
+        if (!actualInputUnit || !defectInputUnit || !sampleInputUnit) {
+          return NextResponse.json(
+            { ok: false, error: 'actual_input_unit, defect_input_unit, sample_input_unit??ea|kg|g媛 ?꾩슂?⑸땲??' },
+            { status: 400 },
+          )
+        }
+
+        const actualInputValue = parseNumber(body.actual_input_value)
+        if (actualInputValue === null) {
+          return NextResponse.json({ ok: false, error: 'actual_input_value媛 ?꾩슂?⑸땲??' }, { status: 400 })
+        }
+
+        const defectInputValueRaw = body.defect_input_value
+        const sampleInputValueRaw = body.sample_input_value
+        const defectInputValue = parseNumber(defectInputValueRaw)
+        const sampleInputValue = parseNumber(sampleInputValueRaw)
+
+        if (defectInputValueRaw !== undefined && defectInputValue === null) {
+          return NextResponse.json({ ok: false, error: 'defect_input_value瑜??뺤긽?곸쑝濡??낅젰??二쇱꽭??' }, { status: 400 })
+        }
+        if (sampleInputValueRaw !== undefined && sampleInputValue === null) {
+          return NextResponse.json({ ok: false, error: 'sample_input_value瑜??뺤긽?곸쑝濡??낅젰??二쇱꽭??' }, { status: 400 })
+        }
+
+        const toQuantityByUnit = (
+          value: number,
+          unit: InputUnit,
+          fieldName: string,
+        ): { grams: number; ea: number | null } | NextResponse => {
+          if (value < 0) {
+            return NextResponse.json({ ok: false, error: `${fieldName}? 0 ?댁긽?댁뼱???⑸땲??` }, { status: 400 })
+          }
+
+          if (unit === 'ea') {
+            if (productionUnitWeightG === null || productionUnitWeightG <= 0) {
+              return NextResponse.json(
+                { ok: false, error: `${fieldName}??ea濡??낅젰?섎㈃ production_unit_weight_g媛 ?꾩슂?⑸땲??` },
+                { status: 400 },
+              )
+            }
+            if (!Number.isInteger(value)) {
+              return NextResponse.json({ ok: false, error: `${fieldName}??ea ?낅젰 ???뺤닔?ъ빞 ?⑸땲??` }, { status: 400 })
+            }
+            return { grams: value * productionUnitWeightG, ea: value }
+          }
+
+          if (unit === 'kg') {
+            return {
+              grams: value * 1000,
+              ea:
+                productionUnitWeightG !== null && productionUnitWeightG > 0
+                  ? Math.floor((value * 1000) / productionUnitWeightG)
+                  : null,
+            }
+          }
+
+          return {
+            grams: value,
+            ea:
+              productionUnitWeightG !== null && productionUnitWeightG > 0
+                ? Math.floor(value / productionUnitWeightG)
+                : null,
+          }
+        }
+
+        const actualConverted = toQuantityByUnit(actualInputValue, actualInputUnit, '?꾨즺?섎웾')
+        if (actualConverted instanceof NextResponse) return actualConverted
+        const defectConverted = toQuantityByUnit(defectInputValue ?? 0, defectInputUnit, '遺덈웾?섎웾')
+        if (defectConverted instanceof NextResponse) return defectConverted
+        const sampleConverted = toQuantityByUnit(sampleInputValue ?? 0, sampleInputUnit, '?섑뵆?섎웾')
+        if (sampleConverted instanceof NextResponse) return sampleConverted
+
+        const actualQuantityG = actualConverted.grams
+        const defectQuantityG = defectConverted.grams
+        const sampleQuantityG = sampleConverted.grams
+        const actualQuantityEa =
+          actualInputUnit === 'ea'
+            ? actualConverted.ea
+            : productionUnitWeightG !== null && productionUnitWeightG > 0
+              ? Math.floor(actualQuantityG / productionUnitWeightG)
+              : null
+
+        const plannedCandidate = parseNumber(body.planned_quantity_g)
+        const plannedQuantityG = plannedCandidate ?? parseNumber(record.planned_quantity_g)
+        if (plannedQuantityG === null || plannedQuantityG <= 0) {
+          return NextResponse.json({ ok: false, error: '?덉젙?섎웾???놁뼱 ?꾨즺 ?낅젰??吏꾪뻾?????놁뒿?덈떎.' }, { status: 422 })
+        }
+        if (actualQuantityG + defectQuantityG + sampleQuantityG > plannedQuantityG) {
+          return NextResponse.json(
+            { ok: false, error: '?ㅼ젣 ?꾨즺??+ 遺덈웾?섎웾 + ?섑뵆?섎웾 ?⑷퀎媛 ?덉젙?섎웾??珥덇낵?????놁뒿?덈떎.' },
+            { status: 400 },
+          )
+        }
+
+        const plannedQuantityEa =
+          productionUnitWeightG !== null && productionUnitWeightG > 0
+            ? Math.floor(plannedQuantityG / productionUnitWeightG)
+            : null
+        const plannedRemainderG =
+          productionUnitWeightG !== null && productionUnitWeightG > 0
+            ? plannedQuantityG - Math.floor(plannedQuantityG / productionUnitWeightG) * productionUnitWeightG
+            : 0
+
+        const updated = await updateRecordWithResilientColumns(
+          recordId,
+          {
+            actual_quantity_g: actualQuantityG,
+            planned_quantity_g: plannedQuantityG,
+            actual_quantity_ea: actualQuantityEa,
+            planned_quantity_ea: plannedQuantityEa,
+            planned_remainder_g: plannedRemainderG,
+            defect_quantity_g: defectQuantityG,
+            sample_quantity_g: sampleQuantityG,
+            status: 'completed',
+          },
+          actualQuantityG,
+        )
+
+        return NextResponse.json(
+          { ok: true, record: toRecordRow(updated), message: '?앹궛 ?꾨즺濡?泥섎━?덉뒿?덈떎.' },
+          { status: 200 },
+        )
+      }
+
       const inputUnitRaw = toText(body.input_unit).toLowerCase()
       if (inputUnitRaw && !['ea', 'kg', 'g'].includes(inputUnitRaw)) {
         return NextResponse.json({ ok: false, error: 'input_unit은 ea, kg, g 중 하나여야 합니다.' }, { status: 400 })
@@ -997,6 +1182,10 @@ export async function PATCH(request: NextRequest) {
             total_required_g: preview.totalRequiredG,
             has_insufficient: preview.hasInsufficient,
             has_missing_mapping: preview.hasMissingMapping,
+            deduction_basis_g: preview.deductionBasisG,
+            entered_quantity_g: preview.enteredQuantityG,
+            loss_quantity_g: preview.lossQuantityG,
+            planned_quantity_g: preview.plannedQuantityG,
           },
         },
         { status: 200 },
@@ -1145,6 +1334,10 @@ export async function PATCH(request: NextRequest) {
           deduction: {
             materials: preview.materials,
             total_required_g: preview.totalRequiredG,
+            deduction_basis_g: preview.deductionBasisG,
+            entered_quantity_g: preview.enteredQuantityG,
+            loss_quantity_g: preview.lossQuantityG,
+            planned_quantity_g: preview.plannedQuantityG,
           },
         },
         { status: 200 },

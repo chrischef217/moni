@@ -241,8 +241,8 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       </table>
       <table class="sign-table">
         <tbody>
-          <tr><th>작성자 서명</th><td>__________________</td></tr>
-          <tr><th>확인자 서명</th><td>__________________</td></tr>
+          <tr><th>작성자 서명</th><td></td></tr>
+          <tr><th>확인자 서명</th><td></td></tr>
         </tbody>
       </table>
     </div>
