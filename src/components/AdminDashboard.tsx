@@ -4618,8 +4618,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           setSampleInputRows([makeSampleRow(0)])
         }}
       >
-        <div className="grid gap-4 md:grid-cols-[minmax(220px,0.35fr)_minmax(0,0.65fr)]">
-          <SectionCard title="대상 작업지시서" className="space-y-2">
+        <div className="grid gap-4 md:grid-cols-[minmax(190px,0.28fr)_minmax(0,0.72fr)]">
+          <SectionCard title="대상 작업지시서" className="space-y-1 p-3">
             {completionTargetRecord ? (
               <div className="space-y-1.5 text-xs text-gray-300">
                 <p>
@@ -4662,7 +4662,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
             <div className="space-y-3">
               <Field label="완료수량">
-                <div className="hidden grid-cols-[1fr_110px] gap-2">
+                <div className="grid grid-cols-[1fr_110px] gap-2">
                   <input
                     type="number"
                     min="0"
@@ -4730,7 +4730,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               </Field>
 
               <Field label="샘플수량">
-                <div className="grid grid-cols-[1fr_110px] gap-2">
+                <div className="hidden grid-cols-[1fr_110px] gap-2">
                   <input
                     type="number"
                     min="0"
