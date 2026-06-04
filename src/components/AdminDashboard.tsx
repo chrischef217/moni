@@ -4730,34 +4730,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               </Field>
 
               <Field label="샘플수량">
-                <div className="hidden grid-cols-[1fr_110px] gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.001"
-                    value={completionForm.sample_input_value}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({ ...prev, sample_input_value: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                  />
-                  <select
-                    value={completionForm.sample_input_unit}
-                    onChange={(event) =>
-                      setCompletionForm((prev) => ({
-                        ...prev,
-                        sample_input_unit: event.target.value as 'kg' | 'g',
-                      }))
-                    }
-                    className="rounded-xl border border-gray-700 bg-gray-900 px-2 py-2 text-white outline-none focus:border-green-500"
-                  >
-                    <option value="g">g</option>
-                    <option value="kg">kg</option>
-                  </select>
-                </div>
-                <p className="hidden mt-1 text-xs text-blue-300">
-                  g 환산: {completionPreview.sampleG !== null ? `${formatNumber(completionPreview.sampleG)}g` : '-'}
-                </p>
                 <div className="mt-2 space-y-2 rounded-xl border border-gray-700/60 bg-gray-900/40 p-2">
                   {sampleRowPreviews.map((row) => (
                     <div key={row.id} className="rounded-lg border border-gray-700 bg-gray-900/70 p-2">
