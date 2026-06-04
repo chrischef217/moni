@@ -15,6 +15,7 @@ type ProductionSubTabKey =
   | 'prod-overview'
   | 'prod-work'
   | 'prod-recipes'
+  | 'prod-recipe-mapping'
   | 'prod-materials'
   | 'prod-packaging'
   | 'prod-sanitation'
@@ -180,9 +181,37 @@ type FoodType = {
 type RawMaterialMapping = {
   id: string
   food_type_id: string
+  recipe_id?: string | null
+  product_id?: string | null
+  product_name?: string | null
+  mapping_scope?: 'recipe' | 'product' | 'global' | null
+  is_default?: boolean | null
+  raw_material_id?: string | number | null
   raw_material_name: string
   packing_unit?: string | null
   packing_weight_g?: number | null
+}
+
+type RecipeMaterialMappingRow = {
+  recipe_id: string
+  product_id: string
+  product_name: string
+  recipe_item_name: string
+  food_type_id: string
+  food_type_name: string
+  ratio_percent: number
+  current_raw_material_name: string | null
+  mapping_status: 'mapped' | 'unmapped' | 'name_fallback' | 'needs_review'
+  applied_scope: 'recipe' | 'product' | 'global' | 'fallback' | null
+  mapping_id: string | null
+  is_broad: boolean
+}
+
+type RecipeMaterialMappingsPayload = {
+  ok?: boolean
+  error?: string
+  rows?: RecipeMaterialMappingRow[]
+  rawMaterials?: Array<{ id: string; item_name: string }>
 }
 
 type RecipeRow = {
@@ -479,6 +508,8 @@ const PRODUCTION_TABS: SubMenuItem[] = [
   { key: 'prod-quality', label: '품질 관리' },
   { key: 'prod-compliance', label: '규정준수 모니터' },
 ]
+
+PRODUCTION_TABS.splice(3, 0, { key: 'prod-recipe-mapping', label: '레시피 원재료 매핑' })
 
 const CHAT_EXAMPLES = [
   '오늘 생산 실적 요약해줘',
@@ -1112,6 +1143,21 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [recipeForm, setRecipeForm] = useState<RecipeFormState>(emptyRecipeForm())
   const [recipeSaving, setRecipeSaving] = useState(false)
   const [recipeRawMaterialValidation, setRecipeRawMaterialValidation] = useState<FieldValidation>(EMPTY_VALIDATION)
+  const [recipeMappingRows, setRecipeMappingRows] = useState<RecipeMaterialMappingRow[]>([])
+  const [recipeMappingLoading, setRecipeMappingLoading] = useState(false)
+  const [recipeMappingError, setRecipeMappingError] = useState('')
+  const [recipeMappingRawMaterials, setRecipeMappingRawMaterials] = useState<Array<{ id: string; item_name: string }>>([])
+  const [recipeMappingProductQuery, setRecipeMappingProductQuery] = useState('')
+  const [recipeMappingItemQuery, setRecipeMappingItemQuery] = useState('')
+  const [recipeMappingStatusFilter, setRecipeMappingStatusFilter] = useState<'all' | 'mapped' | 'unmapped' | 'name_fallback' | 'needs_review'>('all')
+  const [recipeMappingScopeFilter, setRecipeMappingScopeFilter] = useState<'all' | 'recipe' | 'product' | 'global' | 'fallback'>('all')
+  const [recipeMappingBroadOnly, setRecipeMappingBroadOnly] = useState(false)
+  const [showRecipeMappingModal, setShowRecipeMappingModal] = useState(false)
+  const [selectedRecipeMappingRow, setSelectedRecipeMappingRow] = useState<RecipeMaterialMappingRow | null>(null)
+  const [recipeMappingSelectedMaterial, setRecipeMappingSelectedMaterial] = useState('')
+  const [recipeMappingSelectedScope, setRecipeMappingSelectedScope] = useState<'recipe' | 'product' | 'global'>('recipe')
+  const [recipeMappingSaving, setRecipeMappingSaving] = useState(false)
+  const [recipeMappingMessage, setRecipeMappingMessage] = useState<{ tone: 'success' | 'error' | 'warning'; text: string } | null>(null)
 
   const [materialsLoading, setMaterialsLoading] = useState(true)
   const [materialsError, setMaterialsError] = useState('')
@@ -1359,6 +1405,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
   useEffect(() => {
     if (mainMenu !== 'production') return
+    if (productionTab === 'prod-recipe-mapping') {
+      void loadRecipeMaterialMappings()
+      return
+    }
     if (productionTab === 'prod-materials') {
       void loadMaterials(materialsView)
       return
@@ -1847,6 +1897,77 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setRecipesError(error instanceof Error ? error.message : '레시피 데이터를 불러오지 못했습니다.')
     } finally {
       setRecipesLoading(false)
+    }
+  }
+
+  async function loadRecipeMaterialMappings() {
+    setRecipeMappingLoading(true)
+    setRecipeMappingError('')
+    try {
+      const params = new URLSearchParams()
+      params.set('view', 'recipes')
+      if (recipeMappingProductQuery.trim()) params.set('product_name', recipeMappingProductQuery.trim())
+      if (recipeMappingItemQuery.trim()) params.set('recipe_item_name', recipeMappingItemQuery.trim())
+      if (recipeMappingStatusFilter !== 'all') params.set('status', recipeMappingStatusFilter)
+      if (recipeMappingScopeFilter !== 'all') params.set('scope', recipeMappingScopeFilter)
+      if (recipeMappingBroadOnly) params.set('broad_only', 'true')
+
+      const payload = await readJson<RecipeMaterialMappingsPayload>(`/api/moni/raw-material-mapping?${params.toString()}`)
+      setRecipeMappingRows(payload.rows ?? [])
+      setRecipeMappingRawMaterials(payload.rawMaterials ?? [])
+    } catch (error) {
+      setRecipeMappingError(error instanceof Error ? error.message : '레시피 원재료 매핑 목록을 불러오지 못했습니다.')
+    } finally {
+      setRecipeMappingLoading(false)
+    }
+  }
+
+  function openRecipeMappingModal(row: RecipeMaterialMappingRow) {
+    setSelectedRecipeMappingRow(row)
+    setRecipeMappingSelectedScope(
+      row.applied_scope === 'recipe' || row.applied_scope === 'product' || row.applied_scope === 'global'
+        ? row.applied_scope
+        : 'recipe',
+    )
+    setRecipeMappingSelectedMaterial(row.current_raw_material_name ?? '')
+    setRecipeMappingMessage(null)
+    setShowRecipeMappingModal(true)
+  }
+
+  async function saveRecipeManualMapping() {
+    if (!selectedRecipeMappingRow) return
+    if (!recipeMappingSelectedMaterial.trim()) {
+      setRecipeMappingMessage({ tone: 'error', text: '원재료를 선택해 주세요.' })
+      return
+    }
+
+    setRecipeMappingSaving(true)
+    setRecipeMappingMessage(null)
+    try {
+      await readJson('/api/moni/raw-material-mapping', {
+        method: 'POST',
+        body: JSON.stringify({
+          recipe_id: selectedRecipeMappingRow.recipe_id,
+          product_id: selectedRecipeMappingRow.product_id,
+          product_name: selectedRecipeMappingRow.product_name,
+          food_type_id: selectedRecipeMappingRow.food_type_id,
+          food_type_name: selectedRecipeMappingRow.food_type_name,
+          raw_material_name: recipeMappingSelectedMaterial,
+          mapping_scope: recipeMappingSelectedScope,
+          is_default: true,
+        }),
+      })
+      setRecipeMappingMessage({ tone: 'success', text: '매핑을 저장했습니다.' })
+      await Promise.all([loadRecipeMaterialMappings(), loadRecipes(selectedRecipeProductId)])
+      setShowRecipeMappingModal(false)
+      setSelectedRecipeMappingRow(null)
+    } catch (error) {
+      setRecipeMappingMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '매핑 저장 중 오류가 발생했습니다.',
+      })
+    } finally {
+      setRecipeMappingSaving(false)
     }
   }
 
@@ -4763,6 +4884,150 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     )
   }
 
+  function renderRecipeMaterialMapping() {
+    const broadLabels = ['소스', '복합조미식품', '기타가공품', '조미식품', '추출가공식품', '수산물가공품', '육류가공품']
+    const statusLabel = (status: RecipeMaterialMappingRow['mapping_status']) => {
+      if (status === 'mapped') return '매핑됨'
+      if (status === 'name_fallback') return '이름 fallback'
+      if (status === 'needs_review') return '확인 필요'
+      return '미매핑'
+    }
+    const scopeLabel = (scope: RecipeMaterialMappingRow['applied_scope']) => {
+      if (scope === 'recipe') return '레시피별'
+      if (scope === 'product') return '제품별'
+      if (scope === 'global') return '글로벌'
+      if (scope === 'fallback') return 'fallback'
+      return '-'
+    }
+
+    return (
+      <div className="space-y-5">
+        <SectionCard
+          title="레시피 원재료 매핑"
+          description="남은 레시피 항목을 제품별로 검토하고 scope 기준으로 원재료를 직접 연결합니다."
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => void loadRecipeMaterialMappings()}
+                className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+              >
+                조회
+              </button>
+            </>
+          }
+        >
+          <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <Field label="제품명 검색">
+              <input
+                value={recipeMappingProductQuery}
+                onChange={(event) => setRecipeMappingProductQuery(event.target.value)}
+                placeholder="예: 매콤다대기"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="레시피 항목명 검색">
+              <input
+                value={recipeMappingItemQuery}
+                onChange={(event) => setRecipeMappingItemQuery(event.target.value)}
+                placeholder="예: 소스, 대파"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="매핑 상태">
+              <select
+                value={recipeMappingStatusFilter}
+                onChange={(event) => setRecipeMappingStatusFilter(event.target.value as typeof recipeMappingStatusFilter)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="all">전체</option>
+                <option value="mapped">매핑됨</option>
+                <option value="unmapped">미매핑</option>
+                <option value="name_fallback">이름 fallback</option>
+                <option value="needs_review">확인 필요</option>
+              </select>
+            </Field>
+            <Field label="적용 범위">
+              <select
+                value={recipeMappingScopeFilter}
+                onChange={(event) => setRecipeMappingScopeFilter(event.target.value as typeof recipeMappingScopeFilter)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="all">전체</option>
+                <option value="recipe">recipe</option>
+                <option value="product">product</option>
+                <option value="global">global</option>
+                <option value="fallback">fallback</option>
+              </select>
+            </Field>
+            <label className="flex items-center gap-2 rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                checked={recipeMappingBroadOnly}
+                onChange={(event) => setRecipeMappingBroadOnly(event.target.checked)}
+                className="size-4 rounded border-gray-600 bg-gray-800 text-green-500"
+              />
+              포괄 항목만 보기
+            </label>
+          </div>
+
+          <p className="mb-4 text-xs text-gray-400">포괄 항목 기준: {broadLabels.join(', ')}</p>
+
+          {recipeMappingLoading ? (
+            <LoadingBlock lines={6} />
+          ) : recipeMappingError ? (
+            <EmptyState title="매핑 목록을 불러오지 못했습니다" description={recipeMappingError} />
+          ) : recipeMappingRows.length === 0 ? (
+            <EmptyState title="표시할 매핑 대상이 없습니다" description="필터를 조정하거나 조회 버튼을 눌러 다시 불러오세요." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">제품명</th>
+                    <th className="px-3 py-2 font-medium">현재 레시피 항목명</th>
+                    <th className="px-3 py-2 font-medium">식품유형명</th>
+                    <th className="px-3 py-2 font-medium">배합비율</th>
+                    <th className="px-3 py-2 font-medium">현재 매핑 원재료</th>
+                    <th className="px-3 py-2 font-medium">매핑 상태</th>
+                    <th className="px-3 py-2 font-medium">적용 범위</th>
+                    <th className="px-3 py-2 font-medium">처리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recipeMappingRows.map((row) => (
+                    <tr key={`${row.recipe_id}-${row.food_type_id}`} className="border-b border-gray-800/80">
+                      <td className="px-3 py-3 text-white">{row.product_name}</td>
+                      <td className="px-3 py-3 text-gray-200">{row.recipe_item_name}</td>
+                      <td className="px-3 py-3 text-gray-200">{row.food_type_name}</td>
+                      <td className="px-3 py-3 text-green-400">{row.ratio_percent}%</td>
+                      <td className="px-3 py-3 text-gray-200">{row.current_raw_material_name || '-'}</td>
+                      <td className="px-3 py-3">
+                        <span className="rounded-lg border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-200">
+                          {statusLabel(row.mapping_status)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-gray-300">{scopeLabel(row.applied_scope)}</td>
+                      <td className="px-3 py-3">
+                        <button
+                          type="button"
+                          onClick={() => openRecipeMappingModal(row)}
+                          className="rounded-lg border border-green-700/70 px-3 py-1.5 text-xs text-green-200 hover:border-green-500 hover:text-white"
+                        >
+                          처리
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      </div>
+    )
+  }
+
   function renderSanitation() {
     return (
       <SectionCard
@@ -5044,6 +5309,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     if (productionTab === 'prod-overview') return renderOverviewContent()
     if (productionTab === 'prod-work') return renderWorkOrdersV2()
     if (productionTab === 'prod-recipes') return renderRecipeManagement()
+    if (productionTab === 'prod-recipe-mapping') return renderRecipeMaterialMapping()
     if (productionTab === 'prod-materials') return renderMaterialsManagement()
     if (productionTab === 'prod-packaging') return renderPackagingManagement()
     if (productionTab === 'prod-sanitation') return renderSanitation()
@@ -5159,6 +5425,101 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       </div>
 
       {renderMobileChatBar()}
+
+      <Modal
+        open={showRecipeMappingModal}
+        title="레시피 원재료 매핑 처리"
+        description={selectedRecipeMappingRow ? `${selectedRecipeMappingRow.product_name} / ${selectedRecipeMappingRow.recipe_item_name}` : ''}
+        onClose={() => {
+          setShowRecipeMappingModal(false)
+          setSelectedRecipeMappingRow(null)
+          setRecipeMappingMessage(null)
+        }}
+      >
+        {selectedRecipeMappingRow ? (
+          <div className="space-y-4">
+            <div className="grid gap-3 rounded-xl border border-gray-700 bg-gray-900/70 p-4 text-sm text-gray-200 md:grid-cols-2">
+              <p>제품명: <span className="text-white">{selectedRecipeMappingRow.product_name}</span></p>
+              <p>레시피 항목명: <span className="text-white">{selectedRecipeMappingRow.recipe_item_name}</span></p>
+              <p>식품유형명: <span className="text-white">{selectedRecipeMappingRow.food_type_name}</span></p>
+              <p>배합비율: <span className="text-green-300">{selectedRecipeMappingRow.ratio_percent}%</span></p>
+              <p className="md:col-span-2">
+                현재 매핑 상태: <span className="text-amber-300">{selectedRecipeMappingRow.mapping_status}</span> /{' '}
+                적용 범위: <span className="text-gray-100">{selectedRecipeMappingRow.applied_scope ?? '-'}</span>
+              </p>
+            </div>
+
+            <Field label="active raw_materials 선택">
+              <select
+                value={recipeMappingSelectedMaterial}
+                onChange={(event) => setRecipeMappingSelectedMaterial(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="">원재료 선택</option>
+                {recipeMappingRawMaterials.map((item) => (
+                  <option key={item.id} value={item.item_name}>
+                    {item.item_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="적용 범위">
+              <select
+                value={recipeMappingSelectedScope}
+                onChange={(event) => setRecipeMappingSelectedScope(event.target.value as 'recipe' | 'product' | 'global')}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="recipe">이 레시피에만 적용</option>
+                <option value="product">이 제품의 같은 항목에 적용</option>
+                <option value="global">같은 식품유형 전체에 적용</option>
+              </select>
+            </Field>
+
+            {recipeMappingSelectedScope === 'global' ? (
+              <div className="rounded-xl border border-amber-700/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+                글로벌 적용은 여러 제품에 영향을 줄 수 있습니다. 적용 범위를 다시 확인해 주세요.
+              </div>
+            ) : null}
+
+            {recipeMappingMessage ? (
+              <div
+                className={`rounded-xl border px-4 py-3 text-sm ${
+                  recipeMappingMessage.tone === 'success'
+                    ? 'border-green-700/60 bg-green-950/30 text-green-200'
+                    : recipeMappingMessage.tone === 'warning'
+                      ? 'border-amber-700/60 bg-amber-950/30 text-amber-200'
+                      : 'border-red-700/60 bg-red-950/30 text-red-200'
+                }`}
+              >
+                {recipeMappingMessage.text}
+              </div>
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRecipeMappingModal(false)
+                  setSelectedRecipeMappingRow(null)
+                  setRecipeMappingMessage(null)
+                }}
+                className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveRecipeManualMapping()}
+                disabled={recipeMappingSaving}
+                className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+              >
+                {recipeMappingSaving ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         open={showCompletionModal}

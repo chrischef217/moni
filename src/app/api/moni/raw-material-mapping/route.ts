@@ -4,6 +4,9 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+type MappingScope = 'recipe' | 'product' | 'global'
+type MappingStatus = 'mapped' | 'unmapped' | 'name_fallback' | 'needs_review'
+
 function toText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -17,24 +20,265 @@ function toNumber(value: unknown): number | null {
   return null
 }
 
+function normalizeScope(value: unknown): MappingScope | null {
+  const raw = toText(value).toLowerCase()
+  if (raw === 'recipe' || raw === 'product' || raw === 'global') return raw
+  return null
+}
+
+function normalizeKey(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, '')
+}
+
+function parseBoolean(value: string | null): boolean {
+  if (!value) return false
+  const normalized = value.trim().toLowerCase()
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'y'
+}
+
+const BROAD_TERMS = new Set([
+  '소스',
+  '복합조미식품',
+  '기타가공품',
+  '조미식품',
+  '추출가공식품',
+  '수산물가공품',
+  '육류가공품',
+])
+
+function scopeForRow(row: Record<string, unknown>): MappingScope {
+  return normalizeScope(row.mapping_scope) ?? 'global'
+}
+
+function orderMappingsByCreatedAtDesc<T extends Record<string, unknown>>(rows: T[]) {
+  return [...rows].sort((a, b) => {
+    const aTime = new Date(toText(a.created_at) || 0).getTime()
+    const bTime = new Date(toText(b.created_at) || 0).getTime()
+    return bTime - aTime
+  })
+}
+
+async function fetchRecipeScopedRows(request: NextRequest) {
+  const supabase = createMoniServiceRoleClient()
+  const productNameQuery = request.nextUrl.searchParams.get('product_name')?.trim() ?? ''
+  const recipeItemQuery = request.nextUrl.searchParams.get('recipe_item_name')?.trim() ?? ''
+  const statusFilter = request.nextUrl.searchParams.get('status')?.trim().toLowerCase() ?? 'all'
+  const scopeFilter = request.nextUrl.searchParams.get('scope')?.trim().toLowerCase() ?? 'all'
+  const broadOnly = parseBoolean(request.nextUrl.searchParams.get('broad_only'))
+
+  const [recipesResult, mappingsResult, rawMaterialsResult] = await Promise.all([
+    supabase
+      .from('recipes')
+      .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, is_active, sort_order')
+      .eq('is_active', true)
+      .order('product_name', { ascending: true })
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('raw_material_mapping')
+      .select(
+        'id, food_type_id, raw_material_id, raw_material_name, is_default, recipe_id, product_id, product_name, mapping_scope, created_at',
+      )
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: false }),
+    supabase.from('raw_materials').select('id, item_name, is_active').eq('is_active', true).order('item_name', { ascending: true }),
+  ])
+
+  if (recipesResult.error) throw new Error(recipesResult.error.message || '레시피 목록 조회에 실패했습니다.')
+  if (mappingsResult.error) throw new Error(mappingsResult.error.message || '원재료 매핑 목록 조회에 실패했습니다.')
+  if (rawMaterialsResult.error) throw new Error(rawMaterialsResult.error.message || '활성 원재료 목록 조회에 실패했습니다.')
+
+  const recipes = (recipesResult.data ?? []) as Array<Record<string, unknown>>
+  const mappings = (mappingsResult.data ?? []) as Array<Record<string, unknown>>
+  const rawMaterials = (rawMaterialsResult.data ?? []) as Array<{ id: string; item_name: string; is_active?: boolean }>
+
+  const materialsByName = new Map<string, { id: string; item_name: string }>()
+  for (const item of rawMaterials) {
+    const key = normalizeKey(String(item.item_name ?? ''))
+    if (!key) continue
+    materialsByName.set(key, { id: String(item.id), item_name: String(item.item_name) })
+  }
+
+  const recipeScoped = new Map<string, Record<string, unknown>[]>()
+  const productScoped = new Map<string, Record<string, unknown>[]>()
+  const globalScoped = new Map<string, Record<string, unknown>[]>()
+
+  for (const mapping of mappings) {
+    if (mapping.is_default !== true) continue
+    const scope = scopeForRow(mapping)
+    const recipeId = toText(mapping.recipe_id)
+    const productId = toText(mapping.product_id)
+    const foodTypeId = toText(mapping.food_type_id)
+
+    if (scope === 'recipe' && recipeId) {
+      const list = recipeScoped.get(recipeId) ?? []
+      list.push(mapping)
+      recipeScoped.set(recipeId, list)
+      continue
+    }
+
+    if (scope === 'product' && productId && foodTypeId) {
+      const key = `${productId}::${foodTypeId}`
+      const list = productScoped.get(key) ?? []
+      list.push(mapping)
+      productScoped.set(key, list)
+      continue
+    }
+
+    if (foodTypeId) {
+      const list = globalScoped.get(foodTypeId) ?? []
+      list.push(mapping)
+      globalScoped.set(foodTypeId, list)
+    }
+  }
+
+  recipeScoped.forEach((value, key) => {
+    recipeScoped.set(key, orderMappingsByCreatedAtDesc(value))
+  })
+  productScoped.forEach((value, key) => {
+    productScoped.set(key, orderMappingsByCreatedAtDesc(value))
+  })
+  globalScoped.forEach((value, key) => {
+    globalScoped.set(key, orderMappingsByCreatedAtDesc(value))
+  })
+
+  const rows = recipes
+    .map((recipe) => {
+      const recipeId = toText(recipe.id)
+      const productId = toText(recipe.product_id)
+      const productName = toText(recipe.product_name)
+      const foodTypeId = toText(recipe.food_type_id)
+      const foodTypeName = toText(recipe.food_type_name)
+      const ratioPercent = toNumber(recipe.ratio_percent) ?? 0
+
+      let selectedMapping: Record<string, unknown> | null = null
+      let appliedScope: 'recipe' | 'product' | 'global' | 'fallback' | null = null
+
+      const recipeCandidates = recipeScoped.get(recipeId) ?? []
+      if (recipeCandidates.length > 0) {
+        selectedMapping = recipeCandidates[0]
+        appliedScope = 'recipe'
+      }
+
+      if (!selectedMapping) {
+        const productCandidates = productScoped.get(`${productId}::${foodTypeId}`) ?? []
+        if (productCandidates.length > 0) {
+          selectedMapping = productCandidates[0]
+          appliedScope = 'product'
+        }
+      }
+
+      if (!selectedMapping) {
+        const globalCandidates = globalScoped.get(foodTypeId) ?? []
+        if (globalCandidates.length > 0) {
+          selectedMapping = globalCandidates[0]
+          appliedScope = 'global'
+        }
+      }
+
+      const fallbackMaterial = materialsByName.get(normalizeKey(foodTypeName))
+      const selectedName = toText(selectedMapping?.raw_material_name)
+      const currentMappedName = selectedName || fallbackMaterial?.item_name || null
+      const isBroad = BROAD_TERMS.has(foodTypeName)
+
+      let mappingStatus: MappingStatus = 'unmapped'
+      if (selectedMapping) {
+        mappingStatus = 'mapped'
+      } else if (fallbackMaterial) {
+        mappingStatus = 'name_fallback'
+        appliedScope = 'fallback'
+      } else if (isBroad) {
+        mappingStatus = 'needs_review'
+      }
+
+      return {
+        recipe_id: recipeId,
+        product_id: productId,
+        product_name: productName,
+        recipe_item_name: foodTypeName,
+        food_type_id: foodTypeId,
+        food_type_name: foodTypeName,
+        ratio_percent: ratioPercent,
+        current_raw_material_name: currentMappedName,
+        mapping_status: mappingStatus,
+        applied_scope: appliedScope,
+        mapping_id: toText(selectedMapping?.id) || null,
+        is_broad: isBroad,
+      }
+    })
+    .filter((row) => {
+      if (productNameQuery && !row.product_name.toLowerCase().includes(productNameQuery.toLowerCase())) return false
+      if (recipeItemQuery && !row.recipe_item_name.toLowerCase().includes(recipeItemQuery.toLowerCase())) return false
+      if (broadOnly && !row.is_broad) return false
+      if (statusFilter !== 'all' && row.mapping_status !== statusFilter) return false
+      if (scopeFilter !== 'all' && (row.applied_scope ?? '') !== scopeFilter) return false
+      return true
+    })
+    .sort((a, b) => {
+      const byProduct = a.product_name.localeCompare(b.product_name, 'ko')
+      if (byProduct !== 0) return byProduct
+      return b.ratio_percent - a.ratio_percent
+    })
+
+  return {
+    ok: true,
+    rows,
+    rawMaterials: rawMaterials.map((item) => ({ id: String(item.id), item_name: String(item.item_name) })),
+  }
+}
+
+async function buildScopeDefaultQuery(
+  supabase: ReturnType<typeof createMoniServiceRoleClient>,
+  scope: MappingScope,
+  params: {
+    recipeId: string | null
+    productId: string | null
+    foodTypeId: string
+  },
+) {
+  const selected = 'id, raw_material_name, mapping_scope, recipe_id, product_id, food_type_id, is_default'
+  let query = supabase.from('raw_material_mapping').select(selected).eq('is_default', true)
+
+  if (scope === 'recipe') {
+    query = query.eq('mapping_scope', 'recipe').eq('recipe_id', params.recipeId)
+  } else if (scope === 'product') {
+    query = query
+      .eq('mapping_scope', 'product')
+      .eq('product_id', params.productId)
+      .eq('food_type_id', params.foodTypeId)
+  } else {
+    query = query.eq('food_type_id', params.foodTypeId).or('mapping_scope.eq.global,mapping_scope.is.null')
+  }
+
+  return query
+}
+
 export async function GET(request: NextRequest) {
   try {
+    const view = request.nextUrl.searchParams.get('view')?.trim() ?? ''
+    if (view === 'recipes') {
+      const payload = await fetchRecipeScopedRows(request)
+      return NextResponse.json(payload, { status: 200 })
+    }
+
     const foodTypeId = request.nextUrl.searchParams.get('food_type_id')?.trim() ?? ''
+    const recipeId = request.nextUrl.searchParams.get('recipe_id')?.trim() ?? ''
+    const productId = request.nextUrl.searchParams.get('product_id')?.trim() ?? ''
+    const mappingScope = request.nextUrl.searchParams.get('mapping_scope')?.trim() ?? ''
     const supabase = createMoniServiceRoleClient()
 
-    let query = supabase
-      .from('raw_material_mapping')
-      .select('*')
-      .order('created_at', { ascending: false })
+    let query = supabase.from('raw_material_mapping').select('*').order('created_at', { ascending: false })
 
     if (foodTypeId) query = query.eq('food_type_id', foodTypeId)
+    if (recipeId) query = query.eq('recipe_id', recipeId)
+    if (productId) query = query.eq('product_id', productId)
+    if (mappingScope) query = query.eq('mapping_scope', mappingScope)
 
     const { data, error } = await query
-    if (error) throw new Error(error.message || '실제원료 매핑 조회 실패')
+    if (error) throw new Error(error.message || '원재료 매핑 조회에 실패했습니다.')
 
     return NextResponse.json({ ok: true, mappings: data ?? [] }, { status: 200 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : '실제원료 매핑 조회 중 오류가 발생했습니다.'
+    const message = error instanceof Error ? error.message : '원재료 매핑 조회 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }
@@ -44,29 +288,147 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     const foodTypeId = toText(body?.food_type_id)
     const rawMaterialName = toText(body?.raw_material_name)
+    const mappingScope = normalizeScope(body?.mapping_scope) ?? 'global'
+    const recipeId = toText(body?.recipe_id) || null
+    let productId = toText(body?.product_id) || null
+    let productName = toText(body?.product_name) || null
 
     if (!foodTypeId || !rawMaterialName) {
-      return NextResponse.json({ ok: false, error: '식품유형과 실제원료명을 입력해 주세요.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: '식품유형과 원재료명을 입력해 주세요.' }, { status: 400 })
+    }
+
+    if (mappingScope === 'recipe' && !recipeId) {
+      return NextResponse.json({ ok: false, error: '레시피 범위 매핑에는 recipe_id가 필요합니다.' }, { status: 400 })
+    }
+    if (mappingScope === 'product' && !productId) {
+      return NextResponse.json({ ok: false, error: '제품 범위 매핑에는 product_id가 필요합니다.' }, { status: 400 })
     }
 
     const supabase = createMoniServiceRoleClient()
-    const rawMaterialId = toNumber(body?.raw_material_id)
+
+    const { data: activeMaterial, error: activeMaterialError } = await supabase
+      .from('raw_materials')
+      .select('id, item_name, is_active')
+      .eq('item_name', rawMaterialName)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')
+    if (!activeMaterial) {
+      return NextResponse.json(
+        { ok: false, error: '선택한 원재료는 active raw_materials에 없습니다. 원재료 관리에서 먼저 등록해 주세요.' },
+        { status: 400 },
+      )
+    }
+
+    if ((mappingScope === 'recipe' || mappingScope === 'product') && (!productId || !productName) && recipeId) {
+      const { data: recipeRow, error: recipeError } = await supabase
+        .from('recipes')
+        .select('product_id, product_name')
+        .eq('id', recipeId)
+        .maybeSingle()
+      if (recipeError) throw new Error(recipeError.message || '레시피 참조 조회에 실패했습니다.')
+      productId = productId || toText(recipeRow?.product_id) || null
+      productName = productName || toText(recipeRow?.product_name) || null
+    }
+
+    const existingDefaultQuery = await buildScopeDefaultQuery(supabase, mappingScope, {
+      recipeId,
+      productId,
+      foodTypeId,
+    })
+    const { data: existingDefaults, error: existingDefaultError } = await existingDefaultQuery
+    if (existingDefaultError) throw new Error(existingDefaultError.message || '기존 기본 매핑 조회에 실패했습니다.')
+
+    const sameDefault = (existingDefaults ?? []).find((item) => toText(item.raw_material_name) === rawMaterialName)
+    if (sameDefault) {
+      return NextResponse.json(
+        { ok: true, mapping: sameDefault, warning: '동일 범위에 같은 기본 매핑이 이미 존재합니다.' },
+        { status: 200 },
+      )
+    }
+
+    const existingDefaultIds = (existingDefaults ?? []).map((row) => toText(row.id)).filter(Boolean)
+    if (existingDefaultIds.length > 0) {
+      const { error: demoteError } = await supabase
+        .from('raw_material_mapping')
+        .update({ is_default: false })
+        .in('id', existingDefaultIds)
+      if (demoteError) throw new Error(demoteError.message || '기존 기본 매핑 비활성화에 실패했습니다.')
+    }
+
     const payload = {
       food_type_id: foodTypeId,
-      raw_material_id: rawMaterialId,
+      raw_material_id: toNumber(body?.raw_material_id),
       raw_material_name: rawMaterialName,
+      recipe_id: mappingScope === 'recipe' ? recipeId : null,
+      product_id: mappingScope === 'global' ? null : productId,
+      product_name: mappingScope === 'global' ? null : productName,
+      mapping_scope: mappingScope,
       packing_unit: toText(body?.packing_unit) || null,
       packing_weight_g: toNumber(body?.packing_weight_g),
-      is_default: typeof body?.is_default === 'boolean' ? body.is_default : false,
+      is_default: true,
       business_id: toText(body?.business_id) || 'default',
     }
 
     const { data, error } = await supabase.from('raw_material_mapping').insert(payload).select('*').single()
-    if (error) throw new Error(error.message || '실제원료 매핑 저장 실패')
+    if (error) throw new Error(error.message || '원재료 매핑 저장에 실패했습니다.')
 
     return NextResponse.json({ ok: true, mapping: data }, { status: 201 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : '실제원료 매핑 저장 중 오류가 발생했습니다.'
+    const message = error instanceof Error ? error.message : '원재료 매핑 저장 중 오류가 발생했습니다.'
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    const id = toText(body?.id)
+    if (!id) return NextResponse.json({ ok: false, error: '수정할 매핑 id가 필요합니다.' }, { status: 400 })
+
+    const mappingScope = normalizeScope(body?.mapping_scope)
+    if (mappingScope === null) {
+      return NextResponse.json({ ok: false, error: 'mapping_scope는 recipe/product/global만 허용됩니다.' }, { status: 400 })
+    }
+
+    const rawMaterialName = toText(body?.raw_material_name)
+    if (!rawMaterialName) {
+      return NextResponse.json({ ok: false, error: 'raw_material_name은 필수입니다.' }, { status: 400 })
+    }
+
+    const supabase = createMoniServiceRoleClient()
+    const { data: activeMaterial, error: activeMaterialError } = await supabase
+      .from('raw_materials')
+      .select('id')
+      .eq('item_name', rawMaterialName)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')
+    if (!activeMaterial) {
+      return NextResponse.json(
+        { ok: false, error: '선택한 원재료는 active raw_materials에 없습니다. 원재료 관리에서 먼저 등록해 주세요.' },
+        { status: 400 },
+      )
+    }
+
+    const updatePayload = {
+      food_type_id: toText(body?.food_type_id) || null,
+      raw_material_name: rawMaterialName,
+      mapping_scope: mappingScope,
+      recipe_id: mappingScope === 'recipe' ? toText(body?.recipe_id) || null : null,
+      product_id: mappingScope === 'global' ? null : toText(body?.product_id) || null,
+      product_name: mappingScope === 'global' ? null : toText(body?.product_name) || null,
+      packing_unit: toText(body?.packing_unit) || null,
+      packing_weight_g: toNumber(body?.packing_weight_g),
+      is_default: body?.is_default === false ? false : true,
+    }
+
+    const { data, error } = await supabase.from('raw_material_mapping').update(updatePayload).eq('id', id).select('*').single()
+    if (error) throw new Error(error.message || '원재료 매핑 수정에 실패했습니다.')
+
+    return NextResponse.json({ ok: true, mapping: data }, { status: 200 })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '원재료 매핑 수정 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }
@@ -80,11 +442,11 @@ export async function DELETE(request: NextRequest) {
 
     const supabase = createMoniServiceRoleClient()
     const { error } = await supabase.from('raw_material_mapping').delete().eq('id', id)
-    if (error) throw new Error(error.message || '실제원료 매핑 삭제 실패')
+    if (error) throw new Error(error.message || '원재료 매핑 삭제에 실패했습니다.')
 
     return NextResponse.json({ ok: true }, { status: 200 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : '실제원료 매핑 삭제 중 오류가 발생했습니다.'
+    const message = error instanceof Error ? error.message : '원재료 매핑 삭제 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

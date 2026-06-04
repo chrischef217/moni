@@ -49,10 +49,15 @@ type RecipeRow = {
 }
 
 type MappingRow = {
+  id?: string | null
   food_type_id: string | null
   raw_material_id: string | number | null
   raw_material_name: string | null
   is_default: boolean | null
+  recipe_id?: string | null
+  product_id?: string | null
+  mapping_scope?: string | null
+  created_at?: string | null
 }
 
 type MaterialRow = {
@@ -166,6 +171,12 @@ function buildOutboundNote(recordId: string, lotNumber: string) {
 
 function normalizeKey(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '')
+}
+
+function normalizeMappingScope(value: unknown): 'recipe' | 'product' | 'global' {
+  const raw = toText(value).toLowerCase()
+  if (raw === 'recipe' || raw === 'product' || raw === 'global') return raw
+  return 'global'
 }
 
 function isRawIngredient(value: string | null | undefined) {
@@ -535,7 +546,7 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
   if (foodTypeIds.length > 0) {
     const mappingResult = await supabase
       .from('raw_material_mapping')
-      .select('food_type_id, raw_material_id, raw_material_name, is_default')
+      .select('id, food_type_id, raw_material_id, raw_material_name, is_default, recipe_id, product_id, mapping_scope, created_at')
       .in('food_type_id', foodTypeIds)
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: false })
@@ -563,13 +574,32 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
     if (nameKey) materialByName.set(nameKey, material)
   }
 
-  const mappingByFoodType = new Map<string, MappingRow[]>()
+  const recipeScopeMappings = new Map<string, MappingRow[]>()
+  const productScopeMappings = new Map<string, MappingRow[]>()
+  const globalScopeMappings = new Map<string, MappingRow[]>()
   for (const mapping of mappings) {
-    const key = toText(mapping.food_type_id)
-    if (!key) continue
-    const list = mappingByFoodType.get(key) ?? []
-    list.push(mapping)
-    mappingByFoodType.set(key, list)
+    const foodTypeId = toText(mapping.food_type_id)
+    const scope = normalizeMappingScope(mapping.mapping_scope)
+    const recipeId = toText(mapping.recipe_id)
+    const productId = toText(mapping.product_id)
+    if (scope === 'recipe' && recipeId) {
+      const list = recipeScopeMappings.get(recipeId) ?? []
+      list.push(mapping)
+      recipeScopeMappings.set(recipeId, list)
+      continue
+    }
+    if (scope === 'product' && productId && foodTypeId) {
+      const key = `${productId}::${foodTypeId}`
+      const list = productScopeMappings.get(key) ?? []
+      list.push(mapping)
+      productScopeMappings.set(key, list)
+      continue
+    }
+    if (foodTypeId) {
+      const list = globalScopeMappings.get(foodTypeId) ?? []
+      list.push(mapping)
+      globalScopeMappings.set(foodTypeId, list)
+    }
   }
 
   const aggregated = new Map<string, DeductionPreviewRow>()
@@ -582,8 +612,13 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
 
     const foodTypeId = toText(recipe.food_type_id)
     const foodTypeName = toText(recipe.food_type_name) || '미매핑 원재료'
-    const candidates = mappingByFoodType.get(foodTypeId) ?? []
-    const preferred = candidates[0]
+    const recipeCandidates = recipeScopeMappings.get(toText(recipe.id)) ?? []
+    const productCandidates =
+      (toText(recipe.product_id) || toText(record.product_id)) && foodTypeId
+        ? productScopeMappings.get(`${toText(recipe.product_id) || toText(record.product_id)}::${foodTypeId}`) ?? []
+        : []
+    const globalCandidates = foodTypeId ? globalScopeMappings.get(foodTypeId) ?? [] : []
+    const preferred = recipeCandidates[0] ?? productCandidates[0] ?? globalCandidates[0]
 
     const mappedMaterialId = toText(preferred?.raw_material_id)
     const mappedMaterialName = toText(preferred?.raw_material_name)
