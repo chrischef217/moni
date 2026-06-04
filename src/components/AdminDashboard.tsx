@@ -1300,6 +1300,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     return recipes.reduce((sum, recipe) => sum + Number(recipe.ratio_percent ?? 0), 0)
   }, [recipes])
 
+  const recipeRatioRoundedTotal = useMemo(() => {
+    return Math.round(recipeRatioTotal * 100) / 100
+  }, [recipeRatioTotal])
+
+  const recipeRatioDiff = useMemo(() => {
+    return Math.round((recipeRatioRoundedTotal - 100) * 100) / 100
+  }, [recipeRatioRoundedTotal])
+
   const productionDefectQuantity = useMemo(() => {
     const planned = toNumber(productionForm.planned_quantity_g)
     const actual = toNumber(productionForm.actual_quantity_g)
@@ -4289,18 +4297,18 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
               <div
                 className={`rounded-xl border px-4 py-3 text-sm ${
-                  recipeRatioTotal === 100
+                  recipeRatioDiff === 0
                     ? 'border-green-700/60 bg-green-950/40 text-green-200'
-                    : recipeRatioTotal > 100
+                    : recipeRatioDiff > 0
                       ? 'border-red-800/60 bg-red-950/40 text-red-200'
                       : 'border-amber-700/60 bg-amber-950/30 text-amber-200'
                 }`}
               >
-                {recipeRatioTotal === 100
-                  ? '배합비율이 100%로 맞춰졌습니다.'
-                  : recipeRatioTotal > 100
-                    ? `총 ${recipeRatioTotal}% - ${recipeRatioTotal - 100}% 초과`
-                    : `총 ${recipeRatioTotal}% - ${100 - recipeRatioTotal}% 부족`}
+                {recipeRatioDiff === 0
+                  ? `총 ${recipeRatioRoundedTotal.toFixed(2)}% / 정상`
+                  : recipeRatioDiff > 0
+                    ? `총 ${recipeRatioRoundedTotal.toFixed(2)}% - ${Math.abs(recipeRatioDiff).toFixed(2)}% 초과`
+                    : `총 ${recipeRatioRoundedTotal.toFixed(2)}% - ${Math.abs(recipeRatioDiff).toFixed(2)}% 부족`}
               </div>
             </div>
           )}
