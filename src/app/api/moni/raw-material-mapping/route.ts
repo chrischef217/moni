@@ -36,15 +36,12 @@ function parseBoolean(value: string | null): boolean {
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'y'
 }
 
-const BROAD_TERMS = new Set([
-  '소스',
-  '복합조미식품',
-  '기타가공품',
-  '조미식품',
-  '추출가공식품',
-  '수산물가공품',
-  '육류가공품',
-])
+function isMissingTableError(message: string): boolean {
+  const text = message.toLowerCase()
+  return text.includes('does not exist') || text.includes('relation') || text.includes('schema cache')
+}
+
+const BROAD_TERMS = new Set(['소스', '복합조미식품', '기타가공품', '조미식품', '추출가공식품', '수산물가공품', '육류가공품'])
 
 function scopeForRow(row: Record<string, unknown>): MappingScope {
   return normalizeScope(row.mapping_scope) ?? 'global'
@@ -62,7 +59,7 @@ async function fetchRecipeScopedRows(request: NextRequest) {
   const supabase = createMoniServiceRoleClient()
   const productNameQuery = request.nextUrl.searchParams.get('product_name')?.trim() ?? ''
   const recipeItemQuery = request.nextUrl.searchParams.get('recipe_item_name')?.trim() ?? ''
-  const statusFilter = request.nextUrl.searchParams.get('status')?.trim().toLowerCase() ?? 'all'
+  const statusFilter = request.nextUrl.searchParams.get('status')?.trim().toLowerCase() ?? 'pending'
   const scopeFilter = request.nextUrl.searchParams.get('scope')?.trim().toLowerCase() ?? 'all'
   const broadOnly = parseBoolean(request.nextUrl.searchParams.get('broad_only'))
 
@@ -75,9 +72,7 @@ async function fetchRecipeScopedRows(request: NextRequest) {
       .order('sort_order', { ascending: true }),
     supabase
       .from('raw_material_mapping')
-      .select(
-        'id, food_type_id, raw_material_id, raw_material_name, is_default, recipe_id, product_id, product_name, mapping_scope, created_at',
-      )
+      .select('id, food_type_id, raw_material_id, raw_material_name, is_default, recipe_id, product_id, product_name, mapping_scope, created_at')
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: false }),
     supabase.from('raw_materials').select('id, item_name, is_active').eq('is_active', true).order('item_name', { ascending: true }),
@@ -209,7 +204,13 @@ async function fetchRecipeScopedRows(request: NextRequest) {
       if (productNameQuery && !row.product_name.toLowerCase().includes(productNameQuery.toLowerCase())) return false
       if (recipeItemQuery && !row.recipe_item_name.toLowerCase().includes(recipeItemQuery.toLowerCase())) return false
       if (broadOnly && !row.is_broad) return false
-      if (statusFilter !== 'all' && row.mapping_status !== statusFilter) return false
+
+      if (statusFilter === 'pending') {
+        if (!['unmapped', 'name_fallback', 'needs_review'].includes(row.mapping_status)) return false
+      } else if (statusFilter !== 'all' && row.mapping_status !== statusFilter) {
+        return false
+      }
+
       if (scopeFilter !== 'all' && (row.applied_scope ?? '') !== scopeFilter) return false
       return true
     })
@@ -241,10 +242,7 @@ async function buildScopeDefaultQuery(
   if (scope === 'recipe') {
     query = query.eq('mapping_scope', 'recipe').eq('recipe_id', params.recipeId)
   } else if (scope === 'product') {
-    query = query
-      .eq('mapping_scope', 'product')
-      .eq('product_id', params.productId)
-      .eq('food_type_id', params.foodTypeId)
+    query = query.eq('mapping_scope', 'product').eq('product_id', params.productId).eq('food_type_id', params.foodTypeId)
   } else {
     query = query.eq('food_type_id', params.foodTypeId).or('mapping_scope.eq.global,mapping_scope.is.null')
   }
@@ -252,8 +250,55 @@ async function buildScopeDefaultQuery(
   return query
 }
 
+async function getLatestHistoryRow(businessId?: string) {
+  const supabase = createMoniServiceRoleClient()
+  let query = supabase
+    .from('recipe_material_mapping_history')
+    .select('*')
+    .eq('is_undone', false)
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  if (businessId) query = query.eq('business_id', businessId)
+  const { data, error } = await query
+  if (error) throw error
+  return ((data ?? [])[0] as Record<string, unknown> | undefined) ?? null
+}
+
+async function safeInsertHistory(input: Record<string, unknown>): Promise<{ history: Record<string, unknown> | null; warning?: string }> {
+  const supabase = createMoniServiceRoleClient()
+  const { data, error } = await supabase.from('recipe_material_mapping_history').insert(input).select('*').maybeSingle()
+  if (!error) return { history: (data as Record<string, unknown> | null) ?? null }
+  if (isMissingTableError(error.message || '')) {
+    return { history: null, warning: '되돌리기 이력 테이블이 아직 준비되지 않았습니다. 마이그레이션 적용 후 다시 시도해 주세요.' }
+  }
+  throw new Error(error.message || '매핑 이력 저장에 실패했습니다.')
+}
+
 export async function GET(request: NextRequest) {
   try {
+    const action = request.nextUrl.searchParams.get('action')?.trim() ?? ''
+    if (action === 'latest_history') {
+      const businessId = request.nextUrl.searchParams.get('business_id')?.trim() ?? ''
+      try {
+        const history = await getLatestHistoryRow(businessId || undefined)
+        return NextResponse.json({ ok: true, history }, { status: 200 })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '최근 이력 조회 중 오류가 발생했습니다.'
+        if (isMissingTableError(message)) {
+          return NextResponse.json(
+            {
+              ok: true,
+              history: null,
+              warning: '되돌리기 이력 테이블이 아직 준비되지 않았습니다. 마이그레이션 적용 후 사용해 주세요.',
+            },
+            { status: 200 },
+          )
+        }
+        throw error
+      }
+    }
+
     const view = request.nextUrl.searchParams.get('view')?.trim() ?? ''
     if (view === 'recipes') {
       const payload = await fetchRecipeScopedRows(request)
@@ -267,7 +312,6 @@ export async function GET(request: NextRequest) {
     const supabase = createMoniServiceRoleClient()
 
     let query = supabase.from('raw_material_mapping').select('*').order('created_at', { ascending: false })
-
     if (foodTypeId) query = query.eq('food_type_id', foodTypeId)
     if (recipeId) query = query.eq('recipe_id', recipeId)
     if (productId) query = query.eq('product_id', productId)
@@ -275,7 +319,6 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await query
     if (error) throw new Error(error.message || '원재료 매핑 조회에 실패했습니다.')
-
     return NextResponse.json({ ok: true, mappings: data ?? [] }, { status: 200 })
   } catch (error) {
     const message = error instanceof Error ? error.message : '원재료 매핑 조회 중 오류가 발생했습니다.'
@@ -286,25 +329,78 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    const action = toText(body?.action).toLowerCase()
+    const supabase = createMoniServiceRoleClient()
+
+    if (action === 'undo_last_mapping') {
+      let latestHistory: Record<string, unknown> | null = null
+      try {
+        latestHistory = await getLatestHistoryRow(toText(body?.business_id) || undefined)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '최근 이력을 불러오지 못했습니다.'
+        if (isMissingTableError(message)) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: '되돌리기 이력 테이블이 아직 준비되지 않았습니다. 마이그레이션을 먼저 적용해 주세요.',
+            },
+            { status: 409 },
+          )
+        }
+        throw error
+      }
+
+      if (!latestHistory) {
+        return NextResponse.json({ ok: true, nextHistory: null, warning: '되돌릴 최근 처리 이력이 없습니다.' }, { status: 200 })
+      }
+
+      const newMappingId = toText(latestHistory.new_mapping_id)
+      const previousIds = Array.isArray(latestHistory.previous_default_mapping_ids)
+        ? latestHistory.previous_default_mapping_ids.map((item) => toText(item)).filter(Boolean)
+        : []
+
+      if (newMappingId) {
+        const { error: demoteError } = await supabase.from('raw_material_mapping').update({ is_default: false }).eq('id', newMappingId)
+        if (demoteError) throw new Error(demoteError.message || '최근 연결 기본값 해제에 실패했습니다.')
+      }
+
+      if (previousIds.length > 0) {
+        const { error: restoreError } = await supabase.from('raw_material_mapping').update({ is_default: true }).in('id', previousIds)
+        if (restoreError) throw new Error(restoreError.message || '이전 기본값 복원에 실패했습니다.')
+      }
+
+      const { error: markUndoneError } = await supabase
+        .from('recipe_material_mapping_history')
+        .update({
+          is_undone: true,
+          undone_at: new Date().toISOString(),
+          undone_by: toText(body?.actor_id) || null,
+        })
+        .eq('id', toText(latestHistory.id))
+
+      if (markUndoneError) throw new Error(markUndoneError.message || '되돌리기 이력 상태 업데이트에 실패했습니다.')
+
+      const nextHistory = await getLatestHistoryRow(toText(body?.business_id) || undefined)
+      return NextResponse.json({ ok: true, nextHistory }, { status: 200 })
+    }
+
     const foodTypeId = toText(body?.food_type_id)
     const rawMaterialName = toText(body?.raw_material_name)
     const mappingScope = normalizeScope(body?.mapping_scope) ?? 'global'
     const recipeId = toText(body?.recipe_id) || null
     let productId = toText(body?.product_id) || null
     let productName = toText(body?.product_name) || null
+    const businessId = toText(body?.business_id) || 'default'
 
     if (!foodTypeId || !rawMaterialName) {
       return NextResponse.json({ ok: false, error: '식품유형과 원재료명을 입력해 주세요.' }, { status: 400 })
     }
-
     if (mappingScope === 'recipe' && !recipeId) {
       return NextResponse.json({ ok: false, error: '레시피 범위 매핑에는 recipe_id가 필요합니다.' }, { status: 400 })
     }
     if (mappingScope === 'product' && !productId) {
       return NextResponse.json({ ok: false, error: '제품 범위 매핑에는 product_id가 필요합니다.' }, { status: 400 })
     }
-
-    const supabase = createMoniServiceRoleClient()
 
     const { data: activeMaterial, error: activeMaterialError } = await supabase
       .from('raw_materials')
@@ -315,7 +411,7 @@ export async function POST(request: NextRequest) {
     if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')
     if (!activeMaterial) {
       return NextResponse.json(
-        { ok: false, error: '선택한 원재료는 active raw_materials에 없습니다. 원재료 관리에서 먼저 등록해 주세요.' },
+        { ok: false, error: '선택한 원재료가 활성 원재료 목록에 없습니다. 원재료 관리에서 먼저 등록/활성화해 주세요.' },
         { status: 400 },
       )
     }
@@ -326,7 +422,7 @@ export async function POST(request: NextRequest) {
         .select('product_id, product_name')
         .eq('id', recipeId)
         .maybeSingle()
-      if (recipeError) throw new Error(recipeError.message || '레시피 참조 조회에 실패했습니다.')
+      if (recipeError) throw new Error(recipeError.message || '레시피 정보 조회에 실패했습니다.')
       productId = productId || toText(recipeRow?.product_id) || null
       productName = productName || toText(recipeRow?.product_name) || null
     }
@@ -342,17 +438,19 @@ export async function POST(request: NextRequest) {
     const sameDefault = (existingDefaults ?? []).find((item) => toText(item.raw_material_name) === rawMaterialName)
     if (sameDefault) {
       return NextResponse.json(
-        { ok: true, mapping: sameDefault, warning: '동일 범위에 같은 기본 매핑이 이미 존재합니다.' },
+        {
+          ok: true,
+          mapping: sameDefault,
+          history: null,
+          warning: '동일 범위에 같은 기본 매핑이 이미 있습니다.',
+        },
         { status: 200 },
       )
     }
 
-    const existingDefaultIds = (existingDefaults ?? []).map((row) => toText(row.id)).filter(Boolean)
-    if (existingDefaultIds.length > 0) {
-      const { error: demoteError } = await supabase
-        .from('raw_material_mapping')
-        .update({ is_default: false })
-        .in('id', existingDefaultIds)
+    const previousDefaultIds = (existingDefaults ?? []).map((row) => toText(row.id)).filter(Boolean)
+    if (previousDefaultIds.length > 0) {
+      const { error: demoteError } = await supabase.from('raw_material_mapping').update({ is_default: false }).in('id', previousDefaultIds)
       if (demoteError) throw new Error(demoteError.message || '기존 기본 매핑 비활성화에 실패했습니다.')
     }
 
@@ -367,13 +465,31 @@ export async function POST(request: NextRequest) {
       packing_unit: toText(body?.packing_unit) || null,
       packing_weight_g: toNumber(body?.packing_weight_g),
       is_default: true,
-      business_id: toText(body?.business_id) || 'default',
+      business_id: businessId,
     }
 
     const { data, error } = await supabase.from('raw_material_mapping').insert(payload).select('*').single()
     if (error) throw new Error(error.message || '원재료 매핑 저장에 실패했습니다.')
 
-    return NextResponse.json({ ok: true, mapping: data }, { status: 201 })
+    const historyInsert = await safeInsertHistory({
+      business_id: businessId,
+      action_type: 'set_default',
+      mapping_scope: mappingScope,
+      recipe_id: mappingScope === 'recipe' ? recipeId : null,
+      product_id: mappingScope === 'global' ? null : productId,
+      product_name: mappingScope === 'global' ? null : productName,
+      food_type_id: foodTypeId || null,
+      new_mapping_id: toText(data?.id) || null,
+      previous_default_mapping_ids: previousDefaultIds,
+      raw_material_name: rawMaterialName,
+      recipe_item_name: toText(body?.recipe_item_name) || toText(body?.food_type_name) || null,
+      food_type_name: toText(body?.food_type_name) || null,
+      actor_id: toText(body?.actor_id) || null,
+      actor_name: toText(body?.actor_name) || null,
+      is_undone: false,
+    })
+
+    return NextResponse.json({ ok: true, mapping: data, history: historyInsert.history, warning: historyInsert.warning }, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : '원재료 매핑 저장 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
@@ -406,7 +522,7 @@ export async function PATCH(request: NextRequest) {
     if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')
     if (!activeMaterial) {
       return NextResponse.json(
-        { ok: false, error: '선택한 원재료는 active raw_materials에 없습니다. 원재료 관리에서 먼저 등록해 주세요.' },
+        { ok: false, error: '선택한 원재료가 활성 원재료 목록에 없습니다. 원재료 관리에서 먼저 등록/활성화해 주세요.' },
         { status: 400 },
       )
     }
