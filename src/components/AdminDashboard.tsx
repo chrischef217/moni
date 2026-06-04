@@ -16,6 +16,7 @@ type ProductionSubTabKey =
   | 'prod-work'
   | 'prod-recipes'
   | 'prod-materials'
+  | 'prod-packaging'
   | 'prod-sanitation'
   | 'prod-quality'
   | 'prod-compliance'
@@ -242,6 +243,56 @@ type SububuRow = {
   products_used: string[]
 }
 
+type PackagingMaterialRow = {
+  id: string
+  material_name: string
+  material_code?: string | null
+  spec?: string | null
+  material_type?: string | null
+  supplier?: string | null
+  current_stock?: number | null
+  unit_price?: number | null
+  is_active?: boolean | null
+}
+
+type PackagingMaterialsPayload = {
+  ok?: boolean
+  error?: string
+  materials?: PackagingMaterialRow[]
+  material?: PackagingMaterialRow
+}
+
+type PackagingFormState = {
+  id?: string
+  material_name: string
+  material_code: string
+  spec: string
+  material_type: string
+  supplier: string
+  current_stock: string
+  unit_price: string
+  is_active: boolean
+}
+
+type RawMaterialTransactionRow = {
+  id: string
+  tx_date: string
+  tx_type: string
+  counterparty: string
+  inbound_g: number
+  outbound_g: number
+  balance_g: number
+  note: string
+}
+
+type RawMaterialTransactionsPayload = {
+  ok?: boolean
+  error?: string
+  material_name?: string
+  balance_mode?: string
+  rows?: RawMaterialTransactionRow[]
+}
+
 type SububuPayload = {
   ok?: boolean
   error?: string
@@ -414,6 +465,7 @@ const PRODUCTION_TABS: SubMenuItem[] = [
   { key: 'prod-work', label: '작업 지시' },
   { key: 'prod-recipes', label: '레시피 관리' },
   { key: 'prod-materials', label: '원재료 관리' },
+  { key: 'prod-packaging', label: '부재료 관리' },
   { key: 'prod-sanitation', label: '위생점검' },
   { key: 'prod-quality', label: '품질 관리' },
   { key: 'prod-compliance', label: '규정준수 모니터' },
@@ -682,6 +734,21 @@ function emptyMaterialForm(material: RawMaterialRow | null): MaterialFormState {
     supplier_contact: material?.supplier_contact ?? '',
     supplier_address: material?.supplier_address ?? '',
     supplier_biz_number: material?.supplier_biz_number ?? '',
+  }
+}
+
+function emptyPackagingForm(material?: PackagingMaterialRow | null): PackagingFormState {
+  return {
+    id: material?.id,
+    material_name: material?.material_name ?? '',
+    material_code: material?.material_code ?? '',
+    spec: material?.spec ?? '',
+    material_type: material?.material_type ?? '',
+    supplier: material?.supplier ?? '',
+    current_stock:
+      material?.current_stock === null || material?.current_stock === undefined ? '' : String(material.current_stock),
+    unit_price: material?.unit_price === null || material?.unit_price === undefined ? '' : String(material.unit_price),
+    is_active: material?.is_active ?? true,
   }
 }
 
@@ -1052,6 +1119,22 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [sububuError, setSububuError] = useState('')
   const [sububuMaterials, setSububuMaterials] = useState<SububuRow[]>([])
   const [sububuTotalProductionG, setSububuTotalProductionG] = useState(0)
+  const [sububuMaterialQuery, setSububuMaterialQuery] = useState('')
+  const [showSububuDetailModal, setShowSububuDetailModal] = useState(false)
+  const [sububuDetailTarget, setSububuDetailTarget] = useState('')
+  const [sububuDetailFrom, setSububuDetailFrom] = useState(daysAgoValue(29))
+  const [sububuDetailTo, setSububuDetailTo] = useState(todayValue())
+  const [sububuDetailRows, setSububuDetailRows] = useState<RawMaterialTransactionRow[]>([])
+  const [sububuDetailLoading, setSububuDetailLoading] = useState(false)
+  const [sububuDetailError, setSububuDetailError] = useState('')
+  const [sububuDetailBalanceMode, setSububuDetailBalanceMode] = useState('')
+
+  const [packagingLoading, setPackagingLoading] = useState(true)
+  const [packagingError, setPackagingError] = useState('')
+  const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterialRow[]>([])
+  const [showPackagingModal, setShowPackagingModal] = useState(false)
+  const [packagingForm, setPackagingForm] = useState<PackagingFormState>(emptyPackagingForm())
+  const [packagingSaving, setPackagingSaving] = useState(false)
 
   const [sanitationDateFrom, setSanitationDateFrom] = useState(daysAgoValue(29))
   const [sanitationDateTo, setSanitationDateTo] = useState(todayValue())
@@ -1240,6 +1323,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     void loadRecipes()
     void loadFoodTypes()
     void loadMaterials()
+    void loadPackagingMaterials()
     void loadSububu(daysAgoValue(29), todayValue())
     void loadSanitation(daysAgoValue(29), todayValue())
   }, [])
@@ -1249,6 +1333,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setSelectedRecipeProductId(String(recipeProducts[0].id))
     }
   }, [recipeProducts, selectedRecipeProductId])
+
+  useEffect(() => {
+    if (mainMenu !== 'production') return
+    if (productionTab !== 'prod-packaging') return
+    void loadPackagingMaterials()
+  }, [mainMenu, productionTab])
 
   useEffect(() => {
     if (!selectedRecipeProductId) return
@@ -1754,13 +1844,28 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
   }
 
-  async function loadSububu(from: string, to: string) {
+  async function loadPackagingMaterials() {
+    setPackagingLoading(true)
+    setPackagingError('')
+    try {
+      const payload = await readJson<PackagingMaterialsPayload>('/api/moni/packaging-materials')
+      setPackagingMaterials(payload.materials ?? [])
+    } catch (error) {
+      setPackagingError(error instanceof Error ? error.message : '부재료 목록을 불러오지 못했습니다.')
+    } finally {
+      setPackagingLoading(false)
+    }
+  }
+
+  async function loadSububu(from: string, to: string, materialName?: string) {
     setSububuLoading(true)
     setSububuError('')
     try {
       const params = new URLSearchParams()
       if (from) params.set('from', from)
       if (to) params.set('to', to)
+      const normalized = (materialName ?? '').trim()
+      if (normalized) params.set('material_name', normalized)
       const payload = await readJson<SububuPayload>(`/api/moni/sububu?${params.toString()}`)
       setSububuMaterials(payload.materials ?? [])
       setSububuTotalProductionG(Number(payload.total_production_g ?? 0))
@@ -1768,6 +1873,126 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setSububuError(error instanceof Error ? error.message : '수불부 데이터를 불러오지 못했습니다.')
     } finally {
       setSububuLoading(false)
+    }
+  }
+
+  async function loadSububuDetail(materialName: string, from: string, to: string) {
+    const target = materialName.trim()
+    if (!target) return
+    setSububuDetailLoading(true)
+    setSububuDetailError('')
+    try {
+      const params = new URLSearchParams()
+      params.set('material_name', target)
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
+      const payload = await readJson<RawMaterialTransactionsPayload>(`/api/moni/raw-material-transactions?${params.toString()}`)
+      setSububuDetailRows(payload.rows ?? [])
+      setSububuDetailBalanceMode(payload.balance_mode ?? '')
+    } catch (error) {
+      setSububuDetailRows([])
+      setSububuDetailBalanceMode('')
+      setSububuDetailError(error instanceof Error ? error.message : '원료 수불 상세를 불러오지 못했습니다.')
+    } finally {
+      setSububuDetailLoading(false)
+    }
+  }
+
+  async function openSububuDetail(materialName: string) {
+    const target = materialName.trim()
+    if (!target) return
+    setSububuDetailTarget(target)
+    setSububuDetailFrom(sububuDateFrom)
+    setSububuDetailTo(sububuDateTo)
+    setShowSububuDetailModal(true)
+    await loadSububuDetail(target, sububuDateFrom, sububuDateTo)
+  }
+
+  async function savePackagingMaterial() {
+    const materialName = packagingForm.material_name.trim()
+    if (!materialName) {
+      setPackagingError('부재료명을 입력해 주세요.')
+      return
+    }
+
+    const currentStock = toNumber(packagingForm.current_stock)
+    if (currentStock === null || currentStock < 0) {
+      setPackagingError('현재재고는 0 이상 숫자로 입력해 주세요.')
+      return
+    }
+
+    const unitPrice = toNumber(packagingForm.unit_price)
+    if (unitPrice === null || unitPrice < 0) {
+      setPackagingError('단가는 0 이상 숫자로 입력해 주세요.')
+      return
+    }
+
+    setPackagingSaving(true)
+    setPackagingError('')
+    try {
+      const payload = {
+        material_name: materialName,
+        material_code: packagingForm.material_code.trim(),
+        spec: packagingForm.spec.trim(),
+        material_type: packagingForm.material_type.trim(),
+        supplier: packagingForm.supplier.trim(),
+        current_stock: currentStock,
+        unit_price: unitPrice,
+        is_active: packagingForm.is_active,
+        business_id: '20220523011',
+      }
+
+      if (packagingForm.id) {
+        await readJson<PackagingMaterialsPayload>(`/api/moni/packaging-materials/${encodeURIComponent(packagingForm.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        })
+      } else {
+        await readJson<PackagingMaterialsPayload>('/api/moni/packaging-materials', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        })
+      }
+
+      setShowPackagingModal(false)
+      setPackagingForm(emptyPackagingForm())
+      await loadPackagingMaterials()
+    } catch (error) {
+      setPackagingError(error instanceof Error ? error.message : '부재료 저장 중 오류가 발생했습니다.')
+    } finally {
+      setPackagingSaving(false)
+    }
+  }
+
+  function editPackagingMaterial(material: PackagingMaterialRow) {
+    setPackagingError('')
+    setPackagingForm(emptyPackagingForm(material))
+    setShowPackagingModal(true)
+  }
+
+  async function deactivatePackagingMaterial(material: PackagingMaterialRow) {
+    const confirmed = window.confirm(`"${material.material_name}" 항목을 비활성화할까요?`)
+    if (!confirmed) return
+    setPackagingSaving(true)
+    setPackagingError('')
+    try {
+      await readJson<PackagingMaterialsPayload>(`/api/moni/packaging-materials/${encodeURIComponent(material.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          material_name: material.material_name,
+          spec: material.spec ?? '',
+          material_type: material.material_type ?? '',
+          supplier: material.supplier ?? '',
+          current_stock: Number(material.current_stock ?? 0),
+          unit_price: Number(material.unit_price ?? 0),
+          is_active: false,
+        }),
+      })
+      await loadPackagingMaterials()
+    } catch (error) {
+      setPackagingError(error instanceof Error ? error.message : '비활성화 처리 중 오류가 발생했습니다.')
+    } finally {
+      setPackagingSaving(false)
     }
   }
 
@@ -4142,10 +4367,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   function renderMaterialsManagement() {
-    const sububuPdfUrl = `/api/moni/sububu/pdf?${new URLSearchParams({
+    const sububuPdfParams = new URLSearchParams({
       from: sububuDateFrom,
       to: sububuDateTo,
-    }).toString()}`
+    })
+    if (sububuMaterialQuery.trim()) sububuPdfParams.set('material_name', sububuMaterialQuery.trim())
+    const sububuPdfUrl = `/api/moni/sububu/pdf?${sububuPdfParams.toString()}`
 
     return (
       <div className="space-y-5">
@@ -4280,9 +4507,18 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
                 />
               </Field>
+              <Field label="원료명 검색" className="min-w-[180px]">
+                <input
+                  type="text"
+                  value={sububuMaterialQuery}
+                  onChange={(event) => setSububuMaterialQuery(event.target.value)}
+                  placeholder="예: 설탕, 간장"
+                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                />
+              </Field>
               <button
                 type="button"
-                onClick={() => void loadSububu(sububuDateFrom, sububuDateTo)}
+                onClick={() => void loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery)}
                 className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
               >
                 조회
@@ -4305,6 +4541,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               총 생산량: <strong className="text-green-400">{formatNumber(sububuTotalProductionG)}g</strong>
             </span>
           </div>
+          <p className="mb-4 text-xs text-gray-500">
+            원료명을 클릭하면 기간별 입고/소모 상세 내역(가계부 형태)을 확인할 수 있습니다.
+          </p>
           {sububuLoading ? (
             <LoadingBlock lines={4} />
           ) : sububuError ? (
@@ -4326,7 +4565,15 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 <tbody>
                   {sububuMaterials.map((material) => (
                     <tr key={material.food_type_name} className="border-b border-gray-800/80">
-                      <td className="px-3 py-3 text-white">{material.food_type_name}</td>
+                      <td className="px-3 py-3">
+                        <button
+                          type="button"
+                          onClick={() => void openSububuDetail(material.food_type_name)}
+                          className="text-left font-medium text-green-300 underline underline-offset-4 hover:text-green-200"
+                        >
+                          {material.food_type_name}
+                        </button>
+                      </td>
                       <td className="px-3 py-3 text-green-400">{formatNumber(material.total_usage_g)}g</td>
                       <td className="px-3 py-3 text-gray-200">{formatKg(material.total_usage_g)}kg</td>
                       <td className="px-3 py-3 text-gray-200">{material.products_used.length}</td>
@@ -4437,6 +4684,99 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     )
   }
 
+  function renderPackagingManagement() {
+    return (
+      <SectionCard
+        title="부재료 관리"
+        description="포장재/부재료는 packaging_materials 기준으로 관리합니다."
+        actions={
+          <button
+            type="button"
+            onClick={() => {
+              setPackagingError('')
+              setPackagingForm(emptyPackagingForm())
+              setShowPackagingModal(true)
+            }}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400"
+          >
+            부재료 추가
+          </button>
+        }
+      >
+        {packagingError ? (
+          <div className="mb-4 rounded-xl border border-red-800/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+            {packagingError}
+          </div>
+        ) : null}
+
+        {packagingLoading ? (
+          <LoadingBlock lines={6} />
+        ) : packagingMaterials.length === 0 ? (
+          <EmptyState title="등록된 부재료가 없습니다" description="부재료 추가 버튼으로 첫 항목을 등록해 주세요." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-gray-400">
+                <tr className="border-b border-gray-700">
+                  <th className="px-3 py-2 font-medium">부재료명</th>
+                  <th className="px-3 py-2 font-medium">코드</th>
+                  <th className="px-3 py-2 font-medium">규격</th>
+                  <th className="px-3 py-2 font-medium">유형</th>
+                  <th className="px-3 py-2 font-medium">매입처</th>
+                  <th className="px-3 py-2 font-medium">현재재고(ea)</th>
+                  <th className="px-3 py-2 font-medium">단가</th>
+                  <th className="px-3 py-2 font-medium">활성상태</th>
+                  <th className="px-3 py-2 font-medium text-right">처리</th>
+                </tr>
+              </thead>
+              <tbody>
+                {packagingMaterials.map((material) => (
+                  <tr key={material.id} className="border-b border-gray-800/80">
+                    <td className="px-3 py-3 text-white">{material.material_name}</td>
+                    <td className="px-3 py-3 text-gray-200">{material.material_code || '-'}</td>
+                    <td className="px-3 py-3 text-gray-200">{material.spec || '-'}</td>
+                    <td className="px-3 py-3 text-gray-200">{material.material_type || '-'}</td>
+                    <td className="px-3 py-3 text-gray-200">{material.supplier || '-'}</td>
+                    <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock)} ea</td>
+                    <td className="px-3 py-3 text-gray-200">{formatNumber(material.unit_price)}</td>
+                    <td className="px-3 py-3">
+                      {material.is_active === false ? (
+                        <span className="rounded-md border border-red-800/60 bg-red-950/40 px-2 py-1 text-xs text-red-200">비활성</span>
+                      ) : (
+                        <span className="rounded-md border border-green-700/60 bg-green-950/40 px-2 py-1 text-xs text-green-200">활성</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => editPackagingMaterial(material)}
+                          className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                        >
+                          수정
+                        </button>
+                        {material.is_active === false ? null : (
+                          <button
+                            type="button"
+                            onClick={() => void deactivatePackagingMaterial(material)}
+                            disabled={packagingSaving}
+                            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-red-500 hover:text-red-200 disabled:opacity-60"
+                          >
+                            비활성화
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+    )
+  }
+
   function renderQuality() {
     const completed = records.filter((record) => normalizeInspection(record.inspection_result) === '적합').length
     const failed = records.filter((record) => normalizeInspection(record.inspection_result) === '부적합').length
@@ -4493,6 +4833,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     if (productionTab === 'prod-work') return renderWorkOrdersV2()
     if (productionTab === 'prod-recipes') return renderRecipeManagement()
     if (productionTab === 'prod-materials') return renderMaterialsManagement()
+    if (productionTab === 'prod-packaging') return renderPackagingManagement()
     if (productionTab === 'prod-sanitation') return renderSanitation()
     if (productionTab === 'prod-quality') return renderQuality()
     return renderCompliance()
@@ -4994,6 +5335,190 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
           >
             원재료 차감 후 생산 확정
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showSububuDetailModal}
+        title={`${sububuDetailTarget || '원재료'} 수불 상세`}
+        description="기간별 입고/소모 내역"
+        onClose={() => {
+          setShowSububuDetailModal(false)
+          setSububuDetailRows([])
+          setSububuDetailError('')
+        }}
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="시작일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={sububuDetailFrom}
+                onChange={(event) => setSububuDetailFrom(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="종료일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={sububuDetailTo}
+                onChange={(event) => setSububuDetailTo(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <button
+              type="button"
+              onClick={() => void loadSububuDetail(sububuDetailTarget, sububuDetailFrom, sububuDetailTo)}
+              className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+            >
+              검색
+            </button>
+          </div>
+
+          {sububuDetailBalanceMode ? (
+            <p className="text-xs text-gray-500">잔량 표시는 {sububuDetailBalanceMode} 기준입니다.</p>
+          ) : null}
+
+          {sububuDetailLoading ? (
+            <LoadingBlock lines={4} />
+          ) : sububuDetailError ? (
+            <EmptyState title="수불 상세를 불러오지 못했습니다" description={sububuDetailError} />
+          ) : sububuDetailRows.length === 0 ? (
+            <EmptyState title="거래 내역이 없습니다" description="선택한 기간의 입고/소모 데이터가 없습니다." />
+          ) : (
+            <div className="max-h-[420px] overflow-auto rounded-xl border border-gray-700">
+              <table className="min-w-full text-left text-sm">
+                <thead className="sticky top-0 bg-gray-900 text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">날짜</th>
+                    <th className="px-3 py-2 font-medium">구분</th>
+                    <th className="px-3 py-2 font-medium">거래처/사용처</th>
+                    <th className="px-3 py-2 font-medium">입고(g)</th>
+                    <th className="px-3 py-2 font-medium">소모(g)</th>
+                    <th className="px-3 py-2 font-medium">잔량(g)</th>
+                    <th className="px-3 py-2 font-medium">비고</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sububuDetailRows.map((row) => (
+                    <tr key={row.id} className="border-b border-gray-800/80">
+                      <td className="px-3 py-2 text-gray-200">{row.tx_date || '-'}</td>
+                      <td className="px-3 py-2 text-white">{row.tx_type || '-'}</td>
+                      <td className="px-3 py-2 text-gray-200">{row.counterparty || '-'}</td>
+                      <td className="px-3 py-2 text-green-400">{row.inbound_g ? formatNumber(row.inbound_g) : '-'}</td>
+                      <td className="px-3 py-2 text-amber-300">{row.outbound_g ? formatNumber(row.outbound_g) : '-'}</td>
+                      <td className="px-3 py-2 text-gray-200">{formatNumber(row.balance_g)}</td>
+                      <td className="max-w-[320px] truncate px-3 py-2 text-gray-400" title={row.note || ''}>
+                        {row.note || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={showPackagingModal}
+        title={packagingForm.id ? '부재료 수정' : '부재료 추가'}
+        description="packaging_materials 기준"
+        onClose={() => {
+          setShowPackagingModal(false)
+          setPackagingError('')
+          setPackagingForm(emptyPackagingForm())
+        }}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="부재료명">
+            <input
+              value={packagingForm.material_name}
+              onChange={(event) => setPackagingForm((prev) => ({ ...prev, material_name: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="코드">
+            <input
+              value={packagingForm.material_code}
+              onChange={(event) => setPackagingForm((prev) => ({ ...prev, material_code: event.target.value }))}
+              readOnly={!!packagingForm.id}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500 read-only:opacity-60"
+            />
+          </Field>
+          <Field label="규격">
+            <input
+              value={packagingForm.spec}
+              onChange={(event) => setPackagingForm((prev) => ({ ...prev, spec: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="유형">
+            <input
+              value={packagingForm.material_type}
+              onChange={(event) => setPackagingForm((prev) => ({ ...prev, material_type: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="매입처">
+            <input
+              value={packagingForm.supplier}
+              onChange={(event) => setPackagingForm((prev) => ({ ...prev, supplier: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="현재재고(ea)">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={packagingForm.current_stock}
+              onChange={(event) => setPackagingForm((prev) => ({ ...prev, current_stock: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="단가">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={packagingForm.unit_price}
+              onChange={(event) => setPackagingForm((prev) => ({ ...prev, unit_price: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="활성상태">
+            <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                checked={packagingForm.is_active}
+                onChange={(event) => setPackagingForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+                className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-green-500 focus:ring-green-500"
+              />
+              활성
+            </label>
+          </Field>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowPackagingModal(false)
+              setPackagingError('')
+              setPackagingForm(emptyPackagingForm())
+            }}
+            className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+          >
+            닫기
+          </button>
+          <button
+            type="button"
+            onClick={() => void savePackagingMaterial()}
+            disabled={packagingSaving}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+          >
+            저장
           </button>
         </div>
       </Modal>
