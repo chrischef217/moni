@@ -228,12 +228,20 @@ type RawMaterialRow = {
   supplier_contact?: string | null
   supplier_address?: string | null
   supplier_biz_number?: string | null
+  is_active?: boolean | null
+}
+
+type MaterialSummary = {
+  total: number
+  active: number
+  inactive: number
 }
 
 type RawMaterialsPayload = {
   ok?: boolean
   error?: string
   materials?: RawMaterialRow[]
+  summary?: Partial<MaterialSummary>
 }
 
 type SububuRow = {
@@ -260,6 +268,7 @@ type PackagingMaterialsPayload = {
   error?: string
   materials?: PackagingMaterialRow[]
   material?: PackagingMaterialRow
+  summary?: Partial<MaterialSummary>
 }
 
 type PackagingFormState = {
@@ -485,6 +494,8 @@ const EMPTY_VALIDATION: FieldValidation = {
   suggestion: null,
   loading: false,
 }
+
+const EMPTY_MATERIAL_SUMMARY: MaterialSummary = { total: 0, active: 0, inactive: 0 }
 
 function uid() {
   return `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
@@ -1105,6 +1116,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [materialsLoading, setMaterialsLoading] = useState(true)
   const [materialsError, setMaterialsError] = useState('')
   const [materials, setMaterials] = useState<RawMaterialRow[]>([])
+  const [materialsView, setMaterialsView] = useState<'active' | 'inactive'>('active')
+  const [materialsSummary, setMaterialsSummary] = useState<MaterialSummary>(EMPTY_MATERIAL_SUMMARY)
   const [selectedMaterial, setSelectedMaterial] = useState<RawMaterialRow | null>(null)
   const [showMaterialModal, setShowMaterialModal] = useState(false)
   const [materialForm, setMaterialForm] = useState<MaterialFormState>(emptyMaterialForm(null))
@@ -1132,6 +1145,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [packagingLoading, setPackagingLoading] = useState(true)
   const [packagingError, setPackagingError] = useState('')
   const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterialRow[]>([])
+  const [packagingView, setPackagingView] = useState<'active' | 'inactive'>('active')
+  const [packagingSummary, setPackagingSummary] = useState<MaterialSummary>(EMPTY_MATERIAL_SUMMARY)
   const [showPackagingModal, setShowPackagingModal] = useState(false)
   const [packagingForm, setPackagingForm] = useState<PackagingFormState>(emptyPackagingForm())
   const [packagingSaving, setPackagingSaving] = useState(false)
@@ -1322,8 +1337,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     void loadProductionRecords(daysAgoValue(29), todayValue())
     void loadRecipes()
     void loadFoodTypes()
-    void loadMaterials()
-    void loadPackagingMaterials()
+    void loadMaterials('active')
+    void loadPackagingMaterials('active')
     void loadSububu(daysAgoValue(29), todayValue())
     void loadSanitation(daysAgoValue(29), todayValue())
   }, [])
@@ -1336,9 +1351,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
   useEffect(() => {
     if (mainMenu !== 'production') return
-    if (productionTab !== 'prod-packaging') return
-    void loadPackagingMaterials()
-  }, [mainMenu, productionTab])
+    if (productionTab === 'prod-materials') {
+      void loadMaterials(materialsView)
+      return
+    }
+    if (productionTab === 'prod-packaging') {
+      void loadPackagingMaterials(packagingView)
+    }
+  }, [mainMenu, productionTab, materialsView, packagingView])
 
   useEffect(() => {
     if (!selectedRecipeProductId) return
@@ -1831,12 +1851,18 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
   }
 
-  async function loadMaterials() {
+  async function loadMaterials(view: 'active' | 'inactive' = materialsView) {
     setMaterialsLoading(true)
     setMaterialsError('')
     try {
-      const payload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials')
+      const query = view === 'inactive' ? '?status=inactive' : ''
+      const payload = await readJson<RawMaterialsPayload>(`/api/moni/raw-materials${query}`)
       setMaterials(payload.materials ?? [])
+      setMaterialsSummary({
+        total: Number(payload.summary?.total ?? 0),
+        active: Number(payload.summary?.active ?? 0),
+        inactive: Number(payload.summary?.inactive ?? 0),
+      })
     } catch (error) {
       setMaterialsError(error instanceof Error ? error.message : '원재료 목록을 불러오지 못했습니다.')
     } finally {
@@ -1844,16 +1870,80 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
   }
 
-  async function loadPackagingMaterials() {
+  async function loadPackagingMaterials(view: 'active' | 'inactive' = packagingView) {
     setPackagingLoading(true)
     setPackagingError('')
     try {
-      const payload = await readJson<PackagingMaterialsPayload>('/api/moni/packaging-materials')
+      const query = view === 'inactive' ? '?status=inactive' : ''
+      const payload = await readJson<PackagingMaterialsPayload>(`/api/moni/packaging-materials${query}`)
       setPackagingMaterials(payload.materials ?? [])
+      setPackagingSummary({
+        total: Number(payload.summary?.total ?? 0),
+        active: Number(payload.summary?.active ?? 0),
+        inactive: Number(payload.summary?.inactive ?? 0),
+      })
     } catch (error) {
       setPackagingError(error instanceof Error ? error.message : '부재료 목록을 불러오지 못했습니다.')
     } finally {
       setPackagingLoading(false)
+    }
+  }
+
+  async function toggleRawMaterialActive(material: RawMaterialRow, nextActive: boolean) {
+    const actionLabel = nextActive ? '다시 활성화' : '비활성화'
+    const confirmed = window.confirm(`"${material.item_name}" 항목을 ${actionLabel}할까요?`)
+    if (!confirmed) return
+    setMaterialSaving(true)
+    setMaterialsError('')
+    try {
+      await readJson<RawMaterialsPayload>(`/api/moni/raw-materials/${encodeURIComponent(material.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          item_name: material.item_name,
+          food_type: material.food_type ?? material.food_type_name ?? '',
+          country_of_origin: material.country_of_origin ?? '',
+          spec: material.spec ?? '',
+          storage_type: material.storage_type ?? '',
+          shelf_life_days: material.shelf_life_days ?? null,
+          supplier: material.supplier ?? '',
+          supplier_contact: material.supplier_contact ?? '',
+          supplier_address: material.supplier_address ?? '',
+          supplier_biz_number: material.supplier_biz_number ?? '',
+          is_active: nextActive,
+        }),
+      })
+      await loadMaterials(materialsView)
+    } catch (error) {
+      setMaterialsError(error instanceof Error ? error.message : `${actionLabel} 처리 중 오류가 발생했습니다.`)
+    } finally {
+      setMaterialSaving(false)
+    }
+  }
+
+  async function togglePackagingMaterialActive(material: PackagingMaterialRow, nextActive: boolean) {
+    const actionLabel = nextActive ? '다시 활성화' : '비활성화'
+    const confirmed = window.confirm(`"${material.material_name}" 항목을 ${actionLabel}할까요?`)
+    if (!confirmed) return
+    setPackagingSaving(true)
+    setPackagingError('')
+    try {
+      await readJson<PackagingMaterialsPayload>(`/api/moni/packaging-materials/${encodeURIComponent(material.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          material_name: material.material_name,
+          spec: material.spec ?? '',
+          material_type: material.material_type ?? '',
+          supplier: material.supplier ?? '',
+          current_stock: Number(material.current_stock ?? 0),
+          unit_price: Number(material.unit_price ?? 0),
+          is_active: nextActive,
+        }),
+      })
+      await loadPackagingMaterials(packagingView)
+    } catch (error) {
+      setPackagingError(error instanceof Error ? error.message : `${actionLabel} 처리 중 오류가 발생했습니다.`)
+    } finally {
+      setPackagingSaving(false)
     }
   }
 
@@ -4438,6 +4528,34 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </div>
           ) : null}
 
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3 text-sm">
+            <p className="text-gray-300">
+              원재료 총 <span className="font-semibold text-white">{formatNumber(materialsSummary.total)}</span>개 / 활성{' '}
+              <span className="font-semibold text-green-300">{formatNumber(materialsSummary.active)}</span>개 / 비활성{' '}
+              <span className="font-semibold text-amber-300">{formatNumber(materialsSummary.inactive)}</span>개
+            </p>
+            <div className="inline-flex rounded-xl border border-gray-700 bg-gray-950 p-1">
+              <button
+                type="button"
+                onClick={() => setMaterialsView('active')}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  materialsView === 'active' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                활성 원재료
+              </button>
+              <button
+                type="button"
+                onClick={() => setMaterialsView('inactive')}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  materialsView === 'inactive' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                비활성 원재료
+              </button>
+            </div>
+          </div>
+
           {materialsLoading ? (
             <LoadingBlock lines={6} />
           ) : materialsError ? (
@@ -4478,6 +4596,54 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         {material.shelf_life_days ? `${material.shelf_life_days}일` : '-'}
                       </td>
                       <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock_g)}g</td>
+                      <td className="px-3 py-3">
+                        {material.is_active === false ? (
+                          <span className="rounded-md border border-amber-700/60 bg-amber-950/40 px-2 py-1 text-xs text-amber-200">비활성</span>
+                        ) : (
+                          <span className="rounded-md border border-green-700/60 bg-green-950/40 px-2 py-1 text-xs text-green-200">활성</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setSelectedMaterial(material)
+                              setMaterialForm(emptyMaterialForm(material))
+                              setShowMaterialModal(true)
+                            }}
+                            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                          >
+                            수정
+                          </button>
+                          {material.is_active === false ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void toggleRawMaterialActive(material, true)
+                              }}
+                              disabled={materialSaving}
+                              className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-green-200 disabled:opacity-60"
+                            >
+                              다시 활성화
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void toggleRawMaterialActive(material, false)
+                              }}
+                              disabled={materialSaving}
+                              className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-red-500 hover:text-red-200 disabled:opacity-60"
+                            >
+                              비활성화
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -4709,6 +4875,34 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           </div>
         ) : null}
 
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3 text-sm">
+          <p className="text-gray-300">
+            부재료 총 <span className="font-semibold text-white">{formatNumber(packagingSummary.total)}</span>개 / 활성{' '}
+            <span className="font-semibold text-green-300">{formatNumber(packagingSummary.active)}</span>개 / 비활성{' '}
+            <span className="font-semibold text-amber-300">{formatNumber(packagingSummary.inactive)}</span>개
+          </p>
+          <div className="inline-flex rounded-xl border border-gray-700 bg-gray-950 p-1">
+            <button
+              type="button"
+              onClick={() => setPackagingView('active')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                packagingView === 'active' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              활성 부재료
+            </button>
+            <button
+              type="button"
+              onClick={() => setPackagingView('inactive')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                packagingView === 'inactive' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              비활성 부재료
+            </button>
+          </div>
+        </div>
+
         {packagingLoading ? (
           <LoadingBlock lines={6} />
         ) : packagingMaterials.length === 0 ? (
@@ -4755,10 +4949,20 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         >
                           수정
                         </button>
+                        {material.is_active === false ? (
+                          <button
+                            type="button"
+                            onClick={() => void togglePackagingMaterialActive(material, true)}
+                            disabled={packagingSaving}
+                            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-green-200 disabled:opacity-60"
+                          >
+                            다시 활성화
+                          </button>
+                        ) : null}
                         {material.is_active === false ? null : (
                           <button
                             type="button"
-                            onClick={() => void deactivatePackagingMaterial(material)}
+                            onClick={() => void togglePackagingMaterialActive(material, false)}
                             disabled={packagingSaving}
                             className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-red-500 hover:text-red-200 disabled:opacity-60"
                           >

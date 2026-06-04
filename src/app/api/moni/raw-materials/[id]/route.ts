@@ -19,6 +19,16 @@ function numberValue(value: unknown): number | null {
   return null
 }
 
+function boolValue(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const lowered = value.toLowerCase()
+    if (lowered === 'true' || lowered === '1' || lowered === 'y') return true
+    if (lowered === 'false' || lowered === '0' || lowered === 'n') return false
+  }
+  return null
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = String(params.id ?? '').trim()
@@ -31,6 +41,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
     }
 
+    const isActive = boolValue(body.is_active)
     const payload = {
       item_name: text(body.item_name),
       food_type: text(body.food_type),
@@ -42,6 +53,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       supplier_contact: text(body.supplier_contact),
       supplier_address: text(body.supplier_address),
       supplier_biz_number: text(body.supplier_biz_number),
+      ...(isActive === null ? {} : { is_active: isActive }),
     }
 
     const supabase = createMoniServiceRoleClient()

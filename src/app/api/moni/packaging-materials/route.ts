@@ -29,12 +29,43 @@ function makePackagingId() {
   return `PKG-${Date.now()}`
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const includeInactive = ['1', 'true', 'all'].includes(
+      String(request.nextUrl.searchParams.get('include_inactive') ?? '').toLowerCase(),
+    )
+    const status = String(request.nextUrl.searchParams.get('status') ?? '').toLowerCase()
+    const inactiveOnly = status === 'inactive'
+
     const supabase = createMoniServiceRoleClient()
-    const { data, error } = await supabase.from('packaging_materials').select('*').order('material_name', { ascending: true })
+    const { data, error } = await supabase
+      .from('packaging_materials')
+      .select('*')
+      .order('material_name', { ascending: true })
     if (error) throw new Error(error.message || '부재료 목록 조회에 실패했습니다.')
-    return NextResponse.json({ ok: true, materials: data ?? [] }, { status: 200 })
+
+    const allMaterials = (data ?? []) as Array<Record<string, unknown>>
+    const activeMaterials = allMaterials.filter((item) => item.is_active !== false)
+    const inactiveMaterials = allMaterials.filter((item) => item.is_active === false)
+
+    const materials = inactiveOnly
+      ? inactiveMaterials
+      : includeInactive
+        ? allMaterials
+        : activeMaterials
+
+    return NextResponse.json(
+      {
+        ok: true,
+        materials,
+        summary: {
+          total: allMaterials.length,
+          active: activeMaterials.length,
+          inactive: inactiveMaterials.length,
+        },
+      },
+      { status: 200 },
+    )
   } catch (error) {
     const message = error instanceof Error ? error.message : '부재료 목록 조회 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })

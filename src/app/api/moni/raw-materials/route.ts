@@ -21,8 +21,14 @@ function makeRawMaterialId() {
   return `ITEM-${Date.now()}`
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const includeInactive = ['1', 'true', 'all'].includes(
+      String(request.nextUrl.searchParams.get('include_inactive') ?? '').toLowerCase(),
+    )
+    const status = String(request.nextUrl.searchParams.get('status') ?? '').toLowerCase()
+    const inactiveOnly = status === 'inactive'
+
     const supabase = createMoniServiceRoleClient()
     const [materialsResult, transactionsResult] = await Promise.all([
       supabase
@@ -56,7 +62,9 @@ export async function GET() {
       }
     }
 
-    const materials = ((materialsResult.data ?? []) as Array<Record<string, unknown>>).map((item) => {
+    const allMaterials: Array<Record<string, unknown> & { is_active?: boolean }> = (
+      (materialsResult.data ?? []) as Array<Record<string, unknown>>
+    ).map((item) => {
       const id = String(item.id ?? '')
       const name = String(item.item_name ?? '')
       const meta = latestMeta.get(id) ?? latestMeta.get(name)
@@ -67,7 +75,27 @@ export async function GET() {
       }
     })
 
-    return NextResponse.json({ ok: true, materials }, { status: 200 })
+    const activeMaterials = allMaterials.filter((item) => item.is_active !== false)
+    const inactiveMaterials = allMaterials.filter((item) => item.is_active === false)
+
+    const materials = inactiveOnly
+      ? inactiveMaterials
+      : includeInactive
+        ? allMaterials
+        : activeMaterials
+
+    return NextResponse.json(
+      {
+        ok: true,
+        materials,
+        summary: {
+          total: allMaterials.length,
+          active: activeMaterials.length,
+          inactive: inactiveMaterials.length,
+        },
+      },
+      { status: 200 },
+    )
   } catch (error) {
     const message = error instanceof Error ? error.message : '원재료 조회 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
