@@ -15,6 +15,7 @@ type ProductionSubTabKey =
   | 'prod-overview'
   | 'prod-work'
   | 'prod-daily-report'
+  | 'prod-products'
   | 'prod-recipes'
   | 'prod-recipe-mapping'
   | 'prod-materials'
@@ -69,16 +70,21 @@ type ProductionOverviewPayload = {
 type ProductOption = {
   id: string
   product_name: string
+  product_code?: string | null
   product_type?: string | null
   report_number?: string | null
   product_spec?: string | null
   weight_g?: number | null
+  storage_method?: string | null
+  shelf_life?: string | null
   storage_type?: string | null
   shelf_life_days?: number | null
   shelf_life_standard?: string | null
   packaging_material?: string | null
   lot_rule?: string | null
   allergens?: string | null
+  is_active?: boolean | null
+  business_id?: string | null
 }
 
 type ProductionRecord = {
@@ -341,6 +347,25 @@ type PackagingFormState = {
   is_active: boolean
 }
 
+type ProductFormState = {
+  id?: string
+  product_name: string
+  product_code: string
+  report_number: string
+  product_type: string
+  storage_method: string
+  storage_type: string
+  shelf_life: string
+  shelf_life_days: string
+  shelf_life_standard: string
+  product_spec: string
+  weight_g: string
+  packaging_material: string
+  lot_rule: string
+  allergens: string
+  is_active: boolean
+}
+
 type RawMaterialTransactionRow = {
   id: string
   material_name?: string
@@ -571,6 +596,7 @@ const MAIN_TABS: MenuItem[] = [
 const PRODUCTION_TABS: SubMenuItem[] = [
   { key: 'prod-overview', label: '생산 개요' },
   { key: 'prod-work', label: '작업 지시' },
+  { key: 'prod-products', label: '제품관리' },
   { key: 'prod-recipes', label: '레시피 관리' },
   { key: 'prod-materials', label: '원재료 관리' },
   { key: 'prod-ledger', label: '원료수불부' },
@@ -597,6 +623,7 @@ const EMPTY_VALIDATION: FieldValidation = {
 }
 
 const EMPTY_MATERIAL_SUMMARY: MaterialSummary = { total: 0, active: 0, inactive: 0 }
+const PACKAGING_TYPE_OPTIONS = ['포장재', '라벨', '카톤박스'] as const
 
 function uid() {
   return `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
@@ -610,6 +637,46 @@ function daysAgoValue(days: number) {
   const date = new Date()
   date.setDate(date.getDate() - days)
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(date)
+}
+
+function rangeByPeriod(period: 'day' | 'month' | 'quarter' | 'year') {
+  const today = todayValue()
+  if (period === 'day') return { from: today, to: today }
+
+  if (period === 'month') {
+    const now = new Date()
+    const first = new Date(now.getFullYear(), now.getMonth(), 1)
+    return {
+      from: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first),
+      to: today,
+    }
+  }
+
+  if (period === 'quarter') {
+    const now = new Date()
+    const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3
+    const first = new Date(now.getFullYear(), quarterStartMonth, 1)
+    return {
+      from: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first),
+      to: today,
+    }
+  }
+
+  const now = new Date()
+  const first = new Date(now.getFullYear(), 0, 1)
+  return {
+    from: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first),
+    to: today,
+  }
+}
+
+function escapeHtmlForPrint(value: unknown) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
 }
 
 function formatNumber(value: number | null | undefined) {
@@ -910,17 +977,45 @@ function emptyMaterialForm(material: RawMaterialRow | null): MaterialFormState {
 }
 
 function emptyPackagingForm(material?: PackagingMaterialRow | null): PackagingFormState {
+  const normalizedType = PACKAGING_TYPE_OPTIONS.includes((material?.material_type ?? '').trim() as (typeof PACKAGING_TYPE_OPTIONS)[number])
+    ? ((material?.material_type ?? '').trim() as (typeof PACKAGING_TYPE_OPTIONS)[number])
+    : '포장재'
+
   return {
     id: material?.id,
     material_name: material?.material_name ?? '',
     material_code: material?.material_code ?? '',
     spec: material?.spec ?? '',
-    material_type: material?.material_type ?? '',
+    material_type: normalizedType,
     supplier: material?.supplier ?? '',
     current_stock:
       material?.current_stock === null || material?.current_stock === undefined ? '' : String(material.current_stock),
     unit_price: material?.unit_price === null || material?.unit_price === undefined ? '' : String(material.unit_price),
     is_active: material?.is_active ?? true,
+  }
+}
+
+function emptyProductForm(product?: ProductOption | null): ProductFormState {
+  return {
+    id: product?.id,
+    product_name: product?.product_name ?? '',
+    product_code: product?.product_code ?? '',
+    report_number: product?.report_number ?? '',
+    product_type: product?.product_type ?? '완제품',
+    storage_method: product?.storage_method ?? '',
+    storage_type: product?.storage_type ?? '',
+    shelf_life: product?.shelf_life ?? '',
+    shelf_life_days:
+      product?.shelf_life_days === null || product?.shelf_life_days === undefined
+        ? ''
+        : String(product.shelf_life_days),
+    shelf_life_standard: product?.shelf_life_standard ?? '',
+    product_spec: product?.product_spec ?? '',
+    weight_g: product?.weight_g === null || product?.weight_g === undefined ? '' : String(product.weight_g),
+    packaging_material: product?.packaging_material ?? '',
+    lot_rule: product?.lot_rule ?? '',
+    allergens: product?.allergens ?? '',
+    is_active: product?.is_active ?? true,
   }
 }
 
@@ -1053,6 +1148,15 @@ function SectionCard({
       </div>
       <div className="mt-4">{children}</div>
     </section>
+  )
+}
+
+function InfoCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-2">
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className="mt-1 text-sm font-medium text-white">{value}</p>
+    </div>
   )
 }
 
@@ -1246,6 +1350,19 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [recordsError, setRecordsError] = useState('')
   const [records, setRecords] = useState<ProductionRecord[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
+  const [productCatalogLoading, setProductCatalogLoading] = useState(false)
+  const [productCatalogError, setProductCatalogError] = useState('')
+  const [productCatalog, setProductCatalog] = useState<ProductOption[]>([])
+  const [selectedProductId, setSelectedProductId] = useState('')
+  const [productForm, setProductForm] = useState<ProductFormState>(emptyProductForm())
+  const [productSaving, setProductSaving] = useState(false)
+  const [showProductModal, setShowProductModal] = useState(false)
+  const [productDetailUnits, setProductDetailUnits] = useState<ProductionUnit[]>([])
+  const [productDetailUnitsLoading, setProductDetailUnitsLoading] = useState(false)
+  const [productActionMessage, setProductActionMessage] = useState<{
+    tone: 'success' | 'error' | 'warning'
+    text: string
+  } | null>(null)
 
   const [selectedRecord, setSelectedRecord] = useState<ProductionRecord | null>(null)
   const [showProductionModal, setShowProductionModal] = useState(false)
@@ -1607,6 +1724,28 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     })
   }, [dailyLotQuery, dailyProductQuery, productionDateFrom, productionDateTo, records])
 
+  const productCatalogById = useMemo(() => {
+    const map = new Map<string, ProductOption>()
+    for (const product of productCatalog) {
+      map.set(String(product.id), product)
+    }
+    return map
+  }, [productCatalog])
+
+  const productCatalogByName = useMemo(() => {
+    const map = new Map<string, ProductOption>()
+    for (const product of productCatalog) {
+      const key = String(product.product_name ?? '').trim()
+      if (key && !map.has(key)) map.set(key, product)
+    }
+    return map
+  }, [productCatalog])
+
+  const selectedManagedProduct = useMemo(() => {
+    if (!selectedProductId) return null
+    return productCatalog.find((product) => String(product.id) === selectedProductId) ?? null
+  }, [productCatalog, selectedProductId])
+
   const chatPreviewMessages = useMemo(() => {
     return activeConversation?.messages.slice(-8) ?? []
   }, [activeConversation])
@@ -1627,6 +1766,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     void loadCompanyInfo()
     void loadOverview()
     void loadProductionRecords(daysAgoValue(29), todayValue())
+    void loadProductCatalog()
     void loadRecipes()
     void loadFoodTypes()
     void loadMaterials('active')
@@ -1642,11 +1782,23 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }, [recipeProducts, selectedRecipeProductId])
 
   useEffect(() => {
+    if (!selectedProductId) {
+      setProductDetailUnits([])
+      return
+    }
+    void loadProductDetailUnits(selectedProductId)
+  }, [selectedProductId])
+
+  useEffect(() => {
     setDailySelectedIds((prev) => prev.filter((id) => dailyReportRows.some((row) => row.id === id)))
   }, [dailyReportRows])
 
   useEffect(() => {
     if (mainMenu !== 'production') return
+    if (productionTab === 'prod-products') {
+      void loadProductCatalog({ preserveSelected: true })
+      return
+    }
     if (productionTab === 'prod-recipe-mapping') {
       void loadRecipeMaterialMappings()
       void loadLatestRecipeMappingHistory()
@@ -1672,6 +1824,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     sububuDateFrom,
     sububuDateTo,
     sububuMaterialQuery,
+    selectedProductId,
     packagingLedgerDetailFrom,
     packagingLedgerDetailTo,
   ])
@@ -1889,6 +2042,116 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setRecordsError(error instanceof Error ? error.message : '제조기록서를 불러오지 못했습니다.')
     } finally {
       setRecordsLoading(false)
+    }
+  }
+
+  async function loadProductCatalog(options?: { preserveSelected?: boolean }) {
+    setProductCatalogLoading(true)
+    setProductCatalogError('')
+    try {
+      const payload = await readJson<{
+        ok?: boolean
+        error?: string
+        products?: ProductOption[]
+      }>('/api/moni/products?include_inactive=1')
+      const nextProducts = payload.products ?? []
+      setProductCatalog(nextProducts)
+
+      setSelectedProductId((prev) => {
+        if (options?.preserveSelected && prev && nextProducts.some((product) => String(product.id) === prev)) {
+          return prev
+        }
+        return nextProducts.length > 0 ? String(nextProducts[0].id) : ''
+      })
+    } catch (error) {
+      setProductCatalogError(error instanceof Error ? error.message : '제품 목록을 불러오지 못했습니다.')
+    } finally {
+      setProductCatalogLoading(false)
+    }
+  }
+
+  async function loadProductDetailUnits(productId: string) {
+    if (!productId) {
+      setProductDetailUnits([])
+      return
+    }
+
+    setProductDetailUnitsLoading(true)
+    try {
+      const payload = await readJson<ProductionUnitsPayload>(
+        `/api/moni/products/${encodeURIComponent(productId)}/production-units`,
+      )
+      setProductDetailUnits(payload.units ?? [])
+    } catch {
+      setProductDetailUnits([])
+    } finally {
+      setProductDetailUnitsLoading(false)
+    }
+  }
+
+  function openCreateProductModal() {
+    setProductActionMessage(null)
+    setProductForm(emptyProductForm())
+    setShowProductModal(true)
+  }
+
+  function openEditProductModal(product: ProductOption) {
+    setProductActionMessage(null)
+    setProductForm(emptyProductForm(product))
+    setShowProductModal(true)
+  }
+
+  async function saveProductItem() {
+    const productName = productForm.product_name.trim()
+    if (!productName) {
+      setProductActionMessage({ tone: 'error', text: '제품명을 입력해 주세요.' })
+      return
+    }
+
+    setProductSaving(true)
+    setProductActionMessage(null)
+    try {
+      const payload = {
+        product_name: productName,
+        product_code: productForm.product_code.trim() || null,
+        report_number: productForm.report_number.trim() || null,
+        product_type: productForm.product_type.trim() || null,
+        storage_method: productForm.storage_method.trim() || null,
+        storage_type: productForm.storage_type.trim() || null,
+        shelf_life: productForm.shelf_life.trim() || null,
+        shelf_life_days: toNumber(productForm.shelf_life_days),
+        shelf_life_standard: productForm.shelf_life_standard.trim() || null,
+        product_spec: productForm.product_spec.trim() || null,
+        weight_g: toNumber(productForm.weight_g),
+        packaging_material: productForm.packaging_material.trim() || null,
+        lot_rule: productForm.lot_rule.trim() || null,
+        allergens: productForm.allergens.trim() || null,
+        is_active: productForm.is_active,
+        business_id: '20220523011',
+      }
+
+      if (productForm.id) {
+        await readJson(`/api/moni/products/${encodeURIComponent(productForm.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        })
+      } else {
+        await readJson('/api/moni/products', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        })
+      }
+
+      setShowProductModal(false)
+      await Promise.all([loadProductCatalog({ preserveSelected: true }), loadProductionRecords(productionDateFrom, productionDateTo)])
+      setProductActionMessage({ tone: 'success', text: productForm.id ? '제품 정보를 수정했습니다.' : '제품을 등록했습니다.' })
+    } catch (error) {
+      setProductActionMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '제품 저장에 실패했습니다.',
+      })
+    } finally {
+      setProductSaving(false)
     }
   }
 
@@ -2796,7 +3059,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         material_name: materialName,
         material_code: packagingForm.material_code.trim(),
         spec: packagingForm.spec.trim(),
-        material_type: packagingForm.material_type.trim(),
+        material_type: packagingForm.material_type.trim() || '포장재',
         supplier: packagingForm.supplier.trim(),
         current_stock: currentStock,
         unit_price: unitPrice,
@@ -3057,6 +3320,19 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   function resetConversation() {
     setActiveConversationId(null)
     setComposer('')
+  }
+
+  function findProductMeta(record: ProductionRecord | null | undefined) {
+    if (!record) return null
+    const byId = record.product_id ? productCatalogById.get(String(record.product_id)) ?? null : null
+    if (byId) return byId
+    const byName = record.product_name ? productCatalogByName.get(String(record.product_name).trim()) ?? null : null
+    return byName
+  }
+
+  function reportNumberText(value: string | null | undefined) {
+    const trimmed = String(value ?? '').trim()
+    return trimmed || '미등록'
   }
 
   function openWindow(path: string) {
@@ -3658,9 +3934,70 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       return
     }
 
-    selectedRows.forEach((row) => {
-      openWindow(`/api/moni/production-records/${row.id}/pdf`)
-    })
+    const popup = window.open('', '_blank', 'noopener,noreferrer')
+    if (!popup) {
+      setProductionActionMessage({ tone: 'warning', text: '브라우저 팝업 차단을 해제한 뒤 다시 시도해 주세요.' })
+      return
+    }
+
+    const pages = selectedRows
+      .map((row, index) => {
+        const statusCode = normalizeStatusCode(row.status)
+        const planned = Number(row.planned_quantity_g ?? 0)
+        const actual = Number(row.actual_quantity_g ?? 0)
+        const defect = Number(row.defect_quantity_g ?? 0)
+        const sample = Number(row.sample_quantity_g ?? 0)
+        const loss = Math.max(planned - (actual + defect + sample), 0)
+        const meta = findProductMeta(row)
+
+        return `<section class="sheet">
+  <h1>생산일보</h1>
+  <table>
+    <tbody>
+      <tr><th>생산일자</th><td>${escapeHtmlForPrint(row.work_date || '-')}</td><th>LOT</th><td>${escapeHtmlForPrint(row.lot_number || '-')}</td></tr>
+      <tr><th>제품명</th><td>${escapeHtmlForPrint(row.product_name || '-')}</td><th>품목보고번호</th><td>${escapeHtmlForPrint(
+          reportNumberText(meta?.report_number),
+        )}</td></tr>
+      <tr><th>생산단위</th><td>${escapeHtmlForPrint(row.production_unit_name || '-')}</td><th>상태</th><td>${escapeHtmlForPrint(
+          statusCode === 'confirmed' ? '확정' : '생산완료',
+        )}</td></tr>
+      <tr><th>예정량</th><td>${escapeHtmlForPrint(`${formatNumber(planned)}g`)}</td><th>완료량</th><td>${escapeHtmlForPrint(
+          `${formatNumber(actual)}g`,
+        )}</td></tr>
+      <tr><th>불량량</th><td>${escapeHtmlForPrint(`${formatNumber(defect)}g`)}</td><th>샘플량</th><td>${escapeHtmlForPrint(
+          `${formatNumber(sample)}g`,
+        )}</td></tr>
+      <tr><th>로스량</th><td>${escapeHtmlForPrint(`${formatNumber(loss)}g`)}</td><th>원료차감</th><td>${escapeHtmlForPrint(
+          statusCode === 'confirmed' ? '반영' : '미반영',
+        )}</td></tr>
+    </tbody>
+  </table>
+</section>${index < selectedRows.length - 1 ? '<div class="page-break"></div>' : ''}`
+      })
+      .join('')
+
+    popup.document.write(`<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>선택 생산일보 인쇄</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 20px; font-family: Arial, 'Malgun Gothic', sans-serif; color: #111827; }
+    .sheet { width: 100%; max-width: 960px; margin: 0 auto; }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #111827; padding: 8px 10px; font-size: 13px; }
+    th { width: 18%; background: #f3f4f6; text-align: left; white-space: nowrap; }
+    .page-break { page-break-after: always; break-after: page; height: 0; }
+    @media print { body { margin: 0; } .sheet { max-width: none; } }
+  </style>
+</head>
+<body>${pages}
+  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),180));</script>
+</body>
+</html>`)
+    popup.document.close()
   }
 
   async function openDeductionModal(record: ProductionRecord) {
@@ -4139,6 +4476,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       tabMap.get('prod-work') ?? { key: 'prod-work', label: '작업 지시' },
       tabMap.get('prod-ledger') ?? { key: 'prod-ledger', label: '원료수불부' },
       { key: 'prod-daily-report', label: '생산일보' },
+      { key: 'prod-products', label: '제품관리' },
       tabMap.get('prod-materials') ?? { key: 'prod-materials', label: '원재료 관리' },
       tabMap.get('prod-packaging') ?? { key: 'prod-packaging', label: '부재료 관리' },
       tabMap.get('prod-recipe-mapping') ?? { key: 'prod-recipe-mapping', label: '레시피 원재료 연결' },
@@ -4572,6 +4910,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   <tr className="border-b border-gray-700">
                     <th className="px-3 py-2 font-medium">LOT</th>
                     <th className="px-3 py-2 font-medium">제품명</th>
+                    <th className="px-3 py-2 font-medium">품목보고번호</th>
                     <th className="px-3 py-2 font-medium">예정량</th>
                     <th className="px-3 py-2 font-medium">완료량(g)</th>
                     <th className="px-3 py-2 font-medium">불량량(g)</th>
@@ -4584,11 +4923,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   {todayWorkOrders.map((record) => {
                     const statusCode = normalizeStatusCode(record.status)
                     const plannedUnitText = formatPlannedUnitForRecord(record)
+                    const productMeta = findProductMeta(record)
 
                     return (
                       <tr key={record.id} className="border-b border-gray-800/80">
                         <td className="px-3 py-3 font-mono text-gray-300">{record.lot_number || '-'}</td>
                         <td className="px-3 py-3 text-white">{record.product_name || '-'}</td>
+                        <td className="px-3 py-3 text-gray-200">{reportNumberText(productMeta?.report_number)}</td>
                         <td className="px-3 py-3 text-gray-200">
                           <div>{formatNumber(record.planned_quantity_g)}g</div>
                           {plannedUnitText ? (
@@ -5764,6 +6105,195 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     )
   }
 
+  function renderProductManagement() {
+    const selected = selectedManagedProduct
+
+    return (
+      <div className="space-y-5">
+        {productActionMessage ? (
+          <div className={`rounded-xl border px-4 py-3 text-sm ${messageToneClasses(productActionMessage.tone)}`}>
+            {productActionMessage.text}
+          </div>
+        ) : null}
+
+        <div className="grid gap-5 xl:grid-cols-[1.1fr_1fr]">
+          <SectionCard
+            title="제품 목록"
+            description="생산일보 기준으로 사용할 제품 마스터를 조회하고 관리합니다."
+            actions={
+              <button
+                type="button"
+                onClick={openCreateProductModal}
+                className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400"
+              >
+                제품 신규 등록
+              </button>
+            }
+          >
+            {productCatalogLoading ? (
+              <LoadingBlock lines={5} />
+            ) : productCatalogError ? (
+              <EmptyState title="제품 목록을 불러오지 못했습니다" description={productCatalogError} />
+            ) : productCatalog.length === 0 ? (
+              <EmptyState title="등록된 제품이 없습니다" description="제품 신규 등록 버튼으로 첫 제품을 추가해 주세요." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-[940px] w-full text-left text-sm">
+                  <thead className="text-gray-400">
+                    <tr className="border-b border-gray-700">
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">제품명</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">품목보고번호</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">식품유형</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">보관방법</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">소비기한</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">패킹단위</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap text-right">기준중량(g)</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">활성</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap text-right">작업</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productCatalog.map((product) => {
+                      const isSelected = String(product.id) === selectedProductId
+                      const shelfLifeText =
+                        product.shelf_life_days !== null && product.shelf_life_days !== undefined
+                          ? `${formatNumber(product.shelf_life_days)}일`
+                          : product.shelf_life || '-'
+
+                      return (
+                        <tr
+                          key={product.id}
+                          className={`border-b border-gray-800/80 cursor-pointer transition ${
+                            isSelected ? 'bg-green-500/10' : 'hover:bg-gray-700/20'
+                          }`}
+                          onClick={() => setSelectedProductId(String(product.id))}
+                        >
+                          <td className="px-3 py-3 text-white whitespace-nowrap">
+                            <span className="inline-block max-w-[220px] truncate align-middle" title={product.product_name}>
+                              {product.product_name}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{reportNumberText(product.report_number)}</td>
+                          <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{product.product_type || '-'}</td>
+                          <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
+                            {product.storage_method || product.storage_type || '-'}
+                          </td>
+                          <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{shelfLifeText}</td>
+                          <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
+                            {product.product_spec || product.packaging_material || '-'}
+                          </td>
+                          <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">{formatNumber(product.weight_g)}g</td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            {product.is_active === false ? (
+                              <span className="rounded-md border border-red-800/60 bg-red-950/40 px-2 py-1 text-xs text-red-200">
+                                비활성
+                              </span>
+                            ) : (
+                              <span className="rounded-md border border-green-700/60 bg-green-950/40 px-2 py-1 text-xs text-green-200">
+                                활성
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openEditProductModal(product)
+                              }}
+                              className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                            >
+                              수정
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard title="제품 상세정보" description={selected ? selected.product_name : '제품을 선택해 주세요.'}>
+            {!selected ? (
+              <EmptyState title="선택된 제품이 없습니다" description="왼쪽 제품 목록에서 제품을 선택하면 상세정보가 표시됩니다." />
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <InfoCell label="제품명" value={selected.product_name} />
+                  <InfoCell label="품목보고번호" value={reportNumberText(selected.report_number)} />
+                  <InfoCell label="식품유형" value={selected.product_type || '-'} />
+                  <InfoCell label="보관방법" value={selected.storage_method || selected.storage_type || '-'} />
+                  <InfoCell
+                    label="소비기한"
+                    value={
+                      selected.shelf_life_days !== null && selected.shelf_life_days !== undefined
+                        ? `${formatNumber(selected.shelf_life_days)}일`
+                        : selected.shelf_life || '-'
+                    }
+                  />
+                  <InfoCell label="패킹단위" value={selected.product_spec || selected.packaging_material || '-'} />
+                </div>
+
+                <div className="rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-white">생산단위</p>
+                    {productDetailUnitsLoading ? <span className="text-xs text-gray-400">불러오는 중...</span> : null}
+                  </div>
+                  {productDetailUnits.length === 0 ? (
+                    <p className="text-sm text-gray-400">등록된 생산단위가 없습니다.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {productDetailUnits.map((unit) => (
+                        <span
+                          key={unit.id}
+                          className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-xs text-gray-200"
+                        >
+                          {unit.unit_name} ({formatNumber(unit.unit_weight_g)}g)
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEditProductModal(selected)}
+                    className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-green-500 hover:text-white"
+                  >
+                    수정
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProductionTab('prod-recipe-mapping')
+                      setRecipeMappingProductQuery(selected.product_name)
+                    }}
+                    className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-green-500 hover:text-white"
+                  >
+                    레시피 관리
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-500"
+                    title="제조방법설명서는 추후 구현 예정입니다."
+                  >
+                    제조방법설명서
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-500">제조방법설명서 기능은 추후 구현 예정입니다.</p>
+              </div>
+            )}
+          </SectionCard>
+        </div>
+      </div>
+    )
+  }
+
   function renderSanitation() {
     return (
       <SectionCard
@@ -6402,41 +6932,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   function renderProductionDailyReportLayout() {
     const allChecked = dailyReportRows.length > 0 && dailyReportRows.every((row) => dailySelectedIds.includes(row.id))
 
-    const applyPeriodRange = () => {
-      const today = todayValue()
-      if (dailyPeriodType === 'day') {
-        setProductionDateFrom(today)
-        setProductionDateTo(today)
-        return { from: today, to: today }
-      }
-
-      if (dailyPeriodType === 'month') {
-        const now = new Date()
-        const first = new Date(now.getFullYear(), now.getMonth(), 1)
-        const from = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first)
-        setProductionDateFrom(from)
-        setProductionDateTo(today)
-        return { from, to: today }
-      }
-
-      if (dailyPeriodType === 'quarter') {
-        const now = new Date()
-        const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3
-        const first = new Date(now.getFullYear(), quarterStartMonth, 1)
-        const from = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first)
-        setProductionDateFrom(from)
-        setProductionDateTo(today)
-        return { from, to: today }
-      }
-
-      const now = new Date()
-      const first = new Date(now.getFullYear(), 0, 1)
-      const from = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first)
-      setProductionDateFrom(from)
-      setProductionDateTo(today)
-      return { from, to: today }
-    }
-
     return (
       <div className="space-y-4">
         <section className="rounded-2xl border border-gray-800 bg-gray-800/80 p-5 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
@@ -6452,7 +6947,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 <Field label="기간 구분" className="xl:min-w-[160px]">
                   <select
                     value={dailyPeriodType}
-                    onChange={(event) => setDailyPeriodType(event.target.value as 'day' | 'month' | 'quarter' | 'year')}
+                    onChange={(event) => {
+                      const nextPeriod = event.target.value as 'day' | 'month' | 'quarter' | 'year'
+                      setDailyPeriodType(nextPeriod)
+                      const range = rangeByPeriod(nextPeriod)
+                      setProductionDateFrom(range.from)
+                      setProductionDateTo(range.to)
+                    }}
                     className="h-[42px] w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
                   >
                     <option value="day">일자별</option>
@@ -6496,10 +6997,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 <div className="flex flex-wrap items-end justify-start gap-2 pt-6 xl:justify-end">
                   <button
                     type="button"
-                    onClick={() => {
-                      const range = applyPeriodRange()
-                      void loadProductionRecords(range.from, range.to)
-                    }}
+                    onClick={() => void loadProductionRecords(productionDateFrom, productionDateTo)}
                     className="h-[42px] whitespace-nowrap rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
                   >
                     조회
@@ -6561,6 +7059,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     </th>
                     <th className="w-[110px] px-3 py-3 font-medium whitespace-nowrap">생산일자</th>
                     <th className="w-[130px] px-3 py-3 font-medium whitespace-nowrap">LOT</th>
+                    <th className="w-[150px] px-3 py-3 font-medium whitespace-nowrap">품목보고번호</th>
                     <th className="w-[220px] px-3 py-3 font-medium whitespace-nowrap">제품명</th>
                     <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">생산단위</th>
                     <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">예정량</th>
@@ -6569,7 +7068,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">샘플량</th>
                     <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">로스량</th>
                     <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">상태</th>
-                    <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">확정</th>
+                    <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">원료차감</th>
                     <th className="min-w-[280px] px-3 py-3 font-medium whitespace-nowrap">작업</th>
                   </tr>
                 </thead>
@@ -6582,6 +7081,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     const sample = Number(record.sample_quantity_g ?? 0)
                     const loss = Math.max(planned - (actual + defect + sample), 0)
                     const checked = dailySelectedIds.includes(record.id)
+                    const productMeta = findProductMeta(record)
 
                     return (
                       <tr key={record.id} className="border-b border-gray-800/80 hover:bg-gray-900/30">
@@ -6599,6 +7099,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             {record.lot_number || '-'}
                           </span>
                         </td>
+                        <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{reportNumberText(productMeta?.report_number)}</td>
                         <td className="px-3 py-3 text-white whitespace-nowrap">
                           <span className="inline-block max-w-[210px] truncate align-middle" title={record.product_name || '-'}>
                             {record.product_name || '-'}
@@ -6622,7 +7123,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center text-gray-200 whitespace-nowrap">
-                          {statusCode === 'confirmed' ? '예' : '아니오'}
+                          {statusCode === 'confirmed' ? '반영' : '미반영'}
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex min-w-[280px] flex-wrap gap-2">
@@ -6731,6 +7232,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     if (productionTab === 'prod-overview') return renderOverviewContent()
     if (productionTab === 'prod-work') return renderWorkOrdersV2()
     if (productionTab === 'prod-daily-report') return renderProductionDailyReportLayout()
+    if (productionTab === 'prod-products') return renderProductManagement()
     if (productionTab === 'prod-recipes') return renderRecipeManagement()
     if (productionTab === 'prod-recipe-mapping') return renderRecipeMaterialMapping()
     if (productionTab === 'prod-materials') return renderMaterialsManagement()
@@ -7257,6 +7759,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   <span className="text-gray-100">{completionTargetRecord.product_name || '-'}</span>
                 </p>
                 <p>
+                  <span className="text-gray-500">품목보고번호</span>{' '}
+                  <span className="text-gray-100">{reportNumberText(findProductMeta(completionTargetRecord)?.report_number)}</span>
+                </p>
+                <p>
                   <span className="text-gray-500">예정량</span>{' '}
                   <span className="text-gray-100">{formatNumber(completionTargetRecord.planned_quantity_g)}g</span>
                 </p>
@@ -7464,6 +7970,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               <div className="space-y-2 text-sm text-gray-200">
                 <p>LOT: {plannedEditRecord.lot_number || '-'}</p>
                 <p>제품명: {plannedEditRecord.product_name || '-'}</p>
+                <p>품목보고번호: {reportNumberText(findProductMeta(plannedEditRecord)?.report_number)}</p>
                 <p>현재 예정량: {formatKg(plannedEditRecord.planned_quantity_g)}kg</p>
               </div>
             ) : (
@@ -7827,6 +8334,113 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       </Modal>
 
       <Modal
+        open={showProductModal}
+        title={productForm.id ? '제품 수정' : '제품 신규 등록'}
+        description="제품 마스터 기준"
+        onClose={() => {
+          setShowProductModal(false)
+          setProductForm(emptyProductForm())
+        }}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="제품명">
+            <input
+              value={productForm.product_name}
+              onChange={(event) => setProductForm((prev) => ({ ...prev, product_name: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="제품코드">
+            <input
+              value={productForm.product_code}
+              onChange={(event) => setProductForm((prev) => ({ ...prev, product_code: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="품목보고번호">
+            <input
+              value={productForm.report_number}
+              onChange={(event) => setProductForm((prev) => ({ ...prev, report_number: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="식품유형">
+            <input
+              value={productForm.product_type}
+              onChange={(event) => setProductForm((prev) => ({ ...prev, product_type: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="보관방법">
+            <input
+              value={productForm.storage_method}
+              onChange={(event) => setProductForm((prev) => ({ ...prev, storage_method: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="소비기한(일)">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={productForm.shelf_life_days}
+              onChange={(event) => setProductForm((prev) => ({ ...prev, shelf_life_days: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="패킹단위">
+            <input
+              value={productForm.product_spec}
+              onChange={(event) => setProductForm((prev) => ({ ...prev, product_spec: event.target.value }))}
+              placeholder="예: 2kg 파우치"
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="기준중량(g)">
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={productForm.weight_g}
+              onChange={(event) => setProductForm((prev) => ({ ...prev, weight_g: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="활성상태">
+            <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                checked={productForm.is_active}
+                onChange={(event) => setProductForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+                className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-green-500 focus:ring-green-500"
+              />
+              활성
+            </label>
+          </Field>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowProductModal(false)
+              setProductForm(emptyProductForm())
+            }}
+            className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+          >
+            닫기
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveProductItem()}
+            disabled={productSaving}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+          >
+            {productSaving ? '저장 중...' : '저장'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
         open={showPackagingInboundModal}
         title="부재료 입고 등록"
         description="부재료 실제 입고 내역을 기록합니다."
@@ -7931,7 +8545,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       <Modal
         open={showPackagingModal}
         title={packagingForm.id ? '부재료 수정' : '부재료 추가'}
-        description="packaging_materials 기준"
+        description="부재료 마스터 기준"
         onClose={() => {
           setShowPackagingModal(false)
           setPackagingError('')
@@ -7962,11 +8576,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             />
           </Field>
           <Field label="유형">
-            <input
+            <select
               value={packagingForm.material_type}
               onChange={(event) => setPackagingForm((prev) => ({ ...prev, material_type: event.target.value }))}
               className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-            />
+            >
+              {PACKAGING_TYPE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="매입처">
             <input
@@ -8233,6 +8853,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 <p>제조번호: {selectedRecord.lot_number || '-'}</p>
                 <p>제조일자: {selectedRecord.work_date || '-'}</p>
                 <p>제품명: {selectedRecord.product_name || '-'}</p>
+                <p>품목보고번호: {reportNumberText(findProductMeta(selectedRecord)?.report_number)}</p>
                 <p>상태: {normalizeStatus(selectedRecord.status)}</p>
               </div>
             </SectionCard>

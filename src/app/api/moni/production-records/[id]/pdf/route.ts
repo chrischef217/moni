@@ -33,14 +33,13 @@ function formatGram(value: unknown) {
   return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(parsed)}g`
 }
 
+// 원재료 필요량 행은 단위 접미사 없이 숫자만 표시한다.
 function formatRequiredGram(value: number) {
   if (!Number.isFinite(value)) return '-'
   const abs = Math.abs(value)
-
   if (abs >= 1) {
     return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Math.round(value))
   }
-
   return new Intl.NumberFormat('ko-KR', {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
@@ -86,6 +85,19 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       plannedEa !== null && plannedRemainderG !== null ? formatEaRemainder(plannedEa, plannedRemainderG) : ''
     const productionUnitLabel =
       productionUnitName || (productionUnitWeightG !== null && productionUnitWeightG > 0 ? `${formatGram(productionUnitWeightG)} 단위` : '')
+
+    let productReportNumber = ''
+    if (productId) {
+      const byId = await supabase.from('products').select('report_number').eq('id', productId).limit(1)
+      if (byId.error) throw new Error(byId.error.message || '제품 정보 조회에 실패했습니다.')
+      productReportNumber = String(byId.data?.[0]?.report_number ?? '').trim()
+    }
+    if (!productReportNumber && productName) {
+      const byName = await supabase.from('products').select('report_number').eq('product_name', productName).limit(1)
+      if (byName.error) throw new Error(byName.error.message || '제품 정보 조회에 실패했습니다.')
+      productReportNumber = String(byName.data?.[0]?.report_number ?? '').trim()
+    }
+    if (!productReportNumber) productReportNumber = '미등록'
 
     let recipeRows: RecipeRow[] = []
 
@@ -184,19 +196,22 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         <tr>
           <th>제품명</th>
           <td class="value">${escapeHtml(data.product_name)}</td>
+          <th>품목보고번호</th>
+          <td class="value">${escapeHtml(productReportNumber)}</td>
+        </tr>
+        <tr>
           <th>예정수량</th>
-          <td class="value number">
-            ${formatGram(data.planned_quantity_g)}
-            ${plannedEaRemainderText ? `<div style="margin-top:4px;font-size:12px;color:#374151;">${escapeHtml(plannedEaRemainderText)}</div>` : ''}
-          </td>
+          <td class="value number">${formatGram(data.planned_quantity_g)}</td>
+          <th>예정수량(ea)</th>
+          <td class="value number">${plannedEaRemainderText ? escapeHtml(plannedEaRemainderText) : '-'}</td>
         </tr>
         ${
           productionUnitLabel
             ? `<tr>
           <th>생산단위</th>
           <td class="value">${escapeHtml(productionUnitLabel)}</td>
-          <th>예정수량(ea)</th>
-          <td class="value number">${plannedEaRemainderText ? escapeHtml(plannedEaRemainderText) : '-'}</td>
+          <th></th>
+          <td class="value">-</td>
         </tr>`
             : ''
         }
