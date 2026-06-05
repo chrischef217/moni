@@ -7016,27 +7016,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   <InfoCell label="패킹단위(kg)" value={packingUnitsDisplayText(selected, productDetailUnits)} />
                 </div>
 
-                <div className="rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-white">생산단위</p>
-                    {productDetailUnitsLoading ? <span className="text-xs text-gray-400">불러오는 중...</span> : null}
-                  </div>
-                  {productDetailUnits.length === 0 ? (
-                    <p className="text-sm text-gray-400">등록된 생산단위가 없습니다.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {productDetailUnits.map((unit) => (
-                        <span
-                          key={unit.id}
-                          className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-xs text-gray-200"
-                        >
-                          {unit.unit_name} ({formatNumber(unit.unit_weight_g)}g)
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -9257,24 +9236,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               />
               <InfoCell label="패킹단위(kg)" value={packingUnitsDisplayText(selectedManagedProduct, productDetailUnits)} />
               <InfoCell label="활성 여부" value={selectedManagedProduct.is_active === false ? '비활성' : '활성'} />
-            </div>
-
-            <div className="rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-white">생산단위</p>
-                {productDetailUnitsLoading ? <span className="text-xs text-gray-400">불러오는 중...</span> : null}
-              </div>
-              {productDetailUnits.length === 0 ? (
-                <p className="text-sm text-gray-400">등록된 생산단위가 없습니다.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {productDetailUnits.map((unit) => (
-                    <span key={unit.id} className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-xs text-gray-200">
-                      {unit.unit_name} ({formatNumber(unit.unit_weight_g)}g)
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div className="flex flex-wrap gap-2">
