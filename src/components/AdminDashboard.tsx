@@ -403,6 +403,8 @@ type ProductFormState = {
   is_active: boolean
 }
 
+const STORAGE_METHOD_OPTIONS = ['실온', '냉장', '냉동'] as const
+
 type RawMaterialTransactionRow = {
   id: string
   material_name?: string
@@ -687,6 +689,37 @@ function normalizeFoodTypeName(value: string | null | undefined): (typeof FOOD_T
   return FOOD_TYPE_OPTIONS.includes(trimmed as (typeof FOOD_TYPE_OPTIONS)[number])
     ? (trimmed as (typeof FOOD_TYPE_OPTIONS)[number])
     : null
+}
+
+function normalizeStorageMethod(value: string | null | undefined): (typeof STORAGE_METHOD_OPTIONS)[number] | null {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return null
+  if (trimmed === '상온') return '실온'
+  return STORAGE_METHOD_OPTIONS.includes(trimmed as (typeof STORAGE_METHOD_OPTIONS)[number])
+    ? (trimmed as (typeof STORAGE_METHOD_OPTIONS)[number])
+    : null
+}
+
+function storageMethodDisplay(
+  storageMethod: string | null | undefined,
+  storageType: string | null | undefined,
+) {
+  return normalizeStorageMethod(storageMethod) ?? normalizeStorageMethod(storageType) ?? '미지정'
+}
+
+function parsePackingUnitWeights(value: string): number[] {
+  const values = String(value ?? '')
+    .split(/[\/,]/)
+    .map((part) => toNumber(String(part).replace(/[^0-9.]/g, '')))
+    .filter((num): num is number => num !== null && Number.isFinite(num) && num > 0)
+
+  const unique: number[] = []
+  for (const num of values) {
+    if (!unique.some((existing) => Math.abs(existing - num) < 0.0001)) {
+      unique.push(num)
+    }
+  }
+  return unique
 }
 
 function foodTypeDisplay(value: string | null | undefined) {
@@ -1068,6 +1101,7 @@ function emptyPackagingForm(material?: PackagingMaterialRow | null): PackagingFo
 }
 
 function emptyProductForm(product?: ProductOption | null): ProductFormState {
+  const normalizedStorage = normalizeStorageMethod(product?.storage_method) ?? normalizeStorageMethod(product?.storage_type) ?? ''
   return {
     id: product?.id,
     product_name: product?.product_name ?? '',
@@ -1075,8 +1109,8 @@ function emptyProductForm(product?: ProductOption | null): ProductFormState {
     report_number: product?.report_number ?? '',
     product_type: normalizeProductCategory(product?.product_type) ?? '완제품',
     food_type_name: normalizeFoodTypeName(product?.food_type_name) ?? '',
-    storage_method: product?.storage_method ?? '',
-    storage_type: product?.storage_type ?? '',
+    storage_method: normalizedStorage,
+    storage_type: normalizedStorage,
     shelf_life: product?.shelf_life ?? '',
     shelf_life_days:
       product?.shelf_life_days === null || product?.shelf_life_days === undefined
@@ -1431,7 +1465,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [selectedProductId, setSelectedProductId] = useState('')
   const [productForm, setProductForm] = useState<ProductFormState>(emptyProductForm())
   const [productSaving, setProductSaving] = useState(false)
+  const [productUnitSyncing, setProductUnitSyncing] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
+  const [productPackingUnitInputs, setProductPackingUnitInputs] = useState<string[]>([''])
+  const [productPackingUnitsTouched, setProductPackingUnitsTouched] = useState(false)
   const [showProductDetailModal, setShowProductDetailModal] = useState(false)
   const [productDetailUnits, setProductDetailUnits] = useState<ProductionUnit[]>([])
   const [productDetailUnitsLoading, setProductDetailUnitsLoading] = useState(false)
@@ -2205,6 +2242,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   function openCreateProductModal() {
     setProductActionMessage(null)
     setProductForm(emptyProductForm())
+    setProductPackingUnitInputs([''])
+    setProductPackingUnitsTouched(false)
     setShowProductModal(true)
   }
 
@@ -2217,7 +2256,78 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setProductActionMessage(null)
     setSelectedProductId(String(product.id))
     setProductForm(emptyProductForm(product))
+    const baseUnits = parsePackingUnitWeights(product.product_spec ?? '')
+    if (baseUnits.length > 0) {
+      setProductPackingUnitInputs(baseUnits.map((unit) => String(unit)))
+    } else if (product.weight_g !== null && product.weight_g !== undefined && Number(product.weight_g) > 0) {
+      setProductPackingUnitInputs([String(product.weight_g)])
+    } else {
+      setProductPackingUnitInputs([''])
+    }
+    setProductPackingUnitsTouched(false)
     setShowProductModal(true)
+  }
+
+  async function syncProductProductionUnits(productId: string, unitWeights: number[]) {
+    if (!productId) return
+    setProductUnitSyncing(true)
+    try {
+      const unitPayload = await readJson<ProductionUnitsPayload>(
+        `/api/moni/products/${encodeURIComponent(productId)}/production-units`,
+      )
+      const existingUnits = (unitPayload.units ?? []).filter((unit) => Number(unit.unit_weight_g ?? 0) > 0)
+      const desired = unitWeights.filter((value) => Number.isFinite(value) && value > 0)
+      const epsilon = 0.0001
+
+      for (const unit of existingUnits) {
+        const weight = Number(unit.unit_weight_g ?? 0)
+        const exists = desired.some((target) => Math.abs(target - weight) < epsilon)
+        if (!exists) {
+          await readJson(`/api/moni/products/${encodeURIComponent(productId)}/production-units/${encodeURIComponent(String(unit.id))}`, {
+            method: 'DELETE',
+          })
+        }
+      }
+
+      const refreshedPayload = await readJson<ProductionUnitsPayload>(
+        `/api/moni/products/${encodeURIComponent(productId)}/production-units`,
+      )
+      const refreshedUnits = (refreshedPayload.units ?? []).filter((unit) => Number(unit.unit_weight_g ?? 0) > 0)
+
+      for (let index = 0; index < desired.length; index += 1) {
+        const weight = desired[index]
+        const matched = refreshedUnits.find((unit) => Math.abs(Number(unit.unit_weight_g ?? 0) - weight) < epsilon)
+        const unitName = `${formatNumber(weight)}g`
+
+        if (!matched) {
+          await readJson(`/api/moni/products/${encodeURIComponent(productId)}/production-units`, {
+            method: 'POST',
+            body: JSON.stringify({
+              unit_name: unitName,
+              unit_weight_g: weight,
+              is_default: index === 0,
+              sort_order: index,
+            }),
+          })
+          continue
+        }
+
+        const shouldDefault = index === 0
+        if (matched.unit_name !== unitName || Boolean(matched.is_default) !== shouldDefault || (matched.sort_order ?? 0) !== index) {
+          await readJson(`/api/moni/products/${encodeURIComponent(productId)}/production-units/${encodeURIComponent(String(matched.id))}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              unit_name: unitName,
+              unit_weight_g: weight,
+              is_default: shouldDefault,
+              sort_order: index,
+            }),
+          })
+        }
+      }
+    } finally {
+      setProductUnitSyncing(false)
+    }
   }
 
   async function saveProductItem() {
@@ -2230,19 +2340,28 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setProductSaving(true)
     setProductActionMessage(null)
     try {
+      const parsedUnitWeights = productPackingUnitInputs
+        .map((item) => toNumber(item))
+        .filter((num): num is number => num !== null && Number.isFinite(num) && num > 0)
+      const dedupedUnitWeights = Array.from(new Set(parsedUnitWeights.map((value) => Number(value.toFixed(3)))))
+      const storageMethod = normalizeStorageMethod(productForm.storage_method) ?? null
+      const firstUnitWeight = dedupedUnitWeights[0] ?? toNumber(productForm.weight_g)
       const payload = {
         product_name: productName,
         product_code: productForm.product_code.trim() || null,
         report_number: productForm.report_number.trim() || null,
         product_type: normalizeProductCategory(productForm.product_type) ?? '완제품',
         food_type_name: normalizeFoodTypeName(productForm.food_type_name),
-        storage_method: productForm.storage_method.trim() || null,
-        storage_type: productForm.storage_type.trim() || null,
+        storage_method: storageMethod,
+        storage_type: storageMethod,
         shelf_life: productForm.shelf_life.trim() || null,
         shelf_life_days: toNumber(productForm.shelf_life_days),
         shelf_life_standard: productForm.shelf_life_standard.trim() || null,
-        product_spec: productForm.product_spec.trim() || null,
-        weight_g: toNumber(productForm.weight_g),
+        product_spec:
+          dedupedUnitWeights.length > 0
+            ? dedupedUnitWeights.map((value) => `${formatNumber(value)}g`).join(' / ')
+            : null,
+        weight_g: firstUnitWeight,
         packaging_material: productForm.packaging_material.trim() || null,
         lot_rule: productForm.lot_rule.trim() || null,
         allergens: productForm.allergens.trim() || null,
@@ -2250,21 +2369,33 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         business_id: '20220523011',
       }
 
+      let savedProductId = productForm.id ?? ''
       if (productForm.id) {
-        await readJson(`/api/moni/products/${encodeURIComponent(productForm.id)}`, {
+        const response = await readJson<{ product?: ProductOption }>(`/api/moni/products/${encodeURIComponent(productForm.id)}`, {
           method: 'PATCH',
           body: JSON.stringify(payload),
         })
+        savedProductId = String(response.product?.id ?? productForm.id ?? '').trim()
       } else {
-        await readJson('/api/moni/products', {
+        const response = await readJson<{ product?: ProductOption }>('/api/moni/products', {
           method: 'POST',
           body: JSON.stringify(payload),
         })
+        savedProductId = String(response.product?.id ?? '').trim()
+      }
+
+      if (savedProductId && dedupedUnitWeights.length > 0) {
+        await syncProductProductionUnits(savedProductId, dedupedUnitWeights)
       }
 
       setShowProductModal(false)
       await Promise.all([loadProductCatalog({ preserveSelected: true }), loadProductionRecords(productionDateFrom, productionDateTo)])
-      setProductActionMessage({ tone: 'success', text: productForm.id ? '제품 정보를 수정했습니다.' : '제품을 등록했습니다.' })
+      setProductActionMessage({
+        tone: 'success',
+        text: productForm.id
+          ? `제품 정보를 수정했습니다.${productUnitSyncing ? ' 생산단위를 동기화했습니다.' : ''}`
+          : `제품을 등록했습니다.${productUnitSyncing ? ' 생산단위를 동기화했습니다.' : ''}`,
+      })
     } catch (error) {
       setProductActionMessage({
         tone: 'error',
@@ -2273,6 +2404,64 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     } finally {
       setProductSaving(false)
     }
+  }
+
+  useEffect(() => {
+    if (!showProductModal || !productForm.id) return
+    if (productPackingUnitsTouched) return
+    if (productDetailUnits.length > 0) {
+      setProductPackingUnitInputs(
+        productDetailUnits
+          .map((unit) => Number(unit.unit_weight_g ?? 0))
+          .filter((weight) => Number.isFinite(weight) && weight > 0)
+          .map((weight) => String(weight)),
+      )
+      return
+    }
+    const fromSpec = parsePackingUnitWeights(productForm.product_spec ?? '')
+    if (fromSpec.length > 0) {
+      setProductPackingUnitInputs(fromSpec.map((value) => String(value)))
+      return
+    }
+    if (productForm.weight_g.trim()) {
+      setProductPackingUnitInputs([productForm.weight_g.trim()])
+    }
+  }, [
+    productDetailUnits,
+    productForm.id,
+    productForm.product_spec,
+    productForm.weight_g,
+    productPackingUnitsTouched,
+    showProductModal,
+  ])
+
+  function updatePackingUnitInput(index: number, value: string) {
+    setProductPackingUnitsTouched(true)
+    setProductPackingUnitInputs((prev) => prev.map((item, i) => (i === index ? value : item)))
+  }
+
+  function addPackingUnitInput() {
+    setProductPackingUnitsTouched(true)
+    setProductPackingUnitInputs((prev) => [...prev, ''])
+  }
+
+  function removePackingUnitInput(index: number) {
+    setProductPackingUnitsTouched(true)
+    setProductPackingUnitInputs((prev) => {
+      if (prev.length <= 1) return ['']
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  function packingUnitsDisplayText(product: ProductOption) {
+    const fromSpec = parsePackingUnitWeights(product.product_spec ?? '')
+    if (fromSpec.length > 0) {
+      return fromSpec.map((value) => `${formatNumber(value)}g`).join(' / ')
+    }
+    if (product.weight_g !== null && product.weight_g !== undefined && Number(product.weight_g) > 0) {
+      return `${formatNumber(product.weight_g)}g`
+    }
+    return '미등록'
   }
 
   async function loadProductionUnits(productId: string, options?: { forceDefaultSelection?: boolean }) {
@@ -6663,8 +6852,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                       <th className="px-3 py-2 font-medium whitespace-nowrap">식품유형</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">보관방법</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">소비기한</th>
-                      <th className="px-3 py-2 font-medium whitespace-nowrap">패킹단위</th>
-                      <th className="px-3 py-2 font-medium whitespace-nowrap text-right">기준중량(g)</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">패킹단위(g)</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">활성</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap text-right min-w-[180px]">작업</th>
                     </tr>
@@ -6690,13 +6878,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{reportNumberText(product.report_number)}</td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{foodTypeDisplay(product.food_type_name)}</td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
-                            {product.storage_method || product.storage_type || '-'}
+                            {storageMethodDisplay(product.storage_method, product.storage_type)}
                           </td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{shelfLifeText}</td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
-                            {product.product_spec || product.packaging_material || '-'}
+                            <span className="inline-block max-w-[260px] truncate align-middle" title={packingUnitsDisplayText(product)}>
+                              {packingUnitsDisplayText(product)}
+                            </span>
                           </td>
-                          <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">{formatNumber(product.weight_g)}g</td>
                           <td className="px-3 py-3 whitespace-nowrap">
                             {product.is_active === false ? (
                               <span className="rounded-md border border-red-800/60 bg-red-950/40 px-2 py-1 text-xs text-red-200">
@@ -6761,7 +6950,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   <InfoCell label="품목보고번호" value={reportNumberText(selected.report_number)} />
                   <InfoCell label="식품유형" value={foodTypeDisplay(selected.food_type_name)} />
                   <InfoCell label="제품구분" value={productCategoryDisplay(selected.product_type)} />
-                  <InfoCell label="보관방법" value={selected.storage_method || selected.storage_type || '-'} />
+                  <InfoCell label="보관방법" value={storageMethodDisplay(selected.storage_method, selected.storage_type)} />
                   <InfoCell
                     label="소비기한"
                     value={
@@ -6770,7 +6959,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         : '미등록'
                     }
                   />
-                  <InfoCell label="패킹단위" value={selected.product_spec || selected.packaging_material || '-'} />
+                  <InfoCell label="패킹단위(g)" value={packingUnitsDisplayText(selected)} />
                 </div>
 
                 <div className="rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3">
@@ -8903,11 +9092,18 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </select>
           </Field>
           <Field label="보관방법">
-            <input
+            <select
               value={productForm.storage_method}
               onChange={(event) => setProductForm((prev) => ({ ...prev, storage_method: event.target.value }))}
               className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-            />
+            >
+              <option value="">보관방법 선택</option>
+              {STORAGE_METHOD_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="소비기한(월)">
             <input
@@ -8920,23 +9116,39 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
             />
           </Field>
-          <Field label="패킹단위">
-            <input
-              value={productForm.product_spec}
-              onChange={(event) => setProductForm((prev) => ({ ...prev, product_spec: event.target.value }))}
-              placeholder="예: 2kg 파우치"
-              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-            />
-          </Field>
-          <Field label="기준중량(g)">
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={productForm.weight_g}
-              onChange={(event) => setProductForm((prev) => ({ ...prev, weight_g: event.target.value }))}
-              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-            />
+          <Field label="패킹단위(g)">
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={addPackingUnitInput}
+                className="rounded-lg border border-gray-700 px-3 py-1 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+              >
+                패킹단위 추가
+              </button>
+              <div className="space-y-2">
+                {productPackingUnitInputs.map((unitValue, index) => (
+                  <div key={`packing-unit-${index}`} className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      inputMode="decimal"
+                      value={unitValue}
+                      onChange={(event) => updatePackingUnitInput(index, event.target.value)}
+                      className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePackingUnitInput(index)}
+                      className="rounded-lg border border-gray-700 px-2 py-2 text-xs text-gray-300 hover:border-red-500 hover:text-red-300"
+                      aria-label="패킹단위 삭제"
+                    >
+                      X
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </Field>
           <Field label="활성상태">
             <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-200">
@@ -8988,7 +9200,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               <InfoCell label="품목보고번호" value={reportNumberText(selectedManagedProduct.report_number)} />
               <InfoCell label="식품유형" value={foodTypeDisplay(selectedManagedProduct.food_type_name)} />
               <InfoCell label="제품구분" value={productCategoryDisplay(selectedManagedProduct.product_type)} />
-              <InfoCell label="보관방법" value={selectedManagedProduct.storage_method || selectedManagedProduct.storage_type || '-'} />
+              <InfoCell label="보관방법" value={storageMethodDisplay(selectedManagedProduct.storage_method, selectedManagedProduct.storage_type)} />
               <InfoCell
                 label="소비기한"
                 value={
@@ -8997,8 +9209,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     : '미등록'
                 }
               />
-              <InfoCell label="기준중량(g)" value={`${formatNumber(selectedManagedProduct.weight_g)}g`} />
-              <InfoCell label="패킹단위" value={selectedManagedProduct.product_spec || selectedManagedProduct.packaging_material || '-'} />
+              <InfoCell label="패킹단위(g)" value={packingUnitsDisplayText(selectedManagedProduct)} />
               <InfoCell label="활성 여부" value={selectedManagedProduct.is_active === false ? '비활성' : '활성'} />
             </div>
 
