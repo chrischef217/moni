@@ -386,7 +386,6 @@ type PackagingFormState = {
 type ProductFormState = {
   id?: string
   product_name: string
-  product_code: string
   report_number: string
   product_type: string
   food_type_name: string
@@ -720,6 +719,14 @@ function parsePackingUnitWeights(value: string): number[] {
     }
   }
   return unique
+}
+
+function formatKgFromGramValue(value: number) {
+  const kg = value / 1000
+  if (!Number.isFinite(kg)) return null
+  if (Math.abs(kg - Math.round(kg)) < 0.0001) return `${formatNumber(Math.round(kg))}kg`
+  const fixed = Number(kg.toFixed(3))
+  return `${formatNumber(fixed)}kg`
 }
 
 function foodTypeDisplay(value: string | null | undefined) {
@@ -1105,7 +1112,6 @@ function emptyProductForm(product?: ProductOption | null): ProductFormState {
   return {
     id: product?.id,
     product_name: product?.product_name ?? '',
-    product_code: product?.product_code ?? '',
     report_number: product?.report_number ?? '',
     product_type: normalizeProductCategory(product?.product_type) ?? '완제품',
     food_type_name: normalizeFoodTypeName(product?.food_type_name) ?? '',
@@ -2265,6 +2271,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setProductPackingUnitInputs([''])
     }
     setProductPackingUnitsTouched(false)
+    void loadProductDetailUnits(String(product.id))
     setShowProductModal(true)
   }
 
@@ -2348,7 +2355,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       const firstUnitWeight = dedupedUnitWeights[0] ?? toNumber(productForm.weight_g)
       const payload = {
         product_name: productName,
-        product_code: productForm.product_code.trim() || null,
         report_number: productForm.report_number.trim() || null,
         product_type: normalizeProductCategory(productForm.product_type) ?? '완제품',
         food_type_name: normalizeFoodTypeName(productForm.food_type_name),
@@ -2386,6 +2392,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
       if (savedProductId && dedupedUnitWeights.length > 0) {
         await syncProductProductionUnits(savedProductId, dedupedUnitWeights)
+        await loadProductDetailUnits(savedProductId)
       }
 
       setShowProductModal(false)
@@ -2453,13 +2460,26 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     })
   }
 
-  function packingUnitsDisplayText(product: ProductOption) {
+  function packingUnitsDisplayText(product: ProductOption, units?: ProductionUnit[]) {
+    const fromUnits = (units ?? [])
+      .map((unit) => Number(unit.unit_weight_g ?? 0))
+      .filter((weight) => Number.isFinite(weight) && weight > 0)
+    if (fromUnits.length > 0) {
+      return fromUnits
+        .map((value) => formatKgFromGramValue(value))
+        .filter((value): value is string => Boolean(value))
+        .join(' / ')
+    }
+
     const fromSpec = parsePackingUnitWeights(product.product_spec ?? '')
     if (fromSpec.length > 0) {
-      return fromSpec.map((value) => `${formatNumber(value)}g`).join(' / ')
+      return fromSpec
+        .map((value) => formatKgFromGramValue(value))
+        .filter((value): value is string => Boolean(value))
+        .join(' / ')
     }
     if (product.weight_g !== null && product.weight_g !== undefined && Number(product.weight_g) > 0) {
-      return `${formatNumber(product.weight_g)}g`
+      return formatKgFromGramValue(Number(product.weight_g)) ?? '미등록'
     }
     return '미등록'
   }
@@ -6852,7 +6872,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                       <th className="px-3 py-2 font-medium whitespace-nowrap">식품유형</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">보관방법</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">소비기한</th>
-                      <th className="px-3 py-2 font-medium whitespace-nowrap">패킹단위(g)</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">패킹단위(kg)</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">활성</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap text-right min-w-[180px]">작업</th>
                     </tr>
@@ -6959,7 +6979,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         : '미등록'
                     }
                   />
-                  <InfoCell label="패킹단위(g)" value={packingUnitsDisplayText(selected)} />
+                  <InfoCell label="패킹단위(kg)" value={packingUnitsDisplayText(selected, productDetailUnits)} />
                 </div>
 
                 <div className="rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3">
@@ -9050,13 +9070,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
             />
           </Field>
-          <Field label="제품코드">
-            <input
-              value={productForm.product_code}
-              onChange={(event) => setProductForm((prev) => ({ ...prev, product_code: event.target.value }))}
-              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-            />
-          </Field>
           <Field label="품목보고번호">
             <input
               value={productForm.report_number}
@@ -9196,7 +9209,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               <InfoCell label="제품명" value={selectedManagedProduct.product_name} />
-              <InfoCell label="제품코드" value={selectedManagedProduct.product_code || '-'} />
               <InfoCell label="품목보고번호" value={reportNumberText(selectedManagedProduct.report_number)} />
               <InfoCell label="식품유형" value={foodTypeDisplay(selectedManagedProduct.food_type_name)} />
               <InfoCell label="제품구분" value={productCategoryDisplay(selectedManagedProduct.product_type)} />
@@ -9209,7 +9221,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     : '미등록'
                 }
               />
-              <InfoCell label="패킹단위(g)" value={packingUnitsDisplayText(selectedManagedProduct)} />
+              <InfoCell label="패킹단위(kg)" value={packingUnitsDisplayText(selectedManagedProduct, productDetailUnits)} />
               <InfoCell label="활성 여부" value={selectedManagedProduct.is_active === false ? '비활성' : '활성'} />
             </div>
 
