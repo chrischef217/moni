@@ -249,6 +249,16 @@ type RecipeMappingHistoryPayload = {
   nextHistory?: RecipeMappingHistoryItem | null
 }
 
+type ConfirmDialogState = {
+  open: boolean
+  title: string
+  message: string
+  confirmText: string
+  cancelText: string
+  variant: 'danger' | 'default'
+  onConfirm: (() => void) | null
+}
+
 type RecipeRow = {
   id: string
   product_id: string
@@ -641,6 +651,15 @@ const EMPTY_VALIDATION: FieldValidation = {
 }
 
 const EMPTY_MATERIAL_SUMMARY: MaterialSummary = { total: 0, active: 0, inactive: 0 }
+const EMPTY_CONFIRM_DIALOG: ConfirmDialogState = {
+  open: false,
+  title: '',
+  message: '',
+  confirmText: '확인',
+  cancelText: '취소',
+  variant: 'default',
+  onConfirm: null,
+}
 const PACKAGING_TYPE_OPTIONS = ['포장재', '라벨', '카톤박스'] as const
 const PRODUCT_CATEGORY_OPTIONS = ['완제품', '반제품'] as const
 const FOOD_TYPE_OPTIONS = ['소스', '복합조미식품', '기타가공품'] as const
@@ -1227,18 +1246,20 @@ function Modal({
   title,
   description,
   onClose,
+  widthClassName = 'max-w-4xl',
   children,
 }: {
   open: boolean
   title: string
   description?: string
   onClose: () => void
+  widthClassName?: string
   children: ReactNode
 }) {
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-3xl border border-gray-700 bg-gray-900 shadow-2xl">
+      <div className={`max-h-[92vh] w-full overflow-hidden rounded-3xl border border-gray-700 bg-gray-900 shadow-2xl ${widthClassName}`}>
         <div className="flex items-start justify-between border-b border-gray-800 px-6 py-4">
           <div>
             <h3 className="text-xl font-semibold text-white">{title}</h3>
@@ -1468,6 +1489,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [productRecipeRows, setProductRecipeRows] = useState<ProductRecipeDraftRow[]>([])
   const [productRecipeLoading, setProductRecipeLoading] = useState(false)
   const [productRecipeSaving, setProductRecipeSaving] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>(EMPTY_CONFIRM_DIALOG)
   const [productRecipeMessage, setProductRecipeMessage] = useState<{
     tone: 'success' | 'error' | 'warning'
     text: string
@@ -1586,6 +1608,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [showSanitationModal, setShowSanitationModal] = useState(false)
   const [sanitationForm, setSanitationForm] = useState<SanitationFormState>(emptySanitationForm())
   const [sanitationSaving, setSanitationSaving] = useState(false)
+
+  useEffect(() => {
+    if (!confirmDialog.open) return
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setConfirmDialog(EMPTY_CONFIRM_DIALOG)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [confirmDialog.open])
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
@@ -2580,10 +2613,28 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   function removeProductRecipeDraftRow(localId: string) {
-    const confirmed = window.confirm('이 레시피 항목을 삭제할까요? 저장하면 실제 레시피에서 제거됩니다.')
-    if (!confirmed) return
-    setProductRecipeMessage({ tone: 'warning', text: '행을 목록에서 제거했습니다. 변경사항 저장을 눌러 반영해 주세요.' })
-    setProductRecipeRows((prev) => renumberProductRecipeRows(prev.filter((row) => row.local_id !== localId)))
+    setConfirmDialog({
+      open: true,
+      title: '삭제 확인',
+      message: '이 레시피 항목을 삭제하시겠습니까? 저장 전까지는 화면에서만 제거되며, 저장 시 반영됩니다.',
+      confirmText: '삭제',
+      cancelText: '취소',
+      variant: 'danger',
+      onConfirm: () => {
+        setProductRecipeMessage({ tone: 'warning', text: '행을 목록에서 제거했습니다. 변경사항 저장을 눌러 반영해 주세요.' })
+        setProductRecipeRows((prev) => renumberProductRecipeRows(prev.filter((row) => row.local_id !== localId)))
+      },
+    })
+  }
+
+  function closeConfirmDialog() {
+    setConfirmDialog(EMPTY_CONFIRM_DIALOG)
+  }
+
+  function confirmDialogAction() {
+    const action = confirmDialog.onConfirm
+    setConfirmDialog(EMPTY_CONFIRM_DIALOG)
+    action?.()
   }
 
   function moveProductRecipeDraftRow(localId: string, direction: -1 | 1) {
@@ -8869,6 +8920,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         open={showProductRecipeModal}
         title={productRecipeProduct ? `레시피 관리 - ${productRecipeProduct.product_name}` : '레시피 관리'}
         description="제품별 레시피 항목과 배합비율을 한 화면에서 정리합니다."
+        widthClassName="max-w-[1200px]"
         onClose={() => {
           setShowProductRecipeModal(false)
           setProductRecipeProduct(null)
@@ -8937,16 +8989,16 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           ) : productRecipeRows.length === 0 ? (
             <EmptyState title="등록된 레시피가 없습니다" description="원재료 추가 버튼으로 첫 항목을 추가해 주세요." />
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-gray-700">
-              <table className="min-w-[1120px] w-full text-left text-sm">
+            <div className="overflow-x-hidden rounded-xl border border-gray-700">
+              <table className="w-full table-fixed text-left text-sm">
                 <thead className="bg-gray-900 text-gray-400">
                   <tr className="border-b border-gray-700">
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">순서</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap min-w-[220px]">식품유형명</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap w-32">배합비율(%)</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap min-w-[260px]">실제 원재료</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap w-36">재료유형</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap text-right w-56">작업</th>
+                    <th className="w-[60px] px-2 py-2 font-medium whitespace-nowrap text-center">순서</th>
+                    <th className="w-[210px] px-2 py-2 font-medium whitespace-nowrap">식품유형명</th>
+                    <th className="w-[110px] px-2 py-2 font-medium whitespace-nowrap">배합비율(%)</th>
+                    <th className="w-[250px] px-2 py-2 font-medium whitespace-nowrap">실제 원재료</th>
+                    <th className="w-[120px] px-2 py-2 font-medium whitespace-nowrap">재료유형</th>
+                    <th className="w-[220px] px-2 py-2 font-medium whitespace-nowrap text-right">작업</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -8955,8 +9007,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     const materialMatches = productRecipeMaterialMatches(row)
                     return (
                       <tr key={row.local_id} className="border-b border-gray-800/80 align-top">
-                        <td className="px-3 py-3 text-gray-300 whitespace-nowrap">{index + 1}</td>
-                        <td className="px-3 py-3">
+                        <td className="px-2 py-2 text-center text-gray-300 whitespace-nowrap">{index + 1}</td>
+                        <td className="px-2 py-2">
                           <div className="relative">
                             <input
                               value={row.food_type_name}
@@ -9024,7 +9076,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             ) : null}
                           </div>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-2 py-2">
                           <input
                             type="number"
                             min="0"
@@ -9036,7 +9088,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-right text-green-300 outline-none focus:border-green-500"
                           />
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-2 py-2">
                           <div className="relative">
                             <input
                               value={row.raw_material_name}
@@ -9115,7 +9167,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             ) : null}
                           </div>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-2 py-2">
                           <select
                             value={row.ingredient_type}
                             onChange={(event) =>
@@ -9129,20 +9181,20 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             <option value="기타">기타</option>
                           </select>
                         </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap justify-end gap-1.5">
+                        <td className="px-2 py-2">
+                          <div className="flex flex-wrap justify-end gap-1">
                             <button
                               type="button"
                               onClick={() => void saveProductRecipeRows()}
                               disabled={productRecipeSaving}
-                              className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white disabled:opacity-60"
+                              className="rounded-lg border border-gray-700 px-2 py-1 text-xs whitespace-nowrap text-gray-200 hover:border-green-500 hover:text-white disabled:opacity-60"
                             >
                               저장
                             </button>
                             <button
                               type="button"
                               onClick={() => removeProductRecipeDraftRow(row.local_id)}
-                              className="rounded-lg border border-red-800/70 px-2.5 py-1.5 text-xs text-red-200 hover:border-red-600"
+                              className="rounded-lg border border-red-800/70 px-2 py-1 text-xs whitespace-nowrap text-red-200 hover:border-red-600"
                             >
                               삭제
                             </button>
@@ -9150,7 +9202,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               type="button"
                               onClick={() => moveProductRecipeDraftRow(row.local_id, -1)}
                               disabled={index === 0}
-                              className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-200 hover:border-gray-500 disabled:opacity-40"
+                              className="rounded-lg border border-gray-700 px-2 py-1 text-xs whitespace-nowrap text-gray-200 hover:border-gray-500 disabled:opacity-40"
                             >
                               위로
                             </button>
@@ -9158,7 +9210,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               type="button"
                               onClick={() => moveProductRecipeDraftRow(row.local_id, 1)}
                               disabled={index === productRecipeRows.length - 1}
-                              className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-200 hover:border-gray-500 disabled:opacity-40"
+                              className="rounded-lg border border-gray-700 px-2 py-1 text-xs whitespace-nowrap text-gray-200 hover:border-gray-500 disabled:opacity-40"
                             >
                               아래로
                             </button>
@@ -9173,6 +9225,39 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           )}
         </div>
       </Modal>
+
+      {confirmDialog.open ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-4"
+          onClick={closeConfirmDialog}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h4 className="text-lg font-semibold text-gray-900">{confirmDialog.title}</h4>
+            <p className="mt-2 text-sm leading-relaxed text-gray-700">{confirmDialog.message}</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeConfirmDialog}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold whitespace-nowrap text-gray-700 hover:bg-gray-100"
+              >
+                {confirmDialog.cancelText}
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialogAction}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap text-white ${
+                  confirmDialog.variant === 'danger' ? 'bg-red-600 hover:bg-red-500' : 'bg-gray-900 hover:bg-gray-800'
+                }`}
+              >
+                {confirmDialog.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <Modal
         open={showPackagingInboundModal}
