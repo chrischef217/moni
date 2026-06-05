@@ -2639,17 +2639,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       (material) => material.is_active === false && material.item_name.trim().toLowerCase() === normalizedName,
     )
     if (inactiveMatch) {
-      setConfirmDialog({
-        open: true,
-        title: '비활성 원재료 발견',
-        message: '같은 이름의 비활성 원재료가 있습니다. 이 원재료를 다시 활성화하고 현재 레시피에 사용하시겠습니까?',
-        confirmText: '활성화 후 사용',
-        cancelText: '취소',
-        variant: 'default',
-        onConfirm: () => {
-          void reactivateProductRecipeMaterial(localId, inactiveMatch)
-        },
-      })
+      promptReactivateProductRecipeMaterial(localId, inactiveMatch)
       return
     }
 
@@ -2682,6 +2672,20 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         raw_material_notice: error instanceof Error ? error.message : '새 원재료 등록 중 오류가 발생했습니다.',
       })
     }
+  }
+
+  function promptReactivateProductRecipeMaterial(localId: string, material: RawMaterialRow) {
+    setConfirmDialog({
+      open: true,
+      title: '비활성 원재료 활성화',
+      message: '같은 이름의 비활성 원재료가 있습니다. 이 원재료를 다시 활성화하고 현재 레시피에 사용하시겠습니까?',
+      confirmText: '활성화 후 사용',
+      cancelText: '취소',
+      variant: 'default',
+      onConfirm: () => {
+        void reactivateProductRecipeMaterial(localId, material)
+      },
+    })
   }
 
   async function reactivateProductRecipeMaterial(localId: string, material: RawMaterialRow) {
@@ -9120,6 +9124,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     const foodTypeMatches = productRecipeFoodTypeMatches(row)
                     const materialMatches = productRecipeMaterialMatches(row)
                     const rawQuery = row.raw_material_name.trim().toLowerCase()
+                    const inactiveSameName = rawQuery
+                      ? recipeRawMaterials.find(
+                          (material) =>
+                            material.is_active === false &&
+                            material.item_name.trim().toLowerCase() === rawQuery,
+                        ) ?? null
+                      : null
                     const totalMaterialMatchCount = rawQuery
                       ? activeRecipeRawMaterials.filter((material) =>
                           material.item_name.toLowerCase().includes(rawQuery),
@@ -9254,18 +9265,37 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-700 bg-gray-950 shadow-xl">
                                 {materialMatches.length === 0 ? (
                                   <div className="space-y-2 px-3 py-2">
-                                    <p className="text-xs text-gray-300">
-                                      검색 결과가 없습니다. 새 원재료로 추가하시겠습니까?
-                                    </p>
-                                    <button
-                                      type="button"
-                                      onMouseDown={(event) => event.preventDefault()}
-                                      onClick={() => void addProductRecipeMaterialFromQuery(row.local_id)}
-                                      disabled={row.raw_material_adding}
-                                      className="rounded-lg border border-green-700/70 px-2.5 py-1 text-xs font-semibold text-green-200 hover:border-green-500 hover:text-white disabled:opacity-60"
-                                    >
-                                      {row.raw_material_adding ? '등록 중...' : '+ 새 원재료 추가'}
-                                    </button>
+                                    {inactiveSameName ? (
+                                      <>
+                                        <p className="text-xs text-amber-200">
+                                          같은 이름의 비활성 원재료가 있습니다. 새로 추가하기보다 기존 원재료를 다시 활성화해서 사용하는 것을 추천합니다.
+                                        </p>
+                                        <button
+                                          type="button"
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => promptReactivateProductRecipeMaterial(row.local_id, inactiveSameName)}
+                                          disabled={row.raw_material_adding}
+                                          className="rounded-lg border border-green-700/70 px-2.5 py-1 text-xs font-semibold text-green-200 hover:border-green-500 hover:text-white disabled:opacity-60"
+                                        >
+                                          {row.raw_material_adding ? '처리 중...' : '활성화 후 사용'}
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <p className="text-xs text-gray-300">
+                                          검색 결과가 없습니다. 새 원재료로 추가하시겠습니까?
+                                        </p>
+                                        <button
+                                          type="button"
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => void addProductRecipeMaterialFromQuery(row.local_id)}
+                                          disabled={row.raw_material_adding}
+                                          className="rounded-lg border border-green-700/70 px-2.5 py-1 text-xs font-semibold text-green-200 hover:border-green-500 hover:text-white disabled:opacity-60"
+                                        >
+                                          {row.raw_material_adding ? '등록 중...' : '+ 새 원재료 추가'}
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 ) : (
                                   <>
