@@ -34,6 +34,10 @@ function resolveDate(row: TxRow): string {
   return text(row.txn_date) || text(row.created_at) || ''
 }
 
+function isInbound(txType: string) {
+  return txType.toUpperCase().includes('INBOUND')
+}
+
 export async function GET(request: NextRequest) {
   try {
     const materialName = text(request.nextUrl.searchParams.get('material_name'))
@@ -189,6 +193,185 @@ export async function POST(request: NextRequest) {
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : '부재료 입고 등록 중 오류가 발생했습니다.'
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    if (!body) {
+      return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
+    }
+
+    const id = text(body.id)
+    if (!id) {
+      return NextResponse.json({ ok: false, error: '거래 ID가 필요합니다.' }, { status: 400 })
+    }
+
+    const quantity = nullableNumber(body.quantity)
+    if (quantity === null || quantity <= 0) {
+      return NextResponse.json({ ok: false, error: '입고수량은 0보다 커야 합니다.' }, { status: 400 })
+    }
+
+    const txDate = text(body.tx_date) || new Date().toISOString().slice(0, 10)
+    const counterparty = text(body.counterparty)
+    const note = text(body.note)
+
+    const supabase = createMoniServiceRoleClient()
+    const txResult = await supabase.from('packaging_transactions').select('*').eq('id', id).maybeSingle()
+    if (txResult.error) throw new Error(txResult.error.message || '거래내역 조회에 실패했습니다.')
+    if (!txResult.data) {
+      return NextResponse.json({ ok: false, error: '내역을 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const txRow = txResult.data as TxRow
+    if (!isInbound(text(txRow.txn_type))) {
+      return NextResponse.json(
+        { ok: false, error: '자동 출고 내역은 수정할 수 없습니다.' },
+        { status: 409 },
+      )
+    }
+
+    const materialCode = text(txRow.material_code)
+    if (!materialCode) {
+      return NextResponse.json({ ok: false, error: '부재료 연결 정보가 없습니다.' }, { status: 422 })
+    }
+
+    const materialResult = await supabase
+      .from('packaging_materials')
+      .select('id, material_code, material_name, current_stock')
+      .or(`id.eq.${materialCode},material_code.eq.${materialCode}`)
+      .limit(1)
+      .maybeSingle()
+    if (materialResult.error) throw new Error(materialResult.error.message || '부재료 조회에 실패했습니다.')
+    if (!materialResult.data) {
+      return NextResponse.json({ ok: false, error: '연결된 부재료를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const material = materialResult.data as {
+      id?: string | null
+      material_code?: string | null
+      material_name?: string | null
+      current_stock?: number | string | null
+    }
+    const targetId = text(material.id) || materialCode
+    const currentStock = numberValue(material.current_stock)
+    const oldQty = numberValue(txRow.quantity)
+    const nextStock = currentStock - oldQty + quantity
+    if (nextStock < 0) {
+      return NextResponse.json({ ok: false, error: '수정 후 현재재고가 0보다 작아집니다.' }, { status: 409 })
+    }
+
+    const updateStock = await supabase.from('packaging_materials').update({ current_stock: nextStock }).eq('id', targetId)
+    if (updateStock.error) throw new Error(updateStock.error.message || '부재료 재고 갱신에 실패했습니다.')
+
+    const updateTx = await supabase
+      .from('packaging_transactions')
+      .update({
+        quantity,
+        txn_date: txDate,
+        note: note || counterparty || null,
+      })
+      .eq('id', id)
+    if (updateTx.error) {
+      await supabase.from('packaging_materials').update({ current_stock: currentStock }).eq('id', targetId)
+      throw new Error(updateTx.error.message || '거래내역 수정에 실패했습니다.')
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        material: {
+          id: targetId,
+          material_code: text(material.material_code) || materialCode,
+          material_name: text(material.material_name) || materialCode,
+          current_stock: nextStock,
+        },
+      },
+      { status: 200 },
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '거래내역 수정 중 오류가 발생했습니다.'
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const id = text(request.nextUrl.searchParams.get('id'))
+    if (!id) {
+      return NextResponse.json({ ok: false, error: '거래 ID가 필요합니다.' }, { status: 400 })
+    }
+
+    const supabase = createMoniServiceRoleClient()
+    const txResult = await supabase.from('packaging_transactions').select('*').eq('id', id).maybeSingle()
+    if (txResult.error) throw new Error(txResult.error.message || '거래내역 조회에 실패했습니다.')
+    if (!txResult.data) {
+      return NextResponse.json({ ok: false, error: '내역을 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const txRow = txResult.data as TxRow
+    if (!isInbound(text(txRow.txn_type))) {
+      return NextResponse.json(
+        { ok: false, error: '자동 출고 내역은 삭제할 수 없습니다.' },
+        { status: 409 },
+      )
+    }
+
+    const materialCode = text(txRow.material_code)
+    if (!materialCode) {
+      return NextResponse.json({ ok: false, error: '부재료 연결 정보가 없습니다.' }, { status: 422 })
+    }
+
+    const materialResult = await supabase
+      .from('packaging_materials')
+      .select('id, material_code, material_name, current_stock')
+      .or(`id.eq.${materialCode},material_code.eq.${materialCode}`)
+      .limit(1)
+      .maybeSingle()
+    if (materialResult.error) throw new Error(materialResult.error.message || '부재료 조회에 실패했습니다.')
+    if (!materialResult.data) {
+      return NextResponse.json({ ok: false, error: '연결된 부재료를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const material = materialResult.data as {
+      id?: string | null
+      material_code?: string | null
+      material_name?: string | null
+      current_stock?: number | string | null
+    }
+    const targetId = text(material.id) || materialCode
+    const currentStock = numberValue(material.current_stock)
+    const qty = numberValue(txRow.quantity)
+    const nextStock = currentStock - qty
+    if (nextStock < 0) {
+      return NextResponse.json({ ok: false, error: '현재재고가 부족해 삭제할 수 없습니다.' }, { status: 409 })
+    }
+
+    const updateStock = await supabase.from('packaging_materials').update({ current_stock: nextStock }).eq('id', targetId)
+    if (updateStock.error) throw new Error(updateStock.error.message || '부재료 재고 갱신에 실패했습니다.')
+
+    const deleteTx = await supabase.from('packaging_transactions').delete().eq('id', id)
+    if (deleteTx.error) {
+      await supabase.from('packaging_materials').update({ current_stock: currentStock }).eq('id', targetId)
+      throw new Error(deleteTx.error.message || '거래내역 삭제에 실패했습니다.')
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        material: {
+          id: targetId,
+          material_code: text(material.material_code) || materialCode,
+          material_name: text(material.material_name) || materialCode,
+          current_stock: nextStock,
+        },
+      },
+      { status: 200 },
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '거래내역 삭제 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

@@ -14,6 +14,7 @@ type MainMenuKey = 'ai-chat' | 'production' | 'accounting' | 'sales' | 'admin' |
 type ProductionSubTabKey =
   | 'prod-overview'
   | 'prod-work'
+  | 'prod-daily-report'
   | 'prod-recipes'
   | 'prod-recipe-mapping'
   | 'prod-materials'
@@ -1237,6 +1238,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
   const [productionDateFrom, setProductionDateFrom] = useState(daysAgoValue(29))
   const [productionDateTo, setProductionDateTo] = useState(todayValue())
+  const [dailyPeriodType, setDailyPeriodType] = useState<'day' | 'month' | 'quarter' | 'year'>('day')
+  const [dailyProductQuery, setDailyProductQuery] = useState('')
+  const [dailyLotQuery, setDailyLotQuery] = useState('')
+  const [dailySelectedIds, setDailySelectedIds] = useState<string[]>([])
   const [recordsLoading, setRecordsLoading] = useState(true)
   const [recordsError, setRecordsError] = useState('')
   const [records, setRecords] = useState<ProductionRecord[]>([])
@@ -1582,6 +1587,26 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     })
   }, [records])
 
+  const dailyReportRows = useMemo(() => {
+    const from = productionDateFrom.trim()
+    const to = productionDateTo.trim()
+    const productKeyword = dailyProductQuery.trim().toLowerCase()
+    const lotKeyword = dailyLotQuery.trim().toLowerCase()
+
+    return records.filter((record) => {
+      const statusCode = normalizeStatusCode(record.status)
+      if (!(statusCode === 'completed' || statusCode === 'confirmed')) return false
+
+      const workDate = (record.work_date || '').slice(0, 10)
+      if (from && workDate && workDate < from) return false
+      if (to && workDate && workDate > to) return false
+
+      if (productKeyword && !(record.product_name || '').toLowerCase().includes(productKeyword)) return false
+      if (lotKeyword && !(record.lot_number || '').toLowerCase().includes(lotKeyword)) return false
+      return true
+    })
+  }, [dailyLotQuery, dailyProductQuery, productionDateFrom, productionDateTo, records])
+
   const chatPreviewMessages = useMemo(() => {
     return activeConversation?.messages.slice(-8) ?? []
   }, [activeConversation])
@@ -1617,6 +1642,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }, [recipeProducts, selectedRecipeProductId])
 
   useEffect(() => {
+    setDailySelectedIds((prev) => prev.filter((id) => dailyReportRows.some((row) => row.id === id)))
+  }, [dailyReportRows])
+
+  useEffect(() => {
     if (mainMenu !== 'production') return
     if (productionTab === 'prod-recipe-mapping') {
       void loadRecipeMaterialMappings()
@@ -1629,7 +1658,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
     if (productionTab === 'prod-ledger') {
       void loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery)
-      void loadPackagingLedger(packagingLedgerDetailFrom, packagingLedgerDetailTo, sububuMaterialQuery)
+      void loadPackagingLedger(sububuDateFrom, sububuDateTo, sububuMaterialQuery)
       return
     }
     if (productionTab === 'prod-packaging') {
@@ -2506,6 +2535,78 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     await loadSububuDetail(target, sububuDateFrom, sububuDateTo)
   }
 
+  async function editSububuDetailRow(row: RawMaterialTransactionRow) {
+    if (row.tx_type !== '입고') {
+      setSububuDetailError('생산확정으로 생성된 소모 내역은 수정할 수 없습니다.')
+      return
+    }
+    const quantityCurrent = row.inbound_g > 0 ? row.inbound_g : row.outbound_g
+    const quantityInput = window.prompt('입고수량(g)', String(quantityCurrent || 0))
+    if (quantityInput === null) return
+    const quantity = toNumber(quantityInput)
+    if (quantity === null || quantity <= 0) {
+      setSububuDetailError('입고수량은 0보다 커야 합니다.')
+      return
+    }
+
+    const txDate = window.prompt('거래일자(YYYY-MM-DD)', row.tx_date || todayValue())
+    if (txDate === null) return
+    const counterparty = window.prompt('거래처/입고처', row.counterparty || '') ?? ''
+    const note = window.prompt('비고', row.note || '') ?? ''
+
+    setSububuDetailLoading(true)
+    setSububuDetailError('')
+    try {
+      await readJson('/api/moni/raw-material-transactions', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: row.id,
+          quantity,
+          unit: 'g',
+          tx_date: txDate.trim(),
+          counterparty: counterparty.trim() || undefined,
+          note: note.trim() || undefined,
+        }),
+      })
+      await Promise.all([
+        loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery),
+        loadSububuDetail(sububuDetailTarget, sububuDetailFrom, sububuDetailTo),
+        loadMaterials(materialsView),
+      ])
+    } catch (error) {
+      setSububuDetailError(error instanceof Error ? error.message : '수불 내역 수정에 실패했습니다.')
+    } finally {
+      setSububuDetailLoading(false)
+    }
+  }
+
+  async function deleteSububuDetailRow(row: RawMaterialTransactionRow) {
+    if (row.tx_type !== '입고') {
+      setSububuDetailError('생산확정으로 생성된 소모 내역은 삭제할 수 없습니다.')
+      return
+    }
+
+    const confirmed = window.confirm('이 입고 내역을 삭제하시겠습니까? 재고가 즉시 반영됩니다.')
+    if (!confirmed) return
+
+    setSububuDetailLoading(true)
+    setSububuDetailError('')
+    try {
+      await readJson(`/api/moni/raw-material-transactions?id=${encodeURIComponent(row.id)}`, {
+        method: 'DELETE',
+      })
+      await Promise.all([
+        loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery),
+        loadSububuDetail(sububuDetailTarget, sububuDetailFrom, sububuDetailTo),
+        loadMaterials(materialsView),
+      ])
+    } catch (error) {
+      setSububuDetailError(error instanceof Error ? error.message : '수불 내역 삭제에 실패했습니다.')
+    } finally {
+      setSububuDetailLoading(false)
+    }
+  }
+
   async function saveRawInbound() {
     const materialId = rawInboundForm.raw_material_id.trim()
     if (!materialId) {
@@ -2596,6 +2697,77 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setPackagingLedgerDetailTo(sububuDateTo)
     setShowPackagingLedgerDetailModal(true)
     await loadPackagingLedgerDetail(target, sububuDateFrom, sububuDateTo)
+  }
+
+  async function editPackagingLedgerDetailRow(row: PackagingTransactionRow) {
+    if (row.tx_type !== '입고') {
+      setPackagingLedgerDetailError('자동 출고 내역은 수정할 수 없습니다.')
+      return
+    }
+
+    const quantityCurrent = row.inbound_ea > 0 ? row.inbound_ea : row.outbound_ea
+    const quantityInput = window.prompt('입고수량(ea)', String(quantityCurrent || 0))
+    if (quantityInput === null) return
+    const quantity = toNumber(quantityInput)
+    if (quantity === null || quantity <= 0) {
+      setPackagingLedgerDetailError('입고수량은 0보다 커야 합니다.')
+      return
+    }
+
+    const txDate = window.prompt('거래일자(YYYY-MM-DD)', row.tx_date || todayValue())
+    if (txDate === null) return
+    const counterparty = window.prompt('거래처/입고처', row.counterparty || '') ?? ''
+    const note = window.prompt('비고', row.note || '') ?? ''
+
+    setPackagingLedgerDetailLoading(true)
+    setPackagingLedgerDetailError('')
+    try {
+      await readJson('/api/moni/packaging-transactions', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: row.id,
+          quantity,
+          tx_date: txDate.trim(),
+          counterparty: counterparty.trim() || undefined,
+          note: note.trim() || undefined,
+        }),
+      })
+      await Promise.all([
+        loadPackagingLedger(sububuDateFrom, sububuDateTo, sububuMaterialQuery),
+        loadPackagingLedgerDetail(packagingLedgerDetailTarget, packagingLedgerDetailFrom, packagingLedgerDetailTo),
+        loadPackagingMaterials(packagingView),
+      ])
+    } catch (error) {
+      setPackagingLedgerDetailError(error instanceof Error ? error.message : '수불 내역 수정에 실패했습니다.')
+    } finally {
+      setPackagingLedgerDetailLoading(false)
+    }
+  }
+
+  async function deletePackagingLedgerDetailRow(row: PackagingTransactionRow) {
+    if (row.tx_type !== '입고') {
+      setPackagingLedgerDetailError('자동 출고 내역은 삭제할 수 없습니다.')
+      return
+    }
+    const confirmed = window.confirm('이 입고 내역을 삭제하시겠습니까? 재고가 즉시 반영됩니다.')
+    if (!confirmed) return
+
+    setPackagingLedgerDetailLoading(true)
+    setPackagingLedgerDetailError('')
+    try {
+      await readJson(`/api/moni/packaging-transactions?id=${encodeURIComponent(row.id)}`, {
+        method: 'DELETE',
+      })
+      await Promise.all([
+        loadPackagingLedger(sububuDateFrom, sububuDateTo, sububuMaterialQuery),
+        loadPackagingLedgerDetail(packagingLedgerDetailTarget, packagingLedgerDetailFrom, packagingLedgerDetailTo),
+        loadPackagingMaterials(packagingView),
+      ])
+    } catch (error) {
+      setPackagingLedgerDetailError(error instanceof Error ? error.message : '수불 내역 삭제에 실패했습니다.')
+    } finally {
+      setPackagingLedgerDetailLoading(false)
+    }
   }
 
   async function savePackagingMaterial() {
@@ -3435,6 +3607,62 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
   }
 
+  async function revertDailyReport(record: ProductionRecord) {
+    const target = record.lot_number || record.id
+    const warning =
+      '생산일보에서 삭제하면 생산완료 단계가 작업지시 단계로 되돌아갑니다. 확정 상태였다면 원재료 수불/재고도 함께 복원됩니다. 계속할까요?'
+    if (!window.confirm(`${target}\n\n${warning}`)) return
+
+    setProductionActionBusy(true)
+    try {
+      await callProductionAction({
+        action: 'revert_completion',
+        record_id: record.id,
+      })
+      setDailySelectedIds((prev) => prev.filter((id) => id !== record.id))
+      setProductionActionMessage({ tone: 'success', text: '생산일보 항목을 작업지시 단계로 되돌렸습니다.' })
+      await Promise.all([
+        loadOverview(),
+        loadProductionRecords(productionDateFrom, productionDateTo),
+        loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery),
+      ])
+    } catch (error) {
+      setProductionActionMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '생산일보 항목 되돌리기에 실패했습니다.',
+      })
+    } finally {
+      setProductionActionBusy(false)
+    }
+  }
+
+  function toggleDailySelected(recordId: string, checked: boolean) {
+    setDailySelectedIds((prev) => {
+      if (checked) {
+        if (prev.includes(recordId)) return prev
+        return [...prev, recordId]
+      }
+      return prev.filter((id) => id !== recordId)
+    })
+  }
+
+  function printSelectedDailyReports() {
+    if (dailySelectedIds.length === 0) {
+      setProductionActionMessage({ tone: 'warning', text: '출력할 생산일보를 선택해 주세요.' })
+      return
+    }
+
+    const selectedRows = dailyReportRows.filter((row) => dailySelectedIds.includes(row.id))
+    if (selectedRows.length === 0) {
+      setProductionActionMessage({ tone: 'warning', text: '출력할 생산일보를 찾을 수 없습니다.' })
+      return
+    }
+
+    selectedRows.forEach((row) => {
+      openWindow(`/api/moni/production-records/${row.id}/pdf`)
+    })
+  }
+
   async function openDeductionModal(record: ProductionRecord) {
     const statusCode = normalizeStatusCode(record.status)
     if (statusCode !== 'completed') {
@@ -3905,10 +4133,25 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
   function renderProductionSubTabs() {
     if (mainMenu !== 'production') return null
+    const tabMap = new Map(PRODUCTION_TABS.map((item) => [item.key, item]))
+    const orderedTabs: SubMenuItem[] = [
+      tabMap.get('prod-overview') ?? { key: 'prod-overview', label: '생산 개요' },
+      tabMap.get('prod-work') ?? { key: 'prod-work', label: '작업 지시' },
+      tabMap.get('prod-ledger') ?? { key: 'prod-ledger', label: '원료수불부' },
+      { key: 'prod-daily-report', label: '생산일보' },
+      tabMap.get('prod-materials') ?? { key: 'prod-materials', label: '원재료 관리' },
+      tabMap.get('prod-packaging') ?? { key: 'prod-packaging', label: '부재료 관리' },
+      tabMap.get('prod-recipe-mapping') ?? { key: 'prod-recipe-mapping', label: '레시피 원재료 연결' },
+      tabMap.get('prod-recipes') ?? { key: 'prod-recipes', label: '레시피 관리' },
+      tabMap.get('prod-sanitation') ?? { key: 'prod-sanitation', label: '위생점검' },
+      tabMap.get('prod-quality') ?? { key: 'prod-quality', label: '품질 관리' },
+      tabMap.get('prod-compliance') ?? { key: 'prod-compliance', label: '규정준수 모니터' },
+    ]
+
     return (
       <div className="overflow-x-auto border-b border-gray-800 bg-gray-800/70">
         <div className="flex min-w-max gap-1 px-4 md:px-6">
-          {PRODUCTION_TABS.map((item) => (
+          {orderedTabs.map((item) => (
             <button
               key={item.key}
               type="button"
@@ -5505,7 +5748,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         <button
                           type="button"
                           onClick={() => openRecipeMappingModal(row)}
-                          className="rounded-lg border border-green-700/70 px-3 py-1.5 text-xs text-green-200 hover:border-green-500 hover:text-white"
+                          className="whitespace-nowrap rounded-lg border border-green-700/70 px-3 py-1.5 text-xs text-green-200 hover:border-green-500 hover:text-white"
                         >
                           연결 처리
                         </button>
@@ -5915,6 +6158,247 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     )
   }
 
+  function renderProductionDailyReport() {
+    const allChecked = dailyReportRows.length > 0 && dailyReportRows.every((row) => dailySelectedIds.includes(row.id))
+
+    const applyPeriodRange = () => {
+      const today = todayValue()
+      if (dailyPeriodType === 'day') {
+        setProductionDateFrom(today)
+        setProductionDateTo(today)
+        return { from: today, to: today }
+      }
+
+      if (dailyPeriodType === 'month') {
+        const now = new Date()
+        const first = new Date(now.getFullYear(), now.getMonth(), 1)
+        const from = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first)
+        setProductionDateFrom(from)
+        setProductionDateTo(today)
+        return { from, to: today }
+      }
+
+      if (dailyPeriodType === 'quarter') {
+        const now = new Date()
+        const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3
+        const first = new Date(now.getFullYear(), quarterStartMonth, 1)
+        const from = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first)
+        setProductionDateFrom(from)
+        setProductionDateTo(today)
+        return { from, to: today }
+      }
+
+      const now = new Date()
+      const first = new Date(now.getFullYear(), 0, 1)
+      const from = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first)
+      setProductionDateFrom(from)
+      setProductionDateTo(today)
+      return { from, to: today }
+    }
+
+    return (
+      <SectionCard
+        title="생산일보"
+        description="생산완료된 작업만 조회/상세/수정/되돌리기/인쇄할 수 있습니다."
+        actions={
+          <>
+            <Field label="기간 구분" className="min-w-[130px]">
+              <select
+                value={dailyPeriodType}
+                onChange={(event) => setDailyPeriodType(event.target.value as 'day' | 'month' | 'quarter' | 'year')}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="day">일자별</option>
+                <option value="month">월별</option>
+                <option value="quarter">분기별</option>
+                <option value="year">연간</option>
+              </select>
+            </Field>
+            <Field label="시작일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={productionDateFrom}
+                onChange={(event) => setProductionDateFrom(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="종료일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={productionDateTo}
+                onChange={(event) => setProductionDateTo(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="제품명 검색" className="min-w-[180px]">
+              <input
+                value={dailyProductQuery}
+                onChange={(event) => setDailyProductQuery(event.target.value)}
+                placeholder="제품명"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="LOT 검색" className="min-w-[160px]">
+              <input
+                value={dailyLotQuery}
+                onChange={(event) => setDailyLotQuery(event.target.value)}
+                placeholder="LOT"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <button
+              type="button"
+              onClick={() => {
+                const range = applyPeriodRange()
+                void loadProductionRecords(range.from, range.to)
+              }}
+              className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+            >
+              조회
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDailyProductQuery('')
+                setDailyLotQuery('')
+                setDailySelectedIds([])
+                setProductionDateFrom(daysAgoValue(29))
+                setProductionDateTo(todayValue())
+                void loadProductionRecords(daysAgoValue(29), todayValue())
+              }}
+              className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+            >
+              초기화
+            </button>
+            <button
+              type="button"
+              onClick={printSelectedDailyReports}
+              className="h-[42px] rounded-xl bg-green-500 px-4 text-sm font-semibold text-white hover:bg-green-400"
+            >
+              선택 인쇄
+            </button>
+          </>
+        }
+      >
+        {recordsLoading ? (
+          <LoadingBlock lines={5} />
+        ) : dailyReportRows.length === 0 ? (
+          <EmptyState title="조건에 맞는 생산일보가 없습니다" description="기간/제품/LOT 조건을 조정해 다시 조회해 주세요." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-gray-400">
+                <tr className="border-b border-gray-700">
+                  <th className="px-3 py-2 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setDailySelectedIds(dailyReportRows.map((row) => row.id))
+                        } else {
+                          setDailySelectedIds([])
+                        }
+                      }}
+                      className="size-4 rounded border-gray-600 bg-gray-800 text-green-500"
+                    />
+                  </th>
+                  <th className="px-3 py-2 font-medium">생산일자</th>
+                  <th className="px-3 py-2 font-medium">LOT</th>
+                  <th className="px-3 py-2 font-medium">제품명</th>
+                  <th className="px-3 py-2 font-medium">생산단위</th>
+                  <th className="px-3 py-2 font-medium">예정량</th>
+                  <th className="px-3 py-2 font-medium">완료량</th>
+                  <th className="px-3 py-2 font-medium">불량량</th>
+                  <th className="px-3 py-2 font-medium">샘플량</th>
+                  <th className="px-3 py-2 font-medium">로스량</th>
+                  <th className="px-3 py-2 font-medium">상태</th>
+                  <th className="px-3 py-2 font-medium">확정 여부</th>
+                  <th className="px-3 py-2 font-medium">작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyReportRows.map((record) => {
+                  const statusCode = normalizeStatusCode(record.status)
+                  const planned = Number(record.planned_quantity_g ?? 0)
+                  const actual = Number(record.actual_quantity_g ?? 0)
+                  const defect = Number(record.defect_quantity_g ?? 0)
+                  const sample = Number(record.sample_quantity_g ?? 0)
+                  const loss = Math.max(planned - (actual + defect + sample), 0)
+                  const checked = dailySelectedIds.includes(record.id)
+
+                  return (
+                    <tr key={record.id} className="border-b border-gray-800/80">
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => toggleDailySelected(record.id, event.target.checked)}
+                          className="size-4 rounded border-gray-600 bg-gray-800 text-green-500"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-gray-200">{record.work_date || '-'}</td>
+                      <td className="px-3 py-2 font-mono text-gray-300">{record.lot_number || '-'}</td>
+                      <td className="px-3 py-2 text-white">{record.product_name || '-'}</td>
+                      <td className="px-3 py-2 text-gray-200">{record.production_unit_name || '-'}</td>
+                      <td className="px-3 py-2 text-gray-200">{formatNumber(planned)}g</td>
+                      <td className="px-3 py-2 text-green-400">{formatNumber(actual)}g</td>
+                      <td className="px-3 py-2 text-amber-300">{formatNumber(defect)}g</td>
+                      <td className="px-3 py-2 text-blue-300">{formatNumber(sample)}g</td>
+                      <td className="px-3 py-2 text-gray-200">{formatNumber(loss)}g</td>
+                      <td className="px-3 py-2 text-gray-200">{statusCode === 'confirmed' ? '확정' : '생산완료'}</td>
+                      <td className="px-3 py-2 text-gray-200">{statusCode === 'confirmed' ? '예' : '아니오'}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRecord(record)}
+                            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                          >
+                            상세보기
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => printWorkOrder(record)}
+                            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                          >
+                            작업지시서 보기
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openCompletionModalV2(record)}
+                            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                          >
+                            수정
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void revertDailyReport(record)}
+                            disabled={productionActionBusy}
+                            className="rounded-lg border border-red-800/70 px-3 py-1.5 text-xs text-red-200 hover:border-red-600 hover:text-red-100 disabled:opacity-60"
+                          >
+                            삭제
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openWindow(`/api/moni/production-records/${record.id}/pdf`)}
+                            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                          >
+                            인쇄
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+    )
+  }
+
   function renderQuality() {
     const completed = records.filter((record) => normalizeInspection(record.inspection_result) === '적합').length
     const failed = records.filter((record) => normalizeInspection(record.inspection_result) === '부적합').length
@@ -5969,6 +6453,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   function renderProductionSurface() {
     if (productionTab === 'prod-overview') return renderOverviewContent()
     if (productionTab === 'prod-work') return renderWorkOrdersV2()
+    if (productionTab === 'prod-daily-report') return renderProductionDailyReport()
     if (productionTab === 'prod-recipes') return renderRecipeManagement()
     if (productionTab === 'prod-recipe-mapping') return renderRecipeMaterialMapping()
     if (productionTab === 'prod-materials') return renderMaterialsManagement()
@@ -6921,6 +7406,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     <th className="px-3 py-2 font-medium">소모(g)</th>
                     <th className="px-3 py-2 font-medium">잔량(g)</th>
                     <th className="px-3 py-2 font-medium">비고</th>
+                    <th className="px-3 py-2 font-medium">작업</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -6934,6 +7420,24 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                       <td className="px-3 py-2 text-gray-200">{formatNumber(row.balance_g)}</td>
                       <td className="max-w-[320px] truncate px-3 py-2 text-gray-400" title={row.note || ''}>
                         {row.note || '-'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void editSububuDetailRow(row)}
+                            className="rounded-lg border border-gray-700 px-2.5 py-1 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                          >
+                            수정
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteSububuDetailRow(row)}
+                            className="rounded-lg border border-red-800/70 px-2.5 py-1 text-xs text-red-200 hover:border-red-600 hover:text-red-100"
+                          >
+                            삭제
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -7003,6 +7507,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     <th className="px-3 py-2 font-medium">출고(ea)</th>
                     <th className="px-3 py-2 font-medium">잔량(ea)</th>
                     <th className="px-3 py-2 font-medium">비고</th>
+                    <th className="px-3 py-2 font-medium">작업</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -7016,6 +7521,24 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                       <td className="px-3 py-2 text-gray-200">{formatNumber(row.balance_ea)}</td>
                       <td className="max-w-[320px] truncate px-3 py-2 text-gray-400" title={row.note || ''}>
                         {row.note || '-'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void editPackagingLedgerDetailRow(row)}
+                            className="rounded-lg border border-gray-700 px-2.5 py-1 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                          >
+                            수정
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deletePackagingLedgerDetailRow(row)}
+                            className="rounded-lg border border-red-800/70 px-2.5 py-1 text-xs text-red-200 hover:border-red-600 hover:text-red-100"
+                          >
+                            삭제
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

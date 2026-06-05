@@ -1228,6 +1228,99 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
+    if (action === 'revert_completion') {
+      if (recordStatus === 'cancelled') {
+        return NextResponse.json({ ok: false, error: '취소된 작업지시서입니다.' }, { status: 409 })
+      }
+
+      if (!(recordStatus === 'completed' || recordStatus === 'confirmed')) {
+        return NextResponse.json(
+          { ok: false, error: '생산완료 또는 확정된 기록만 되돌릴 수 있습니다.' },
+          { status: 409 },
+        )
+      }
+
+      const lotNumber = toText(record.lot_number) || recordId
+      const supabase = createMoniServiceRoleClient()
+
+      if (recordStatus === 'confirmed') {
+        const txQuery = await supabase
+          .from('raw_material_transactions')
+          .select('id, raw_material_id, quantity_g, note')
+          .eq('txn_type', 'OUTBOUND')
+          .or(`note.ilike.%production_record_id=${recordId}%,note.ilike.%lot_number=${lotNumber}%`)
+
+        if (txQuery.error) {
+          throw new ApiError(500, txQuery.error.message || '소모 이력 조회에 실패했습니다.', 'query.outbound')
+        }
+
+        const txRows = (txQuery.data ?? []) as Array<{
+          id?: string | null
+          raw_material_id?: string | null
+          quantity_g?: number | string | null
+        }>
+
+        const rollbackStocks: Array<{ id: string; previous: number }> = []
+        try {
+          for (const tx of txRows) {
+            const materialId = toText(tx.raw_material_id)
+            if (!materialId) continue
+            const qtyG = parseNumber(tx.quantity_g) ?? 0
+            if (qtyG <= 0) continue
+
+            const materialResult = await supabase
+              .from('raw_materials')
+              .select('id, current_stock_g')
+              .eq('id', materialId)
+              .maybeSingle()
+            if (materialResult.error) {
+              throw new ApiError(500, materialResult.error.message || '원재료 조회에 실패했습니다.', 'query.material')
+            }
+            if (!materialResult.data) continue
+
+            const currentStock = parseNumber((materialResult.data as { current_stock_g?: unknown }).current_stock_g) ?? 0
+            const nextStock = currentStock + qtyG
+
+            const updateResult = await supabase
+              .from('raw_materials')
+              .update({ current_stock_g: nextStock })
+              .eq('id', materialId)
+            if (updateResult.error) {
+              throw new ApiError(500, updateResult.error.message || '원재료 재고 복원에 실패했습니다.', 'mutate.stock.rollback')
+            }
+
+            rollbackStocks.push({ id: materialId, previous: currentStock })
+          }
+
+          const txIds = txRows.map((row) => toText(row.id)).filter(Boolean)
+          if (txIds.length > 0) {
+            const deleteResult = await supabase.from('raw_material_transactions').delete().in('id', txIds)
+            if (deleteResult.error) {
+              throw new ApiError(500, deleteResult.error.message || '소모 이력 복원에 실패했습니다.', 'mutate.tx.rollback')
+            }
+          }
+        } catch (error) {
+          for (const rollback of rollbackStocks) {
+            await supabase.from('raw_materials').update({ current_stock_g: rollback.previous }).eq('id', rollback.id)
+          }
+          throw error
+        }
+      }
+
+      const reverted = await updateRecordWithResilientColumns(recordId, {
+        status: 'planned',
+        actual_quantity_g: 0,
+        defect_quantity_g: 0,
+        sample_quantity_g: 0,
+        actual_quantity_ea: null,
+      })
+
+      return NextResponse.json(
+        { ok: true, record: toRecordRow(reverted), message: '생산일보 항목을 작업지시 단계로 되돌렸습니다.' },
+        { status: 200 },
+      )
+    }
+
     if (action === 'preview_confirm') {
       const preview = await buildDeductionPreview(record)
       return NextResponse.json(

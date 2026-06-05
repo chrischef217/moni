@@ -34,6 +34,10 @@ function resolveDate(row: TxRow): string {
   return text(row.txn_date) || text(row.created_at) || ''
 }
 
+function isInbound(txType: string) {
+  return txType.toUpperCase().includes('INBOUND')
+}
+
 export async function GET(request: NextRequest) {
   try {
     const materialName = text(request.nextUrl.searchParams.get('material_name'))
@@ -41,12 +45,11 @@ export async function GET(request: NextRequest) {
     const to = text(request.nextUrl.searchParams.get('to'))
 
     const supabase = createMoniServiceRoleClient()
-    const txQuery = supabase
+    let query = supabase
       .from('raw_material_transactions')
       .select('*')
       .order('txn_date', { ascending: true })
       .order('created_at', { ascending: true })
-    let query = txQuery
 
     if (from) query = query.gte('txn_date', from)
     if (to) query = query.lte('txn_date', to)
@@ -83,6 +86,7 @@ export async function GET(request: NextRequest) {
         note,
       }
     })
+
     const rows = normalizedKeyword
       ? allRows.filter((row) => row.material_name.toLowerCase().includes(normalizedKeyword))
       : allRows
@@ -189,6 +193,189 @@ export async function POST(request: NextRequest) {
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : '원재료 입고 등록 중 오류가 발생했습니다.'
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    if (!body) {
+      return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
+    }
+
+    const id = text(body.id)
+    if (!id) {
+      return NextResponse.json({ ok: false, error: '거래 ID가 필요합니다.' }, { status: 400 })
+    }
+
+    const quantity = nullableNumber(body.quantity)
+    if (quantity === null || quantity <= 0) {
+      return NextResponse.json({ ok: false, error: '입고수량은 0보다 커야 합니다.' }, { status: 400 })
+    }
+
+    const unitRaw = text(body.unit).toLowerCase()
+    const unit = unitRaw === 'kg' ? 'kg' : 'g'
+    const nextQuantityG = unit === 'kg' ? quantity * 1000 : quantity
+    if (nextQuantityG <= 0) {
+      return NextResponse.json({ ok: false, error: '입고수량은 0보다 커야 합니다.' }, { status: 400 })
+    }
+
+    const txDate = text(body.tx_date) || new Date().toISOString().slice(0, 10)
+    const counterparty = text(body.counterparty)
+    const note = text(body.note)
+    const unitPrice = nullableNumber(body.unit_price)
+
+    const supabase = createMoniServiceRoleClient()
+    const txResult = await supabase.from('raw_material_transactions').select('*').eq('id', id).maybeSingle()
+    if (txResult.error) throw new Error(txResult.error.message || '거래내역 조회에 실패했습니다.')
+    if (!txResult.data) {
+      return NextResponse.json({ ok: false, error: '내역을 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const txRow = txResult.data as TxRow
+    if (!isInbound(text(txRow.txn_type))) {
+      return NextResponse.json(
+        { ok: false, error: '생산확정으로 생성된 출고/소모 내역은 수정할 수 없습니다.' },
+        { status: 409 },
+      )
+    }
+
+    const rawMaterialId = text(txRow.raw_material_id)
+    if (!rawMaterialId) {
+      return NextResponse.json({ ok: false, error: '원재료 연결 정보가 없습니다.' }, { status: 422 })
+    }
+
+    const oldQuantityG = numberValue(txRow.quantity_g ?? txRow.quantity ?? 0)
+    const materialResult = await supabase
+      .from('raw_materials')
+      .select('id, item_name, current_stock_g')
+      .eq('id', rawMaterialId)
+      .maybeSingle()
+    if (materialResult.error) throw new Error(materialResult.error.message || '원재료 조회에 실패했습니다.')
+    if (!materialResult.data) {
+      return NextResponse.json({ ok: false, error: '연결된 원재료를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const material = materialResult.data as {
+      id: string
+      item_name?: string | null
+      current_stock_g?: number | string | null
+    }
+
+    const currentStockG = numberValue(material.current_stock_g)
+    const nextStockG = currentStockG - oldQuantityG + nextQuantityG
+    if (nextStockG < 0) {
+      return NextResponse.json({ ok: false, error: '수정 후 현재재고가 0보다 작아집니다.' }, { status: 409 })
+    }
+
+    const updateStock = await supabase.from('raw_materials').update({ current_stock_g: nextStockG }).eq('id', rawMaterialId)
+    if (updateStock.error) throw new Error(updateStock.error.message || '원재료 재고 갱신에 실패했습니다.')
+
+    const updateTx = await supabase
+      .from('raw_material_transactions')
+      .update({
+        quantity_g: nextQuantityG,
+        total_quantity_g: nextStockG,
+        txn_date: txDate,
+        supplier: counterparty || null,
+        unit_price: unitPrice,
+        note: note || counterparty || null,
+      })
+      .eq('id', id)
+    if (updateTx.error) {
+      await supabase.from('raw_materials').update({ current_stock_g: currentStockG }).eq('id', rawMaterialId)
+      throw new Error(updateTx.error.message || '거래내역 수정에 실패했습니다.')
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        material: {
+          id: material.id,
+          item_name: text(material.item_name) || rawMaterialId,
+          current_stock_g: nextStockG,
+        },
+      },
+      { status: 200 },
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '거래내역 수정 중 오류가 발생했습니다.'
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const id = text(request.nextUrl.searchParams.get('id'))
+    if (!id) {
+      return NextResponse.json({ ok: false, error: '거래 ID가 필요합니다.' }, { status: 400 })
+    }
+
+    const supabase = createMoniServiceRoleClient()
+    const txResult = await supabase.from('raw_material_transactions').select('*').eq('id', id).maybeSingle()
+    if (txResult.error) throw new Error(txResult.error.message || '거래내역 조회에 실패했습니다.')
+    if (!txResult.data) {
+      return NextResponse.json({ ok: false, error: '내역을 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const txRow = txResult.data as TxRow
+    if (!isInbound(text(txRow.txn_type))) {
+      return NextResponse.json(
+        { ok: false, error: '생산확정으로 생성된 출고/소모 내역은 삭제할 수 없습니다.' },
+        { status: 409 },
+      )
+    }
+
+    const rawMaterialId = text(txRow.raw_material_id)
+    if (!rawMaterialId) {
+      return NextResponse.json({ ok: false, error: '원재료 연결 정보가 없습니다.' }, { status: 422 })
+    }
+
+    const qtyG = numberValue(txRow.quantity_g ?? txRow.quantity ?? 0)
+    const materialResult = await supabase
+      .from('raw_materials')
+      .select('id, item_name, current_stock_g')
+      .eq('id', rawMaterialId)
+      .maybeSingle()
+    if (materialResult.error) throw new Error(materialResult.error.message || '원재료 조회에 실패했습니다.')
+    if (!materialResult.data) {
+      return NextResponse.json({ ok: false, error: '연결된 원재료를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const material = materialResult.data as {
+      id: string
+      item_name?: string | null
+      current_stock_g?: number | string | null
+    }
+    const currentStockG = numberValue(material.current_stock_g)
+    const nextStockG = currentStockG - qtyG
+    if (nextStockG < 0) {
+      return NextResponse.json({ ok: false, error: '현재재고가 부족해 삭제할 수 없습니다.' }, { status: 409 })
+    }
+
+    const updateStock = await supabase.from('raw_materials').update({ current_stock_g: nextStockG }).eq('id', rawMaterialId)
+    if (updateStock.error) throw new Error(updateStock.error.message || '원재료 재고 갱신에 실패했습니다.')
+
+    const deleteTx = await supabase.from('raw_material_transactions').delete().eq('id', id)
+    if (deleteTx.error) {
+      await supabase.from('raw_materials').update({ current_stock_g: currentStockG }).eq('id', rawMaterialId)
+      throw new Error(deleteTx.error.message || '거래내역 삭제에 실패했습니다.')
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        material: {
+          id: material.id,
+          item_name: text(material.item_name) || rawMaterialId,
+          current_stock_g: nextStockG,
+        },
+      },
+      { status: 200 },
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '거래내역 삭제 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }
