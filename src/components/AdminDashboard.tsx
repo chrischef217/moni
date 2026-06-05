@@ -732,10 +732,11 @@ function formatKgFromGramValue(value: number) {
 function formatKgDisplayWithoutConversion(value: number) {
   if (!Number.isFinite(value)) return null
   const normalized = Number(value)
-  if (Math.abs(normalized - Math.round(normalized)) < 0.0001) {
-    return `${formatNumber(Math.round(normalized))}kg`
+  const restored = normalized > 0 && normalized < 1 ? normalized * 1000 : normalized
+  if (Math.abs(restored - Math.round(restored)) < 0.0001) {
+    return `${formatNumber(Math.round(restored))}kg`
   }
-  return `${formatNumber(Number(normalized.toFixed(3)))}kg`
+  return `${formatNumber(Number(restored.toFixed(3)))}kg`
 }
 
 function foodTypeDisplay(value: string | null | undefined) {
