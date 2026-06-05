@@ -57,6 +57,7 @@ function orderMappingsByCreatedAtDesc<T extends Record<string, unknown>>(rows: T
 
 async function fetchRecipeScopedRows(request: NextRequest) {
   const supabase = createMoniServiceRoleClient()
+  const productIdQuery = request.nextUrl.searchParams.get('product_id')?.trim() ?? ''
   const productNameQuery = request.nextUrl.searchParams.get('product_name')?.trim() ?? ''
   const recipeItemQuery = request.nextUrl.searchParams.get('recipe_item_name')?.trim() ?? ''
   const statusFilter = request.nextUrl.searchParams.get('status')?.trim().toLowerCase() ?? 'pending'
@@ -201,6 +202,7 @@ async function fetchRecipeScopedRows(request: NextRequest) {
       }
     })
     .filter((row) => {
+      if (productIdQuery && row.product_id !== productIdQuery) return false
       if (productNameQuery && !row.product_name.toLowerCase().includes(productNameQuery.toLowerCase())) return false
       if (recipeItemQuery && !row.recipe_item_name.toLowerCase().includes(recipeItemQuery.toLowerCase())) return false
       if (broadOnly && !row.is_broad) return false

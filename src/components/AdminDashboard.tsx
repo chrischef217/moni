@@ -616,7 +616,6 @@ const PRODUCTION_TABS: SubMenuItem[] = [
   { key: 'prod-overview', label: '생산 개요' },
   { key: 'prod-work', label: '작업 지시' },
   { key: 'prod-products', label: '제품관리' },
-  { key: 'prod-recipes', label: '레시피 관리' },
   { key: 'prod-materials', label: '원재료 관리' },
   { key: 'prod-ledger', label: '원료수불부' },
   { key: 'prod-packaging', label: '부재료 관리' },
@@ -2503,6 +2502,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   function makeProductRecipeDraftRow(
     recipe?: RecipeRow,
     index = 0,
+    recipeMappedMaterialName?: string | null,
     mappingsByFoodType?: Map<string, RawMaterialMapping[]>,
   ): ProductRecipeDraftRow {
     const mapping = recipe ? mappingsByFoodType?.get(String(recipe.food_type_id))?.[0] : null
@@ -2513,7 +2513,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       food_type_name: recipe?.food_type_name ?? '',
       ratio_percent:
         recipe?.ratio_percent !== null && recipe?.ratio_percent !== undefined ? String(recipe.ratio_percent) : '',
-      raw_material_name: mapping?.raw_material_name ?? '',
+      raw_material_name: recipeMappedMaterialName ?? mapping?.raw_material_name ?? '',
       ingredient_type: recipe?.ingredient_type || '원재료',
       semi_product_id: recipe?.semi_product_id ?? null,
       sort_order: index + 1,
@@ -2580,7 +2580,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   function removeProductRecipeDraftRow(localId: string) {
-    setProductRecipeMessage({ tone: 'warning', text: '행을 목록에서 제거했습니다. 저장해야 실제 레시피에 반영됩니다.' })
+    const confirmed = window.confirm('이 레시피 항목을 삭제할까요? 저장하면 실제 레시피에서 제거됩니다.')
+    if (!confirmed) return
+    setProductRecipeMessage({ tone: 'warning', text: '행을 목록에서 제거했습니다. 변경사항 저장을 눌러 반영해 주세요.' })
     setProductRecipeRows((prev) => renumberProductRecipeRows(prev.filter((row) => row.local_id !== localId)))
   }
 
@@ -2596,6 +2598,39 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     })
   }
 
+  async function loadProductRecipeDraftRows(product: ProductOption) {
+    const [recipePayload, mappingPayload] = await Promise.all([
+      readJson<RecipesPayload>(`/api/moni/recipes?product_id=${encodeURIComponent(String(product.id))}`),
+      readJson<RecipeMaterialMappingsPayload>(
+        `/api/moni/raw-material-mapping?view=recipes&product_id=${encodeURIComponent(String(product.id))}`,
+      ),
+    ])
+
+    setRecipeProducts(recipePayload.products ?? recipeProducts)
+    setRecipeRawMaterials(recipePayload.rawMaterials ?? recipeRawMaterials)
+    const mappingsByFoodType = (recipePayload.mappings ?? []).reduce((map, mapping) => {
+      const key = String(mapping.food_type_id)
+      const list = map.get(key) ?? []
+      list.push(mapping)
+      map.set(key, list)
+      return map
+    }, new Map<string, RawMaterialMapping[]>())
+    const mappingNameByRecipeId = new Map(
+      (mappingPayload.rows ?? []).map((row) => [String(row.recipe_id), row.current_raw_material_name ?? null]),
+    )
+
+    setProductRecipeRows(
+      (recipePayload.recipes ?? []).map((recipe, index) =>
+        makeProductRecipeDraftRow(
+          recipe,
+          index,
+          mappingNameByRecipeId.get(String(recipe.id)) ?? null,
+          mappingsByFoodType,
+        ),
+      ),
+    )
+  }
+
   async function openProductRecipeModal(product: ProductOption) {
     setProductRecipeProduct(product)
     setShowProductRecipeModal(true)
@@ -2606,19 +2641,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       if (foodTypes.length === 0) {
         await loadFoodTypes()
       }
-      const payload = await readJson<RecipesPayload>(`/api/moni/recipes?product_id=${encodeURIComponent(String(product.id))}`)
-      setRecipeProducts(payload.products ?? recipeProducts)
-      setRecipeRawMaterials(payload.rawMaterials ?? recipeRawMaterials)
-      const mappingsByFoodType = (payload.mappings ?? []).reduce((map, mapping) => {
-        const key = String(mapping.food_type_id)
-        const list = map.get(key) ?? []
-        list.push(mapping)
-        map.set(key, list)
-        return map
-      }, new Map<string, RawMaterialMapping[]>())
-      setProductRecipeRows(
-        (payload.recipes ?? []).map((recipe, index) => makeProductRecipeDraftRow(recipe, index, mappingsByFoodType)),
-      )
+      await loadProductRecipeDraftRows(product)
     } catch (error) {
       setProductRecipeRows([])
       setProductRecipeMessage({
@@ -2633,9 +2656,20 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   async function saveProductRecipeRows() {
     if (!productRecipeProduct) return
 
-    const invalidRow = productRecipeRows.find((row) => {
-      const ratio = toNumber(row.ratio_percent)
-      return !row.food_type_name.trim() || ratio === null || ratio < 0
+    const preparedRows = productRecipeRows.map((row, index) => ({
+      local_id: row.local_id,
+      id: row.id,
+      food_type_id: row.food_type_id || null,
+      food_type_name: row.food_type_name.trim(),
+      ratio_percent: toNumber(row.ratio_percent),
+      ingredient_type: row.ingredient_type || '원재료',
+      semi_product_id: row.semi_product_id || null,
+      sort_order: index + 1,
+      raw_material_name: row.raw_material_name.trim(),
+    }))
+
+    const invalidRow = preparedRows.find((row) => {
+      return !row.food_type_name || row.ratio_percent === null || row.ratio_percent < 0
     })
     if (invalidRow) {
       setProductRecipeMessage({ tone: 'error', text: '식품유형명과 0 이상 배합비율을 모두 입력해 주세요.' })
@@ -2662,28 +2696,45 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           product_id: String(productRecipeProduct.id),
           product_name: productRecipeProduct.product_name,
           business_id: productRecipeProduct.business_id || '20220523011',
-          recipes: productRecipeRows.map((row, index) => ({
+          recipes: preparedRows.map((row) => ({
             id: row.id,
             food_type_id: row.food_type_id || null,
-            food_type_name: row.food_type_name.trim(),
-            ratio_percent: toNumber(row.ratio_percent) ?? 0,
+            food_type_name: row.food_type_name,
+            ratio_percent: row.ratio_percent ?? 0,
             ingredient_type: row.ingredient_type || '원재료',
             semi_product_id: row.semi_product_id || null,
-            sort_order: index + 1,
+            sort_order: row.sort_order,
           })),
         }),
       })
 
-      const mappingsByFoodType = (payload.mappings ?? []).reduce((map, mapping) => {
-        const key = String(mapping.food_type_id)
-        const list = map.get(key) ?? []
-        list.push(mapping)
-        map.set(key, list)
-        return map
-      }, new Map<string, RawMaterialMapping[]>())
-      setProductRecipeRows(
-        (payload.recipes ?? []).map((recipe, index) => makeProductRecipeDraftRow(recipe, index, mappingsByFoodType)),
-      )
+      const savedRecipes = payload.recipes ?? []
+      const recipeBySortOrder = new Map(savedRecipes.map((recipe) => [Number(recipe.sort_order ?? 0), recipe]))
+
+      for (const row of preparedRows) {
+        if (!row.raw_material_name) continue
+        const targetRecipe = recipeBySortOrder.get(row.sort_order)
+        if (!targetRecipe?.id || !targetRecipe.food_type_id) continue
+
+        await readJson('/api/moni/raw-material-mapping', {
+          method: 'POST',
+          body: JSON.stringify({
+            recipe_id: String(targetRecipe.id),
+            product_id: String(productRecipeProduct.id),
+            product_name: productRecipeProduct.product_name,
+            food_type_id: String(targetRecipe.food_type_id),
+            food_type_name: targetRecipe.food_type_name,
+            recipe_item_name: targetRecipe.food_type_name,
+            raw_material_name: row.raw_material_name,
+            mapping_scope: 'recipe',
+            is_default: true,
+            business_id: productRecipeProduct.business_id || '20220523011',
+          }),
+        })
+      }
+
+      await loadProductRecipeDraftRows(productRecipeProduct)
+      await Promise.all([loadRecipeMaterialMappings(), loadLatestRecipeMappingHistory()])
       if (selectedRecipeProductId === String(productRecipeProduct.id)) {
         await loadRecipes(selectedRecipeProductId)
       }
@@ -4761,7 +4812,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       tabMap.get('prod-materials') ?? { key: 'prod-materials', label: '원재료 관리' },
       tabMap.get('prod-packaging') ?? { key: 'prod-packaging', label: '부재료 관리' },
       tabMap.get('prod-recipe-mapping') ?? { key: 'prod-recipe-mapping', label: '레시피 원재료 연결' },
-      tabMap.get('prod-recipes') ?? { key: 'prod-recipes', label: '레시피 관리' },
       tabMap.get('prod-sanitation') ?? { key: 'prod-sanitation', label: '위생점검' },
       tabMap.get('prod-quality') ?? { key: 'prod-quality', label: '품질 관리' },
       tabMap.get('prod-compliance') ?? { key: 'prod-compliance', label: '규정준수 모니터' },
