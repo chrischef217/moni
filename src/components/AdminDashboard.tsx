@@ -6399,6 +6399,283 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     )
   }
 
+  function renderProductionDailyReportLayout() {
+    const allChecked = dailyReportRows.length > 0 && dailyReportRows.every((row) => dailySelectedIds.includes(row.id))
+
+    const applyPeriodRange = () => {
+      const today = todayValue()
+      if (dailyPeriodType === 'day') {
+        setProductionDateFrom(today)
+        setProductionDateTo(today)
+        return { from: today, to: today }
+      }
+
+      if (dailyPeriodType === 'month') {
+        const now = new Date()
+        const first = new Date(now.getFullYear(), now.getMonth(), 1)
+        const from = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first)
+        setProductionDateFrom(from)
+        setProductionDateTo(today)
+        return { from, to: today }
+      }
+
+      if (dailyPeriodType === 'quarter') {
+        const now = new Date()
+        const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3
+        const first = new Date(now.getFullYear(), quarterStartMonth, 1)
+        const from = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first)
+        setProductionDateFrom(from)
+        setProductionDateTo(today)
+        return { from, to: today }
+      }
+
+      const now = new Date()
+      const first = new Date(now.getFullYear(), 0, 1)
+      const from = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(first)
+      setProductionDateFrom(from)
+      setProductionDateTo(today)
+      return { from, to: today }
+    }
+
+    return (
+      <div className="space-y-4">
+        <section className="rounded-2xl border border-gray-800 bg-gray-800/80 p-5 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+            <div className="xl:w-64 xl:shrink-0">
+              <h2 className="text-xl font-semibold text-white">생산일보</h2>
+              <p className="mt-1 text-sm text-gray-400">
+                생산완료된 작업만 조회/상세/수정/되돌리기/인쇄할 수 있습니다.
+              </p>
+            </div>
+            <div className="flex-1 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[160px_180px_180px_minmax(220px,1fr)_minmax(180px,1fr)_auto]">
+                <Field label="기간 구분" className="xl:min-w-[160px]">
+                  <select
+                    value={dailyPeriodType}
+                    onChange={(event) => setDailyPeriodType(event.target.value as 'day' | 'month' | 'quarter' | 'year')}
+                    className="h-[42px] w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  >
+                    <option value="day">일자별</option>
+                    <option value="month">월별</option>
+                    <option value="quarter">분기별</option>
+                    <option value="year">연간</option>
+                  </select>
+                </Field>
+                <Field label="시작일" className="xl:min-w-[180px]">
+                  <input
+                    type="date"
+                    value={productionDateFrom}
+                    onChange={(event) => setProductionDateFrom(event.target.value)}
+                    className="h-[42px] w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="종료일" className="xl:min-w-[180px]">
+                  <input
+                    type="date"
+                    value={productionDateTo}
+                    onChange={(event) => setProductionDateTo(event.target.value)}
+                    className="h-[42px] w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="제품명 검색" className="xl:min-w-[220px]">
+                  <input
+                    value={dailyProductQuery}
+                    onChange={(event) => setDailyProductQuery(event.target.value)}
+                    placeholder="제품명"
+                    className="h-[42px] w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <Field label="LOT 검색" className="xl:min-w-[180px]">
+                  <input
+                    value={dailyLotQuery}
+                    onChange={(event) => setDailyLotQuery(event.target.value)}
+                    placeholder="LOT"
+                    className="h-[42px] w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+                <div className="flex flex-wrap items-end justify-start gap-2 pt-6 xl:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const range = applyPeriodRange()
+                      void loadProductionRecords(range.from, range.to)
+                    }}
+                    className="h-[42px] whitespace-nowrap rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+                  >
+                    조회
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDailyProductQuery('')
+                      setDailyLotQuery('')
+                      setDailySelectedIds([])
+                      setProductionDateFrom(daysAgoValue(29))
+                      setProductionDateTo(todayValue())
+                      void loadProductionRecords(daysAgoValue(29), todayValue())
+                    }}
+                    className="h-[42px] whitespace-nowrap rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+                  >
+                    초기화
+                  </button>
+                  <button
+                    type="button"
+                    onClick={printSelectedDailyReports}
+                    className="h-[42px] whitespace-nowrap rounded-xl bg-green-500 px-4 text-sm font-semibold text-white hover:bg-green-400"
+                  >
+                    선택 인쇄
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-gray-800 bg-gray-800/80 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
+          {recordsLoading ? (
+            <div className="p-5">
+              <LoadingBlock lines={5} />
+            </div>
+          ) : dailyReportRows.length === 0 ? (
+            <div className="p-5">
+              <EmptyState title="조건에 맞는 생산일보가 없습니다" description="기간/제품/LOT 조건을 조정해 다시 조회해 주세요." />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-[1320px] w-full table-auto text-left text-sm">
+                <thead className="bg-gray-900/60 text-gray-300">
+                  <tr className="border-b border-gray-700">
+                    <th className="w-12 px-3 py-3 text-center font-medium whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={allChecked}
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            setDailySelectedIds(dailyReportRows.map((row) => row.id))
+                          } else {
+                            setDailySelectedIds([])
+                          }
+                        }}
+                        className="size-4 rounded border-gray-600 bg-gray-800 text-green-500"
+                      />
+                    </th>
+                    <th className="w-[110px] px-3 py-3 font-medium whitespace-nowrap">생산일자</th>
+                    <th className="w-[130px] px-3 py-3 font-medium whitespace-nowrap">LOT</th>
+                    <th className="w-[220px] px-3 py-3 font-medium whitespace-nowrap">제품명</th>
+                    <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">생산단위</th>
+                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">예정량</th>
+                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">완료량</th>
+                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">불량량</th>
+                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">샘플량</th>
+                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">로스량</th>
+                    <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">상태</th>
+                    <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">확정</th>
+                    <th className="min-w-[280px] px-3 py-3 font-medium whitespace-nowrap">작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyReportRows.map((record) => {
+                    const statusCode = normalizeStatusCode(record.status)
+                    const planned = Number(record.planned_quantity_g ?? 0)
+                    const actual = Number(record.actual_quantity_g ?? 0)
+                    const defect = Number(record.defect_quantity_g ?? 0)
+                    const sample = Number(record.sample_quantity_g ?? 0)
+                    const loss = Math.max(planned - (actual + defect + sample), 0)
+                    const checked = dailySelectedIds.includes(record.id)
+
+                    return (
+                      <tr key={record.id} className="border-b border-gray-800/80 hover:bg-gray-900/30">
+                        <td className="px-3 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => toggleDailySelected(record.id, event.target.checked)}
+                            className="size-4 rounded border-gray-600 bg-gray-800 text-green-500"
+                          />
+                        </td>
+                        <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{record.work_date || '-'}</td>
+                        <td className="px-3 py-3 font-mono text-gray-300 whitespace-nowrap">
+                          <span className="inline-block max-w-[120px] truncate align-middle" title={record.lot_number || '-'}>
+                            {record.lot_number || '-'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-white whitespace-nowrap">
+                          <span className="inline-block max-w-[210px] truncate align-middle" title={record.product_name || '-'}>
+                            {record.product_name || '-'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center text-gray-200 whitespace-nowrap">{record.production_unit_name || '-'}</td>
+                        <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">{formatNumber(planned)}g</td>
+                        <td className="px-3 py-3 text-right text-green-400 whitespace-nowrap">{formatNumber(actual)}g</td>
+                        <td className="px-3 py-3 text-right text-amber-300 whitespace-nowrap">{formatNumber(defect)}g</td>
+                        <td className="px-3 py-3 text-right text-blue-300 whitespace-nowrap">{formatNumber(sample)}g</td>
+                        <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">{formatNumber(loss)}g</td>
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              statusCode === 'confirmed'
+                                ? 'bg-green-500/15 text-green-300'
+                                : 'bg-blue-500/15 text-blue-300'
+                            }`}
+                          >
+                            {statusCode === 'confirmed' ? '확정' : '생산완료'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center text-gray-200 whitespace-nowrap">
+                          {statusCode === 'confirmed' ? '예' : '아니오'}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex min-w-[280px] flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedRecord(record)}
+                              className="whitespace-nowrap rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                            >
+                              상세보기
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => printWorkOrder(record)}
+                              className="whitespace-nowrap rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                            >
+                              작업지시서 보기
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openCompletionModalV2(record)}
+                              className="whitespace-nowrap rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                            >
+                              수정
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void revertDailyReport(record)}
+                              disabled={productionActionBusy}
+                              className="whitespace-nowrap rounded-lg border border-red-800/70 px-3 py-1.5 text-xs text-red-200 hover:border-red-600 hover:text-red-100 disabled:opacity-60"
+                            >
+                              삭제
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openWindow(`/api/moni/production-records/${record.id}/pdf`)}
+                              className="whitespace-nowrap rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                            >
+                              인쇄
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    )
+  }
+
   function renderQuality() {
     const completed = records.filter((record) => normalizeInspection(record.inspection_result) === '적합').length
     const failed = records.filter((record) => normalizeInspection(record.inspection_result) === '부적합').length
@@ -6453,7 +6730,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   function renderProductionSurface() {
     if (productionTab === 'prod-overview') return renderOverviewContent()
     if (productionTab === 'prod-work') return renderWorkOrdersV2()
-    if (productionTab === 'prod-daily-report') return renderProductionDailyReport()
+    if (productionTab === 'prod-daily-report') return renderProductionDailyReportLayout()
     if (productionTab === 'prod-recipes') return renderRecipeManagement()
     if (productionTab === 'prod-recipe-mapping') return renderRecipeMaterialMapping()
     if (productionTab === 'prod-materials') return renderMaterialsManagement()
