@@ -31,10 +31,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = createMoniServiceRoleClient()
     const [materialsResult, transactionsResult] = await Promise.all([
-      supabase
-        .from('raw_materials')
-        .select('*')
-        .order('item_name', { ascending: true }),
+      supabase.from('raw_materials').select('*').order('item_name', { ascending: true }),
       supabase
         .from('raw_material_transactions')
         .select('raw_material_id, raw_material_name, food_type_name, packing_unit, created_at')
@@ -78,11 +75,7 @@ export async function GET(request: NextRequest) {
     const activeMaterials = allMaterials.filter((item) => item.is_active !== false)
     const inactiveMaterials = allMaterials.filter((item) => item.is_active === false)
 
-    const materials = inactiveOnly
-      ? inactiveMaterials
-      : includeInactive
-        ? allMaterials
-        : activeMaterials
+    const materials = inactiveOnly ? inactiveMaterials : includeInactive ? allMaterials : activeMaterials
 
     return NextResponse.json(
       {
@@ -115,14 +108,37 @@ export async function POST(request: NextRequest) {
     const supabase = createMoniServiceRoleClient()
     const { data: existingRows, error: findError } = await supabase
       .from('raw_materials')
-      .select('id, item_name, packing_weight_g, current_stock_g')
+      .select('id, item_name, packing_weight_g, current_stock_g, is_active')
       .eq('item_name', itemName)
-      .limit(1)
     if (findError) throw new Error(findError.message || '원재료 조회 실패')
 
-    const existing = existingRows?.[0]
-    if (existing) {
-      return NextResponse.json({ ok: true, material: existing }, { status: 200 })
+    const existingActive = (existingRows ?? []).find((row) => row.is_active !== false)
+    if (existingActive) {
+      return NextResponse.json(
+        {
+          ok: true,
+          status: 'existing_active',
+          material: {
+            id: existingActive.id,
+            item_name: existingActive.item_name,
+            packing_weight_g: existingActive.packing_weight_g,
+            current_stock_g: existingActive.current_stock_g,
+          },
+        },
+        { status: 200 },
+      )
+    }
+
+    const existingInactive = (existingRows ?? []).find((row) => row.is_active === false)
+    if (existingInactive) {
+      return NextResponse.json(
+        {
+          ok: false,
+          status: 'existing_inactive',
+          error: '동일한 이름의 비활성 원재료가 있습니다. 원재료 관리에서 활성화 후 사용하세요.',
+        },
+        { status: 409 },
+      )
     }
 
     const id = makeRawMaterialId()
@@ -136,12 +152,16 @@ export async function POST(request: NextRequest) {
       business_id: text(body?.business_id) || 'default',
     }
 
-    const { data, error } = await supabase.from('raw_materials').insert(payload).select('id, item_name, packing_weight_g, current_stock_g').single()
-    if (error) throw new Error(error.message || '원재료 저장 실패')
+    const { data, error } = await supabase
+      .from('raw_materials')
+      .insert(payload)
+      .select('id, item_name, packing_weight_g, current_stock_g')
+      .single()
+    if (error) throw new Error(error.message || '원재료 등록 실패')
 
-    return NextResponse.json({ ok: true, material: data }, { status: 201 })
+    return NextResponse.json({ ok: true, status: 'created', material: data }, { status: 201 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : '원재료 저장 중 오류가 발생했습니다.'
+    const message = error instanceof Error ? error.message : '원재료 등록 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

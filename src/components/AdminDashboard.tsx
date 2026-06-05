@@ -285,6 +285,8 @@ type ProductRecipeDraftRow = {
   food_type_highlight: number
   raw_material_open: boolean
   raw_material_highlight: number
+  raw_material_adding: boolean
+  raw_material_notice: string
 }
 
 type RecipesPayload = {
@@ -2536,9 +2538,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     recipe?: RecipeRow,
     index = 0,
     recipeMappedMaterialName?: string | null,
-    mappingsByFoodType?: Map<string, RawMaterialMapping[]>,
   ): ProductRecipeDraftRow {
-    const mapping = recipe ? mappingsByFoodType?.get(String(recipe.food_type_id))?.[0] : null
     return {
       local_id: uid(),
       id: recipe?.id,
@@ -2546,7 +2546,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       food_type_name: recipe?.food_type_name ?? '',
       ratio_percent:
         recipe?.ratio_percent !== null && recipe?.ratio_percent !== undefined ? String(recipe.ratio_percent) : '',
-      raw_material_name: recipeMappedMaterialName ?? mapping?.raw_material_name ?? '',
+      raw_material_name: recipeMappedMaterialName ?? '',
       ingredient_type: recipe?.ingredient_type || '원재료',
       semi_product_id: recipe?.semi_product_id ?? null,
       sort_order: index + 1,
@@ -2554,6 +2554,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       food_type_highlight: 0,
       raw_material_open: false,
       raw_material_highlight: 0,
+      raw_material_adding: false,
+      raw_material_notice: '',
     }
   }
 
@@ -2604,7 +2606,62 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       raw_material_name: material.item_name,
       raw_material_open: false,
       raw_material_highlight: 0,
+      raw_material_notice: '',
     })
+  }
+
+  async function addProductRecipeMaterialFromQuery(localId: string) {
+    const row = productRecipeRows.find((item) => item.local_id === localId)
+    const productId = productRecipeProduct ? String(productRecipeProduct.id) : ''
+    const rawName = row?.raw_material_name.trim() ?? ''
+    if (!row) return
+
+    if (!rawName) {
+      updateProductRecipeRow(localId, { raw_material_notice: '원재료명을 먼저 입력해 주세요.' })
+      return
+    }
+
+    const normalizedName = rawName.toLowerCase()
+    const activeMatch = activeRecipeRawMaterials.find((material) => material.item_name.trim().toLowerCase() === normalizedName)
+    if (activeMatch) {
+      updateProductRecipeRow(localId, {
+        raw_material_name: activeMatch.item_name,
+        raw_material_open: false,
+        raw_material_highlight: 0,
+        raw_material_notice: '이미 등록된 원재료를 선택했습니다.',
+      })
+      return
+    }
+
+    updateProductRecipeRow(localId, { raw_material_adding: true, raw_material_notice: '' })
+    try {
+      const payload = await readJson<{ material?: RawMaterialRow }>('/api/moni/raw-materials', {
+        method: 'POST',
+        body: JSON.stringify({
+          item_name: rawName,
+          business_id: productRecipeProduct?.business_id || '20220523011',
+        }),
+      })
+
+      const nextName = payload.material?.item_name?.trim() || rawName
+      if (productId) {
+        await loadRecipes(productId)
+      } else {
+        await loadRecipes(selectedRecipeProductId)
+      }
+      updateProductRecipeRow(localId, {
+        raw_material_name: nextName,
+        raw_material_open: false,
+        raw_material_highlight: 0,
+        raw_material_adding: false,
+        raw_material_notice: '원재료를 등록했습니다. 현재 행에 자동 선택되었습니다.',
+      })
+    } catch (error) {
+      updateProductRecipeRow(localId, {
+        raw_material_adding: false,
+        raw_material_notice: error instanceof Error ? error.message : '새 원재료 등록 중 오류가 발생했습니다.',
+      })
+    }
   }
 
   function addProductRecipeDraftRow() {
@@ -2659,26 +2716,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
     setRecipeProducts(recipePayload.products ?? recipeProducts)
     setRecipeRawMaterials(recipePayload.rawMaterials ?? recipeRawMaterials)
-    const mappingsByFoodType = (recipePayload.mappings ?? []).reduce((map, mapping) => {
-      const key = String(mapping.food_type_id)
-      const list = map.get(key) ?? []
-      list.push(mapping)
-      map.set(key, list)
-      return map
-    }, new Map<string, RawMaterialMapping[]>())
-    const mappingNameByRecipeId = new Map(
-      (mappingPayload.rows ?? []).map((row) => [String(row.recipe_id), row.current_raw_material_name ?? null]),
-    )
+    const mappingNameByRecipeId = new Map<string, string | null>()
+    for (const row of mappingPayload.rows ?? []) {
+      mappingNameByRecipeId.set(String(row.recipe_id), row.current_raw_material_name ?? null)
+    }
 
     setProductRecipeRows(
-      (recipePayload.recipes ?? []).map((recipe, index) =>
-        makeProductRecipeDraftRow(
-          recipe,
-          index,
-          mappingNameByRecipeId.get(String(recipe.id)) ?? null,
-          mappingsByFoodType,
-        ),
-      ),
+      (recipePayload.recipes ?? []).map((recipe, index) => {
+        const recipeKey = String(recipe.id)
+        const mappedName = mappingNameByRecipeId.has(recipeKey) ? (mappingNameByRecipeId.get(recipeKey) ?? '') : ''
+        return makeProductRecipeDraftRow(recipe, index, mappedName)
+      }),
     )
   }
 
@@ -9005,6 +9053,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   {productRecipeRows.map((row, index) => {
                     const foodTypeMatches = productRecipeFoodTypeMatches(row)
                     const materialMatches = productRecipeMaterialMatches(row)
+                    const rawQuery = row.raw_material_name.trim().toLowerCase()
+                    const totalMaterialMatchCount = rawQuery
+                      ? activeRecipeRawMaterials.filter((material) =>
+                          material.item_name.toLowerCase().includes(rawQuery),
+                        ).length
+                      : activeRecipeRawMaterials.length
                     return (
                       <tr key={row.local_id} className="border-b border-gray-800/80 align-top">
                         <td className="px-2 py-2 text-center text-gray-300 whitespace-nowrap">{index + 1}</td>
@@ -9133,7 +9187,20 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             {row.raw_material_open && row.raw_material_name.trim() ? (
                               <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-700 bg-gray-950 shadow-xl">
                                 {materialMatches.length === 0 ? (
-                                  <p className="px-3 py-2 text-xs text-gray-400">검색 결과가 없습니다.</p>
+                                  <div className="space-y-2 px-3 py-2">
+                                    <p className="text-xs text-gray-300">
+                                      검색 결과가 없습니다. 새 원재료로 추가하시겠습니까?
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => void addProductRecipeMaterialFromQuery(row.local_id)}
+                                      disabled={row.raw_material_adding}
+                                      className="rounded-lg border border-green-700/70 px-2.5 py-1 text-xs font-semibold text-green-200 hover:border-green-500 hover:text-white disabled:opacity-60"
+                                    >
+                                      {row.raw_material_adding ? '등록 중...' : '+ 새 원재료 추가'}
+                                    </button>
+                                  </div>
                                 ) : (
                                   <>
                                     {materialMatches.map((material, candidateIndex) => (
@@ -9151,9 +9218,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                                         {material.item_name}
                                       </button>
                                     ))}
-                                    {activeRecipeRawMaterials.filter((material) =>
-                                      material.item_name.toLowerCase().includes(row.raw_material_name.trim().toLowerCase()),
-                                    ).length > materialMatches.length ? (
+                                    {totalMaterialMatchCount > materialMatches.length ? (
                                       <p className="border-t border-gray-800 px-3 py-2 text-xs text-amber-200">
                                         검색 결과가 많습니다. 더 구체적으로 입력하세요.
                                       </p>
@@ -9164,6 +9229,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             ) : null}
                             {row.raw_material_name.trim() ? (
                               <p className="mt-1 text-xs text-gray-400">선택된 원재료: {row.raw_material_name.trim()}</p>
+                            ) : null}
+                            {row.raw_material_notice ? (
+                              <p className="mt-1 text-xs text-amber-200">{row.raw_material_notice}</p>
                             ) : null}
                           </div>
                         </td>
