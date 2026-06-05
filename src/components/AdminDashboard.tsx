@@ -2633,6 +2633,26 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       return
     }
 
+    const allMaterialsPayload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials?include_inactive=true')
+    const allMaterials = allMaterialsPayload.materials ?? []
+    const inactiveMatch = allMaterials.find(
+      (material) => material.is_active === false && material.item_name.trim().toLowerCase() === normalizedName,
+    )
+    if (inactiveMatch) {
+      setConfirmDialog({
+        open: true,
+        title: '비활성 원재료 발견',
+        message: '같은 이름의 비활성 원재료가 있습니다. 이 원재료를 다시 활성화하고 현재 레시피에 사용하시겠습니까?',
+        confirmText: '활성화 후 사용',
+        cancelText: '취소',
+        variant: 'default',
+        onConfirm: () => {
+          void reactivateProductRecipeMaterial(localId, inactiveMatch)
+        },
+      })
+      return
+    }
+
     updateProductRecipeRow(localId, { raw_material_adding: true, raw_material_notice: '' })
     try {
       const payload = await readJson<{ material?: RawMaterialRow }>('/api/moni/raw-materials', {
@@ -2660,6 +2680,43 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       updateProductRecipeRow(localId, {
         raw_material_adding: false,
         raw_material_notice: error instanceof Error ? error.message : '새 원재료 등록 중 오류가 발생했습니다.',
+      })
+    }
+  }
+
+  async function reactivateProductRecipeMaterial(localId: string, material: RawMaterialRow) {
+    updateProductRecipeRow(localId, { raw_material_adding: true, raw_material_notice: '' })
+    try {
+      await readJson<RawMaterialsPayload>(`/api/moni/raw-materials/${encodeURIComponent(material.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          item_name: material.item_name,
+          food_type: material.food_type ?? material.food_type_name ?? '',
+          country_of_origin: material.country_of_origin ?? '',
+          spec: material.spec ?? '',
+          storage_type: material.storage_type ?? '',
+          shelf_life_days: material.shelf_life_days ?? null,
+          supplier: material.supplier ?? '',
+          supplier_contact: material.supplier_contact ?? '',
+          supplier_address: material.supplier_address ?? '',
+          supplier_biz_number: material.supplier_biz_number ?? '',
+          is_active: true,
+        }),
+      })
+
+      const targetProductId = productRecipeProduct ? String(productRecipeProduct.id) : selectedRecipeProductId
+      await loadRecipes(targetProductId)
+      updateProductRecipeRow(localId, {
+        raw_material_name: material.item_name,
+        raw_material_open: false,
+        raw_material_highlight: 0,
+        raw_material_adding: false,
+        raw_material_notice: '비활성 원재료를 다시 활성화하고 현재 행에 선택했습니다.',
+      })
+    } catch (error) {
+      updateProductRecipeRow(localId, {
+        raw_material_adding: false,
+        raw_material_notice: error instanceof Error ? error.message : '원재료 활성화 중 오류가 발생했습니다.',
       })
     }
   }
@@ -6354,7 +6411,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </button>
           }
         >
-          <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <Field label="제품명 검색">
               <input
                 value={recipeMappingProductQuery}
@@ -6407,6 +6464,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               />
               포괄 항목만 보기
             </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => {
+                  void loadRecipeMaterialMappings()
+                }}
+                className="h-[42px] w-full rounded-xl border border-green-700/70 px-4 text-sm font-semibold whitespace-nowrap text-green-200 hover:border-green-500 hover:text-white"
+              >
+                찾기
+              </button>
+            </div>
           </div>
 
           <div className="mb-4 rounded-2xl border border-cyan-300 bg-slate-50 px-4 py-3 text-slate-900 ring-1 ring-cyan-300/60 shadow-[0_0_18px_rgba(34,211,238,0.25)]">
@@ -9010,9 +9078,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           ) : null}
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-gray-400">
-              원재료 선택은 참고 표시입니다. 생산 차감용 실제 연결은 기존 “레시피 원재료 연결” 화면의 저장/되돌리기 기준을 유지합니다.
-            </p>
+            <p className="text-sm text-gray-400">실제 원재료는 이 레시피 행에만 연결됩니다.</p>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
