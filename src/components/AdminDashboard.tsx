@@ -72,6 +72,7 @@ type ProductOption = {
   product_name: string
   product_code?: string | null
   product_type?: string | null
+  food_type_name?: string | null
   report_number?: string | null
   product_spec?: string | null
   weight_g?: number | null
@@ -369,6 +370,7 @@ type ProductFormState = {
   product_code: string
   report_number: string
   product_type: string
+  food_type_name: string
   storage_method: string
   storage_type: string
   shelf_life: string
@@ -641,18 +643,31 @@ const EMPTY_VALIDATION: FieldValidation = {
 
 const EMPTY_MATERIAL_SUMMARY: MaterialSummary = { total: 0, active: 0, inactive: 0 }
 const PACKAGING_TYPE_OPTIONS = ['포장재', '라벨', '카톤박스'] as const
-const PRODUCT_TYPE_OPTIONS = ['소스', '복합조미식품', '기타가공품'] as const
+const PRODUCT_CATEGORY_OPTIONS = ['완제품', '반제품'] as const
+const FOOD_TYPE_OPTIONS = ['소스', '복합조미식품', '기타가공품'] as const
 
-function normalizeProductType(value: string | null | undefined): (typeof PRODUCT_TYPE_OPTIONS)[number] | null {
+function normalizeProductCategory(value: string | null | undefined): (typeof PRODUCT_CATEGORY_OPTIONS)[number] | null {
   const trimmed = String(value ?? '').trim()
   if (!trimmed) return null
-  return PRODUCT_TYPE_OPTIONS.includes(trimmed as (typeof PRODUCT_TYPE_OPTIONS)[number])
-    ? (trimmed as (typeof PRODUCT_TYPE_OPTIONS)[number])
+  return PRODUCT_CATEGORY_OPTIONS.includes(trimmed as (typeof PRODUCT_CATEGORY_OPTIONS)[number])
+    ? (trimmed as (typeof PRODUCT_CATEGORY_OPTIONS)[number])
     : null
 }
 
-function productTypeDisplay(value: string | null | undefined) {
-  return normalizeProductType(value) ?? '미지정'
+function normalizeFoodTypeName(value: string | null | undefined): (typeof FOOD_TYPE_OPTIONS)[number] | null {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return null
+  return FOOD_TYPE_OPTIONS.includes(trimmed as (typeof FOOD_TYPE_OPTIONS)[number])
+    ? (trimmed as (typeof FOOD_TYPE_OPTIONS)[number])
+    : null
+}
+
+function foodTypeDisplay(value: string | null | undefined) {
+  return normalizeFoodTypeName(value) ?? '미지정'
+}
+
+function productCategoryDisplay(value: string | null | undefined) {
+  return normalizeProductCategory(value) ?? '미지정'
 }
 
 function uid() {
@@ -1031,7 +1046,8 @@ function emptyProductForm(product?: ProductOption | null): ProductFormState {
     product_name: product?.product_name ?? '',
     product_code: product?.product_code ?? '',
     report_number: product?.report_number ?? '',
-    product_type: normalizeProductType(product?.product_type) ?? '',
+    product_type: normalizeProductCategory(product?.product_type) ?? '완제품',
+    food_type_name: normalizeFoodTypeName(product?.food_type_name) ?? '',
     storage_method: product?.storage_method ?? '',
     storage_type: product?.storage_type ?? '',
     shelf_life: product?.shelf_life ?? '',
@@ -2177,6 +2193,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         product_name: productName,
         product_code: productForm.product_code.trim() || null,
         report_number: productForm.report_number.trim() || null,
+        product_type: normalizeProductCategory(productForm.product_type) ?? '완제품',
+        food_type_name: normalizeFoodTypeName(productForm.food_type_name),
         storage_method: productForm.storage_method.trim() || null,
         storage_type: productForm.storage_type.trim() || null,
         shelf_life: productForm.shelf_life.trim() || null,
@@ -6433,7 +6451,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             </span>
                           </td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{reportNumberText(product.report_number)}</td>
-                          <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{productTypeDisplay(product.product_type)}</td>
+                          <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{foodTypeDisplay(product.food_type_name)}</td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
                             {product.storage_method || product.storage_type || '-'}
                           </td>
@@ -6504,7 +6522,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 <div className="grid gap-3 md:grid-cols-2">
                   <InfoCell label="제품명" value={selected.product_name} />
                   <InfoCell label="품목보고번호" value={reportNumberText(selected.report_number)} />
-                  <InfoCell label="식품유형" value={selected.product_type || '-'} />
+                  <InfoCell label="식품유형" value={foodTypeDisplay(selected.food_type_name)} />
+                  <InfoCell label="제품구분" value={productCategoryDisplay(selected.product_type)} />
                   <InfoCell label="보관방법" value={selected.storage_method || selected.storage_type || '-'} />
                   <InfoCell
                     label="소비기한"
@@ -8621,12 +8640,25 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           </Field>
           <Field label="식품유형">
             <select
+              value={productForm.food_type_name}
+              onChange={(event) => setProductForm((prev) => ({ ...prev, food_type_name: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            >
+              <option value="">식품유형 선택</option>
+              {FOOD_TYPE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="제품구분">
+            <select
               value={productForm.product_type}
               onChange={(event) => setProductForm((prev) => ({ ...prev, product_type: event.target.value }))}
               className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
             >
-              <option value="">식품유형 선택</option>
-              {PRODUCT_TYPE_OPTIONS.map((option) => (
+              {PRODUCT_CATEGORY_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -8716,7 +8748,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               <InfoCell label="제품명" value={selectedManagedProduct.product_name} />
               <InfoCell label="제품코드" value={selectedManagedProduct.product_code || '-'} />
               <InfoCell label="품목보고번호" value={reportNumberText(selectedManagedProduct.report_number)} />
-              <InfoCell label="식품유형" value={productTypeDisplay(selectedManagedProduct.product_type)} />
+              <InfoCell label="식품유형" value={foodTypeDisplay(selectedManagedProduct.food_type_name)} />
+              <InfoCell label="제품구분" value={productCategoryDisplay(selectedManagedProduct.product_type)} />
               <InfoCell label="보관방법" value={selectedManagedProduct.storage_method || selectedManagedProduct.storage_type || '-'} />
               <InfoCell
                 label="소비기한"
@@ -8798,7 +8831,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             <div className="grid gap-3 rounded-2xl border border-gray-700 bg-gray-900/70 p-4 text-sm md:grid-cols-4">
               <InfoCell label="제품명" value={productRecipeProduct.product_name} />
               <InfoCell label="품목보고번호" value={reportNumberText(productRecipeProduct.report_number)} />
-              <InfoCell label="식품유형" value={productTypeDisplay(productRecipeProduct.product_type)} />
+              <InfoCell label="식품유형" value={foodTypeDisplay(productRecipeProduct.food_type_name)} />
               <div
                 className={`rounded-xl border px-3 py-2 ${
                   productRecipeDiff === 0

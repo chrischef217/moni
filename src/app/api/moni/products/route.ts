@@ -4,7 +4,8 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const PRODUCT_TYPE_OPTIONS = ['소스', '복합조미식품', '기타가공품'] as const
+const PRODUCT_CATEGORY_OPTIONS = ['완제품', '반제품'] as const
+const FOOD_TYPE_OPTIONS = ['소스', '복합조미식품', '기타가공품'] as const
 
 function text(value: unknown): string {
   if (typeof value !== 'string' && typeof value !== 'number') return ''
@@ -28,11 +29,19 @@ function boolValue(value: unknown, fallback = true): boolean {
   return fallback
 }
 
-function normalizeProductType(value: unknown): (typeof PRODUCT_TYPE_OPTIONS)[number] | null {
+function normalizeProductCategory(value: unknown): (typeof PRODUCT_CATEGORY_OPTIONS)[number] | null {
   const candidate = text(value)
   if (!candidate) return null
-  return PRODUCT_TYPE_OPTIONS.includes(candidate as (typeof PRODUCT_TYPE_OPTIONS)[number])
-    ? (candidate as (typeof PRODUCT_TYPE_OPTIONS)[number])
+  return PRODUCT_CATEGORY_OPTIONS.includes(candidate as (typeof PRODUCT_CATEGORY_OPTIONS)[number])
+    ? (candidate as (typeof PRODUCT_CATEGORY_OPTIONS)[number])
+    : null
+}
+
+function normalizeFoodTypeName(value: unknown): (typeof FOOD_TYPE_OPTIONS)[number] | null {
+  const candidate = text(value)
+  if (!candidate) return null
+  return FOOD_TYPE_OPTIONS.includes(candidate as (typeof FOOD_TYPE_OPTIONS)[number])
+    ? (candidate as (typeof FOOD_TYPE_OPTIONS)[number])
     : null
 }
 
@@ -60,6 +69,7 @@ export async function GET(request: NextRequest) {
           'product_code',
           'report_number',
           'product_type',
+          'food_type_name',
           'storage_method',
           'storage_type',
           'shelf_life',
@@ -113,6 +123,19 @@ export async function POST(request: NextRequest) {
     if (!productName) {
       return NextResponse.json({ ok: false, error: '제품명을 입력해 주세요.' }, { status: 400 })
     }
+    const rawProductType = text(body.product_type)
+    const normalizedCategory = normalizeProductCategory(rawProductType)
+    if (rawProductType && !normalizedCategory) {
+      return NextResponse.json({ ok: false, error: '제품구분은 완제품/반제품만 허용됩니다.' }, { status: 400 })
+    }
+    const requestedFoodType = text(body.food_type_name)
+    const normalizedFoodType = normalizeFoodTypeName(requestedFoodType)
+    if (requestedFoodType && !normalizedFoodType) {
+      return NextResponse.json(
+        { ok: false, error: '식품유형은 소스/복합조미식품/기타가공품 중 하나여야 합니다.' },
+        { status: 400 },
+      )
+    }
 
     const idFromBody = text(body.id)
     const payload = {
@@ -120,7 +143,8 @@ export async function POST(request: NextRequest) {
       product_name: productName,
       product_code: text(body.product_code) || null,
       report_number: text(body.report_number) || null,
-      product_type: '완제품',
+      product_type: normalizedCategory ?? '완제품',
+      food_type_name: normalizedFoodType,
       storage_method: text(body.storage_method) || null,
       storage_type: text(body.storage_type) || null,
       shelf_life: text(body.shelf_life) || null,
