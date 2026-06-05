@@ -364,6 +364,13 @@ type PackagingMaterialsPayload = {
   summary?: Partial<MaterialSummary>
 }
 
+function normalizeMaterialName(value: string | null | undefined): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
 type PackagingFormState = {
   id?: string
   material_name: string
@@ -2583,11 +2590,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   function productRecipeMaterialMatches(row: ProductRecipeDraftRow) {
-    const query = row.raw_material_name.trim().toLowerCase()
+    const query = normalizeMaterialName(row.raw_material_name)
     return activeRecipeRawMaterials
       .filter((material) => {
         const name = material.item_name.trim()
-        return name && (!query || name.toLowerCase().includes(query))
+        return name && (!query || normalizeMaterialName(name).includes(query))
       })
       .slice(0, 20)
   }
@@ -2621,8 +2628,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       return
     }
 
-    const normalizedName = rawName.toLowerCase()
-    const activeMatch = activeRecipeRawMaterials.find((material) => material.item_name.trim().toLowerCase() === normalizedName)
+    const normalizedName = normalizeMaterialName(rawName)
+    const activeMatch = activeRecipeRawMaterials.find(
+      (material) => normalizeMaterialName(material.item_name) === normalizedName,
+    )
     if (activeMatch) {
       updateProductRecipeRow(localId, {
         raw_material_name: activeMatch.item_name,
@@ -2636,7 +2645,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     const allMaterialsPayload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials?include_inactive=true')
     const allMaterials = allMaterialsPayload.materials ?? []
     const inactiveMatch = allMaterials.find(
-      (material) => material.is_active === false && material.item_name.trim().toLowerCase() === normalizedName,
+      (material) => material.is_active === false && normalizeMaterialName(material.item_name) === normalizedName,
     )
     if (inactiveMatch) {
       promptReactivateProductRecipeMaterial(localId, inactiveMatch)
@@ -2767,11 +2776,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     })
   }
 
-  async function loadProductRecipeDraftRows(product: ProductOption) {
+  async function loadProductRecipeDraftRows(
+    product: ProductOption,
+    preferredRecipeMaterialNames?: Map<string, string>,
+  ) {
     const [recipePayload, mappingPayload] = await Promise.all([
       readJson<RecipesPayload>(`/api/moni/recipes?product_id=${encodeURIComponent(String(product.id))}`),
       readJson<RecipeMaterialMappingsPayload>(
-        `/api/moni/raw-material-mapping?view=recipes&product_id=${encodeURIComponent(String(product.id))}`,
+        `/api/moni/raw-material-mapping?view=recipes&product_id=${encodeURIComponent(String(product.id))}&status=all`,
       ),
     ])
 
@@ -2785,7 +2797,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setProductRecipeRows(
       (recipePayload.recipes ?? []).map((recipe, index) => {
         const recipeKey = String(recipe.id)
-        const mappedName = mappingNameByRecipeId.has(recipeKey) ? (mappingNameByRecipeId.get(recipeKey) ?? '') : ''
+        const mappedName = mappingNameByRecipeId.has(recipeKey)
+          ? (mappingNameByRecipeId.get(recipeKey) ?? '')
+          : preferredRecipeMaterialNames?.get(recipeKey) ?? ''
         return makeProductRecipeDraftRow(recipe, index, mappedName)
       }),
     )
@@ -2870,11 +2884,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
       const savedRecipes = payload.recipes ?? []
       const recipeBySortOrder = new Map(savedRecipes.map((recipe) => [Number(recipe.sort_order ?? 0), recipe]))
+      const preferredRecipeMaterialNames = new Map<string, string>()
 
       for (const row of preparedRows) {
         if (!row.raw_material_name) continue
         const targetRecipe = recipeBySortOrder.get(row.sort_order)
         if (!targetRecipe?.id || !targetRecipe.food_type_id) continue
+        preferredRecipeMaterialNames.set(String(targetRecipe.id), row.raw_material_name)
 
         await readJson('/api/moni/raw-material-mapping', {
           method: 'POST',
@@ -2893,7 +2909,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         })
       }
 
-      await loadProductRecipeDraftRows(productRecipeProduct)
+      await loadProductRecipeDraftRows(productRecipeProduct, preferredRecipeMaterialNames)
       await Promise.all([loadRecipeMaterialMappings(), loadLatestRecipeMappingHistory()])
       if (selectedRecipeProductId === String(productRecipeProduct.id)) {
         await loadRecipes(selectedRecipeProductId)
@@ -9123,17 +9139,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   {productRecipeRows.map((row, index) => {
                     const foodTypeMatches = productRecipeFoodTypeMatches(row)
                     const materialMatches = productRecipeMaterialMatches(row)
-                    const rawQuery = row.raw_material_name.trim().toLowerCase()
+                    const rawQuery = normalizeMaterialName(row.raw_material_name)
                     const inactiveSameName = rawQuery
                       ? recipeRawMaterials.find(
                           (material) =>
                             material.is_active === false &&
-                            material.item_name.trim().toLowerCase() === rawQuery,
+                            normalizeMaterialName(material.item_name) === rawQuery,
                         ) ?? null
                       : null
                     const totalMaterialMatchCount = rawQuery
                       ? activeRecipeRawMaterials.filter((material) =>
-                          material.item_name.toLowerCase().includes(rawQuery),
+                          normalizeMaterialName(material.item_name).includes(rawQuery),
                         ).length
                       : activeRecipeRawMaterials.length
                     return (
