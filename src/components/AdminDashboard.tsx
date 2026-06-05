@@ -6673,8 +6673,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     {productCatalog.map((product) => {
                       const shelfLifeText =
                         product.shelf_life_days !== null && product.shelf_life_days !== undefined
-                          ? `${formatNumber(product.shelf_life_days)}일`
-                          : product.shelf_life || '-'
+                          ? `${formatNumber(product.shelf_life_days)}개월`
+                          : '미등록'
 
                       return (
                         <tr
@@ -6766,8 +6766,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     label="소비기한"
                     value={
                       selected.shelf_life_days !== null && selected.shelf_life_days !== undefined
-                        ? `${formatNumber(selected.shelf_life_days)}일`
-                        : selected.shelf_life || '-'
+                        ? `${formatNumber(selected.shelf_life_days)}개월`
+                        : '미등록'
                     }
                   />
                   <InfoCell label="패킹단위" value={selected.product_spec || selected.packaging_material || '-'} />
@@ -8909,13 +8909,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
             />
           </Field>
-          <Field label="소비기한(일)">
+          <Field label="소비기한(월)">
             <input
               type="number"
               min="0"
               step="1"
               value={productForm.shelf_life_days}
               onChange={(event) => setProductForm((prev) => ({ ...prev, shelf_life_days: event.target.value }))}
+              placeholder="예: 12"
               className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
             />
           </Field>
@@ -8992,8 +8993,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 label="소비기한"
                 value={
                   selectedManagedProduct.shelf_life_days !== null && selectedManagedProduct.shelf_life_days !== undefined
-                    ? `${formatNumber(selectedManagedProduct.shelf_life_days)}일`
-                    : selectedManagedProduct.shelf_life || '-'
+                    ? `${formatNumber(selectedManagedProduct.shelf_life_days)}개월`
+                    : '미등록'
                 }
               />
               <InfoCell label="기준중량(g)" value={`${formatNumber(selectedManagedProduct.weight_g)}g`} />
