@@ -4955,7 +4955,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     const statusCode = normalizeStatusCode(record.status)
                     const plannedUnitText = formatPlannedUnitForRecord(record)
                     const productMeta = findProductMeta(record)
-
                     return (
                       <tr key={record.id} className="border-b border-gray-800/80">
                         <td className="px-3 py-3 font-mono text-gray-300">{record.lot_number || '-'}</td>
@@ -6975,15 +6974,15 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     return (
       <div className="space-y-4">
         <section className="rounded-2xl border border-gray-800 bg-gray-800/80 p-5 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-            <div className="xl:w-64 xl:shrink-0">
-              <h2 className="text-xl font-semibold text-white">생산일보</h2>
-              <p className="mt-1 text-sm text-gray-400">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="whitespace-nowrap text-xl font-bold text-white">생산일보</h2>
+              <p className="text-sm text-gray-400">
                 생산완료된 작업만 조회/상세/수정/되돌리기/인쇄할 수 있습니다.
               </p>
             </div>
-            <div className="flex-1 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[160px_180px_180px_minmax(220px,1fr)_minmax(180px,1fr)_auto]">
+            <div className="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                 <Field label="기간 구분" className="xl:min-w-[160px]">
                   <select
                     value={dailyPeriodType}
@@ -7034,7 +7033,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     className="h-[42px] w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
                   />
                 </Field>
-                <div className="flex flex-wrap items-end justify-start gap-2 pt-6 xl:justify-end">
+                <div className="col-span-full flex flex-wrap items-end justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => void loadProductionRecords(productionDateFrom, productionDateTo)}
@@ -7079,11 +7078,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               <EmptyState title="조건에 맞는 생산일보가 없습니다" description="기간/제품/LOT 조건을 조정해 다시 조회해 주세요." />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-[1280px] w-full table-auto text-left text-sm">
+            <div className="overflow-x-auto rounded-lg">
+              <table className="min-w-full w-full table-auto text-left text-sm">
                 <thead className="bg-gray-900/60 text-gray-300">
                   <tr className="border-b border-gray-700">
-                    <th className="w-12 px-3 py-3 text-center font-medium whitespace-nowrap">
+                    <th className="w-8 px-3 py-3 text-center font-medium whitespace-nowrap">
                       <input
                         type="checkbox"
                         checked={allChecked}
@@ -7097,13 +7096,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         className="size-4 rounded border-gray-600 bg-gray-800 text-green-500"
                       />
                     </th>
-                    <th className="w-[110px] px-3 py-3 font-medium whitespace-nowrap">생산일자</th>
-                    <th className="w-[130px] px-3 py-3 font-medium whitespace-nowrap">LOT</th>
-                    <th className="w-[150px] px-3 py-3 font-medium whitespace-nowrap">품목보고번호</th>
-                    <th className="w-[220px] px-3 py-3 font-medium whitespace-nowrap">제품명</th>
-                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">예정량</th>
-                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">완료량</th>
-                    <th className="min-w-[360px] px-3 py-3 font-medium whitespace-nowrap">작업</th>
+                    <th className="w-28 px-3 py-3 font-medium whitespace-nowrap">생산일자</th>
+                    <th className="w-32 px-3 py-3 font-medium whitespace-nowrap">LOT</th>
+                    <th className="min-w-[160px] px-3 py-3 font-medium whitespace-nowrap">제품명</th>
+                    <th className="w-24 px-3 py-3 text-right font-medium whitespace-nowrap">예정량</th>
+                    <th className="w-24 px-3 py-3 text-right font-medium whitespace-nowrap">완료량</th>
+                    <th className="w-40 px-3 py-3 font-medium whitespace-nowrap">작업</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -7111,7 +7109,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     const planned = Number(record.planned_quantity_g ?? 0)
                     const actual = Number(record.actual_quantity_g ?? 0)
                     const checked = dailySelectedIds.includes(record.id)
-                    const productMeta = findProductMeta(record)
 
                     return (
                       <tr key={record.id} className="border-b border-gray-800/80 hover:bg-gray-900/30">
@@ -7129,7 +7126,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             {record.lot_number || '-'}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{reportNumberText(productMeta?.report_number)}</td>
                         <td className="px-3 py-3 text-white whitespace-nowrap">
                           <span className="inline-block max-w-[210px] truncate align-middle" title={record.product_name || '-'}>
                             {record.product_name || '-'}
@@ -7138,25 +7134,28 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">{formatNumber(planned)}g</td>
                         <td className="px-3 py-3 text-right text-green-400 whitespace-nowrap">{formatNumber(actual)}g</td>
                         <td className="px-3 py-3">
-                          <div className="flex min-w-[360px] flex-wrap gap-2">
+                          <div className="flex items-center gap-1">
                             <button
                               type="button"
                               onClick={() => setSelectedRecord(record)}
-                              className="whitespace-nowrap rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              title="상세보기"
+                              className="whitespace-nowrap rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                             >
-                              상세보기
+                              상세
                             </button>
                             <button
                               type="button"
                               onClick={() => printWorkOrder(record)}
-                              className="whitespace-nowrap rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              title="작업지시서 보기"
+                              className="whitespace-nowrap rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                             >
-                              작업지시서 보기
+                              지시서
                             </button>
                             <button
                               type="button"
                               onClick={() => openCompletionModalV2(record)}
-                              className="whitespace-nowrap rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              title="수정"
+                              className="whitespace-nowrap rounded-md border border-gray-700 px-2 py-1 text-xs text-blue-300 hover:border-blue-500 hover:text-blue-200"
                             >
                               수정
                             </button>
@@ -7164,14 +7163,16 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               type="button"
                               onClick={() => void revertDailyReport(record)}
                               disabled={productionActionBusy}
-                              className="whitespace-nowrap rounded-lg border border-red-800/70 px-3 py-1.5 text-xs text-red-200 hover:border-red-600 hover:text-red-100 disabled:opacity-60"
+                              title="삭제"
+                              className="whitespace-nowrap rounded-md border border-red-800/70 px-2 py-1 text-xs text-red-300 hover:border-red-600 hover:text-red-100 disabled:opacity-60"
                             >
                               삭제
                             </button>
                             <button
                               type="button"
                               onClick={() => openWindow(`/api/moni/production-records/${record.id}/pdf`)}
-                              className="whitespace-nowrap rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              title="인쇄"
+                              className="whitespace-nowrap rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                             >
                               인쇄
                             </button>
