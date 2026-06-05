@@ -1210,6 +1210,30 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [recipeMappingSelectedScope, setRecipeMappingSelectedScope] = useState<'recipe' | 'product' | 'global'>('recipe')
   const [recipeMappingSaving, setRecipeMappingSaving] = useState(false)
   const [recipeMappingMessage, setRecipeMappingMessage] = useState<{ tone: 'success' | 'error' | 'warning'; text: string } | null>(null)
+  const [showQuickMaterialModal, setShowQuickMaterialModal] = useState(false)
+  const [quickMaterialSaving, setQuickMaterialSaving] = useState(false)
+  const [quickMaterialMessage, setQuickMaterialMessage] = useState<{ tone: 'success' | 'error' | 'warning'; text: string } | null>(null)
+  const [quickMaterialForm, setQuickMaterialForm] = useState({
+    item_name: '',
+    item_code: '',
+    supplier: '',
+    unit: 'g',
+    unit_price: '',
+    current_stock: '0',
+    note: '',
+  })
+
+  function resetQuickMaterialForm() {
+    setQuickMaterialForm({
+      item_name: '',
+      item_code: '',
+      supplier: '',
+      unit: 'g',
+      unit_price: '',
+      current_stock: '0',
+      note: '',
+    })
+  }
 
   const [materialsLoading, setMaterialsLoading] = useState(true)
   const [materialsError, setMaterialsError] = useState('')
@@ -2138,6 +2162,48 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setRecipeMappingHistoryWarning(error instanceof Error ? error.message : '되돌리기 처리에 실패했습니다.')
     } finally {
       setRecipeMappingUndoing(false)
+    }
+  }
+
+  async function saveQuickRawMaterial() {
+    const itemName = quickMaterialForm.item_name.trim()
+    if (!itemName) {
+      setQuickMaterialMessage({ tone: 'error', text: '원재료명은 필수입니다.' })
+      return
+    }
+
+    setQuickMaterialSaving(true)
+    setQuickMaterialMessage(null)
+    try {
+      await readJson<{ ok?: boolean; material?: RawMaterialRow }>('/api/moni/raw-materials', {
+        method: 'POST',
+        body: JSON.stringify({
+          item_name: itemName,
+          item_code: quickMaterialForm.item_code.trim() || undefined,
+          supplier: quickMaterialForm.supplier.trim() || undefined,
+          unit: quickMaterialForm.unit,
+          unit_price: toNumber(quickMaterialForm.unit_price) ?? undefined,
+          current_stock_g: 0,
+          note: quickMaterialForm.note.trim() || undefined,
+        }),
+      })
+
+      await loadRecipeMaterialMappings()
+      setRecipeMappingMaterialQuery(itemName)
+      setRecipeMappingSelectedMaterial(itemName)
+      setRecipeMappingCandidateOpen(true)
+      setRecipeMappingHighlightIndex(0)
+      setShowQuickMaterialModal(false)
+      resetQuickMaterialForm()
+      setQuickMaterialMessage(null)
+      setRecipeMappingMessage({ tone: 'success', text: '원재료를 등록했습니다. 등록한 원재료를 바로 선택할 수 있습니다.' })
+    } catch (error) {
+      setQuickMaterialMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '원재료 등록 중 오류가 발생했습니다.',
+      })
+    } finally {
+      setQuickMaterialSaving(false)
     }
   }
 
@@ -5649,6 +5715,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           setRecipeMappingMaterialQuery('')
           setRecipeMappingCandidateOpen(false)
           setRecipeMappingHighlightIndex(-1)
+          setShowQuickMaterialModal(false)
         }}
       >
         {selectedRecipeMappingRow ? (
@@ -5664,7 +5731,21 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               </p>
             </div>
 
-            <Field label="사용 중인 원재료 검색">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-200">사용 중인 원재료 검색</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQuickMaterialModal(true)
+                  setQuickMaterialMessage(null)
+                }}
+                className="rounded-lg border border-green-700/70 px-3 py-1.5 text-xs font-semibold text-green-200 hover:border-green-500 hover:text-white"
+              >
+                빠른 신규 원재료 등록
+              </button>
+            </div>
+
+            <Field label="">
               <div className="space-y-2">
                 <input
                   type="text"
@@ -5765,6 +5846,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   setRecipeMappingMessage(null)
                   setRecipeMappingCandidateOpen(false)
                   setRecipeMappingHighlightIndex(-1)
+                  setShowQuickMaterialModal(false)
                 }}
                 className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
               >
@@ -5781,6 +5863,118 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </div>
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={showQuickMaterialModal}
+        title="빠른 신규 원재료 등록"
+        description="원재료 마스터만 등록합니다. 입고 기록은 생성되지 않습니다."
+        onClose={() => {
+          setShowQuickMaterialModal(false)
+          setQuickMaterialMessage(null)
+          resetQuickMaterialForm()
+        }}
+      >
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="원재료명">
+              <input
+                type="text"
+                value={quickMaterialForm.item_name}
+                onChange={(event) => setQuickMaterialForm((prev) => ({ ...prev, item_name: event.target.value }))}
+                placeholder="예: 대파(국내산)"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="원재료 코드">
+              <input
+                type="text"
+                value={quickMaterialForm.item_code}
+                onChange={(event) => setQuickMaterialForm((prev) => ({ ...prev, item_code: event.target.value }))}
+                placeholder="선택 입력"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="매입처">
+              <input
+                type="text"
+                value={quickMaterialForm.supplier}
+                onChange={(event) => setQuickMaterialForm((prev) => ({ ...prev, supplier: event.target.value }))}
+                placeholder="선택 입력"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="단위">
+              <select
+                value={quickMaterialForm.unit}
+                onChange={(event) => setQuickMaterialForm((prev) => ({ ...prev, unit: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="g">g</option>
+                <option value="kg">kg</option>
+                <option value="ea">ea</option>
+              </select>
+            </Field>
+            <Field label="단가">
+              <input
+                type="number"
+                min={0}
+                step="any"
+                value={quickMaterialForm.unit_price}
+                onChange={(event) => setQuickMaterialForm((prev) => ({ ...prev, unit_price: event.target.value }))}
+                placeholder="선택 입력"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="현재재고">
+              <input
+                type="number"
+                min={0}
+                step="any"
+                value={quickMaterialForm.current_stock}
+                onChange={(event) => setQuickMaterialForm((prev) => ({ ...prev, current_stock: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="비고" className="md:col-span-2">
+              <textarea
+                value={quickMaterialForm.note}
+                onChange={(event) => setQuickMaterialForm((prev) => ({ ...prev, note: event.target.value }))}
+                rows={3}
+                placeholder="선택 입력"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+          </div>
+
+          {quickMaterialMessage ? (
+            <div className={`rounded-xl border px-4 py-3 text-sm ${messageToneClasses(quickMaterialMessage.tone)}`}>
+              {quickMaterialMessage.text}
+            </div>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowQuickMaterialModal(false)
+                setQuickMaterialMessage(null)
+                resetQuickMaterialForm()
+              }}
+              className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              onClick={() => void saveQuickRawMaterial()}
+              disabled={quickMaterialSaving || !quickMaterialForm.item_name.trim()}
+              className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+            >
+              {quickMaterialSaving ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       <Modal
