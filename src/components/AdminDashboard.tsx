@@ -371,6 +371,7 @@ type RawMaterialTransactionRow = {
   material_name?: string
   tx_date: string
   tx_type: string
+  tx_type_code?: string
   counterparty: string
   inbound_g: number
   outbound_g: number
@@ -624,6 +625,19 @@ const EMPTY_VALIDATION: FieldValidation = {
 
 const EMPTY_MATERIAL_SUMMARY: MaterialSummary = { total: 0, active: 0, inactive: 0 }
 const PACKAGING_TYPE_OPTIONS = ['포장재', '라벨', '카톤박스'] as const
+const PRODUCT_TYPE_OPTIONS = ['소스', '복합조미식품', '기타가공품'] as const
+
+function normalizeProductType(value: string | null | undefined): (typeof PRODUCT_TYPE_OPTIONS)[number] | null {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return null
+  return PRODUCT_TYPE_OPTIONS.includes(trimmed as (typeof PRODUCT_TYPE_OPTIONS)[number])
+    ? (trimmed as (typeof PRODUCT_TYPE_OPTIONS)[number])
+    : null
+}
+
+function productTypeDisplay(value: string | null | undefined) {
+  return normalizeProductType(value) ?? '미지정'
+}
 
 function uid() {
   return `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
@@ -1001,7 +1015,7 @@ function emptyProductForm(product?: ProductOption | null): ProductFormState {
     product_name: product?.product_name ?? '',
     product_code: product?.product_code ?? '',
     report_number: product?.report_number ?? '',
-    product_type: product?.product_type ?? '완제품',
+    product_type: normalizeProductType(product?.product_type) ?? '',
     storage_method: product?.storage_method ?? '',
     storage_type: product?.storage_type ?? '',
     shelf_life: product?.shelf_life ?? '',
@@ -1357,6 +1371,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [productForm, setProductForm] = useState<ProductFormState>(emptyProductForm())
   const [productSaving, setProductSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
+  const [showProductDetailModal, setShowProductDetailModal] = useState(false)
   const [productDetailUnits, setProductDetailUnits] = useState<ProductionUnit[]>([])
   const [productDetailUnitsLoading, setProductDetailUnitsLoading] = useState(false)
   const [productActionMessage, setProductActionMessage] = useState<{
@@ -2095,8 +2110,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setShowProductModal(true)
   }
 
+  function openProductDetailModal(product: ProductOption) {
+    setSelectedProductId(String(product.id))
+    setShowProductDetailModal(true)
+  }
+
   function openEditProductModal(product: ProductOption) {
     setProductActionMessage(null)
+    setSelectedProductId(String(product.id))
     setProductForm(emptyProductForm(product))
     setShowProductModal(true)
   }
@@ -2108,6 +2129,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       return
     }
 
+    const normalizedProductType = normalizeProductType(productForm.product_type)
+    if (!normalizedProductType) {
+      setProductActionMessage({ tone: 'error', text: '식품유형을 선택해 주세요. (소스/복합조미식품/기타가공품)' })
+      return
+    }
+
     setProductSaving(true)
     setProductActionMessage(null)
     try {
@@ -2115,7 +2142,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         product_name: productName,
         product_code: productForm.product_code.trim() || null,
         report_number: productForm.report_number.trim() || null,
-        product_type: productForm.product_type.trim() || null,
+        product_type: normalizedProductType,
         storage_method: productForm.storage_method.trim() || null,
         storage_type: productForm.storage_type.trim() || null,
         shelf_life: productForm.shelf_life.trim() || null,
@@ -2799,7 +2826,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   async function editSububuDetailRow(row: RawMaterialTransactionRow) {
-    if (row.tx_type !== '입고') {
+    const typeCode = String(row.tx_type_code ?? '').toUpperCase()
+    const isInbound = typeCode ? typeCode === 'INBOUND' : row.tx_type === '입고'
+    if (!isInbound) {
       setSububuDetailError('생산확정으로 생성된 소모 내역은 수정할 수 없습니다.')
       return
     }
@@ -2844,7 +2873,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   async function deleteSububuDetailRow(row: RawMaterialTransactionRow) {
-    if (row.tx_type !== '입고') {
+    const typeCode = String(row.tx_type_code ?? '').toUpperCase()
+    const isInbound = typeCode ? typeCode === 'INBOUND' : row.tx_type === '입고'
+    if (!isInbound) {
       setSububuDetailError('생산확정으로 생성된 소모 내역은 삭제할 수 없습니다.')
       return
     }
@@ -6116,7 +6147,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           </div>
         ) : null}
 
-        <div className="grid gap-5 xl:grid-cols-[1.1fr_1fr]">
+        <div className="grid gap-5">
           <SectionCard
             title="제품 목록"
             description="생산일보 기준으로 사용할 제품 마스터를 조회하고 관리합니다."
@@ -6138,7 +6169,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               <EmptyState title="등록된 제품이 없습니다" description="제품 신규 등록 버튼으로 첫 제품을 추가해 주세요." />
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-[940px] w-full text-left text-sm">
+                <table className="min-w-[1120px] w-full text-left text-sm">
                   <thead className="text-gray-400">
                     <tr className="border-b border-gray-700">
                       <th className="px-3 py-2 font-medium whitespace-nowrap">제품명</th>
@@ -6154,7 +6185,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   </thead>
                   <tbody>
                     {productCatalog.map((product) => {
-                      const isSelected = String(product.id) === selectedProductId
                       const shelfLifeText =
                         product.shelf_life_days !== null && product.shelf_life_days !== undefined
                           ? `${formatNumber(product.shelf_life_days)}일`
@@ -6163,10 +6193,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                       return (
                         <tr
                           key={product.id}
-                          className={`border-b border-gray-800/80 cursor-pointer transition ${
-                            isSelected ? 'bg-green-500/10' : 'hover:bg-gray-700/20'
-                          }`}
-                          onClick={() => setSelectedProductId(String(product.id))}
+                          className="border-b border-gray-800/80 cursor-pointer transition hover:bg-gray-700/20"
+                          onClick={() => openProductDetailModal(product)}
                         >
                           <td className="px-3 py-3 text-white whitespace-nowrap">
                             <span className="inline-block max-w-[220px] truncate align-middle" title={product.product_name}>
@@ -6174,7 +6202,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             </span>
                           </td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{reportNumberText(product.report_number)}</td>
-                          <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{product.product_type || '-'}</td>
+                          <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{productTypeDisplay(product.product_type)}</td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
                             {product.storage_method || product.storage_type || '-'}
                           </td>
@@ -6195,16 +6223,28 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             )}
                           </td>
                           <td className="px-3 py-3 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                openEditProductModal(product)
-                              }}
-                              className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
-                            >
-                              수정
-                            </button>
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  openProductDetailModal(product)
+                                }}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                상세
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  openEditProductModal(product)
+                                }}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                수정
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -6215,7 +6255,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             )}
           </SectionCard>
 
-          <SectionCard title="제품 상세정보" description={selected ? selected.product_name : '제품을 선택해 주세요.'}>
+          <div className="hidden">
             {!selected ? (
               <EmptyState title="선택된 제품이 없습니다" description="왼쪽 제품 목록에서 제품을 선택하면 상세정보가 표시됩니다." />
             ) : (
@@ -6288,7 +6328,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 <p className="text-xs text-gray-500">제조방법설명서 기능은 추후 구현 예정입니다.</p>
               </div>
             )}
-          </SectionCard>
+          </div>
         </div>
       </div>
     )
@@ -7040,7 +7080,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[1320px] w-full table-auto text-left text-sm">
+              <table className="min-w-[1280px] w-full table-auto text-left text-sm">
                 <thead className="bg-gray-900/60 text-gray-300">
                   <tr className="border-b border-gray-700">
                     <th className="w-12 px-3 py-3 text-center font-medium whitespace-nowrap">
@@ -7061,25 +7101,15 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     <th className="w-[130px] px-3 py-3 font-medium whitespace-nowrap">LOT</th>
                     <th className="w-[150px] px-3 py-3 font-medium whitespace-nowrap">품목보고번호</th>
                     <th className="w-[220px] px-3 py-3 font-medium whitespace-nowrap">제품명</th>
-                    <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">생산단위</th>
                     <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">예정량</th>
                     <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">완료량</th>
-                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">불량량</th>
-                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">샘플량</th>
-                    <th className="w-[100px] px-3 py-3 text-right font-medium whitespace-nowrap">로스량</th>
-                    <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">상태</th>
-                    <th className="w-[90px] px-3 py-3 text-center font-medium whitespace-nowrap">원료차감</th>
-                    <th className="min-w-[280px] px-3 py-3 font-medium whitespace-nowrap">작업</th>
+                    <th className="min-w-[360px] px-3 py-3 font-medium whitespace-nowrap">작업</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dailyReportRows.map((record) => {
-                    const statusCode = normalizeStatusCode(record.status)
                     const planned = Number(record.planned_quantity_g ?? 0)
                     const actual = Number(record.actual_quantity_g ?? 0)
-                    const defect = Number(record.defect_quantity_g ?? 0)
-                    const sample = Number(record.sample_quantity_g ?? 0)
-                    const loss = Math.max(planned - (actual + defect + sample), 0)
                     const checked = dailySelectedIds.includes(record.id)
                     const productMeta = findProductMeta(record)
 
@@ -7105,28 +7135,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             {record.product_name || '-'}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-center text-gray-200 whitespace-nowrap">{record.production_unit_name || '-'}</td>
                         <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">{formatNumber(planned)}g</td>
                         <td className="px-3 py-3 text-right text-green-400 whitespace-nowrap">{formatNumber(actual)}g</td>
-                        <td className="px-3 py-3 text-right text-amber-300 whitespace-nowrap">{formatNumber(defect)}g</td>
-                        <td className="px-3 py-3 text-right text-blue-300 whitespace-nowrap">{formatNumber(sample)}g</td>
-                        <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">{formatNumber(loss)}g</td>
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-                              statusCode === 'confirmed'
-                                ? 'bg-green-500/15 text-green-300'
-                                : 'bg-blue-500/15 text-blue-300'
-                            }`}
-                          >
-                            {statusCode === 'confirmed' ? '확정' : '생산완료'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 text-center text-gray-200 whitespace-nowrap">
-                          {statusCode === 'confirmed' ? '반영' : '미반영'}
-                        </td>
                         <td className="px-3 py-3">
-                          <div className="flex min-w-[280px] flex-wrap gap-2">
+                          <div className="flex min-w-[360px] flex-wrap gap-2">
                             <button
                               type="button"
                               onClick={() => setSelectedRecord(record)}
@@ -8365,11 +8377,18 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             />
           </Field>
           <Field label="식품유형">
-            <input
+            <select
               value={productForm.product_type}
               onChange={(event) => setProductForm((prev) => ({ ...prev, product_type: event.target.value }))}
               className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-            />
+            >
+              <option value="">식품유형 선택</option>
+              {PRODUCT_TYPE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="보관방법">
             <input
@@ -8438,6 +8457,87 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             {productSaving ? '저장 중...' : '저장'}
           </button>
         </div>
+      </Modal>
+
+      <Modal
+        open={showProductDetailModal}
+        title="제품 상세정보"
+        description={selectedManagedProduct ? selectedManagedProduct.product_name : '제품을 선택해 주세요.'}
+        onClose={() => setShowProductDetailModal(false)}
+      >
+        {!selectedManagedProduct ? (
+          <EmptyState title="선택된 제품이 없습니다" description="제품 목록에서 상세를 눌러 확인해 주세요." />
+        ) : (
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <InfoCell label="제품명" value={selectedManagedProduct.product_name} />
+              <InfoCell label="제품코드" value={selectedManagedProduct.product_code || '-'} />
+              <InfoCell label="품목보고번호" value={reportNumberText(selectedManagedProduct.report_number)} />
+              <InfoCell label="식품유형" value={productTypeDisplay(selectedManagedProduct.product_type)} />
+              <InfoCell label="보관방법" value={selectedManagedProduct.storage_method || selectedManagedProduct.storage_type || '-'} />
+              <InfoCell
+                label="소비기한"
+                value={
+                  selectedManagedProduct.shelf_life_days !== null && selectedManagedProduct.shelf_life_days !== undefined
+                    ? `${formatNumber(selectedManagedProduct.shelf_life_days)}일`
+                    : selectedManagedProduct.shelf_life || '-'
+                }
+              />
+              <InfoCell label="기준중량(g)" value={`${formatNumber(selectedManagedProduct.weight_g)}g`} />
+              <InfoCell label="패킹단위" value={selectedManagedProduct.product_spec || selectedManagedProduct.packaging_material || '-'} />
+              <InfoCell label="활성 여부" value={selectedManagedProduct.is_active === false ? '비활성' : '활성'} />
+            </div>
+
+            <div className="rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-white">생산단위</p>
+                {productDetailUnitsLoading ? <span className="text-xs text-gray-400">불러오는 중...</span> : null}
+              </div>
+              {productDetailUnits.length === 0 ? (
+                <p className="text-sm text-gray-400">등록된 생산단위가 없습니다.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {productDetailUnits.map((unit) => (
+                    <span key={unit.id} className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-xs text-gray-200">
+                      {unit.unit_name} ({formatNumber(unit.unit_weight_g)}g)
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProductDetailModal(false)
+                  openEditProductModal(selectedManagedProduct)
+                }}
+                className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-green-500 hover:text-white"
+              >
+                수정
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProductDetailModal(false)
+                  setProductionTab('prod-recipe-mapping')
+                  setRecipeMappingProductQuery(selectedManagedProduct.product_name)
+                }}
+                className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-green-500 hover:text-white"
+              >
+                레시피 관리
+              </button>
+              <button
+                type="button"
+                onClick={() => window.alert('제조방법설명서는 추후 구현 예정입니다.')}
+                className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-green-500 hover:text-white"
+              >
+                제조방법설명서
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal

@@ -4,9 +4,11 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const PRODUCT_TYPE_OPTIONS = ['소스', '복합조미식품', '기타가공품'] as const
+
 function text(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
+  if (typeof value !== 'string' && typeof value !== 'number') return null
+  const trimmed = String(value).trim()
   return trimmed.length > 0 ? trimmed : null
 }
 
@@ -29,6 +31,14 @@ function boolValue(value: unknown, fallback = true): boolean {
   return fallback
 }
 
+function normalizeProductType(value: unknown): (typeof PRODUCT_TYPE_OPTIONS)[number] | null {
+  const candidate = text(value)
+  if (!candidate) return null
+  return PRODUCT_TYPE_OPTIONS.includes(candidate as (typeof PRODUCT_TYPE_OPTIONS)[number])
+    ? (candidate as (typeof PRODUCT_TYPE_OPTIONS)[number])
+    : null
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = String(params.id ?? '').trim()
@@ -41,11 +51,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
     }
 
+    const normalizedProductType = normalizeProductType(body.product_type)
+    if (!normalizedProductType) {
+      return NextResponse.json({ ok: false, error: '식품유형은 소스/복합조미식품/기타가공품 중 하나여야 합니다.' }, { status: 400 })
+    }
+
     const payload: Record<string, unknown> = {
       product_name: text(body.product_name),
       product_code: text(body.product_code),
       report_number: text(body.report_number),
-      product_type: text(body.product_type),
+      product_type: normalizedProductType,
       product_spec: text(body.product_spec),
       weight_g: numberValue(body.weight_g),
       storage_method: text(body.storage_method),

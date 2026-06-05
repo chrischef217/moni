@@ -24,10 +24,14 @@ function nullableNumber(value: unknown): number | null {
   return null
 }
 
-function normalizeType(value: string): '입고' | '소모' {
+function normalizeTypeCode(value: string): 'INBOUND' | 'OUTBOUND' {
   const raw = value.toUpperCase()
-  if (raw.includes('INBOUND') || raw.includes('입고')) return '입고'
-  return '소모'
+  if (raw.includes('INBOUND') || raw.includes('입고')) return 'INBOUND'
+  return 'OUTBOUND'
+}
+
+function normalizeTypeLabel(typeCode: 'INBOUND' | 'OUTBOUND'): '입고' | '소모' {
+  return typeCode === 'INBOUND' ? '입고' : '소모'
 }
 
 function resolveDate(row: TxRow): string {
@@ -35,7 +39,7 @@ function resolveDate(row: TxRow): string {
 }
 
 function isInbound(txType: string) {
-  return txType.toUpperCase().includes('INBOUND')
+  return normalizeTypeCode(txType) === 'INBOUND'
 }
 
 export async function GET(request: NextRequest) {
@@ -57,18 +61,24 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query
     if (error) throw new Error(error.message || '원재료 거래내역 조회에 실패했습니다.')
 
-    let runningBalance = 0
+    const runningBalanceByMaterial = new Map<string, number>()
     const normalizedKeyword = materialName.trim().toLowerCase()
     const allRows = ((data ?? []) as TxRow[]).map((row) => {
       const materialLabel = text(row.raw_material_name) || text(row.item_name)
       const qtyG = numberValue(row.quantity_g ?? row.quantity ?? 0)
-      const txType = normalizeType(text(row.txn_type))
-      const inboundG = txType === '입고' ? qtyG : 0
-      const outboundG = txType === '소모' ? qtyG : 0
-      runningBalance += inboundG - outboundG
+      const txTypeCode = normalizeTypeCode(text(row.txn_type))
+      const txType = normalizeTypeLabel(txTypeCode)
+      const inboundG = txTypeCode === 'INBOUND' ? qtyG : 0
+      const outboundG = txTypeCode === 'OUTBOUND' ? qtyG : 0
       const note = text(row.note)
+
+      const materialKey = materialLabel || '__unknown__'
+      const prevBalance = runningBalanceByMaterial.get(materialKey) ?? 0
+      const nextBalance = prevBalance + inboundG - outboundG
+      runningBalanceByMaterial.set(materialKey, nextBalance)
+
       const useTarget =
-        txType === '입고'
+        txTypeCode === 'INBOUND'
           ? text(row.supplier) || '입고'
           : note.includes('production_record_id=') || note.includes('lot_number=')
             ? note
@@ -79,10 +89,11 @@ export async function GET(request: NextRequest) {
         material_name: materialLabel,
         tx_date: resolveDate(row),
         tx_type: txType,
+        tx_type_code: txTypeCode,
         counterparty: useTarget,
         inbound_g: inboundG,
         outbound_g: outboundG,
-        balance_g: numberValue(row.total_quantity_g) || runningBalance,
+        balance_g: numberValue(row.total_quantity_g) || nextBalance,
         note,
       }
     })
@@ -152,6 +163,7 @@ export async function POST(request: NextRequest) {
       current_stock_g?: number | string | null
       business_id?: string | null
     }
+
     const currentStockG = numberValue(material.current_stock_g)
     const nextStockG = currentStockG + quantityG
     const businessId = text(body.business_id) || text(material.business_id) || 'default'
@@ -235,10 +247,7 @@ export async function PATCH(request: NextRequest) {
 
     const txRow = txResult.data as TxRow
     if (!isInbound(text(txRow.txn_type))) {
-      return NextResponse.json(
-        { ok: false, error: '생산확정으로 생성된 출고/소모 내역은 수정할 수 없습니다.' },
-        { status: 409 },
-      )
+      return NextResponse.json({ ok: false, error: '생산확정으로 생성된 소모 내역은 수정할 수 없습니다.' }, { status: 409 })
     }
 
     const rawMaterialId = text(txRow.raw_material_id)
@@ -321,10 +330,7 @@ export async function DELETE(request: NextRequest) {
 
     const txRow = txResult.data as TxRow
     if (!isInbound(text(txRow.txn_type))) {
-      return NextResponse.json(
-        { ok: false, error: '생산확정으로 생성된 출고/소모 내역은 삭제할 수 없습니다.' },
-        { status: 409 },
-      )
+      return NextResponse.json({ ok: false, error: '생산확정으로 생성된 소모 내역은 삭제할 수 없습니다.' }, { status: 409 })
     }
 
     const rawMaterialId = text(txRow.raw_material_id)
