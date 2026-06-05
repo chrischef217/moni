@@ -51,16 +51,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
     }
 
-    const normalizedProductType = normalizeProductType(body.product_type)
-    if (!normalizedProductType) {
-      return NextResponse.json({ ok: false, error: '식품유형은 소스/복합조미식품/기타가공품 중 하나여야 합니다.' }, { status: 400 })
-    }
-
     const payload: Record<string, unknown> = {
       product_name: text(body.product_name),
       product_code: text(body.product_code),
       report_number: text(body.report_number),
-      product_type: normalizedProductType,
       product_spec: text(body.product_spec),
       weight_g: numberValue(body.weight_g),
       storage_method: text(body.storage_method),

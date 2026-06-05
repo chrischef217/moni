@@ -260,6 +260,22 @@ type RecipeRow = {
   semi_product_id?: string | null
 }
 
+type ProductRecipeDraftRow = {
+  local_id: string
+  id?: string
+  food_type_id: string
+  food_type_name: string
+  ratio_percent: string
+  raw_material_name: string
+  ingredient_type: string
+  semi_product_id?: string | null
+  sort_order: number
+  food_type_open: boolean
+  food_type_highlight: number
+  raw_material_open: boolean
+  raw_material_highlight: number
+}
+
 type RecipesPayload = {
   ok?: boolean
   error?: string
@@ -1432,6 +1448,15 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [recipeForm, setRecipeForm] = useState<RecipeFormState>(emptyRecipeForm())
   const [recipeSaving, setRecipeSaving] = useState(false)
   const [recipeRawMaterialValidation, setRecipeRawMaterialValidation] = useState<FieldValidation>(EMPTY_VALIDATION)
+  const [showProductRecipeModal, setShowProductRecipeModal] = useState(false)
+  const [productRecipeProduct, setProductRecipeProduct] = useState<ProductOption | null>(null)
+  const [productRecipeRows, setProductRecipeRows] = useState<ProductRecipeDraftRow[]>([])
+  const [productRecipeLoading, setProductRecipeLoading] = useState(false)
+  const [productRecipeSaving, setProductRecipeSaving] = useState(false)
+  const [productRecipeMessage, setProductRecipeMessage] = useState<{
+    tone: 'success' | 'error' | 'warning'
+    text: string
+  } | null>(null)
   const [recipeMappingRows, setRecipeMappingRows] = useState<RecipeMaterialMappingRow[]>([])
   const [recipeMappingLoading, setRecipeMappingLoading] = useState(false)
   const [recipeMappingError, setRecipeMappingError] = useState('')
@@ -1703,6 +1728,22 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const recipeRatioDiff = useMemo(() => {
     return Math.round((recipeRatioRoundedTotal - 100) * 100) / 100
   }, [recipeRatioRoundedTotal])
+
+  const activeRecipeRawMaterials = useMemo(() => {
+    return recipeRawMaterials.filter((material) => material.is_active !== false)
+  }, [recipeRawMaterials])
+
+  const productRecipeTotal = useMemo(() => {
+    return productRecipeRows.reduce((sum, row) => sum + (toNumber(row.ratio_percent) ?? 0), 0)
+  }, [productRecipeRows])
+
+  const productRecipeRoundedTotal = useMemo(() => {
+    return Math.round(productRecipeTotal * 100) / 100
+  }, [productRecipeTotal])
+
+  const productRecipeDiff = useMemo(() => {
+    return Math.round((productRecipeRoundedTotal - 100) * 100) / 100
+  }, [productRecipeRoundedTotal])
 
   const productionDefectQuantity = useMemo(() => {
     const planned = toNumber(productionForm.planned_quantity_g)
@@ -2129,12 +2170,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       return
     }
 
-    const normalizedProductType = normalizeProductType(productForm.product_type)
-    if (!normalizedProductType) {
-      setProductActionMessage({ tone: 'error', text: '식품유형을 선택해 주세요. (소스/복합조미식품/기타가공품)' })
-      return
-    }
-
     setProductSaving(true)
     setProductActionMessage(null)
     try {
@@ -2142,7 +2177,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         product_name: productName,
         product_code: productForm.product_code.trim() || null,
         report_number: productForm.report_number.trim() || null,
-        product_type: normalizedProductType,
         storage_method: productForm.storage_method.trim() || null,
         storage_type: productForm.storage_type.trim() || null,
         shelf_life: productForm.shelf_life.trim() || null,
@@ -2445,6 +2479,204 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setRecipesError(error instanceof Error ? error.message : '레시피 데이터를 불러오지 못했습니다.')
     } finally {
       setRecipesLoading(false)
+    }
+  }
+
+  function makeProductRecipeDraftRow(
+    recipe?: RecipeRow,
+    index = 0,
+    mappingsByFoodType?: Map<string, RawMaterialMapping[]>,
+  ): ProductRecipeDraftRow {
+    const mapping = recipe ? mappingsByFoodType?.get(String(recipe.food_type_id))?.[0] : null
+    return {
+      local_id: uid(),
+      id: recipe?.id,
+      food_type_id: recipe?.food_type_id ?? '',
+      food_type_name: recipe?.food_type_name ?? '',
+      ratio_percent:
+        recipe?.ratio_percent !== null && recipe?.ratio_percent !== undefined ? String(recipe.ratio_percent) : '',
+      raw_material_name: mapping?.raw_material_name ?? '',
+      ingredient_type: recipe?.ingredient_type || '원재료',
+      semi_product_id: recipe?.semi_product_id ?? null,
+      sort_order: index + 1,
+      food_type_open: false,
+      food_type_highlight: 0,
+      raw_material_open: false,
+      raw_material_highlight: 0,
+    }
+  }
+
+  function renumberProductRecipeRows(rows: ProductRecipeDraftRow[]) {
+    return rows.map((row, index) => ({ ...row, sort_order: index + 1 }))
+  }
+
+  function updateProductRecipeRow(localId: string, patch: Partial<ProductRecipeDraftRow>) {
+    setProductRecipeRows((prev) =>
+      prev.map((row) => (row.local_id === localId ? { ...row, ...patch } : row)),
+    )
+  }
+
+  function productRecipeFoodTypeMatches(row: ProductRecipeDraftRow) {
+    const query = row.food_type_name.trim().toLowerCase()
+    const seen = new Set<string>()
+    return foodTypes
+      .filter((foodType) => {
+        const name = foodType.type_name.trim()
+        if (!name || seen.has(name)) return false
+        seen.add(name)
+        return !query || name.toLowerCase().includes(query)
+      })
+      .slice(0, 12)
+  }
+
+  function productRecipeMaterialMatches(row: ProductRecipeDraftRow) {
+    const query = row.raw_material_name.trim().toLowerCase()
+    return activeRecipeRawMaterials
+      .filter((material) => {
+        const name = material.item_name.trim()
+        return name && (!query || name.toLowerCase().includes(query))
+      })
+      .slice(0, 20)
+  }
+
+  function selectProductRecipeFoodType(localId: string, foodType: FoodType) {
+    updateProductRecipeRow(localId, {
+      food_type_id: String(foodType.id),
+      food_type_name: foodType.type_name,
+      food_type_open: false,
+      food_type_highlight: 0,
+    })
+  }
+
+  function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) {
+    updateProductRecipeRow(localId, {
+      raw_material_name: material.item_name,
+      raw_material_open: false,
+      raw_material_highlight: 0,
+    })
+  }
+
+  function addProductRecipeDraftRow() {
+    setProductRecipeMessage(null)
+    setProductRecipeRows((prev) => renumberProductRecipeRows([makeProductRecipeDraftRow(undefined, 0), ...prev]))
+  }
+
+  function removeProductRecipeDraftRow(localId: string) {
+    setProductRecipeMessage({ tone: 'warning', text: '행을 목록에서 제거했습니다. 저장해야 실제 레시피에 반영됩니다.' })
+    setProductRecipeRows((prev) => renumberProductRecipeRows(prev.filter((row) => row.local_id !== localId)))
+  }
+
+  function moveProductRecipeDraftRow(localId: string, direction: -1 | 1) {
+    setProductRecipeRows((prev) => {
+      const index = prev.findIndex((row) => row.local_id === localId)
+      const targetIndex = index + direction
+      if (index < 0 || targetIndex < 0 || targetIndex >= prev.length) return prev
+      const next = [...prev]
+      const [row] = next.splice(index, 1)
+      next.splice(targetIndex, 0, row)
+      return renumberProductRecipeRows(next)
+    })
+  }
+
+  async function openProductRecipeModal(product: ProductOption) {
+    setProductRecipeProduct(product)
+    setShowProductRecipeModal(true)
+    setProductRecipeLoading(true)
+    setProductRecipeMessage(null)
+
+    try {
+      if (foodTypes.length === 0) {
+        await loadFoodTypes()
+      }
+      const payload = await readJson<RecipesPayload>(`/api/moni/recipes?product_id=${encodeURIComponent(String(product.id))}`)
+      setRecipeProducts(payload.products ?? recipeProducts)
+      setRecipeRawMaterials(payload.rawMaterials ?? recipeRawMaterials)
+      const mappingsByFoodType = (payload.mappings ?? []).reduce((map, mapping) => {
+        const key = String(mapping.food_type_id)
+        const list = map.get(key) ?? []
+        list.push(mapping)
+        map.set(key, list)
+        return map
+      }, new Map<string, RawMaterialMapping[]>())
+      setProductRecipeRows(
+        (payload.recipes ?? []).map((recipe, index) => makeProductRecipeDraftRow(recipe, index, mappingsByFoodType)),
+      )
+    } catch (error) {
+      setProductRecipeRows([])
+      setProductRecipeMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '제품 레시피를 불러오지 못했습니다.',
+      })
+    } finally {
+      setProductRecipeLoading(false)
+    }
+  }
+
+  async function saveProductRecipeRows() {
+    if (!productRecipeProduct) return
+
+    const invalidRow = productRecipeRows.find((row) => {
+      const ratio = toNumber(row.ratio_percent)
+      return !row.food_type_name.trim() || ratio === null || ratio < 0
+    })
+    if (invalidRow) {
+      setProductRecipeMessage({ tone: 'error', text: '식품유형명과 0 이상 배합비율을 모두 입력해 주세요.' })
+      return
+    }
+
+    if (productRecipeRoundedTotal !== 100) {
+      setProductRecipeMessage({
+        tone: 'error',
+        text:
+          productRecipeDiff > 0
+            ? `배합비율이 ${Math.abs(productRecipeDiff).toFixed(2)}% 초과되었습니다. 총 100.00%로 맞춰 주세요.`
+            : `배합비율이 ${Math.abs(productRecipeDiff).toFixed(2)}% 부족합니다. 총 100.00%로 맞춰 주세요.`,
+      })
+      return
+    }
+
+    setProductRecipeSaving(true)
+    setProductRecipeMessage(null)
+    try {
+      const payload = await readJson<RecipesPayload>('/api/moni/recipes', {
+        method: 'PUT',
+        body: JSON.stringify({
+          product_id: String(productRecipeProduct.id),
+          product_name: productRecipeProduct.product_name,
+          business_id: productRecipeProduct.business_id || '20220523011',
+          recipes: productRecipeRows.map((row, index) => ({
+            id: row.id,
+            food_type_id: row.food_type_id || null,
+            food_type_name: row.food_type_name.trim(),
+            ratio_percent: toNumber(row.ratio_percent) ?? 0,
+            ingredient_type: row.ingredient_type || '원재료',
+            semi_product_id: row.semi_product_id || null,
+            sort_order: index + 1,
+          })),
+        }),
+      })
+
+      const mappingsByFoodType = (payload.mappings ?? []).reduce((map, mapping) => {
+        const key = String(mapping.food_type_id)
+        const list = map.get(key) ?? []
+        list.push(mapping)
+        map.set(key, list)
+        return map
+      }, new Map<string, RawMaterialMapping[]>())
+      setProductRecipeRows(
+        (payload.recipes ?? []).map((recipe, index) => makeProductRecipeDraftRow(recipe, index, mappingsByFoodType)),
+      )
+      if (selectedRecipeProductId === String(productRecipeProduct.id)) {
+        await loadRecipes(selectedRecipeProductId)
+      }
+      setProductRecipeMessage({ tone: 'success', text: '제품 레시피를 저장했습니다.' })
+    } catch (error) {
+      setProductRecipeMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '제품 레시피 저장에 실패했습니다.',
+      })
+    } finally {
+      setProductRecipeSaving(false)
     }
   }
 
@@ -6179,7 +6411,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                       <th className="px-3 py-2 font-medium whitespace-nowrap">패킹단위</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap text-right">기준중량(g)</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">활성</th>
-                      <th className="px-3 py-2 font-medium whitespace-nowrap text-right">작업</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap text-right min-w-[180px]">작업</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -6222,7 +6454,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             )}
                           </td>
                           <td className="px-3 py-3 text-right whitespace-nowrap">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex flex-wrap justify-end gap-2">
                               <button
                                 type="button"
                                 onClick={(event) => {
@@ -6242,6 +6474,16 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                                 className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                               >
                                 수정
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void openProductRecipeModal(product)
+                                }}
+                                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
+                              >
+                                레시피
                               </button>
                             </div>
                           </td>
@@ -8522,8 +8764,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 type="button"
                 onClick={() => {
                   setShowProductDetailModal(false)
-                  setProductionTab('prod-recipe-mapping')
-                  setRecipeMappingProductQuery(selectedManagedProduct.product_name)
+                  void openProductRecipeModal(selectedManagedProduct)
                 }}
                 className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-green-500 hover:text-white"
               >
@@ -8539,6 +8780,315 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={showProductRecipeModal}
+        title={productRecipeProduct ? `레시피 관리 - ${productRecipeProduct.product_name}` : '레시피 관리'}
+        description="제품별 레시피 항목과 배합비율을 한 화면에서 정리합니다."
+        onClose={() => {
+          setShowProductRecipeModal(false)
+          setProductRecipeProduct(null)
+          setProductRecipeRows([])
+          setProductRecipeMessage(null)
+        }}
+      >
+        <div className="space-y-4">
+          {productRecipeProduct ? (
+            <div className="grid gap-3 rounded-2xl border border-gray-700 bg-gray-900/70 p-4 text-sm md:grid-cols-4">
+              <InfoCell label="제품명" value={productRecipeProduct.product_name} />
+              <InfoCell label="품목보고번호" value={reportNumberText(productRecipeProduct.report_number)} />
+              <InfoCell label="식품유형" value={productTypeDisplay(productRecipeProduct.product_type)} />
+              <div
+                className={`rounded-xl border px-3 py-2 ${
+                  productRecipeDiff === 0
+                    ? 'border-green-700/60 bg-green-950/40 text-green-200'
+                    : productRecipeDiff > 0
+                      ? 'border-red-800/60 bg-red-950/40 text-red-200'
+                      : 'border-amber-700/60 bg-amber-950/30 text-amber-200'
+                }`}
+              >
+                <p className="text-xs text-gray-400">현재 합계</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {productRecipeDiff === 0
+                    ? `총 ${productRecipeRoundedTotal.toFixed(2)}% / 정상`
+                    : productRecipeDiff > 0
+                      ? `총 ${productRecipeRoundedTotal.toFixed(2)}% - ${Math.abs(productRecipeDiff).toFixed(2)}% 초과`
+                      : `총 ${productRecipeRoundedTotal.toFixed(2)}% - ${Math.abs(productRecipeDiff).toFixed(2)}% 부족`}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          {productRecipeMessage ? (
+            <div className={`rounded-xl border px-4 py-3 text-sm ${messageToneClasses(productRecipeMessage.tone)}`}>
+              {productRecipeMessage.text}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-gray-400">
+              원재료 선택은 참고 표시입니다. 생산 차감용 실제 연결은 기존 “레시피 원재료 연결” 화면의 저장/되돌리기 기준을 유지합니다.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={addProductRecipeDraftRow}
+                className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-green-500 hover:text-white"
+              >
+                원재료 추가
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveProductRecipeRows()}
+                disabled={productRecipeSaving || productRecipeLoading || !productRecipeProduct}
+                className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+              >
+                {productRecipeSaving ? '저장 중...' : '전체 저장'}
+              </button>
+            </div>
+          </div>
+
+          {productRecipeLoading ? (
+            <LoadingBlock lines={5} />
+          ) : productRecipeRows.length === 0 ? (
+            <EmptyState title="등록된 레시피가 없습니다" description="원재료 추가 버튼으로 첫 항목을 추가해 주세요." />
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-gray-700">
+              <table className="min-w-[1120px] w-full text-left text-sm">
+                <thead className="bg-gray-900 text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">순서</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap min-w-[220px]">식품유형명</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap w-32">배합비율(%)</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap min-w-[260px]">실제 원재료</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap w-36">재료유형</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap text-right w-56">작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productRecipeRows.map((row, index) => {
+                    const foodTypeMatches = productRecipeFoodTypeMatches(row)
+                    const materialMatches = productRecipeMaterialMatches(row)
+                    return (
+                      <tr key={row.local_id} className="border-b border-gray-800/80 align-top">
+                        <td className="px-3 py-3 text-gray-300 whitespace-nowrap">{index + 1}</td>
+                        <td className="px-3 py-3">
+                          <div className="relative">
+                            <input
+                              value={row.food_type_name}
+                              onChange={(event) =>
+                                updateProductRecipeRow(row.local_id, {
+                                  food_type_name: event.target.value,
+                                  food_type_id: '',
+                                  food_type_open: true,
+                                  food_type_highlight: 0,
+                                })
+                              }
+                              onFocus={() => updateProductRecipeRow(row.local_id, { food_type_open: true })}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                  updateProductRecipeRow(row.local_id, { food_type_open: false })
+                                  return
+                                }
+                                if (!row.food_type_open && ['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) {
+                                  updateProductRecipeRow(row.local_id, { food_type_open: true })
+                                  return
+                                }
+                                if (event.key === 'ArrowDown') {
+                                  event.preventDefault()
+                                  updateProductRecipeRow(row.local_id, {
+                                    food_type_highlight: Math.min(row.food_type_highlight + 1, foodTypeMatches.length - 1),
+                                  })
+                                } else if (event.key === 'ArrowUp') {
+                                  event.preventDefault()
+                                  updateProductRecipeRow(row.local_id, {
+                                    food_type_highlight: Math.max(row.food_type_highlight - 1, 0),
+                                  })
+                                } else if (event.key === 'Enter' && foodTypeMatches.length > 0) {
+                                  event.preventDefault()
+                                  selectProductRecipeFoodType(
+                                    row.local_id,
+                                    foodTypeMatches[Math.max(0, Math.min(row.food_type_highlight, foodTypeMatches.length - 1))],
+                                  )
+                                }
+                              }}
+                              placeholder="식품유형명을 입력하세요"
+                              className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                            />
+                            {row.food_type_open && row.food_type_name.trim() ? (
+                              <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-700 bg-gray-950 shadow-xl">
+                                {foodTypeMatches.length === 0 ? (
+                                  <p className="px-3 py-2 text-xs text-gray-400">기존 식품유형이 없습니다. 입력한 이름으로 새로 저장할 수 있습니다.</p>
+                                ) : (
+                                  foodTypeMatches.map((foodType, candidateIndex) => (
+                                    <button
+                                      key={foodType.id}
+                                      type="button"
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => selectProductRecipeFoodType(row.local_id, foodType)}
+                                      className={`block w-full px-3 py-2 text-left text-sm ${
+                                        candidateIndex === row.food_type_highlight
+                                          ? 'bg-green-500/20 text-white'
+                                          : 'text-gray-200 hover:bg-gray-800'
+                                      }`}
+                                    >
+                                      {foodType.type_name}
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={row.ratio_percent}
+                            onChange={(event) =>
+                              updateProductRecipeRow(row.local_id, { ratio_percent: event.target.value })
+                            }
+                            className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-right text-green-300 outline-none focus:border-green-500"
+                          />
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="relative">
+                            <input
+                              value={row.raw_material_name}
+                              onChange={(event) =>
+                                updateProductRecipeRow(row.local_id, {
+                                  raw_material_name: event.target.value,
+                                  raw_material_open: true,
+                                  raw_material_highlight: 0,
+                                })
+                              }
+                              onFocus={() => updateProductRecipeRow(row.local_id, { raw_material_open: true })}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                  updateProductRecipeRow(row.local_id, { raw_material_open: false })
+                                  return
+                                }
+                                if (!row.raw_material_open && ['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) {
+                                  updateProductRecipeRow(row.local_id, { raw_material_open: true })
+                                  return
+                                }
+                                if (event.key === 'ArrowDown') {
+                                  event.preventDefault()
+                                  updateProductRecipeRow(row.local_id, {
+                                    raw_material_highlight: Math.min(row.raw_material_highlight + 1, materialMatches.length - 1),
+                                  })
+                                } else if (event.key === 'ArrowUp') {
+                                  event.preventDefault()
+                                  updateProductRecipeRow(row.local_id, {
+                                    raw_material_highlight: Math.max(row.raw_material_highlight - 1, 0),
+                                  })
+                                } else if (event.key === 'Enter' && materialMatches.length > 0) {
+                                  event.preventDefault()
+                                  selectProductRecipeMaterial(
+                                    row.local_id,
+                                    materialMatches[Math.max(0, Math.min(row.raw_material_highlight, materialMatches.length - 1))],
+                                  )
+                                }
+                              }}
+                              placeholder="원재료명을 입력하세요"
+                              className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                            />
+                            {row.raw_material_open && row.raw_material_name.trim() ? (
+                              <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-700 bg-gray-950 shadow-xl">
+                                {materialMatches.length === 0 ? (
+                                  <p className="px-3 py-2 text-xs text-gray-400">검색 결과가 없습니다.</p>
+                                ) : (
+                                  <>
+                                    {materialMatches.map((material, candidateIndex) => (
+                                      <button
+                                        key={material.id}
+                                        type="button"
+                                        onMouseDown={(event) => event.preventDefault()}
+                                        onClick={() => selectProductRecipeMaterial(row.local_id, material)}
+                                        className={`block w-full px-3 py-2 text-left text-sm ${
+                                          candidateIndex === row.raw_material_highlight
+                                            ? 'bg-green-500/20 text-white'
+                                            : 'text-gray-200 hover:bg-gray-800'
+                                        }`}
+                                      >
+                                        {material.item_name}
+                                      </button>
+                                    ))}
+                                    {activeRecipeRawMaterials.filter((material) =>
+                                      material.item_name.toLowerCase().includes(row.raw_material_name.trim().toLowerCase()),
+                                    ).length > materialMatches.length ? (
+                                      <p className="border-t border-gray-800 px-3 py-2 text-xs text-amber-200">
+                                        검색 결과가 많습니다. 더 구체적으로 입력하세요.
+                                      </p>
+                                    ) : null}
+                                  </>
+                                )}
+                              </div>
+                            ) : null}
+                            {row.raw_material_name.trim() ? (
+                              <p className="mt-1 text-xs text-gray-400">선택된 원재료: {row.raw_material_name.trim()}</p>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <select
+                            value={row.ingredient_type}
+                            onChange={(event) =>
+                              updateProductRecipeRow(row.local_id, { ingredient_type: event.target.value })
+                            }
+                            className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                          >
+                            <option value="원재료">원재료</option>
+                            <option value="부재료">부재료</option>
+                            <option value="반제품">반제품</option>
+                            <option value="기타">기타</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => void saveProductRecipeRows()}
+                              disabled={productRecipeSaving}
+                              className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white disabled:opacity-60"
+                            >
+                              저장
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeProductRecipeDraftRow(row.local_id)}
+                              className="rounded-lg border border-red-800/70 px-2.5 py-1.5 text-xs text-red-200 hover:border-red-600"
+                            >
+                              삭제
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveProductRecipeDraftRow(row.local_id, -1)}
+                              disabled={index === 0}
+                              className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-200 hover:border-gray-500 disabled:opacity-40"
+                            >
+                              위로
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveProductRecipeDraftRow(row.local_id, 1)}
+                              disabled={index === productRecipeRows.length - 1}
+                              className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-200 hover:border-gray-500 disabled:opacity-40"
+                            >
+                              아래로
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </Modal>
 
       <Modal

@@ -114,18 +114,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: '제품명을 입력해 주세요.' }, { status: 400 })
     }
 
-    const normalizedProductType = normalizeProductType(body.product_type)
-    if (!normalizedProductType) {
-      return NextResponse.json({ ok: false, error: '식품유형은 소스/복합조미식품/기타가공품 중 하나여야 합니다.' }, { status: 400 })
-    }
-
     const idFromBody = text(body.id)
     const payload = {
       id: idFromBody || createProductId(),
       product_name: productName,
       product_code: text(body.product_code) || null,
       report_number: text(body.report_number) || null,
-      product_type: normalizedProductType,
+      product_type: '완제품',
       storage_method: text(body.storage_method) || null,
       storage_type: text(body.storage_type) || null,
       shelf_life: text(body.shelf_life) || null,
