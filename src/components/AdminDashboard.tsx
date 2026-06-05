@@ -17,6 +17,7 @@ type ProductionSubTabKey =
   | 'prod-recipes'
   | 'prod-recipe-mapping'
   | 'prod-materials'
+  | 'prod-ledger'
   | 'prod-packaging'
   | 'prod-sanitation'
   | 'prod-quality'
@@ -300,10 +301,11 @@ type RawMaterialsPayload = {
 }
 
 type SububuRow = {
-  food_type_name: string
-  total_usage_g: number
-  usage_count: number
-  products_used: string[]
+  material_name: string
+  inbound_g: number
+  outbound_g: number
+  balance_g: number
+  tx_count: number
 }
 
 type PackagingMaterialRow = {
@@ -340,6 +342,7 @@ type PackagingFormState = {
 
 type RawMaterialTransactionRow = {
   id: string
+  material_name?: string
   tx_date: string
   tx_type: string
   counterparty: string
@@ -355,6 +358,27 @@ type RawMaterialTransactionsPayload = {
   material_name?: string
   balance_mode?: string
   rows?: RawMaterialTransactionRow[]
+}
+
+type PackagingTransactionRow = {
+  id: string
+  material_code?: string
+  material_name: string
+  tx_date: string
+  tx_type: string
+  counterparty: string
+  inbound_ea: number
+  outbound_ea: number
+  balance_ea: number
+  note: string
+}
+
+type PackagingTransactionsPayload = {
+  ok?: boolean
+  error?: string
+  material_name?: string
+  balance_mode?: string
+  rows?: PackagingTransactionRow[]
 }
 
 type SububuPayload = {
@@ -496,6 +520,25 @@ type MaterialFormState = {
   supplier_biz_number: string
 }
 
+type RawInboundFormState = {
+  tx_date: string
+  raw_material_id: string
+  quantity: string
+  unit: 'g' | 'kg'
+  counterparty: string
+  unit_price: string
+  note: string
+}
+
+type PackagingInboundFormState = {
+  tx_date: string
+  material_code: string
+  quantity: string
+  counterparty: string
+  unit_price: string
+  note: string
+}
+
 type SanitationFormState = {
   check_date: string
   checker_name: string
@@ -529,13 +572,13 @@ const PRODUCTION_TABS: SubMenuItem[] = [
   { key: 'prod-work', label: '작업 지시' },
   { key: 'prod-recipes', label: '레시피 관리' },
   { key: 'prod-materials', label: '원재료 관리' },
+  { key: 'prod-ledger', label: '원료수불부' },
   { key: 'prod-packaging', label: '부재료 관리' },
+  { key: 'prod-recipe-mapping', label: '레시피 원재료 연결' },
   { key: 'prod-sanitation', label: '위생점검' },
   { key: 'prod-quality', label: '품질 관리' },
   { key: 'prod-compliance', label: '규정준수 모니터' },
 ]
-
-PRODUCTION_TABS.splice(5, 0, { key: 'prod-recipe-mapping', label: '레시피 원재료 연결' })
 
 const CHAT_EXAMPLES = [
   '오늘 생산 실적 요약해줘',
@@ -715,6 +758,49 @@ function formatDateTime(iso: string | null | undefined) {
   }).format(date)}`
 }
 
+function summarizeRawLedger(rows: RawMaterialTransactionRow[]) {
+  const map = new Map<string, SububuRow>()
+  for (const row of rows) {
+    const key = String(row.material_name || '').trim() || '원재료명 확인 필요'
+    const current = map.get(key) ?? {
+      material_name: key,
+      inbound_g: 0,
+      outbound_g: 0,
+      balance_g: 0,
+      tx_count: 0,
+    }
+    current.inbound_g += Number(row.inbound_g ?? 0)
+    current.outbound_g += Number(row.outbound_g ?? 0)
+    current.balance_g = Number(row.balance_g ?? current.balance_g)
+    current.tx_count += 1
+    map.set(key, current)
+  }
+  return Array.from(map.values()).sort((a, b) => b.inbound_g + b.outbound_g - (a.inbound_g + a.outbound_g))
+}
+
+function summarizePackagingLedger(rows: PackagingTransactionRow[]) {
+  const map = new Map<
+    string,
+    { material_name: string; inbound_ea: number; outbound_ea: number; balance_ea: number; tx_count: number }
+  >()
+  for (const row of rows) {
+    const key = String(row.material_name || '').trim() || '부재료명 확인 필요'
+    const current = map.get(key) ?? {
+      material_name: key,
+      inbound_ea: 0,
+      outbound_ea: 0,
+      balance_ea: 0,
+      tx_count: 0,
+    }
+    current.inbound_ea += Number(row.inbound_ea ?? 0)
+    current.outbound_ea += Number(row.outbound_ea ?? 0)
+    current.balance_ea = Number(row.balance_ea ?? current.balance_ea)
+    current.tx_count += 1
+    map.set(key, current)
+  }
+  return Array.from(map.values()).sort((a, b) => b.inbound_ea + b.outbound_ea - (a.inbound_ea + a.outbound_ea))
+}
+
 function normalizeStatus(status: string | null | undefined) {
   const raw = String(status ?? '').trim().toLowerCase()
   if (!raw) return '-'
@@ -834,6 +920,29 @@ function emptyPackagingForm(material?: PackagingMaterialRow | null): PackagingFo
       material?.current_stock === null || material?.current_stock === undefined ? '' : String(material.current_stock),
     unit_price: material?.unit_price === null || material?.unit_price === undefined ? '' : String(material.unit_price),
     is_active: material?.is_active ?? true,
+  }
+}
+
+function emptyRawInboundForm(): RawInboundFormState {
+  return {
+    tx_date: todayValue(),
+    raw_material_id: '',
+    quantity: '',
+    unit: 'g',
+    counterparty: '',
+    unit_price: '',
+    note: '',
+  }
+}
+
+function emptyPackagingInboundForm(): PackagingInboundFormState {
+  return {
+    tx_date: todayValue(),
+    material_code: '',
+    quantity: '',
+    counterparty: '',
+    unit_price: '',
+    note: '',
   }
 }
 
@@ -1200,6 +1309,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [recipeMappingLatestHistory, setRecipeMappingLatestHistory] = useState<RecipeMappingHistoryItem | null>(null)
   const [recipeMappingHistoryLoading, setRecipeMappingHistoryLoading] = useState(false)
   const [recipeMappingHistoryWarning, setRecipeMappingHistoryWarning] = useState('')
+  const [recipeMappingHistoryCollapsed, setRecipeMappingHistoryCollapsed] = useState(false)
   const [recipeMappingUndoing, setRecipeMappingUndoing] = useState(false)
   const [showRecipeMappingModal, setShowRecipeMappingModal] = useState(false)
   const [selectedRecipeMappingRow, setSelectedRecipeMappingRow] = useState<RecipeMaterialMappingRow | null>(null)
@@ -1247,13 +1357,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [showMaterialUpload, setShowMaterialUpload] = useState(false)
   const [materialUploadBusy, setMaterialUploadBusy] = useState(false)
   const [materialUploadResult, setMaterialUploadResult] = useState<UploadResult | null>(null)
+  const [showRawInboundModal, setShowRawInboundModal] = useState(false)
+  const [rawInboundForm, setRawInboundForm] = useState<RawInboundFormState>(emptyRawInboundForm())
+  const [rawInboundSaving, setRawInboundSaving] = useState(false)
+  const [rawInboundError, setRawInboundError] = useState('')
 
+  const [ledgerTab, setLedgerTab] = useState<'raw' | 'packaging'>('raw')
   const [sububuDateFrom, setSububuDateFrom] = useState(daysAgoValue(29))
   const [sububuDateTo, setSububuDateTo] = useState(todayValue())
   const [sububuLoading, setSububuLoading] = useState(true)
   const [sububuError, setSububuError] = useState('')
   const [sububuMaterials, setSububuMaterials] = useState<SububuRow[]>([])
-  const [sububuTotalProductionG, setSububuTotalProductionG] = useState(0)
   const [sububuMaterialQuery, setSububuMaterialQuery] = useState('')
   const [showSububuDetailModal, setShowSububuDetailModal] = useState(false)
   const [sububuDetailTarget, setSububuDetailTarget] = useState('')
@@ -1263,6 +1377,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [sububuDetailLoading, setSububuDetailLoading] = useState(false)
   const [sububuDetailError, setSububuDetailError] = useState('')
   const [sububuDetailBalanceMode, setSububuDetailBalanceMode] = useState('')
+  const [showPackagingLedgerDetailModal, setShowPackagingLedgerDetailModal] = useState(false)
+  const [packagingLedgerDetailTarget, setPackagingLedgerDetailTarget] = useState('')
+  const [packagingLedgerDetailFrom, setPackagingLedgerDetailFrom] = useState(daysAgoValue(29))
+  const [packagingLedgerDetailTo, setPackagingLedgerDetailTo] = useState(todayValue())
+  const [packagingLedgerDetailRows, setPackagingLedgerDetailRows] = useState<PackagingTransactionRow[]>([])
+  const [packagingLedgerDetailLoading, setPackagingLedgerDetailLoading] = useState(false)
+  const [packagingLedgerDetailError, setPackagingLedgerDetailError] = useState('')
+  const [packagingLedgerDetailBalanceMode, setPackagingLedgerDetailBalanceMode] = useState('')
 
   const [packagingLoading, setPackagingLoading] = useState(true)
   const [packagingError, setPackagingError] = useState('')
@@ -1272,6 +1394,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [showPackagingModal, setShowPackagingModal] = useState(false)
   const [packagingForm, setPackagingForm] = useState<PackagingFormState>(emptyPackagingForm())
   const [packagingSaving, setPackagingSaving] = useState(false)
+  const [showPackagingInboundModal, setShowPackagingInboundModal] = useState(false)
+  const [packagingInboundForm, setPackagingInboundForm] = useState<PackagingInboundFormState>(emptyPackagingInboundForm())
+  const [packagingInboundSaving, setPackagingInboundSaving] = useState(false)
+  const [packagingInboundError, setPackagingInboundError] = useState('')
+  const [packagingLedgerRows, setPackagingLedgerRows] = useState<PackagingTransactionRow[]>([])
 
   const [sanitationDateFrom, setSanitationDateFrom] = useState(daysAgoValue(29))
   const [sanitationDateTo, setSanitationDateTo] = useState(todayValue())
@@ -1500,10 +1627,25 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       void loadMaterials(materialsView)
       return
     }
+    if (productionTab === 'prod-ledger') {
+      void loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery)
+      void loadPackagingLedger(packagingLedgerDetailFrom, packagingLedgerDetailTo, sububuMaterialQuery)
+      return
+    }
     if (productionTab === 'prod-packaging') {
       void loadPackagingMaterials(packagingView)
     }
-  }, [mainMenu, productionTab, materialsView, packagingView])
+  }, [
+    mainMenu,
+    productionTab,
+    materialsView,
+    packagingView,
+    sububuDateFrom,
+    sububuDateTo,
+    sububuMaterialQuery,
+    packagingLedgerDetailFrom,
+    packagingLedgerDetailTo,
+  ])
 
   useEffect(() => {
     if (!selectedRecipeProductId) return
@@ -2321,9 +2463,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       if (to) params.set('to', to)
       const normalized = (materialName ?? '').trim()
       if (normalized) params.set('material_name', normalized)
-      const payload = await readJson<SububuPayload>(`/api/moni/sububu?${params.toString()}`)
-      setSububuMaterials(payload.materials ?? [])
-      setSububuTotalProductionG(Number(payload.total_production_g ?? 0))
+      const payload = await readJson<RawMaterialTransactionsPayload>(`/api/moni/raw-material-transactions?${params.toString()}`)
+      const txRows = payload.rows ?? []
+      const summaryRows = summarizeRawLedger(txRows)
+      setSububuMaterials(summaryRows)
     } catch (error) {
       setSububuError(error instanceof Error ? error.message : '수불부 데이터를 불러오지 못했습니다.')
     } finally {
@@ -2361,6 +2504,98 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setSububuDetailTo(sububuDateTo)
     setShowSububuDetailModal(true)
     await loadSububuDetail(target, sububuDateFrom, sububuDateTo)
+  }
+
+  async function saveRawInbound() {
+    const materialId = rawInboundForm.raw_material_id.trim()
+    if (!materialId) {
+      setRawInboundError('입고할 원재료를 선택해 주세요.')
+      return
+    }
+
+    const quantity = toNumber(rawInboundForm.quantity)
+    if (quantity === null || quantity <= 0) {
+      setRawInboundError('입고수량은 0보다 큰 값으로 입력해 주세요.')
+      return
+    }
+
+    setRawInboundSaving(true)
+    setRawInboundError('')
+    try {
+      await readJson('/api/moni/raw-material-transactions', {
+        method: 'POST',
+        body: JSON.stringify({
+          tx_date: rawInboundForm.tx_date,
+          raw_material_id: materialId,
+          quantity,
+          unit: rawInboundForm.unit,
+          counterparty: rawInboundForm.counterparty.trim() || undefined,
+          unit_price: toNumber(rawInboundForm.unit_price) ?? undefined,
+          note: rawInboundForm.note.trim() || undefined,
+        }),
+      })
+      setShowRawInboundModal(false)
+      setRawInboundForm(emptyRawInboundForm())
+      await Promise.all([
+        loadMaterials(materialsView),
+        loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery),
+      ])
+    } catch (error) {
+      setRawInboundError(error instanceof Error ? error.message : '원재료 입고 등록 중 오류가 발생했습니다.')
+    } finally {
+      setRawInboundSaving(false)
+    }
+  }
+
+  async function loadPackagingLedger(from: string, to: string, materialName?: string) {
+    setSububuLoading(true)
+    setSububuError('')
+    try {
+      const params = new URLSearchParams()
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
+      const normalized = (materialName ?? '').trim()
+      if (normalized) params.set('material_name', normalized)
+      const payload = await readJson<PackagingTransactionsPayload>(`/api/moni/packaging-transactions?${params.toString()}`)
+      setPackagingLedgerRows(payload.rows ?? [])
+    } catch (error) {
+      setSububuError(error instanceof Error ? error.message : '부재료 수불 데이터를 불러오지 못했습니다.')
+      setPackagingLedgerRows([])
+    } finally {
+      setSububuLoading(false)
+    }
+  }
+
+  async function loadPackagingLedgerDetail(materialName: string, from: string, to: string) {
+    const target = materialName.trim()
+    if (!target) return
+    setPackagingLedgerDetailLoading(true)
+    setPackagingLedgerDetailError('')
+    try {
+      const params = new URLSearchParams()
+      params.set('material_name', target)
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
+      const payload = await readJson<PackagingTransactionsPayload>(`/api/moni/packaging-transactions?${params.toString()}`)
+      setPackagingLedgerDetailRows(payload.rows ?? [])
+      setPackagingLedgerDetailBalanceMode(payload.balance_mode ?? '')
+    } catch (error) {
+      setPackagingLedgerDetailRows([])
+      setPackagingLedgerDetailBalanceMode('')
+      setPackagingLedgerDetailError(error instanceof Error ? error.message : '부재료 수불 상세를 불러오지 못했습니다.')
+    } finally {
+      setPackagingLedgerDetailLoading(false)
+    }
+  }
+
+  async function openPackagingLedgerDetail(materialName: string) {
+    const target = materialName.trim()
+    if (!target) return
+    setPackagingLedgerDetailTarget(target)
+    setPackagingLedgerDetailFrom(sububuDateFrom)
+    setPackagingLedgerDetailTo(sububuDateTo)
+    setShowPackagingLedgerDetailModal(true)
+    await loadPackagingLedgerDetail(target, sububuDateFrom, sububuDateTo)
   }
 
   async function savePackagingMaterial() {
@@ -2416,6 +2651,45 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setPackagingError(error instanceof Error ? error.message : '부재료 저장 중 오류가 발생했습니다.')
     } finally {
       setPackagingSaving(false)
+    }
+  }
+
+  async function savePackagingInbound() {
+    const materialCode = packagingInboundForm.material_code.trim()
+    if (!materialCode) {
+      setPackagingInboundError('입고할 부재료를 선택해 주세요.')
+      return
+    }
+    const quantity = toNumber(packagingInboundForm.quantity)
+    if (quantity === null || quantity <= 0) {
+      setPackagingInboundError('입고수량은 0보다 큰 값으로 입력해 주세요.')
+      return
+    }
+
+    setPackagingInboundSaving(true)
+    setPackagingInboundError('')
+    try {
+      await readJson('/api/moni/packaging-transactions', {
+        method: 'POST',
+        body: JSON.stringify({
+          tx_date: packagingInboundForm.tx_date,
+          material_code: materialCode,
+          quantity,
+          counterparty: packagingInboundForm.counterparty.trim() || undefined,
+          unit_price: toNumber(packagingInboundForm.unit_price) ?? undefined,
+          note: packagingInboundForm.note.trim() || undefined,
+        }),
+      })
+      setShowPackagingInboundModal(false)
+      setPackagingInboundForm(emptyPackagingInboundForm())
+      await Promise.all([
+        loadPackagingMaterials(packagingView),
+        loadPackagingLedger(sububuDateFrom, sububuDateTo, sububuMaterialQuery),
+      ])
+    } catch (error) {
+      setPackagingInboundError(error instanceof Error ? error.message : '부재료 입고 등록 중 오류가 발생했습니다.')
+    } finally {
+      setPackagingInboundSaving(false)
     }
   }
 
@@ -4822,13 +5096,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   function renderMaterialsManagement() {
-    const sububuPdfParams = new URLSearchParams({
-      from: sububuDateFrom,
-      to: sububuDateTo,
-    })
-    if (sububuMaterialQuery.trim()) sububuPdfParams.set('material_name', sububuMaterialQuery.trim())
-    const sububuPdfUrl = `/api/moni/sububu/pdf?${sububuPdfParams.toString()}`
-
     return (
       <div className="space-y-5">
         <SectionCard
@@ -4838,17 +5105,35 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             <>
               <button
                 type="button"
-                onClick={() => setShowMaterialUpload((prev) => !prev)}
+                onClick={() => {
+                  setQuickMaterialMessage(null)
+                  resetQuickMaterialForm()
+                  setShowQuickMaterialModal(true)
+                }}
                 className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
               >
-                원재료 입고 등록
+                신규 원재료 등록
               </button>
               <button
                 type="button"
-                onClick={() => window.alert('수동 입고 등록은 다음 단계에서 연결 예정입니다.')}
+                onClick={() => {
+                  setRawInboundError('')
+                  setRawInboundForm((prev) => ({
+                    ...emptyRawInboundForm(),
+                    raw_material_id: prev.raw_material_id || materials[0]?.id || '',
+                  }))
+                  setShowRawInboundModal(true)
+                }}
                 className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
               >
                 수동 입고 등록
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMaterialUpload((prev) => !prev)}
+                className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+              >
+                엑셀 입고 등록
               </button>
             </>
           }
@@ -5017,105 +5302,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           )}
         </SectionCard>
 
-        <SectionCard
-          title="수불부 조회"
-          description="생산 기록과 레시피를 기준으로 원재료 사용량을 계산합니다."
-          actions={
-            <>
-              <Field label="시작일" className="min-w-[140px]">
-                <input
-                  type="date"
-                  value={sububuDateFrom}
-                  onChange={(event) => setSububuDateFrom(event.target.value)}
-                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                />
-              </Field>
-              <Field label="종료일" className="min-w-[140px]">
-                <input
-                  type="date"
-                  value={sububuDateTo}
-                  onChange={(event) => setSububuDateTo(event.target.value)}
-                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                />
-              </Field>
-              <Field label="원료명 검색" className="min-w-[180px]">
-                <input
-                  type="text"
-                  value={sububuMaterialQuery}
-                  onChange={(event) => setSububuMaterialQuery(event.target.value)}
-                  placeholder="예: 설탕, 간장"
-                  className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
-                />
-              </Field>
-              <button
-                type="button"
-                onClick={() => void loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery)}
-                className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
-              >
-                조회
-              </button>
-              <button
-                type="button"
-                onClick={() => openWindow(sububuPdfUrl)}
-                className="h-[42px] rounded-xl bg-green-500 px-4 text-sm font-semibold text-white hover:bg-green-400"
-              >
-                PDF 출력
-              </button>
-            </>
-          }
-        >
-          <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-gray-700 bg-gray-900/70 px-4 py-3 text-sm text-gray-300">
-            <span>
-              조회 기간: <strong className="text-white">{sububuDateFrom}</strong> ~ <strong className="text-white">{sububuDateTo}</strong>
-            </span>
-            <span>
-              총 생산량: <strong className="text-green-400">{formatNumber(sububuTotalProductionG)}g</strong>
-            </span>
-          </div>
-          <p className="mb-4 text-xs text-gray-500">
-            원료명을 클릭하면 기간별 입고/소모 상세 내역(가계부 형태)을 확인할 수 있습니다.
-          </p>
-          {sububuLoading ? (
-            <LoadingBlock lines={4} />
-          ) : sububuError ? (
-            <EmptyState title="수불부를 불러오지 못했습니다" description={sububuError} />
-          ) : sububuMaterials.length === 0 ? (
-            <EmptyState title="해당 기간의 수불부 데이터가 없습니다" description="생산기록과 레시피가 있어야 계산됩니다." />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="text-gray-400">
-                  <tr className="border-b border-gray-700">
-                    <th className="px-3 py-2 font-medium">원재료명</th>
-                    <th className="px-3 py-2 font-medium">사용량(g)</th>
-                    <th className="px-3 py-2 font-medium">사용량(kg)</th>
-                    <th className="px-3 py-2 font-medium">투입 제품 수</th>
-                    <th className="px-3 py-2 font-medium">투입 횟수</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sububuMaterials.map((material) => (
-                    <tr key={material.food_type_name} className="border-b border-gray-800/80">
-                      <td className="px-3 py-3">
-                        <button
-                          type="button"
-                          onClick={() => void openSububuDetail(material.food_type_name)}
-                          className="text-left font-medium text-green-300 underline underline-offset-4 hover:text-green-200"
-                        >
-                          {material.food_type_name}
-                        </button>
-                      </td>
-                      <td className="px-3 py-3 text-green-400">{formatNumber(material.total_usage_g)}g</td>
-                      <td className="px-3 py-3 text-gray-200">{formatKg(material.total_usage_g)}kg</td>
-                      <td className="px-3 py-3 text-gray-200">{material.products_used.length}</td>
-                      <td className="px-3 py-3 text-gray-200">{material.usage_count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </SectionCard>
       </div>
     )
   }
@@ -5210,47 +5396,72 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </label>
           </div>
 
-          <div className="mb-4 rounded-xl border border-cyan-700/40 bg-cyan-950/20 px-4 py-2.5 text-sm text-cyan-100">
-            <p className="mb-2 text-sm font-semibold">최근 처리 이력</p>
-            {recipeMappingHistoryLoading ? (
-              <div className="animate-pulse text-cyan-200">최근 처리 내역을 불러오는 중...</div>
+          <div className="mb-4 rounded-2xl border border-cyan-300 bg-slate-50 px-4 py-3 text-slate-900 ring-1 ring-cyan-300/60 shadow-[0_0_18px_rgba(34,211,238,0.25)]">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">최근 처리 이력</p>
+              <button
+                type="button"
+                onClick={() => setRecipeMappingHistoryCollapsed((prev) => !prev)}
+                className="rounded-lg border border-cyan-300 px-3 py-1 text-xs font-semibold text-cyan-800 hover:border-cyan-500"
+              >
+                {recipeMappingHistoryCollapsed ? '펼치기' : '접기'}
+              </button>
+            </div>
+
+            {recipeMappingHistoryCollapsed ? (
+              <div className="rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs sm:text-sm">
+                {recipeMappingLatestHistory ? (
+                  <p className="truncate text-center text-slate-800">
+                    최근 처리 요약: {recipeMappingLatestHistory.product_name || '-'} / {recipeMappingLatestHistory.raw_material_name || '-'}
+                  </p>
+                ) : (
+                  <p className="text-center text-slate-600">아직 처리 이력이 없습니다.</p>
+                )}
+              </div>
+            ) : recipeMappingHistoryLoading ? (
+              <div className="animate-pulse text-center text-sm text-slate-600">최근 처리 내역을 불러오는 중...</div>
             ) : recipeMappingLatestHistory ? (
-              <div className="grid grid-cols-1 gap-2 text-xs md:grid-cols-12 md:items-end md:gap-x-3 md:gap-y-2 md:text-sm">
-                <div className="md:col-span-4">
-                  <p className="text-cyan-200">제품명</p>
-                  <p className="text-white">{recipeMappingLatestHistory.product_name || '-'}</p>
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 xl:grid-cols-12 xl:items-center xl:gap-3 xl:text-sm">
+                <div className="truncate rounded-lg bg-white px-2.5 py-2 text-center xl:col-span-2" title={recipeMappingLatestHistory.product_name || '-'}>
+                  <p className="text-[11px] text-slate-500">제품명</p>
+                  <p className="truncate font-medium text-slate-900">{recipeMappingLatestHistory.product_name || '-'}</p>
                 </div>
-                <div className="md:col-span-4">
-                  <p className="text-cyan-200">레시피 항목명</p>
-                  <p className="text-white">{recipeMappingLatestHistory.recipe_item_name || recipeMappingLatestHistory.food_type_name || '-'}</p>
+                <div
+                  className="truncate rounded-lg bg-white px-2.5 py-2 text-center xl:col-span-2"
+                  title={recipeMappingLatestHistory.recipe_item_name || recipeMappingLatestHistory.food_type_name || '-'}
+                >
+                  <p className="text-[11px] text-slate-500">레시피 항목명</p>
+                  <p className="truncate font-medium text-slate-900">
+                    {recipeMappingLatestHistory.recipe_item_name || recipeMappingLatestHistory.food_type_name || '-'}
+                  </p>
                 </div>
-                <div className="md:col-span-4">
-                  <p className="text-cyan-200">선택 원재료</p>
-                  <p className="text-white">{recipeMappingLatestHistory.raw_material_name}</p>
+                <div className="truncate rounded-lg bg-white px-2.5 py-2 text-center xl:col-span-2" title={recipeMappingLatestHistory.raw_material_name || '-'}>
+                  <p className="text-[11px] text-slate-500">선택 원재료</p>
+                  <p className="truncate font-medium text-slate-900">{recipeMappingLatestHistory.raw_material_name || '-'}</p>
                 </div>
-                <div className="md:col-span-3">
-                  <p className="text-cyan-200">적용 범위</p>
-                  <p className="text-white">{recipeMappingScopeText(recipeMappingLatestHistory.mapping_scope)}</p>
+                <div className="truncate rounded-lg bg-white px-2.5 py-2 text-center xl:col-span-2" title={recipeMappingScopeText(recipeMappingLatestHistory.mapping_scope)}>
+                  <p className="text-[11px] text-slate-500">적용 범위</p>
+                  <p className="truncate font-medium text-slate-900">{recipeMappingScopeText(recipeMappingLatestHistory.mapping_scope)}</p>
                 </div>
-                <div className="md:col-span-5">
-                  <p className="text-cyan-200">처리 시간</p>
-                  <p className="text-white">{formatDateTime(recipeMappingLatestHistory.created_at)}</p>
+                <div className="truncate rounded-lg bg-white px-2.5 py-2 text-center xl:col-span-2" title={formatDateTime(recipeMappingLatestHistory.created_at)}>
+                  <p className="text-[11px] text-slate-500">처리 시간</p>
+                  <p className="truncate font-medium text-slate-900">{formatDateTime(recipeMappingLatestHistory.created_at)}</p>
                 </div>
-                <div className="md:col-span-4 md:flex md:justify-end">
+                <div className="rounded-lg bg-white px-2.5 py-2 text-center xl:col-span-2 xl:flex xl:justify-center">
                   <button
                     type="button"
                     onClick={() => void undoLatestRecipeMapping()}
                     disabled={recipeMappingUndoing}
-                    className="rounded-lg border border-cyan-600 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:border-cyan-400 hover:text-white disabled:opacity-60"
+                    className="rounded-lg border border-cyan-600 px-3 py-1.5 text-xs font-semibold text-cyan-800 hover:border-cyan-500 hover:text-cyan-900 disabled:opacity-60"
                   >
                     {recipeMappingUndoing ? '되돌리는 중...' : '되돌리기'}
                   </button>
                 </div>
               </div>
             ) : (
-              <p className="text-cyan-200">아직 처리 이력이 없습니다.</p>
+              <p className="text-center text-sm text-slate-600">아직 처리 이력이 없습니다.</p>
             )}
-            {recipeMappingHistoryWarning ? <p className="mt-2 text-xs text-amber-200">{recipeMappingHistoryWarning}</p> : null}
+            {recipeMappingHistoryWarning ? <p className="mt-2 text-xs text-amber-700">{recipeMappingHistoryWarning}</p> : null}
           </div>
 
           <p className="mb-4 text-xs text-gray-400">포괄 항목 기준: {broadLabels.join(', ')}</p>
@@ -5411,17 +5622,33 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         title="부재료 관리"
         description="포장재/부재료는 packaging_materials 기준으로 관리합니다."
         actions={
-          <button
-            type="button"
-            onClick={() => {
-              setPackagingError('')
-              setPackagingForm(emptyPackagingForm())
-              setShowPackagingModal(true)
-            }}
-            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400"
-          >
-            부재료 추가
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setPackagingError('')
+                setPackagingForm(emptyPackagingForm())
+                setShowPackagingModal(true)
+              }}
+              className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400"
+            >
+              부재료 신규 추가
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPackagingInboundError('')
+                setPackagingInboundForm((prev) => ({
+                  ...emptyPackagingInboundForm(),
+                  material_code: prev.material_code || packagingMaterials[0]?.id || '',
+                }))
+                setShowPackagingInboundModal(true)
+              }}
+              className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+            >
+              부재료 입고 등록
+            </button>
+          </>
         }
       >
         {packagingError ? (
@@ -5461,7 +5688,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         {packagingLoading ? (
           <LoadingBlock lines={6} />
         ) : packagingMaterials.length === 0 ? (
-          <EmptyState title="등록된 부재료가 없습니다" description="부재료 추가 버튼으로 첫 항목을 등록해 주세요." />
+          <EmptyState title="등록된 부재료가 없습니다" description="부재료 신규 추가 버튼으로 첫 항목을 등록해 주세요." />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
@@ -5536,6 +5763,158 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     )
   }
 
+  function renderLedgerManagement() {
+    const packagingSummaryRows = summarizePackagingLedger(packagingLedgerRows)
+
+    return (
+      <SectionCard
+        title="원료수불부"
+        description="원재료 수불부와 부재료 수불부를 분리해서 조회합니다."
+        actions={
+          <>
+            <Field label="시작일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={sububuDateFrom}
+                onChange={(event) => setSububuDateFrom(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="종료일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={sububuDateTo}
+                onChange={(event) => setSububuDateTo(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="원료명 검색" className="min-w-[180px]">
+              <input
+                type="text"
+                value={sububuMaterialQuery}
+                onChange={(event) => setSububuMaterialQuery(event.target.value)}
+                placeholder="예: 설탕, 간장"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <button
+              type="button"
+              onClick={() => {
+                if (ledgerTab === 'raw') {
+                  void loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery)
+                  return
+                }
+                void loadPackagingLedger(sububuDateFrom, sububuDateTo, sububuMaterialQuery)
+              }}
+              className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+            >
+              조회
+            </button>
+          </>
+        }
+      >
+        <div className="mb-4 inline-flex rounded-xl border border-gray-700 bg-gray-950 p-1">
+          <button
+            type="button"
+            onClick={() => setLedgerTab('raw')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              ledgerTab === 'raw' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
+            }`}
+          >
+            원재료 수불부
+          </button>
+          <button
+            type="button"
+            onClick={() => setLedgerTab('packaging')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              ledgerTab === 'packaging' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
+            }`}
+          >
+            부재료 수불부
+          </button>
+        </div>
+
+        {sububuLoading ? (
+          <LoadingBlock lines={4} />
+        ) : sububuError ? (
+          <EmptyState title="수불부를 불러오지 못했습니다" description={sububuError} />
+        ) : ledgerTab === 'raw' ? (
+          sububuMaterials.length === 0 ? (
+            <EmptyState title="해당 기간의 원재료 수불 데이터가 없습니다" description="입고/소모 내역이 있어야 표시됩니다." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">원재료명</th>
+                    <th className="px-3 py-2 font-medium">입고(g)</th>
+                    <th className="px-3 py-2 font-medium">소모(g)</th>
+                    <th className="px-3 py-2 font-medium">잔량(g)</th>
+                    <th className="px-3 py-2 font-medium">거래건수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sububuMaterials.map((material) => (
+                    <tr key={material.material_name} className="border-b border-gray-800/80">
+                      <td className="px-3 py-3">
+                        <button
+                          type="button"
+                          onClick={() => void openSububuDetail(material.material_name)}
+                          className="text-left font-medium text-green-300 underline underline-offset-4 hover:text-green-200"
+                        >
+                          {material.material_name}
+                        </button>
+                      </td>
+                      <td className="px-3 py-3 text-green-400">{formatNumber(material.inbound_g)}g</td>
+                      <td className="px-3 py-3 text-amber-300">{formatNumber(material.outbound_g)}g</td>
+                      <td className="px-3 py-3 text-gray-200">{formatNumber(material.balance_g)}g</td>
+                      <td className="px-3 py-3 text-gray-200">{formatNumber(material.tx_count)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : packagingSummaryRows.length === 0 ? (
+          <EmptyState title="해당 기간의 부재료 수불 데이터가 없습니다" description="입고/출고 내역이 있어야 표시됩니다." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-gray-400">
+                <tr className="border-b border-gray-700">
+                  <th className="px-3 py-2 font-medium">부재료명</th>
+                  <th className="px-3 py-2 font-medium">입고(ea)</th>
+                  <th className="px-3 py-2 font-medium">출고(ea)</th>
+                  <th className="px-3 py-2 font-medium">잔량(ea)</th>
+                  <th className="px-3 py-2 font-medium">거래건수</th>
+                </tr>
+              </thead>
+              <tbody>
+                {packagingSummaryRows.map((material) => (
+                  <tr key={material.material_name} className="border-b border-gray-800/80">
+                    <td className="px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() => void openPackagingLedgerDetail(material.material_name)}
+                        className="text-left font-medium text-green-300 underline underline-offset-4 hover:text-green-200"
+                      >
+                        {material.material_name}
+                      </button>
+                    </td>
+                    <td className="px-3 py-3 text-green-400">{formatNumber(material.inbound_ea)} ea</td>
+                    <td className="px-3 py-3 text-amber-300">{formatNumber(material.outbound_ea)} ea</td>
+                    <td className="px-3 py-3 text-gray-200">{formatNumber(material.balance_ea)} ea</td>
+                    <td className="px-3 py-3 text-gray-200">{formatNumber(material.tx_count)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+    )
+  }
+
   function renderQuality() {
     const completed = records.filter((record) => normalizeInspection(record.inspection_result) === '적합').length
     const failed = records.filter((record) => normalizeInspection(record.inspection_result) === '부적합').length
@@ -5593,6 +5972,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     if (productionTab === 'prod-recipes') return renderRecipeManagement()
     if (productionTab === 'prod-recipe-mapping') return renderRecipeMaterialMapping()
     if (productionTab === 'prod-materials') return renderMaterialsManagement()
+    if (productionTab === 'prod-ledger') return renderLedgerManagement()
     if (productionTab === 'prod-packaging') return renderPackagingManagement()
     if (productionTab === 'prod-sanitation') return renderSanitation()
     if (productionTab === 'prod-quality') return renderQuality()
@@ -5867,6 +6247,116 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </div>
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={showRawInboundModal}
+        title="수동 입고 등록"
+        description="원재료 실제 입고 내역을 기록합니다."
+        onClose={() => {
+          setShowRawInboundModal(false)
+          setRawInboundError('')
+          setRawInboundForm(emptyRawInboundForm())
+        }}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="입고일자">
+            <input
+              type="date"
+              value={rawInboundForm.tx_date}
+              onChange={(event) => setRawInboundForm((prev) => ({ ...prev, tx_date: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="원재료 선택">
+            <select
+              value={rawInboundForm.raw_material_id}
+              onChange={(event) => setRawInboundForm((prev) => ({ ...prev, raw_material_id: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            >
+              <option value="">원재료를 선택하세요</option>
+              {materials
+                .filter((item) => item.is_active !== false)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.item_name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <Field label="입고수량">
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={rawInboundForm.quantity}
+              onChange={(event) => setRawInboundForm((prev) => ({ ...prev, quantity: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="단위">
+            <select
+              value={rawInboundForm.unit}
+              onChange={(event) => setRawInboundForm((prev) => ({ ...prev, unit: event.target.value as 'g' | 'kg' }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            >
+              <option value="g">g</option>
+              <option value="kg">kg</option>
+            </select>
+          </Field>
+          <Field label="거래처/입고처">
+            <input
+              value={rawInboundForm.counterparty}
+              onChange={(event) => setRawInboundForm((prev) => ({ ...prev, counterparty: event.target.value }))}
+              placeholder="선택 입력"
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="단가">
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={rawInboundForm.unit_price}
+              onChange={(event) => setRawInboundForm((prev) => ({ ...prev, unit_price: event.target.value }))}
+              placeholder="선택 입력"
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="비고" className="sm:col-span-2">
+            <textarea
+              rows={3}
+              value={rawInboundForm.note}
+              onChange={(event) => setRawInboundForm((prev) => ({ ...prev, note: event.target.value }))}
+              placeholder="선택 입력"
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+        </div>
+        {rawInboundError ? (
+          <div className="mt-4 rounded-xl border border-red-800/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">{rawInboundError}</div>
+        ) : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowRawInboundModal(false)
+              setRawInboundError('')
+              setRawInboundForm(emptyRawInboundForm())
+            }}
+            className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveRawInbound()}
+            disabled={rawInboundSaving}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+          >
+            {rawInboundSaving ? '저장 중...' : '입고 등록'}
+          </button>
+        </div>
       </Modal>
 
       <Modal
@@ -6451,6 +6941,190 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               </table>
             </div>
           )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={showPackagingLedgerDetailModal}
+        title={`${packagingLedgerDetailTarget || '부재료'} 수불 상세`}
+        description="기간별 입고/출고 내역"
+        onClose={() => {
+          setShowPackagingLedgerDetailModal(false)
+          setPackagingLedgerDetailRows([])
+          setPackagingLedgerDetailError('')
+        }}
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="시작일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={packagingLedgerDetailFrom}
+                onChange={(event) => setPackagingLedgerDetailFrom(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="종료일" className="min-w-[140px]">
+              <input
+                type="date"
+                value={packagingLedgerDetailTo}
+                onChange={(event) => setPackagingLedgerDetailTo(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <button
+              type="button"
+              onClick={() => void loadPackagingLedgerDetail(packagingLedgerDetailTarget, packagingLedgerDetailFrom, packagingLedgerDetailTo)}
+              className="h-[42px] rounded-xl border border-gray-700 px-4 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white"
+            >
+              검색
+            </button>
+          </div>
+
+          {packagingLedgerDetailBalanceMode ? (
+            <p className="text-xs text-gray-500">잔량 표시는 {packagingLedgerDetailBalanceMode} 기준입니다.</p>
+          ) : null}
+
+          {packagingLedgerDetailLoading ? (
+            <LoadingBlock lines={4} />
+          ) : packagingLedgerDetailError ? (
+            <EmptyState title="수불 상세를 불러오지 못했습니다" description={packagingLedgerDetailError} />
+          ) : packagingLedgerDetailRows.length === 0 ? (
+            <EmptyState title="거래 내역이 없습니다" description="선택한 기간의 입고/출고 데이터가 없습니다." />
+          ) : (
+            <div className="max-h-[420px] overflow-auto rounded-xl border border-gray-700">
+              <table className="min-w-full text-left text-sm">
+                <thead className="sticky top-0 bg-gray-900 text-gray-400">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">날짜</th>
+                    <th className="px-3 py-2 font-medium">구분</th>
+                    <th className="px-3 py-2 font-medium">거래처/사용처</th>
+                    <th className="px-3 py-2 font-medium">입고(ea)</th>
+                    <th className="px-3 py-2 font-medium">출고(ea)</th>
+                    <th className="px-3 py-2 font-medium">잔량(ea)</th>
+                    <th className="px-3 py-2 font-medium">비고</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {packagingLedgerDetailRows.map((row) => (
+                    <tr key={row.id} className="border-b border-gray-800/80">
+                      <td className="px-3 py-2 text-gray-200">{row.tx_date || '-'}</td>
+                      <td className="px-3 py-2 text-white">{row.tx_type || '-'}</td>
+                      <td className="px-3 py-2 text-gray-200">{row.counterparty || '-'}</td>
+                      <td className="px-3 py-2 text-green-400">{row.inbound_ea ? formatNumber(row.inbound_ea) : '-'}</td>
+                      <td className="px-3 py-2 text-amber-300">{row.outbound_ea ? formatNumber(row.outbound_ea) : '-'}</td>
+                      <td className="px-3 py-2 text-gray-200">{formatNumber(row.balance_ea)}</td>
+                      <td className="max-w-[320px] truncate px-3 py-2 text-gray-400" title={row.note || ''}>
+                        {row.note || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={showPackagingInboundModal}
+        title="부재료 입고 등록"
+        description="부재료 실제 입고 내역을 기록합니다."
+        onClose={() => {
+          setShowPackagingInboundModal(false)
+          setPackagingInboundError('')
+          setPackagingInboundForm(emptyPackagingInboundForm())
+        }}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="입고일자">
+            <input
+              type="date"
+              value={packagingInboundForm.tx_date}
+              onChange={(event) => setPackagingInboundForm((prev) => ({ ...prev, tx_date: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="부재료 선택">
+            <select
+              value={packagingInboundForm.material_code}
+              onChange={(event) => setPackagingInboundForm((prev) => ({ ...prev, material_code: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            >
+              <option value="">부재료를 선택하세요</option>
+              {packagingMaterials
+                .filter((item) => item.is_active !== false)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.material_name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <Field label="입고수량(ea)">
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={packagingInboundForm.quantity}
+              onChange={(event) => setPackagingInboundForm((prev) => ({ ...prev, quantity: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="거래처/입고처">
+            <input
+              value={packagingInboundForm.counterparty}
+              onChange={(event) => setPackagingInboundForm((prev) => ({ ...prev, counterparty: event.target.value }))}
+              placeholder="선택 입력"
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="단가">
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={packagingInboundForm.unit_price}
+              onChange={(event) => setPackagingInboundForm((prev) => ({ ...prev, unit_price: event.target.value }))}
+              placeholder="선택 입력"
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+          <Field label="비고" className="sm:col-span-2">
+            <textarea
+              rows={3}
+              value={packagingInboundForm.note}
+              onChange={(event) => setPackagingInboundForm((prev) => ({ ...prev, note: event.target.value }))}
+              placeholder="선택 입력"
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+        </div>
+        {packagingInboundError ? (
+          <div className="mt-4 rounded-xl border border-red-800/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+            {packagingInboundError}
+          </div>
+        ) : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowPackagingInboundModal(false)
+              setPackagingInboundError('')
+              setPackagingInboundForm(emptyPackagingInboundForm())
+            }}
+            className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={() => void savePackagingInbound()}
+            disabled={packagingInboundSaving}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
+          >
+            {packagingInboundSaving ? '저장 중...' : '입고 등록'}
+          </button>
         </div>
       </Modal>
 
