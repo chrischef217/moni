@@ -5210,29 +5210,33 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </label>
           </div>
 
-          <div className="mb-4 rounded-xl border border-cyan-700/40 bg-cyan-950/20 px-4 py-3 text-sm text-cyan-100">
-            <p className="mb-2 font-semibold">최근 처리 이력</p>
+          <div className="mb-4 rounded-xl border border-cyan-700/40 bg-cyan-950/20 px-4 py-2.5 text-sm text-cyan-100">
+            <p className="mb-2 text-sm font-semibold">최근 처리 이력</p>
             {recipeMappingHistoryLoading ? (
               <div className="animate-pulse text-cyan-200">최근 처리 내역을 불러오는 중...</div>
             ) : recipeMappingLatestHistory ? (
-              <div className="space-y-1 text-xs md:text-sm">
-                <p>
-                  제품명: <span className="text-white">{recipeMappingLatestHistory.product_name || '-'}</span>
-                </p>
-                <p>
-                  레시피 항목명:{' '}
-                  <span className="text-white">{recipeMappingLatestHistory.recipe_item_name || recipeMappingLatestHistory.food_type_name || '-'}</span>
-                </p>
-                <p>
-                  선택 원재료: <span className="text-white">{recipeMappingLatestHistory.raw_material_name}</span>
-                </p>
-                <p>
-                  적용 범위: <span className="text-white">{recipeMappingScopeText(recipeMappingLatestHistory.mapping_scope)}</span>
-                </p>
-                <p>
-                  처리 시간: <span className="text-white">{formatDateTime(recipeMappingLatestHistory.created_at)}</span>
-                </p>
-                <div className="pt-1">
+              <div className="grid grid-cols-1 gap-2 text-xs md:grid-cols-12 md:items-end md:gap-x-3 md:gap-y-2 md:text-sm">
+                <div className="md:col-span-4">
+                  <p className="text-cyan-200">제품명</p>
+                  <p className="text-white">{recipeMappingLatestHistory.product_name || '-'}</p>
+                </div>
+                <div className="md:col-span-4">
+                  <p className="text-cyan-200">레시피 항목명</p>
+                  <p className="text-white">{recipeMappingLatestHistory.recipe_item_name || recipeMappingLatestHistory.food_type_name || '-'}</p>
+                </div>
+                <div className="md:col-span-4">
+                  <p className="text-cyan-200">선택 원재료</p>
+                  <p className="text-white">{recipeMappingLatestHistory.raw_material_name}</p>
+                </div>
+                <div className="md:col-span-3">
+                  <p className="text-cyan-200">적용 범위</p>
+                  <p className="text-white">{recipeMappingScopeText(recipeMappingLatestHistory.mapping_scope)}</p>
+                </div>
+                <div className="md:col-span-5">
+                  <p className="text-cyan-200">처리 시간</p>
+                  <p className="text-white">{formatDateTime(recipeMappingLatestHistory.created_at)}</p>
+                </div>
+                <div className="md:col-span-4 md:flex md:justify-end">
                   <button
                     type="button"
                     onClick={() => void undoLatestRecipeMapping()}
