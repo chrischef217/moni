@@ -729,6 +729,15 @@ function formatKgFromGramValue(value: number) {
   return `${formatNumber(fixed)}kg`
 }
 
+function formatKgDisplayWithoutConversion(value: number) {
+  if (!Number.isFinite(value)) return null
+  const normalized = Number(value)
+  if (Math.abs(normalized - Math.round(normalized)) < 0.0001) {
+    return `${formatNumber(Math.round(normalized))}kg`
+  }
+  return `${formatNumber(Number(normalized.toFixed(3)))}kg`
+}
+
 function foodTypeDisplay(value: string | null | undefined) {
   return normalizeFoodTypeName(value) ?? '미지정'
 }
@@ -2480,6 +2489,30 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
     if (product.weight_g !== null && product.weight_g !== undefined && Number(product.weight_g) > 0) {
       return formatKgFromGramValue(Number(product.weight_g)) ?? '미등록'
+    }
+    return '미등록'
+  }
+
+  function packingUnitsDisplayTextForList(product: ProductOption, units?: ProductionUnit[]) {
+    const fromUnits = (units ?? [])
+      .map((unit) => Number(unit.unit_weight_g ?? 0))
+      .filter((weight) => Number.isFinite(weight) && weight > 0)
+    if (fromUnits.length > 0) {
+      return fromUnits
+        .map((value) => formatKgDisplayWithoutConversion(value))
+        .filter((value): value is string => Boolean(value))
+        .join(' / ')
+    }
+
+    const fromSpec = parsePackingUnitWeights(product.product_spec ?? '')
+    if (fromSpec.length > 0) {
+      return fromSpec
+        .map((value) => formatKgDisplayWithoutConversion(value))
+        .filter((value): value is string => Boolean(value))
+        .join(' / ')
+    }
+    if (product.weight_g !== null && product.weight_g !== undefined && Number(product.weight_g) > 0) {
+      return formatKgDisplayWithoutConversion(Number(product.weight_g)) ?? '미등록'
     }
     return '미등록'
   }
@@ -6902,8 +6935,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                           </td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{shelfLifeText}</td>
                           <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
-                            <span className="inline-block max-w-[260px] truncate align-middle" title={packingUnitsDisplayText(product)}>
-                              {packingUnitsDisplayText(product)}
+                            <span className="inline-block max-w-[260px] truncate align-middle" title={packingUnitsDisplayTextForList(product)}>
+                              {packingUnitsDisplayTextForList(product)}
                             </span>
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap">
