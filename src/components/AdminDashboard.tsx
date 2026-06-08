@@ -195,6 +195,7 @@ type RawMaterialMapping = {
   product_name?: string | null
   mapping_scope?: 'recipe' | 'product' | 'global' | null
   is_default?: boolean | null
+  raw_material_ref_id?: string | null
   raw_material_id?: string | number | null
   raw_material_name: string
   packing_unit?: string | null
@@ -209,6 +210,7 @@ type RecipeMaterialMappingRow = {
   food_type_id: string
   food_type_name: string
   ratio_percent: number
+  current_raw_material_ref_id?: string | null
   current_raw_material_name: string | null
   mapping_status: 'mapped' | 'unmapped' | 'name_fallback' | 'needs_review'
   applied_scope: 'recipe' | 'product' | 'global' | 'fallback' | null
@@ -277,6 +279,7 @@ type ProductRecipeDraftRow = {
   food_type_id: string
   food_type_name: string
   ratio_percent: string
+  raw_material_ref_id: string
   raw_material_name: string
   ingredient_type: string
   semi_product_id?: string | null
@@ -1574,6 +1577,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [recipeMappingUndoing, setRecipeMappingUndoing] = useState(false)
   const [showRecipeMappingModal, setShowRecipeMappingModal] = useState(false)
   const [selectedRecipeMappingRow, setSelectedRecipeMappingRow] = useState<RecipeMaterialMappingRow | null>(null)
+  const [recipeMappingSelectedMaterialId, setRecipeMappingSelectedMaterialId] = useState('')
   const [recipeMappingSelectedMaterial, setRecipeMappingSelectedMaterial] = useState('')
   const [recipeMappingMaterialQuery, setRecipeMappingMaterialQuery] = useState('')
   const [recipeMappingCandidateOpen, setRecipeMappingCandidateOpen] = useState(false)
@@ -2788,6 +2792,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     recipe?: RecipeRow,
     index = 0,
     recipeMappedMaterialName?: string | null,
+    recipeMappedMaterialRefId?: string | null,
   ): ProductRecipeDraftRow {
     return {
       local_id: uid(),
@@ -2796,6 +2801,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       food_type_name: recipe?.food_type_name ?? '',
       ratio_percent:
         recipe?.ratio_percent !== null && recipe?.ratio_percent !== undefined ? String(recipe.ratio_percent) : '',
+      raw_material_ref_id: recipeMappedMaterialRefId ?? '',
       raw_material_name: recipeMappedMaterialName ?? '',
       ingredient_type: recipe?.ingredient_type || '원재료',
       semi_product_id: recipe?.semi_product_id ?? null,
@@ -2853,6 +2859,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
   function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) {
     updateProductRecipeRow(localId, {
+      raw_material_ref_id: String(material.id),
       raw_material_name: material.item_name,
       raw_material_open: false,
       raw_material_highlight: 0,
@@ -2901,6 +2908,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     )
     if (activeMatch) {
       updateProductRecipeRow(localId, {
+        raw_material_ref_id: String(activeMatch.id),
         raw_material_name: activeMatch.item_name,
         raw_material_open: false,
         raw_material_highlight: 0,
@@ -2943,6 +2951,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         await loadRecipes(selectedRecipeProductId)
       }
       updateProductRecipeRow(localId, {
+        raw_material_ref_id: payload.material?.id ? String(payload.material.id) : '',
         raw_material_name: nextName,
         raw_material_open: false,
         raw_material_highlight: 0,
@@ -2999,6 +3008,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       const targetProductId = productRecipeProduct ? String(productRecipeProduct.id) : selectedRecipeProductId
       await loadRecipes(targetProductId)
       updateProductRecipeRow(localId, {
+        raw_material_ref_id: String(material.id),
         raw_material_name: material.item_name,
         raw_material_open: false,
         raw_material_highlight: 0,
@@ -3069,8 +3079,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setRecipeProducts(recipePayload.products ?? recipeProducts)
     setRecipeRawMaterials(recipePayload.rawMaterials ?? recipeRawMaterials)
     const mappingNameByRecipeId = new Map<string, string | null>()
+    const mappingRefIdByRecipeId = new Map<string, string | null>()
     for (const row of mappingPayload.rows ?? []) {
       mappingNameByRecipeId.set(String(row.recipe_id), row.current_raw_material_name ?? null)
+      mappingRefIdByRecipeId.set(String(row.recipe_id), row.current_raw_material_ref_id ?? null)
     }
 
     setProductRecipeRows(
@@ -3079,7 +3091,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         const mappedName = mappingNameByRecipeId.has(recipeKey)
           ? (mappingNameByRecipeId.get(recipeKey) ?? '')
           : preferredRecipeMaterialNames?.get(recipeKey) ?? ''
-        return makeProductRecipeDraftRow(recipe, index, mappedName)
+        const mappedRefId = mappingRefIdByRecipeId.get(recipeKey) ?? ''
+        return makeProductRecipeDraftRow(recipe, index, mappedName, mappedRefId)
       }),
     )
   }
@@ -3118,6 +3131,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       ingredient_type: row.ingredient_type || '원재료',
       semi_product_id: row.semi_product_id || null,
       sort_order: index + 1,
+      raw_material_ref_id: row.raw_material_ref_id.trim(),
       raw_material_name: row.raw_material_name.trim(),
     }))
 
@@ -3179,14 +3193,26 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         const requestedRawName = row.raw_material_name.trim()
         if (!requestedRawName) continue
         const requestedKey = normalizeMaterialName(requestedRawName)
+        const requestedRefId = row.raw_material_ref_id.trim()
         const activeCandidate =
+          (requestedRefId
+            ? allMaterials.find(
+                (material) => material.is_active !== false && String(material.id) === requestedRefId,
+              )
+            : undefined) ??
           activeRecipeRawMaterials.find(
             (material) => normalizeMaterialName(material.item_name) === requestedKey,
-          ) ?? recipeRawMaterials.find(
+          ) ??
+          recipeRawMaterials.find(
             (material) => material.is_active !== false && normalizeMaterialName(material.item_name) === requestedKey,
-          ) ?? activeMaterialsByNormalized.get(requestedKey)
+          ) ??
+          activeMaterialsByNormalized.get(requestedKey)
 
         let resolvedRawMaterialName = activeCandidate?.item_name?.trim() || requestedRawName
+        const resolvedRawMaterialRefId = activeCandidate?.id ? String(activeCandidate.id) : requestedRefId
+        if (!resolvedRawMaterialRefId) {
+          throw new Error('선택한 원재료가 활성 원재료 목록에 없습니다. 원재료 관리에서 먼저 등록/활성화해 주세요.')
+        }
         if (activeCandidate) {
           upsertRecipeRawMaterial({
             ...activeCandidate,
@@ -3207,6 +3233,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             food_type_id: String(targetRecipe.food_type_id),
             food_type_name: targetRecipe.food_type_name,
             recipe_item_name: targetRecipe.food_type_name,
+            raw_material_ref_id: resolvedRawMaterialRefId || null,
             raw_material_name: resolvedRawMaterialName,
             mapping_scope: 'recipe',
             is_default: true,
@@ -3276,6 +3303,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         : 'recipe',
     )
     const initialMaterial = row.current_raw_material_name ?? ''
+    setRecipeMappingSelectedMaterialId(row.current_raw_material_ref_id ?? '')
     setRecipeMappingSelectedMaterial(initialMaterial)
     setRecipeMappingMaterialQuery(initialMaterial)
     setRecipeMappingCandidateOpen(false)
@@ -3284,9 +3312,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setShowRecipeMappingModal(true)
   }
 
-  function selectRecipeMappingMaterial(name: string) {
-    setRecipeMappingSelectedMaterial(name)
-    setRecipeMappingMaterialQuery(name)
+  function selectRecipeMappingMaterial(material: { id: string; item_name: string }) {
+    setRecipeMappingSelectedMaterialId(String(material.id))
+    setRecipeMappingSelectedMaterial(material.item_name)
+    setRecipeMappingMaterialQuery(material.item_name)
     setRecipeMappingCandidateOpen(false)
     setRecipeMappingHighlightIndex(-1)
   }
@@ -3296,6 +3325,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setRecipeMappingCandidateOpen(true)
     setRecipeMappingHighlightIndex(0)
     if (nextValue.trim() !== recipeMappingSelectedMaterial.trim()) {
+      setRecipeMappingSelectedMaterialId('')
       setRecipeMappingSelectedMaterial('')
     }
   }
@@ -3335,11 +3365,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       if (!recipeMappingCandidateOpen) return
       event.preventDefault()
       if (recipeMappingMaterialCandidates.length === 1) {
-        selectRecipeMappingMaterial(recipeMappingMaterialCandidates[0].item_name)
+        selectRecipeMappingMaterial(recipeMappingMaterialCandidates[0])
         return
       }
       if (recipeMappingHighlightIndex >= 0 && recipeMappingHighlightIndex < recipeMappingMaterialCandidates.length) {
-        selectRecipeMappingMaterial(recipeMappingMaterialCandidates[recipeMappingHighlightIndex].item_name)
+        selectRecipeMappingMaterial(recipeMappingMaterialCandidates[recipeMappingHighlightIndex])
       }
     }
   }
@@ -3354,6 +3384,16 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     setRecipeMappingSaving(true)
     setRecipeMappingMessage(null)
     try {
+      const selectedMaterial =
+        (recipeMappingSelectedMaterialId
+          ? recipeMappingRawMaterials.find((material) => String(material.id) === recipeMappingSelectedMaterialId)
+          : undefined) ??
+        recipeMappingRawMaterials.find(
+          (material) => normalizeMaterialName(material.item_name) === normalizeMaterialName(recipeMappingSelectedMaterial),
+        )
+      if (!selectedMaterial?.id) {
+        throw new Error('선택한 원재료가 활성 원재료 목록에 없습니다. 원재료 관리에서 먼저 등록/활성화해 주세요.')
+      }
       const payload = await readJson<RecipeMappingHistoryPayload>('/api/moni/raw-material-mapping', {
         method: 'POST',
         body: JSON.stringify({
@@ -3362,7 +3402,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           product_name: selectedRecipeMappingRow.product_name,
           food_type_id: selectedRecipeMappingRow.food_type_id,
           food_type_name: selectedRecipeMappingRow.food_type_name,
-          raw_material_name: recipeMappingSelectedMaterial,
+          raw_material_ref_id: String(selectedMaterial.id),
+          raw_material_name: selectedMaterial.item_name,
           mapping_scope: recipeMappingSelectedScope,
           is_default: true,
         }),
@@ -3376,6 +3417,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       await Promise.all([loadRecipeMaterialMappings(), loadRecipes(selectedRecipeProductId), loadLatestRecipeMappingHistory()])
       setShowRecipeMappingModal(false)
       setSelectedRecipeMappingRow(null)
+      setRecipeMappingSelectedMaterialId('')
       setRecipeMappingMaterialQuery('')
       setRecipeMappingCandidateOpen(false)
       setRecipeMappingHighlightIndex(-1)
@@ -8215,7 +8257,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                             <li key={item.id}>
                               <button
                                 type="button"
-                                onClick={() => selectRecipeMappingMaterial(item.item_name)}
+                                onClick={() => selectRecipeMappingMaterial(item)}
                                 className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
                                   isHighlighted
                                     ? 'bg-green-500/20 text-white'
@@ -9524,6 +9566,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               onChange={(event) =>
                                 updateProductRecipeRow(row.local_id, {
                                   raw_material_name: event.target.value,
+                                  raw_material_ref_id: '',
                                   raw_material_open: true,
                                   raw_material_highlight: 0,
                                 })

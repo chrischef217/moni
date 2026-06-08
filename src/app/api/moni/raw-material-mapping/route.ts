@@ -41,6 +41,12 @@ function isMissingTableError(message: string): boolean {
   return text.includes('does not exist') || text.includes('relation') || text.includes('schema cache')
 }
 
+function isMissingColumnError(message: string, columnName: string): boolean {
+  const text = message.toLowerCase()
+  const column = columnName.toLowerCase()
+  return text.includes(column) && (text.includes('does not exist') || text.includes('schema cache') || text.includes('column'))
+}
+
 const BROAD_TERMS = new Set(['소스', '복합조미식품', '기타가공품', '조미식품', '추출가공식품', '수산물가공품', '육류가공품'])
 
 function scopeForRow(row: Record<string, unknown>): MappingScope {
@@ -73,10 +79,10 @@ async function fetchRecipeScopedRows(request: NextRequest) {
       .order('sort_order', { ascending: true }),
     supabase
       .from('raw_material_mapping')
-      .select('id, food_type_id, raw_material_id, raw_material_name, is_default, recipe_id, product_id, product_name, mapping_scope, created_at')
+      .select('*')
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: false }),
-    supabase.from('raw_materials').select('id, item_name, is_active').eq('is_active', true).order('item_name', { ascending: true }),
+    supabase.from('raw_materials').select('id, item_name, is_active').order('item_name', { ascending: true }),
   ])
 
   if (recipesResult.error) throw new Error(recipesResult.error.message || '레시피 목록 조회에 실패했습니다.')
@@ -88,10 +94,14 @@ async function fetchRecipeScopedRows(request: NextRequest) {
   const rawMaterials = (rawMaterialsResult.data ?? []) as Array<{ id: string; item_name: string; is_active?: boolean }>
 
   const materialsByName = new Map<string, { id: string; item_name: string }>()
+  const materialsById = new Map<string, { id: string; item_name: string; is_active?: boolean }>()
   for (const item of rawMaterials) {
+    const id = String(item.id)
+    if (id) materialsById.set(id, { id, item_name: String(item.item_name), is_active: item.is_active })
+    if (item.is_active === false) continue
     const key = normalizeKey(String(item.item_name ?? ''))
     if (!key) continue
-    materialsByName.set(key, { id: String(item.id), item_name: String(item.item_name) })
+    materialsByName.set(key, { id, item_name: String(item.item_name) })
   }
 
   const recipeScoped = new Map<string, Record<string, unknown>[]>()
@@ -172,8 +182,11 @@ async function fetchRecipeScopedRows(request: NextRequest) {
       }
 
       const fallbackMaterial = materialsByName.get(normalizeKey(foodTypeName))
-      const selectedName = toText(selectedMapping?.raw_material_name)
+      const selectedRefId = toText(selectedMapping?.raw_material_ref_id)
+      const selectedRefMaterial = selectedRefId ? materialsById.get(selectedRefId) : undefined
+      const selectedName = selectedRefMaterial?.item_name || toText(selectedMapping?.raw_material_name)
       const currentMappedName = selectedName || fallbackMaterial?.item_name || null
+      const currentMappedRefId = selectedRefMaterial?.id || selectedRefId || fallbackMaterial?.id || null
       const isBroad = BROAD_TERMS.has(foodTypeName)
 
       let mappingStatus: MappingStatus = 'unmapped'
@@ -194,6 +207,7 @@ async function fetchRecipeScopedRows(request: NextRequest) {
         food_type_id: foodTypeId,
         food_type_name: foodTypeName,
         ratio_percent: ratioPercent,
+        current_raw_material_ref_id: currentMappedRefId,
         current_raw_material_name: currentMappedName,
         mapping_status: mappingStatus,
         applied_scope: appliedScope,
@@ -225,7 +239,9 @@ async function fetchRecipeScopedRows(request: NextRequest) {
   return {
     ok: true,
     rows,
-    rawMaterials: rawMaterials.map((item) => ({ id: String(item.id), item_name: String(item.item_name) })),
+    rawMaterials: rawMaterials
+      .filter((item) => item.is_active !== false)
+      .map((item) => ({ id: String(item.id), item_name: String(item.item_name) })),
   }
 }
 
@@ -238,7 +254,7 @@ async function buildScopeDefaultQuery(
     foodTypeId: string
   },
 ) {
-  const selected = 'id, raw_material_name, mapping_scope, recipe_id, product_id, food_type_id, is_default'
+  const selected = '*'
   let query = supabase.from('raw_material_mapping').select(selected).eq('is_default', true)
 
   if (scope === 'recipe') {
@@ -388,13 +404,14 @@ export async function POST(request: NextRequest) {
 
     const foodTypeId = toText(body?.food_type_id)
     const rawMaterialName = toText(body?.raw_material_name)
+    const rawMaterialRefId = toText(body?.raw_material_ref_id) || null
     const mappingScope = normalizeScope(body?.mapping_scope) ?? 'global'
     const recipeId = toText(body?.recipe_id) || null
     let productId = toText(body?.product_id) || null
     let productName = toText(body?.product_name) || null
     const businessId = toText(body?.business_id) || 'default'
 
-    if (!foodTypeId || !rawMaterialName) {
+    if (!foodTypeId || (!rawMaterialRefId && !rawMaterialName)) {
       return NextResponse.json({ ok: false, error: '식품유형과 원재료명을 입력해 주세요.' }, { status: 400 })
     }
     if (mappingScope === 'recipe' && !recipeId) {
@@ -404,12 +421,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: '제품 범위 매핑에는 product_id가 필요합니다.' }, { status: 400 })
     }
 
-    const { data: activeMaterial, error: activeMaterialError } = await supabase
+    let activeMaterialQuery = supabase
       .from('raw_materials')
       .select('id, item_name, is_active')
-      .eq('item_name', rawMaterialName)
       .eq('is_active', true)
-      .maybeSingle()
+    activeMaterialQuery = rawMaterialRefId ? activeMaterialQuery.eq('id', rawMaterialRefId) : activeMaterialQuery.eq('item_name', rawMaterialName)
+    const { data: activeMaterial, error: activeMaterialError } = await activeMaterialQuery.maybeSingle()
     if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')
     if (!activeMaterial) {
       return NextResponse.json(
@@ -417,6 +434,8 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       )
     }
+    const canonicalRawMaterialRefId = toText(activeMaterial.id)
+    const canonicalRawMaterialName = toText(activeMaterial.item_name) || rawMaterialName
 
     if ((mappingScope === 'recipe' || mappingScope === 'product') && (!productId || !productName) && recipeId) {
       const { data: recipeRow, error: recipeError } = await supabase
@@ -437,7 +456,11 @@ export async function POST(request: NextRequest) {
     const { data: existingDefaults, error: existingDefaultError } = await existingDefaultQuery
     if (existingDefaultError) throw new Error(existingDefaultError.message || '기존 기본 매핑 조회에 실패했습니다.')
 
-    const sameDefault = (existingDefaults ?? []).find((item) => toText(item.raw_material_name) === rawMaterialName)
+    const sameDefault = (existingDefaults ?? []).find((item) => {
+      const existingRefId = toText(item.raw_material_ref_id)
+      if (canonicalRawMaterialRefId && existingRefId) return existingRefId === canonicalRawMaterialRefId
+      return toText(item.raw_material_name) === canonicalRawMaterialName
+    })
     if (sameDefault) {
       return NextResponse.json(
         {
@@ -459,7 +482,8 @@ export async function POST(request: NextRequest) {
     const payload = {
       food_type_id: foodTypeId,
       raw_material_id: toNumber(body?.raw_material_id),
-      raw_material_name: rawMaterialName,
+      raw_material_ref_id: canonicalRawMaterialRefId || null,
+      raw_material_name: canonicalRawMaterialName,
       recipe_id: mappingScope === 'recipe' ? recipeId : null,
       product_id: mappingScope === 'global' ? null : productId,
       product_name: mappingScope === 'global' ? null : productName,
@@ -470,7 +494,13 @@ export async function POST(request: NextRequest) {
       business_id: businessId,
     }
 
-    const { data, error } = await supabase.from('raw_material_mapping').insert(payload).select('*').single()
+    let insertResult = await supabase.from('raw_material_mapping').insert(payload).select('*').single()
+    if (insertResult.error && isMissingColumnError(insertResult.error.message, 'raw_material_ref_id')) {
+      const legacyPayload: Record<string, unknown> = { ...payload }
+      delete legacyPayload.raw_material_ref_id
+      insertResult = await supabase.from('raw_material_mapping').insert(legacyPayload).select('*').single()
+    }
+    const { data, error } = insertResult
     if (error) throw new Error(error.message || '원재료 매핑 저장에 실패했습니다.')
 
     const historyInsert = await safeInsertHistory({
@@ -483,7 +513,7 @@ export async function POST(request: NextRequest) {
       food_type_id: foodTypeId || null,
       new_mapping_id: toText(data?.id) || null,
       previous_default_mapping_ids: previousDefaultIds,
-      raw_material_name: rawMaterialName,
+      raw_material_name: canonicalRawMaterialName,
       recipe_item_name: toText(body?.recipe_item_name) || toText(body?.food_type_name) || null,
       food_type_name: toText(body?.food_type_name) || null,
       actor_id: toText(body?.actor_id) || null,
@@ -510,17 +540,18 @@ export async function PATCH(request: NextRequest) {
     }
 
     const rawMaterialName = toText(body?.raw_material_name)
-    if (!rawMaterialName) {
+    const rawMaterialRefId = toText(body?.raw_material_ref_id) || null
+    if (!rawMaterialRefId && !rawMaterialName) {
       return NextResponse.json({ ok: false, error: 'raw_material_name은 필수입니다.' }, { status: 400 })
     }
 
     const supabase = createMoniServiceRoleClient()
-    const { data: activeMaterial, error: activeMaterialError } = await supabase
+    let activeMaterialQuery = supabase
       .from('raw_materials')
-      .select('id')
-      .eq('item_name', rawMaterialName)
+      .select('id, item_name')
       .eq('is_active', true)
-      .maybeSingle()
+    activeMaterialQuery = rawMaterialRefId ? activeMaterialQuery.eq('id', rawMaterialRefId) : activeMaterialQuery.eq('item_name', rawMaterialName)
+    const { data: activeMaterial, error: activeMaterialError } = await activeMaterialQuery.maybeSingle()
     if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')
     if (!activeMaterial) {
       return NextResponse.json(
@@ -528,10 +559,13 @@ export async function PATCH(request: NextRequest) {
         { status: 400 },
       )
     }
+    const canonicalRawMaterialRefId = toText(activeMaterial.id)
+    const canonicalRawMaterialName = toText(activeMaterial.item_name) || rawMaterialName
 
     const updatePayload = {
       food_type_id: toText(body?.food_type_id) || null,
-      raw_material_name: rawMaterialName,
+      raw_material_ref_id: canonicalRawMaterialRefId || null,
+      raw_material_name: canonicalRawMaterialName,
       mapping_scope: mappingScope,
       recipe_id: mappingScope === 'recipe' ? toText(body?.recipe_id) || null : null,
       product_id: mappingScope === 'global' ? null : toText(body?.product_id) || null,
@@ -541,7 +575,13 @@ export async function PATCH(request: NextRequest) {
       is_default: body?.is_default === false ? false : true,
     }
 
-    const { data, error } = await supabase.from('raw_material_mapping').update(updatePayload).eq('id', id).select('*').single()
+    let updateResult = await supabase.from('raw_material_mapping').update(updatePayload).eq('id', id).select('*').single()
+    if (updateResult.error && isMissingColumnError(updateResult.error.message, 'raw_material_ref_id')) {
+      const legacyPayload: Record<string, unknown> = { ...updatePayload }
+      delete legacyPayload.raw_material_ref_id
+      updateResult = await supabase.from('raw_material_mapping').update(legacyPayload).eq('id', id).select('*').single()
+    }
+    const { data, error } = updateResult
     if (error) throw new Error(error.message || '원재료 매핑 수정에 실패했습니다.')
 
     return NextResponse.json({ ok: true, mapping: data }, { status: 200 })

@@ -52,6 +52,7 @@ type MappingRow = {
   id?: string | null
   food_type_id: string | null
   raw_material_id: string | number | null
+  raw_material_ref_id?: string | null
   raw_material_name: string | null
   is_default: boolean | null
   recipe_id?: string | null
@@ -546,7 +547,7 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
   if (foodTypeIds.length > 0) {
     const mappingResult = await supabase
       .from('raw_material_mapping')
-      .select('id, food_type_id, raw_material_id, raw_material_name, is_default, recipe_id, product_id, mapping_scope, created_at')
+      .select('*')
       .in('food_type_id', foodTypeIds)
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: false })
@@ -620,12 +621,14 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
     const globalCandidates = foodTypeId ? globalScopeMappings.get(foodTypeId) ?? [] : []
     const preferred = recipeCandidates[0] ?? productCandidates[0] ?? globalCandidates[0]
 
+    const mappedMaterialRefId = toText(preferred?.raw_material_ref_id)
     const mappedMaterialId = toText(preferred?.raw_material_id)
     const mappedMaterialName = toText(preferred?.raw_material_name)
+    const byRefId = mappedMaterialRefId ? materialById.get(mappedMaterialRefId) : undefined
     const byId = mappedMaterialId ? materialById.get(mappedMaterialId) : undefined
     const byMappedName = mappedMaterialName ? materialByName.get(normalizeKey(mappedMaterialName)) : undefined
     const byFoodTypeName = materialByName.get(normalizeKey(foodTypeName))
-    const targetMaterial = byId ?? byMappedName ?? byFoodTypeName
+    const targetMaterial = byRefId ?? byId ?? byMappedName ?? byFoodTypeName
 
     const key = targetMaterial ? `material:${targetMaterial.id}` : `missing:${foodTypeName}`
     const currentStockG = parseNumber(targetMaterial?.current_stock_g) ?? 0

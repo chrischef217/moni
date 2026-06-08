@@ -34,6 +34,12 @@ function normalizeName(value: unknown): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
+function isMissingColumnError(message: string, columnName: string): boolean {
+  const text = message.toLowerCase()
+  const column = columnName.toLowerCase()
+  return text.includes(column) && (text.includes('does not exist') || text.includes('schema cache') || text.includes('column'))
+}
+
 type MappingRow = {
   id: string
   raw_material_name: string | null
@@ -94,6 +100,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const shouldSyncMapping = oldKey.length > 0 && newKey.length > 0 && oldKey !== newKey
 
     if (shouldSyncMapping) {
+      const { error: refMappingError } = await supabase
+        .from('raw_material_mapping')
+        .update({ raw_material_name: newName })
+        .eq('raw_material_ref_id', id)
+      if (refMappingError && !isMissingColumnError(refMappingError.message, 'raw_material_ref_id')) {
+        throw new Error(refMappingError.message || '?먯옱猷??곌껐紐?媛깆떊 ?ㅽ뙣')
+      }
+
       const candidates: MappingRow[] = []
       if (businessId) {
         const [sameBusinessResult, nullBusinessResult] = await Promise.all([
