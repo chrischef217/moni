@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import AllowanceModule, {
   EMPTY_COMPANY_INFO,
@@ -1597,6 +1597,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     current_stock: '0',
     note: '',
   })
+  const productRecipeRawMaterialInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   function resetQuickMaterialForm() {
     setQuickMaterialForm({
@@ -9565,6 +9566,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                         <td className="px-2 py-2">
                           <div className="relative">
                             <input
+                              ref={(element) => {
+                                productRecipeRawMaterialInputRefs.current[row.local_id] = element
+                              }}
                               value={row.raw_material_name}
                               onChange={(event) =>
                                 updateProductRecipeRow(row.local_id, {
@@ -9576,6 +9580,22 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               }
                               onFocus={() => updateProductRecipeRow(row.local_id, { raw_material_open: true })}
                               onKeyDown={(event) => {
+                                if (event.key === 'Tab') {
+                                  const currentIndex = productRecipeRows.findIndex((item) => item.local_id === row.local_id)
+                                  if (currentIndex >= 0) {
+                                    const nextIndex = event.shiftKey ? currentIndex - 1 : currentIndex + 1
+                                    const nextRow = productRecipeRows[nextIndex]
+                                    const nextInput = nextRow
+                                      ? productRecipeRawMaterialInputRefs.current[nextRow.local_id] ?? null
+                                      : null
+                                    if (nextInput) {
+                                      event.preventDefault()
+                                      nextInput.focus()
+                                      nextInput.select()
+                                      return
+                                    }
+                                  }
+                                }
                                 if (event.key === 'Escape') {
                                   updateProductRecipeRow(row.local_id, { raw_material_open: false })
                                   return
