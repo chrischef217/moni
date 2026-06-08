@@ -51,8 +51,32 @@ function formatEaRemainder(ea: number, remainderG: number) {
 }
 
 type RecipeRow = {
+  id?: string | null
+  product_id?: string | null
+  food_type_id?: string | null
   food_type_name?: string | null
   ratio_percent?: number | string | null
+}
+
+type MappingRow = {
+  recipe_id?: string | null
+  product_id?: string | null
+  food_type_id?: string | null
+  raw_material_ref_id?: string | null
+  raw_material_id?: string | number | null
+  raw_material_name?: string | null
+  mapping_scope?: string | null
+  is_default?: boolean | null
+  created_at?: string | null
+}
+
+type MaterialRow = {
+  id?: string | null
+  item_name?: string | null
+}
+
+function normalizeKey(value: unknown) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, '')
 }
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
@@ -104,7 +128,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     if (productId) {
       const byProductId = await supabase
         .from('recipes')
-        .select('food_type_name, ratio_percent')
+        .select('id, product_id, food_type_id, food_type_name, ratio_percent')
         .eq('product_id', productId)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
@@ -115,7 +139,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     if (recipeRows.length === 0 && productName) {
       const byProductName = await supabase
         .from('recipes')
-        .select('food_type_name, ratio_percent')
+        .select('id, product_id, food_type_id, food_type_name, ratio_percent')
         .eq('product_name', productName)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
@@ -123,16 +147,107 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       recipeRows = (byProductName.data ?? []) as RecipeRow[]
     }
 
+    const businessId = String(data.business_id ?? '').trim() || '20220523011'
+    const materialBusinessScope = `business_id.eq.${businessId},business_id.eq.default,business_id.is.null`
+    const mappingQuery = await supabase
+      .from('raw_material_mapping')
+      .select(
+        'recipe_id, product_id, food_type_id, raw_material_ref_id, raw_material_id, raw_material_name, mapping_scope, is_default, created_at, business_id',
+      )
+      .eq('is_default', true)
+      .or(materialBusinessScope)
+      .order('created_at', { ascending: false })
+      .limit(5000)
+    if (mappingQuery.error) throw new Error(mappingQuery.error.message || '원재료 매핑 조회에 실패했습니다.')
+    const allMappings = (mappingQuery.data ?? []) as MappingRow[]
+
+    const mappingRefIds = Array.from(
+      new Set(
+        allMappings
+          .map((mapping) => String(mapping.raw_material_ref_id ?? mapping.raw_material_id ?? '').trim())
+          .filter((value) => value.length > 0),
+      ),
+    )
+
+    let mappedMaterialsById = new Map<string, string>()
+    if (mappingRefIds.length > 0) {
+      const mappedMaterialsQuery = await supabase.from('raw_materials').select('id, item_name').in('id', mappingRefIds).limit(5000)
+      if (mappedMaterialsQuery.error) throw new Error(mappedMaterialsQuery.error.message || '원재료 조회에 실패했습니다.')
+      mappedMaterialsById = new Map(
+        ((mappedMaterialsQuery.data ?? []) as MaterialRow[])
+          .map((material) => [String(material.id ?? '').trim(), String(material.item_name ?? '').trim()] as const)
+          .filter(([id, name]) => id && name),
+      )
+    }
+
+    const directMaterialQuery = await supabase
+      .from('raw_materials')
+      .select('item_name')
+      .eq('is_active', true)
+      .or(materialBusinessScope)
+      .limit(5000)
+    if (directMaterialQuery.error) throw new Error(directMaterialQuery.error.message || '원재료 조회에 실패했습니다.')
+    const directMaterialByName = new Map(
+      ((directMaterialQuery.data ?? []) as Array<{ item_name?: string | null }>)
+        .map((material) => String(material.item_name ?? '').trim())
+        .filter((name) => name.length > 0)
+        .map((name) => [normalizeKey(name), name] as const),
+    )
+
+    const resolveMappedMaterialName = (mapping: MappingRow | null | undefined) => {
+      if (!mapping) return ''
+      const refId = String(mapping.raw_material_ref_id ?? mapping.raw_material_id ?? '').trim()
+      if (refId) {
+        const mappedName = mappedMaterialsById.get(refId)
+        if (mappedName) return mappedName
+      }
+      return String(mapping.raw_material_name ?? '').trim()
+    }
+
     const requirementRows = recipeRows
       .map((row) => {
         const ratio = parseNumber(row.ratio_percent) ?? 0
+        const recipeId = String(row.id ?? '').trim()
+        const recipeProductId = String(row.product_id ?? '').trim() || productId
+        const foodTypeId = String(row.food_type_id ?? '').trim()
+        const foodTypeName = String(row.food_type_name ?? '').trim()
+
+        const recipeScoped = allMappings.find(
+          (mapping) =>
+            String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'recipe' &&
+            String(mapping.recipe_id ?? '').trim() === recipeId,
+        )
+        const productScoped = allMappings.find(
+          (mapping) =>
+            String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'product' &&
+            String(mapping.product_id ?? '').trim() === recipeProductId &&
+            String(mapping.food_type_id ?? '').trim() === foodTypeId,
+        )
+        const globalScoped = allMappings.find(
+          (mapping) =>
+            String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'global' &&
+            String(mapping.food_type_id ?? '').trim() === foodTypeId,
+        )
+        const preferredMapping = recipeScoped ?? productScoped ?? globalScoped
+
+        let displayMaterialName = resolveMappedMaterialName(preferredMapping)
+        if (!displayMaterialName && foodTypeName) {
+          const nameFallbackMapping = allMappings.find(
+            (mapping) => normalizeKey(mapping.raw_material_name) === normalizeKey(foodTypeName),
+          )
+          displayMaterialName = resolveMappedMaterialName(nameFallbackMapping)
+        }
+        if (!displayMaterialName && foodTypeName) {
+          displayMaterialName = directMaterialByName.get(normalizeKey(foodTypeName)) || ''
+        }
+
         return {
-          foodTypeName: String(row.food_type_name ?? '').trim(),
+          materialDisplayName: displayMaterialName || (foodTypeName ? `미연결: ${foodTypeName}` : '미연결'),
           ratioPercent: ratio,
           requiredG: plannedQuantityG > 0 ? (plannedQuantityG * ratio) / 100 : 0,
         }
       })
-      .filter((row) => row.foodTypeName && row.ratioPercent > 0)
+      .filter((row) => row.materialDisplayName && row.ratioPercent > 0)
 
     const html = `<!doctype html>
 <html lang="ko">
@@ -233,7 +348,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
             ? requirementRows
                 .map(
                   (row) => `<tr>
-                    <td>${escapeHtml(row.foodTypeName)}</td>
+                    <td>${escapeHtml(row.materialDisplayName)}</td>
                     <td class="number">${formatNumber(row.ratioPercent)}</td>
                     <td class="number">${formatRequiredGram(row.requiredG)}</td>
                   </tr>`,
