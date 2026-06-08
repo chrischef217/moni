@@ -6760,7 +6760,9 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <th className="px-3 py-2 font-medium">규격</th>
                     <th className="px-3 py-2 font-medium">보관</th>
                     <th className="px-3 py-2 font-medium">소비기한</th>
-                    <th className="px-3 py-2 font-medium">현재재고</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">현재재고</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">재료유형</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap text-right">작업</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -6774,12 +6776,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                         setShowMaterialModal(true)
                       }}
                     >
-                      <td className="px-3 py-3 text-white">
-                        <div className="flex flex-col">
-                          <span>{material.item_name}</span>
-                          <span className="text-xs text-gray-400">재료유형: {material.ingredient_type || '원재료'}</span>
-                        </div>
-                      </td>
+                      <td className="px-3 py-3 text-white">{material.item_name}</td>
                       <td className="px-3 py-3 text-gray-200">{material.food_type || material.food_type_name || '-'}</td>
                       <td className="px-3 py-3 text-gray-200">{material.country_of_origin || '-'}</td>
                       <td className="px-3 py-3 text-gray-200">{material.spec || material.packing_unit || '-'}</td>
@@ -6788,6 +6785,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                         {material.shelf_life_days ? `${material.shelf_life_days}일` : '-'}
                       </td>
                       <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock_g)}g</td>
+                      <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{material.ingredient_type || '원재료'}</td>
                       <td className="px-3 py-3 text-right">
                         <div className="inline-flex items-center gap-2">
                           <button
