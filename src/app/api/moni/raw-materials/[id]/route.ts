@@ -29,6 +29,11 @@ function boolValue(value: unknown): boolean | null {
   return null
 }
 
+function normalizeName(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = String(params.id ?? '').trim()
@@ -57,10 +62,38 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     const supabase = createMoniServiceRoleClient()
+
+    const { data: beforeRow, error: beforeError } = await supabase
+      .from('raw_materials')
+      .select('id, item_name, business_id')
+      .eq('id', id)
+      .maybeSingle()
+    if (beforeError) throw new Error(beforeError.message || '원재료 조회 실패')
+    if (!beforeRow) {
+      return NextResponse.json({ ok: false, error: '원재료를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const oldName = text(beforeRow.item_name) ?? ''
+    const businessId = text(beforeRow.business_id)
+
     const { data, error } = await supabase.from('raw_materials').update(payload).eq('id', id).select('*').maybeSingle()
     if (error) throw new Error(error.message || '원재료 수정 실패')
     if (!data) {
       return NextResponse.json({ ok: false, error: '원재료를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const newName = text(data.item_name) ?? ''
+    const oldKey = normalizeName(oldName)
+    const newKey = normalizeName(newName)
+    const shouldSyncMapping = oldKey.length > 0 && newKey.length > 0 && oldKey !== newKey
+
+    if (shouldSyncMapping) {
+      let mappingQuery = supabase.from('raw_material_mapping').update({ raw_material_name: newName }).eq('raw_material_name', oldName)
+      if (businessId) {
+        mappingQuery = mappingQuery.eq('business_id', businessId)
+      }
+      const { error: mappingError } = await mappingQuery
+      if (mappingError) throw new Error(mappingError.message || '원재료 연결명 갱신 실패')
     }
 
     return NextResponse.json({ ok: true, material: data }, { status: 200 })
