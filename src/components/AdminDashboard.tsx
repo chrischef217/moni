@@ -3119,7 +3119,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     ])
 
     setRecipeProducts(recipePayload.products ?? recipeProducts)
-    setRecipeRawMaterials((mappingPayload.rawMaterials as RawMaterialRow[] | undefined) ?? recipePayload.rawMaterials ?? recipeRawMaterials)
+    setRecipeRawMaterials(
+      recipePayload.rawMaterials ??
+        (mappingPayload.rawMaterials as RawMaterialRow[] | undefined) ??
+        recipeRawMaterials,
+    )
     const mappingNameByRecipeId = new Map<string, string | null>()
     const mappingRefIdByRecipeId = new Map<string, string | null>()
     for (const row of mappingPayload.rows ?? []) {
