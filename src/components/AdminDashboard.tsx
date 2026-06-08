@@ -3164,6 +3164,15 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       const savedRecipes = payload.recipes ?? []
       const recipeBySortOrder = new Map(savedRecipes.map((recipe) => [Number(recipe.sort_order ?? 0), recipe]))
       const preferredRecipeMaterialNames = new Map<string, string>()
+      const allMaterialsPayload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials?include_inactive=true')
+      const allMaterials = allMaterialsPayload.materials ?? []
+      const activeMaterialsByNormalized = new Map<string, RawMaterialRow>()
+      for (const material of allMaterials) {
+        if (material.is_active === false) continue
+        const key = normalizeMaterialName(material.item_name)
+        if (!key || activeMaterialsByNormalized.has(key)) continue
+        activeMaterialsByNormalized.set(key, material)
+      }
 
       for (const row of preparedRows) {
         if (!row.raw_material_name) continue
@@ -3175,20 +3184,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             (material) => normalizeMaterialName(material.item_name) === requestedKey,
           ) ?? recipeRawMaterials.find(
             (material) => material.is_active !== false && normalizeMaterialName(material.item_name) === requestedKey,
-          )
+          ) ?? activeMaterialsByNormalized.get(requestedKey)
 
         let resolvedRawMaterialName = activeCandidate?.item_name?.trim() || requestedRawName
-        if (!activeCandidate) {
-          const allMaterialsPayload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials?include_inactive=true')
-          const fallbackActive = (allMaterialsPayload.materials ?? []).find(
-            (material) => material.is_active !== false && normalizeMaterialName(material.item_name) === requestedKey,
-          )
-          if (!fallbackActive) {
-            throw new Error('선택된 원재료가 활성 원재료 목록에 없습니다. 원재료 관리에서 먼저 등록/활성화해 주세요.')
-          }
-          resolvedRawMaterialName = fallbackActive.item_name.trim()
+        if (activeCandidate) {
           upsertRecipeRawMaterial({
-            ...fallbackActive,
+            ...activeCandidate,
             is_active: true,
           })
         }

@@ -34,6 +34,12 @@ function normalizeName(value: unknown): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
+type MappingRow = {
+  id: string
+  raw_material_name: string | null
+  business_id: string | null
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = String(params.id ?? '').trim()
@@ -88,12 +94,46 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const shouldSyncMapping = oldKey.length > 0 && newKey.length > 0 && oldKey !== newKey
 
     if (shouldSyncMapping) {
-      let mappingQuery = supabase.from('raw_material_mapping').update({ raw_material_name: newName }).eq('raw_material_name', oldName)
+      const candidates: MappingRow[] = []
       if (businessId) {
-        mappingQuery = mappingQuery.eq('business_id', businessId)
+        const [sameBusinessResult, nullBusinessResult] = await Promise.all([
+          supabase
+            .from('raw_material_mapping')
+            .select('id, raw_material_name, business_id')
+            .eq('business_id', businessId),
+          supabase
+            .from('raw_material_mapping')
+            .select('id, raw_material_name, business_id')
+            .is('business_id', null),
+        ])
+        if (sameBusinessResult.error) throw new Error(sameBusinessResult.error.message || '원재료 연결 조회 실패')
+        if (nullBusinessResult.error) throw new Error(nullBusinessResult.error.message || '원재료 연결 조회 실패')
+        candidates.push(...((sameBusinessResult.data ?? []) as MappingRow[]), ...((nullBusinessResult.data ?? []) as MappingRow[]))
+      } else {
+        const { data: nullBusinessRows, error: nullBusinessError } = await supabase
+          .from('raw_material_mapping')
+          .select('id, raw_material_name, business_id')
+          .is('business_id', null)
+        if (nullBusinessError) throw new Error(nullBusinessError.message || '원재료 연결 조회 실패')
+        candidates.push(...((nullBusinessRows ?? []) as MappingRow[]))
       }
-      const { error: mappingError } = await mappingQuery
-      if (mappingError) throw new Error(mappingError.message || '원재료 연결명 갱신 실패')
+
+      const mappingIds = Array.from(
+        new Set(
+          candidates
+            .filter((row) => normalizeName(row.raw_material_name ?? '') === oldKey)
+            .map((row) => String(row.id))
+            .filter(Boolean),
+        ),
+      )
+
+      if (mappingIds.length > 0) {
+        const { error: mappingError } = await supabase
+          .from('raw_material_mapping')
+          .update({ raw_material_name: newName })
+          .in('id', mappingIds)
+        if (mappingError) throw new Error(mappingError.message || '원재료 연결명 갱신 실패')
+      }
     }
 
     return NextResponse.json({ ok: true, material: data }, { status: 200 })
