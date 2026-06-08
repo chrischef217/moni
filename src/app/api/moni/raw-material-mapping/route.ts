@@ -89,6 +89,7 @@ async function fetchRecipeScopedRows(request: NextRequest) {
   const scopedMappingsQuery = supabase
     .from('raw_material_mapping')
     .select('*')
+    .eq('is_default', true)
     .or(businessScopeFilter(businessId))
     .order('is_default', { ascending: false })
     .order('created_at', { ascending: false })

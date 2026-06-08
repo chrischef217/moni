@@ -3081,6 +3081,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     const mappingNameByRecipeId = new Map<string, string | null>()
     const mappingRefIdByRecipeId = new Map<string, string | null>()
     for (const row of mappingPayload.rows ?? []) {
+      if (row.mapping_status !== 'mapped') continue
       mappingNameByRecipeId.set(String(row.recipe_id), row.current_raw_material_name ?? null)
       mappingRefIdByRecipeId.set(String(row.recipe_id), row.current_raw_material_ref_id ?? null)
     }
