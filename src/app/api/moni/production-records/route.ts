@@ -535,6 +535,8 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
 
   const allRecipes = await resolveRecipes(record)
   const recipes = allRecipes.filter((recipe) => isRawIngredient(recipe.ingredient_type))
+  const businessId = toText(record.business_id) || '20220523011'
+  const materialBusinessScope = `business_id.eq.${businessId},business_id.eq.default,business_id.is.null`
   if (recipes.length === 0) {
     throw new ApiError(422, '원재료 레시피가 없어 생산 확정을 진행할 수 없습니다.', 'validation.recipes.empty')
   }
@@ -549,6 +551,7 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
       .from('raw_material_mapping')
       .select('*')
       .in('food_type_id', foodTypeIds)
+      .or(materialBusinessScope)
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: false })
     if (mappingResult.error) {
@@ -559,7 +562,8 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
 
   const materialsResult = await supabase
     .from('raw_materials')
-    .select('id, item_code, item_name, current_stock_g')
+    .select('id, item_code, item_name, current_stock_g, business_id')
+    .or(materialBusinessScope)
     .limit(5000)
   if (materialsResult.error) {
     throw new ApiError(500, materialsResult.error.message || '원재료 재고 조회에 실패했습니다.', 'validation.materials.query')

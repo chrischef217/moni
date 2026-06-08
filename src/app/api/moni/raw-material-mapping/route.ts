@@ -47,6 +47,22 @@ function isMissingColumnError(message: string, columnName: string): boolean {
   return text.includes(column) && (text.includes('does not exist') || text.includes('schema cache') || text.includes('column'))
 }
 
+function normalizeBusinessId(value: unknown): string {
+  return toText(value) || '20220523011'
+}
+
+function businessScopeFilter(businessId: string): string {
+  return `business_id.eq.${businessId},business_id.eq.default,business_id.is.null`
+}
+
+function businessPriority(value: unknown, businessId: string): number {
+  const raw = toText(value)
+  if (raw === businessId) return 0
+  if (raw === 'default') return 1
+  if (raw === '') return 2
+  return 3
+}
+
 const BROAD_TERMS = new Set(['소스', '복합조미식품', '기타가공품', '조미식품', '추출가공식품', '수산물가공품', '육류가공품'])
 
 function scopeForRow(row: Record<string, unknown>): MappingScope {
@@ -69,6 +85,18 @@ async function fetchRecipeScopedRows(request: NextRequest) {
   const statusFilter = request.nextUrl.searchParams.get('status')?.trim().toLowerCase() ?? 'pending'
   const scopeFilter = request.nextUrl.searchParams.get('scope')?.trim().toLowerCase() ?? 'all'
   const broadOnly = parseBoolean(request.nextUrl.searchParams.get('broad_only'))
+  const businessId = normalizeBusinessId(request.nextUrl.searchParams.get('business_id'))
+  const scopedMappingsQuery = supabase
+    .from('raw_material_mapping')
+    .select('*')
+    .or(businessScopeFilter(businessId))
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: false })
+  const scopedMaterialsQuery = supabase
+    .from('raw_materials')
+    .select('id, item_name, is_active, business_id')
+    .or(businessScopeFilter(businessId))
+    .order('item_name', { ascending: true })
 
   const [recipesResult, mappingsResult, rawMaterialsResult] = await Promise.all([
     supabase
@@ -77,12 +105,8 @@ async function fetchRecipeScopedRows(request: NextRequest) {
       .eq('is_active', true)
       .order('product_name', { ascending: true })
       .order('sort_order', { ascending: true }),
-    supabase
-      .from('raw_material_mapping')
-      .select('*')
-      .order('is_default', { ascending: false })
-      .order('created_at', { ascending: false }),
-    supabase.from('raw_materials').select('id, item_name, is_active').order('item_name', { ascending: true }),
+    scopedMappingsQuery,
+    scopedMaterialsQuery,
   ])
 
   if (recipesResult.error) throw new Error(recipesResult.error.message || '레시피 목록 조회에 실패했습니다.')
@@ -91,17 +115,22 @@ async function fetchRecipeScopedRows(request: NextRequest) {
 
   const recipes = (recipesResult.data ?? []) as Array<Record<string, unknown>>
   const mappings = (mappingsResult.data ?? []) as Array<Record<string, unknown>>
-  const rawMaterials = (rawMaterialsResult.data ?? []) as Array<{ id: string; item_name: string; is_active?: boolean }>
+  const rawMaterials = (rawMaterialsResult.data ?? []) as Array<{ id: string; item_name: string; is_active?: boolean; business_id?: string | null }>
 
   const materialsByName = new Map<string, { id: string; item_name: string }>()
   const materialsById = new Map<string, { id: string; item_name: string; is_active?: boolean }>()
+  const activeMaterialsByName = new Map<string, { id: string; item_name: string; business_id?: string | null }>()
   for (const item of rawMaterials) {
     const id = String(item.id)
     if (id) materialsById.set(id, { id, item_name: String(item.item_name), is_active: item.is_active })
     if (item.is_active === false) continue
     const key = normalizeKey(String(item.item_name ?? ''))
     if (!key) continue
-    materialsByName.set(key, { id, item_name: String(item.item_name) })
+    const current = activeMaterialsByName.get(key)
+    if (!current || businessPriority(item.business_id, businessId) < businessPriority(current.business_id, businessId)) {
+      activeMaterialsByName.set(key, { id, item_name: String(item.item_name), business_id: item.business_id ?? null })
+      materialsByName.set(key, { id, item_name: String(item.item_name) })
+    }
   }
 
   const recipeScoped = new Map<string, Record<string, unknown>[]>()
@@ -239,9 +268,7 @@ async function fetchRecipeScopedRows(request: NextRequest) {
   return {
     ok: true,
     rows,
-    rawMaterials: rawMaterials
-      .filter((item) => item.is_active !== false)
-      .map((item) => ({ id: String(item.id), item_name: String(item.item_name) })),
+    rawMaterials: Array.from(activeMaterialsByName.values()).map((item) => ({ id: item.id, item_name: item.item_name })),
   }
 }
 
@@ -252,10 +279,15 @@ async function buildScopeDefaultQuery(
     recipeId: string | null
     productId: string | null
     foodTypeId: string
+    businessId: string
   },
 ) {
   const selected = '*'
-  let query = supabase.from('raw_material_mapping').select(selected).eq('is_default', true)
+  let query = supabase
+    .from('raw_material_mapping')
+    .select(selected)
+    .eq('is_default', true)
+    .or(businessScopeFilter(params.businessId))
 
   if (scope === 'recipe') {
     query = query.eq('mapping_scope', 'recipe').eq('recipe_id', params.recipeId)
@@ -425,6 +457,7 @@ export async function POST(request: NextRequest) {
       .from('raw_materials')
       .select('id, item_name, is_active')
       .eq('is_active', true)
+      .or(businessScopeFilter(businessId))
     activeMaterialQuery = rawMaterialRefId ? activeMaterialQuery.eq('id', rawMaterialRefId) : activeMaterialQuery.eq('item_name', rawMaterialName)
     const { data: activeMaterial, error: activeMaterialError } = await activeMaterialQuery.maybeSingle()
     if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')
@@ -452,6 +485,7 @@ export async function POST(request: NextRequest) {
       recipeId,
       productId,
       foodTypeId,
+      businessId,
     })
     const { data: existingDefaults, error: existingDefaultError } = await existingDefaultQuery
     if (existingDefaultError) throw new Error(existingDefaultError.message || '기존 기본 매핑 조회에 실패했습니다.')
@@ -550,6 +584,7 @@ export async function PATCH(request: NextRequest) {
       .from('raw_materials')
       .select('id, item_name')
       .eq('is_active', true)
+      .or(businessScopeFilter(normalizeBusinessId(body?.business_id)))
     activeMaterialQuery = rawMaterialRefId ? activeMaterialQuery.eq('id', rawMaterialRefId) : activeMaterialQuery.eq('item_name', rawMaterialName)
     const { data: activeMaterial, error: activeMaterialError } = await activeMaterialQuery.maybeSingle()
     if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')

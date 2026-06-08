@@ -2917,7 +2917,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       return
     }
 
-    const allMaterialsPayload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials?include_inactive=true')
+    const allMaterialsPayload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials?include_inactive=true&business_id=20220523011')
     const allMaterials = allMaterialsPayload.materials ?? []
     const inactiveMatch = allMaterials.find(
       (material) => material.is_active === false && normalizeMaterialName(material.item_name) === normalizedName,
@@ -3072,12 +3072,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     const [recipePayload, mappingPayload] = await Promise.all([
       readJson<RecipesPayload>(`/api/moni/recipes?product_id=${encodeURIComponent(String(product.id))}`),
       readJson<RecipeMaterialMappingsPayload>(
-        `/api/moni/raw-material-mapping?view=recipes&product_id=${encodeURIComponent(String(product.id))}&status=all`,
+        `/api/moni/raw-material-mapping?view=recipes&product_id=${encodeURIComponent(String(product.id))}&status=all&business_id=${encodeURIComponent(product.business_id || '20220523011')}`,
       ),
     ])
 
     setRecipeProducts(recipePayload.products ?? recipeProducts)
-    setRecipeRawMaterials(recipePayload.rawMaterials ?? recipeRawMaterials)
+    setRecipeRawMaterials((mappingPayload.rawMaterials as RawMaterialRow[] | undefined) ?? recipePayload.rawMaterials ?? recipeRawMaterials)
     const mappingNameByRecipeId = new Map<string, string | null>()
     const mappingRefIdByRecipeId = new Map<string, string | null>()
     for (const row of mappingPayload.rows ?? []) {
@@ -3178,7 +3178,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       const savedRecipes = payload.recipes ?? []
       const recipeBySortOrder = new Map(savedRecipes.map((recipe) => [Number(recipe.sort_order ?? 0), recipe]))
       const preferredRecipeMaterialNames = new Map<string, string>()
-      const allMaterialsPayload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials?include_inactive=true')
+      const allMaterialsPayload = await readJson<RawMaterialsPayload>('/api/moni/raw-materials?include_inactive=true&business_id=20220523011')
       const allMaterials = allMaterialsPayload.materials ?? []
       const activeMaterialsByNormalized = new Map<string, RawMaterialRow>()
       for (const material of allMaterials) {
@@ -3200,13 +3200,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 (material) => material.is_active !== false && String(material.id) === requestedRefId,
               )
             : undefined) ??
+          activeMaterialsByNormalized.get(requestedKey) ??
           activeRecipeRawMaterials.find(
             (material) => normalizeMaterialName(material.item_name) === requestedKey,
           ) ??
           recipeRawMaterials.find(
             (material) => material.is_active !== false && normalizeMaterialName(material.item_name) === requestedKey,
-          ) ??
-          activeMaterialsByNormalized.get(requestedKey)
+          )
 
         let resolvedRawMaterialName = activeCandidate?.item_name?.trim() || requestedRawName
         const resolvedRawMaterialRefId = activeCandidate?.id ? String(activeCandidate.id) : requestedRefId
@@ -3269,6 +3269,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       if (recipeMappingStatusFilter !== 'all') params.set('status', recipeMappingStatusFilter)
       if (recipeMappingScopeFilter !== 'all') params.set('scope', recipeMappingScopeFilter)
       if (recipeMappingBroadOnly) params.set('broad_only', 'true')
+      params.set('business_id', '20220523011')
 
       const payload = await readJson<RecipeMaterialMappingsPayload>(`/api/moni/raw-material-mapping?${params.toString()}`)
       setRecipeMappingRows(payload.rows ?? [])
@@ -3406,6 +3407,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           raw_material_name: selectedMaterial.item_name,
           mapping_scope: recipeMappingSelectedScope,
           is_default: true,
+          business_id: '20220523011',
         }),
       })
       setRecipeMappingLatestHistory(payload.history ?? null)

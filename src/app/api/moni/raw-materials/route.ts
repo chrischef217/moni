@@ -21,6 +21,24 @@ function makeRawMaterialId() {
   return `ITEM-${Date.now()}`
 }
 
+function normalizeBusinessId(value: unknown): string {
+  const raw = text(value)
+  return raw || '20220523011'
+}
+
+function isScopedBusinessId(value: unknown, businessId: string): boolean {
+  const raw = text(value)
+  return raw === businessId || raw === 'default' || raw === ''
+}
+
+function businessPriority(value: unknown, businessId: string): number {
+  const raw = text(value)
+  if (raw === businessId) return 0
+  if (raw === 'default') return 1
+  if (raw === '') return 2
+  return 3
+}
+
 export async function GET(request: NextRequest) {
   try {
     const includeInactive = ['1', 'true', 'all'].includes(
@@ -28,6 +46,7 @@ export async function GET(request: NextRequest) {
     )
     const status = String(request.nextUrl.searchParams.get('status') ?? '').toLowerCase()
     const inactiveOnly = status === 'inactive'
+    const businessId = normalizeBusinessId(request.nextUrl.searchParams.get('business_id'))
 
     const supabase = createMoniServiceRoleClient()
     const [materialsResult, transactionsResult] = await Promise.all([
@@ -59,8 +78,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const scopedRows = ((materialsResult.data ?? []) as Array<Record<string, unknown>>).filter((item) =>
+      isScopedBusinessId(item.business_id, businessId),
+    )
+    const scopedByName = new Map<string, Record<string, unknown>>()
+    for (const item of scopedRows) {
+      const nameKey = text(item.item_name).toLowerCase()
+      if (!nameKey) continue
+      const current = scopedByName.get(nameKey)
+      if (!current || businessPriority(item.business_id, businessId) < businessPriority(current.business_id, businessId)) {
+        scopedByName.set(nameKey, item)
+      }
+    }
+
+    const dedupedRows = Array.from(scopedByName.values())
+
     const allMaterials: Array<Record<string, unknown> & { is_active?: boolean }> = (
-      (materialsResult.data ?? []) as Array<Record<string, unknown>>
+      dedupedRows
     ).map((item) => {
       const id = String(item.id ?? '')
       const name = String(item.item_name ?? '')
@@ -100,6 +134,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     const itemName = text(body?.item_name)
     const packingWeightG = numberValue(body?.packing_weight_g)
+    const businessId = normalizeBusinessId(body?.business_id)
 
     if (!itemName) {
       return NextResponse.json({ ok: false, error: '원재료명을 입력해 주세요.' }, { status: 400 })
@@ -108,11 +143,15 @@ export async function POST(request: NextRequest) {
     const supabase = createMoniServiceRoleClient()
     const { data: existingRows, error: findError } = await supabase
       .from('raw_materials')
-      .select('id, item_name, packing_weight_g, current_stock_g, is_active')
+      .select('id, item_name, packing_weight_g, current_stock_g, is_active, business_id')
       .eq('item_name', itemName)
+      .or(`business_id.eq.${businessId},business_id.eq.default,business_id.is.null`)
     if (findError) throw new Error(findError.message || '원재료 조회 실패')
 
-    const existingActive = (existingRows ?? []).find((row) => row.is_active !== false)
+    const scopedExistingRows = [...(existingRows ?? [])].sort(
+      (a, b) => businessPriority(a.business_id, businessId) - businessPriority(b.business_id, businessId),
+    )
+    const existingActive = scopedExistingRows.find((row) => row.is_active !== false)
     if (existingActive) {
       return NextResponse.json(
         {
@@ -123,13 +162,15 @@ export async function POST(request: NextRequest) {
             item_name: existingActive.item_name,
             packing_weight_g: existingActive.packing_weight_g,
             current_stock_g: existingActive.current_stock_g,
+            is_active: existingActive.is_active,
+            business_id: existingActive.business_id,
           },
         },
         { status: 200 },
       )
     }
 
-    const existingInactive = (existingRows ?? []).find((row) => row.is_active === false)
+    const existingInactive = scopedExistingRows.find((row) => row.is_active === false)
     if (existingInactive) {
       return NextResponse.json(
         {
@@ -149,13 +190,13 @@ export async function POST(request: NextRequest) {
       packing_weight_g: packingWeightG,
       current_stock_g: 0,
       is_active: true,
-      business_id: text(body?.business_id) || 'default',
+      business_id: businessId,
     }
 
     const { data, error } = await supabase
       .from('raw_materials')
       .insert(payload)
-      .select('id, item_name, packing_weight_g, current_stock_g')
+      .select('id, item_name, packing_weight_g, current_stock_g, is_active, business_id')
       .single()
     if (error) throw new Error(error.message || '원재료 등록 실패')
 
