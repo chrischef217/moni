@@ -313,6 +313,10 @@ type RawMaterialRow = {
   food_type_name?: string | null
   food_type?: string | null
   country_of_origin?: string | null
+  origin?: string | null
+  country_origin?: string | null
+  origin_country?: string | null
+  source_country?: string | null
   spec?: string | null
   storage_type?: string | null
   shelf_life_days?: number | null
@@ -372,6 +376,25 @@ function normalizeMaterialName(value: string | null | undefined): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ')
+}
+
+function getRawMaterialOriginLabel(material: RawMaterialRow): string {
+  const origin =
+    material.country_of_origin ??
+    material.origin ??
+    material.country_origin ??
+    material.origin_country ??
+    material.source_country ??
+    ''
+  return String(origin).trim()
+}
+
+function getRawMaterialDisplayName(material: RawMaterialRow): string {
+  const itemName = String(material.item_name ?? '').trim()
+  const origin = getRawMaterialOriginLabel(material)
+  if (!itemName) return ''
+  if (!origin) return itemName
+  return `${itemName} (${origin})`
 }
 
 type PackagingFormState = {
@@ -9689,7 +9712,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                                             : 'text-gray-200 hover:bg-gray-800'
                                         }`}
                                       >
-                                        {material.item_name}
+                                        {getRawMaterialDisplayName(material)}
                                       </button>
                                     ))}
                                     {totalMaterialMatchCount > materialMatches.length ? (
