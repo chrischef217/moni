@@ -6793,7 +6793,12 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                         setShowMaterialModal(true)
                       }}
                     >
-                      <td className="px-3 py-3 text-white">{material.item_name}</td>
+                      <td className="px-3 py-3 text-white">
+                        <div className="flex flex-col">
+                          <span>{material.item_name}</span>
+                          <span className="text-xs text-gray-400">{material.ingredient_type || '???'}</span>
+                        </div>
+                      </td>
                       <td className="px-3 py-3 text-gray-200">{material.food_type || material.food_type_name || '-'}</td>
                       <td className="px-3 py-3 text-gray-200">{material.country_of_origin || '-'}</td>
                       <td className="px-3 py-3 text-gray-200">{material.spec || material.packing_unit || '-'}</td>
@@ -6802,7 +6807,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                         {material.shelf_life_days ? `${material.shelf_life_days}일` : '-'}
                       </td>
                       <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock_g)}g</td>
-                      <td className="px-3 py-3">
+                      <td className="hidden">
                         {material.is_active === false ? (
                           <span className="rounded-md border border-amber-700/60 bg-amber-950/40 px-2 py-1 text-xs text-amber-200">비활성</span>
                         ) : (
@@ -7501,7 +7506,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <td className="px-3 py-3 text-gray-200">{material.supplier || '-'}</td>
                     <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock)} ea</td>
                     <td className="px-3 py-3 text-gray-200">{formatNumber(material.unit_price)}</td>
-                    <td className="px-3 py-3">
+                    <td className="hidden">
                       {material.is_active === false ? (
                         <span className="rounded-md border border-red-800/60 bg-red-950/40 px-2 py-1 text-xs text-red-200">비활성</span>
                       ) : (
