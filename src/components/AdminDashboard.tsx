@@ -1599,6 +1599,24 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   })
   const productRecipeRawMaterialInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
+  function focusProductRecipeRawMaterialInput(targetRow: ProductRecipeDraftRow | null, targetIndex: number): boolean {
+    const byRef = targetRow ? productRecipeRawMaterialInputRefs.current[targetRow.local_id] ?? null : null
+    if (byRef) {
+      byRef.focus()
+      byRef.select?.()
+      return true
+    }
+
+    if (typeof document === 'undefined') return false
+    const bySelector = document.querySelector(
+      `input[data-recipe-raw-material-input="true"][data-recipe-row-index="${targetIndex}"]`,
+    ) as HTMLInputElement | null
+    if (!bySelector) return false
+    bySelector.focus()
+    bySelector.select?.()
+    return true
+  }
+
   function resetQuickMaterialForm() {
     setQuickMaterialForm({
       item_name: '',
@@ -9569,6 +9587,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               ref={(element) => {
                                 productRecipeRawMaterialInputRefs.current[row.local_id] = element
                               }}
+                              data-recipe-raw-material-input="true"
+                              data-recipe-row-index={index}
                               value={row.raw_material_name}
                               onChange={(event) =>
                                 updateProductRecipeRow(row.local_id, {
@@ -9581,19 +9601,13 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                               onFocus={() => updateProductRecipeRow(row.local_id, { raw_material_open: true })}
                               onKeyDown={(event) => {
                                 if (event.key === 'Tab') {
-                                  const currentIndex = productRecipeRows.findIndex((item) => item.local_id === row.local_id)
-                                  if (currentIndex >= 0) {
-                                    const nextIndex = event.shiftKey ? currentIndex - 1 : currentIndex + 1
-                                    const nextRow = productRecipeRows[nextIndex]
-                                    const nextInput = nextRow
-                                      ? productRecipeRawMaterialInputRefs.current[nextRow.local_id] ?? null
-                                      : null
-                                    if (nextInput) {
-                                      event.preventDefault()
-                                      nextInput.focus()
-                                      nextInput.select()
-                                      return
-                                    }
+                                  const targetIndex = event.shiftKey ? index - 1 : index + 1
+                                  const targetRow = productRecipeRows[targetIndex] ?? null
+                                  const moved = focusProductRecipeRawMaterialInput(targetRow, targetIndex)
+                                  if (moved) {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    return
                                   }
                                 }
                                 if (event.key === 'Escape') {
