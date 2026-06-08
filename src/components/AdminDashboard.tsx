@@ -1666,7 +1666,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [materialsLoading, setMaterialsLoading] = useState(true)
   const [materialsError, setMaterialsError] = useState('')
   const [materials, setMaterials] = useState<RawMaterialRow[]>([])
-  const [materialsView, setMaterialsView] = useState<'active' | 'inactive'>('active')
+  const [materialsView] = useState<'active' | 'inactive'>('active')
   const [materialsNameQuery, setMaterialsNameQuery] = useState('')
   const [materialsSummary, setMaterialsSummary] = useState<MaterialSummary>(EMPTY_MATERIAL_SUMMARY)
   const [selectedMaterial, setSelectedMaterial] = useState<RawMaterialRow | null>(null)
@@ -1708,7 +1708,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [packagingLoading, setPackagingLoading] = useState(true)
   const [packagingError, setPackagingError] = useState('')
   const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterialRow[]>([])
-  const [packagingView, setPackagingView] = useState<'active' | 'inactive'>('active')
+  const [packagingView] = useState<'active' | 'inactive'>('active')
   const [packagingNameQuery, setPackagingNameQuery] = useState('')
   const [packagingSummary, setPackagingSummary] = useState<MaterialSummary>(EMPTY_MATERIAL_SUMMARY)
   const [showPackagingModal, setShowPackagingModal] = useState(false)
@@ -6728,26 +6728,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
               <span className="font-semibold text-green-300">{formatNumber(materialsSummary.active)}</span>개 / 비활성{' '}
               <span className="font-semibold text-amber-300">{formatNumber(materialsSummary.inactive)}</span>개
             </p>
-            <div className="inline-flex rounded-xl border border-gray-700 bg-gray-950 p-1">
-              <button
-                type="button"
-                onClick={() => setMaterialsView('active')}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  materialsView === 'active' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                활성 원재료
-              </button>
-              <button
-                type="button"
-                onClick={() => setMaterialsView('inactive')}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  materialsView === 'inactive' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                비활성 원재료
-              </button>
-            </div>
+
           </div>
 
           <div className="mb-4 max-w-xs">
@@ -6796,7 +6777,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                       <td className="px-3 py-3 text-white">
                         <div className="flex flex-col">
                           <span>{material.item_name}</span>
-                          <span className="text-xs text-gray-400">{material.ingredient_type || '???'}</span>
+                          <span className="text-xs text-gray-400">재료유형: {material.ingredient_type || '원재료'}</span>
                         </div>
                       </td>
                       <td className="px-3 py-3 text-gray-200">{material.food_type || material.food_type_name || '-'}</td>
@@ -6807,13 +6788,6 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                         {material.shelf_life_days ? `${material.shelf_life_days}일` : '-'}
                       </td>
                       <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock_g)}g</td>
-                      <td className="hidden">
-                        {material.is_active === false ? (
-                          <span className="rounded-md border border-amber-700/60 bg-amber-950/40 px-2 py-1 text-xs text-amber-200">비활성</span>
-                        ) : (
-                          <span className="rounded-md border border-green-700/60 bg-green-950/40 px-2 py-1 text-xs text-green-200">활성</span>
-                        )}
-                      </td>
                       <td className="px-3 py-3 text-right">
                         <div className="inline-flex items-center gap-2">
                           <button
@@ -7442,26 +7416,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             <span className="font-semibold text-green-300">{formatNumber(packagingSummary.active)}</span>개 / 비활성{' '}
             <span className="font-semibold text-amber-300">{formatNumber(packagingSummary.inactive)}</span>개
           </p>
-          <div className="inline-flex rounded-xl border border-gray-700 bg-gray-950 p-1">
-            <button
-              type="button"
-              onClick={() => setPackagingView('active')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                packagingView === 'active' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              활성 부재료
-            </button>
-            <button
-              type="button"
-              onClick={() => setPackagingView('inactive')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                packagingView === 'inactive' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              비활성 부재료
-            </button>
-          </div>
+
         </div>
 
         <div className="mb-4 max-w-xs">
@@ -7492,7 +7447,6 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                   <th className="px-3 py-2 font-medium">매입처</th>
                   <th className="px-3 py-2 font-medium">현재재고(ea)</th>
                   <th className="px-3 py-2 font-medium">단가</th>
-                  <th className="px-3 py-2 font-medium">활성상태</th>
                   <th className="px-3 py-2 font-medium text-right">처리</th>
                 </tr>
               </thead>
@@ -7506,13 +7460,6 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <td className="px-3 py-3 text-gray-200">{material.supplier || '-'}</td>
                     <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock)} ea</td>
                     <td className="px-3 py-3 text-gray-200">{formatNumber(material.unit_price)}</td>
-                    <td className="hidden">
-                      {material.is_active === false ? (
-                        <span className="rounded-md border border-red-800/60 bg-red-950/40 px-2 py-1 text-xs text-red-200">비활성</span>
-                      ) : (
-                        <span className="rounded-md border border-green-700/60 bg-green-950/40 px-2 py-1 text-xs text-green-200">활성</span>
-                      )}
-                    </td>
                     <td className="px-3 py-3 text-right">
                       <div className="inline-flex items-center gap-2">
                         <button
