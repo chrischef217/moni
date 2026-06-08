@@ -1504,6 +1504,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [productCatalogLoading, setProductCatalogLoading] = useState(false)
   const [productCatalogError, setProductCatalogError] = useState('')
   const [productCatalog, setProductCatalog] = useState<ProductOption[]>([])
+  const [productNameQuery, setProductNameQuery] = useState('')
   const [selectedProductId, setSelectedProductId] = useState('')
   const [productForm, setProductForm] = useState<ProductFormState>(emptyProductForm())
   const [productSaving, setProductSaving] = useState(false)
@@ -1656,6 +1657,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [materialsError, setMaterialsError] = useState('')
   const [materials, setMaterials] = useState<RawMaterialRow[]>([])
   const [materialsView, setMaterialsView] = useState<'active' | 'inactive'>('active')
+  const [materialsNameQuery, setMaterialsNameQuery] = useState('')
   const [materialsSummary, setMaterialsSummary] = useState<MaterialSummary>(EMPTY_MATERIAL_SUMMARY)
   const [selectedMaterial, setSelectedMaterial] = useState<RawMaterialRow | null>(null)
   const [showMaterialModal, setShowMaterialModal] = useState(false)
@@ -1697,6 +1699,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [packagingError, setPackagingError] = useState('')
   const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterialRow[]>([])
   const [packagingView, setPackagingView] = useState<'active' | 'inactive'>('active')
+  const [packagingNameQuery, setPackagingNameQuery] = useState('')
   const [packagingSummary, setPackagingSummary] = useState<MaterialSummary>(EMPTY_MATERIAL_SUMMARY)
   const [showPackagingModal, setShowPackagingModal] = useState(false)
   const [packagingForm, setPackagingForm] = useState<PackagingFormState>(emptyPackagingForm())
@@ -1957,6 +1960,31 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     if (!selectedProductId) return null
     return productCatalog.find((product) => String(product.id) === selectedProductId) ?? null
   }, [productCatalog, selectedProductId])
+
+  const productSummary = useMemo(() => {
+    const total = productCatalog.length
+    const active = productCatalog.filter((product) => product.is_active !== false).length
+    const inactive = Math.max(total - active, 0)
+    return { total, active, inactive }
+  }, [productCatalog])
+
+  const filteredProductCatalog = useMemo(() => {
+    const keyword = productNameQuery.trim().toLowerCase()
+    if (!keyword) return productCatalog
+    return productCatalog.filter((product) => String(product.product_name ?? '').toLowerCase().includes(keyword))
+  }, [productCatalog, productNameQuery])
+
+  const filteredMaterials = useMemo(() => {
+    const keyword = materialsNameQuery.trim().toLowerCase()
+    if (!keyword) return materials
+    return materials.filter((material) => String(material.item_name ?? '').toLowerCase().includes(keyword))
+  }, [materials, materialsNameQuery])
+
+  const filteredPackagingMaterials = useMemo(() => {
+    const keyword = packagingNameQuery.trim().toLowerCase()
+    if (!keyword) return packagingMaterials
+    return packagingMaterials.filter((material) => String(material.material_name ?? '').toLowerCase().includes(keyword))
+  }, [packagingMaterials, packagingNameQuery])
 
   const chatPreviewMessages = useMemo(() => {
     return activeConversation?.messages.slice(-8) ?? []
@@ -6693,6 +6721,18 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             </div>
           </div>
 
+          <div className="mb-4 max-w-xs">
+            <Field label="원재료명 검색">
+              <input
+                type="text"
+                value={materialsNameQuery}
+                onChange={(event) => setMaterialsNameQuery(event.target.value)}
+                placeholder="원재료명 입력"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+          </div>
+
           {materialsLoading ? (
             <LoadingBlock lines={6} />
           ) : materialsError ? (
@@ -6714,7 +6754,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {materials.map((material) => (
+                  {filteredMaterials.map((material) => (
                     <tr
                       key={material.id}
                       className="cursor-pointer border-b border-gray-800/80 transition hover:bg-gray-700/20"
@@ -7044,6 +7084,25 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               </button>
             }
           >
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3 text-sm">
+              <p className="text-gray-300">
+                전체 제품 <span className="font-semibold text-white">{formatNumber(productSummary.total)}</span>개 / 활성{' '}
+                <span className="font-semibold text-green-300">{formatNumber(productSummary.active)}</span>개 / 비활성{' '}
+                <span className="font-semibold text-amber-300">{formatNumber(productSummary.inactive)}</span>개
+              </p>
+              <div className="w-full max-w-xs">
+                <Field label="제품명 검색">
+                  <input
+                    type="text"
+                    value={productNameQuery}
+                    onChange={(event) => setProductNameQuery(event.target.value)}
+                    placeholder="제품명 입력"
+                    className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+                  />
+                </Field>
+              </div>
+            </div>
+
             {productCatalogLoading ? (
               <LoadingBlock lines={5} />
             ) : productCatalogError ? (
@@ -7066,7 +7125,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {productCatalog.map((product) => {
+                    {filteredProductCatalog.map((product) => {
                       const shelfLifeText =
                         product.shelf_life_days !== null && product.shelf_life_days !== undefined
                           ? `${formatNumber(product.shelf_life_days)}개월`
@@ -7371,6 +7430,18 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
           </div>
         </div>
 
+        <div className="mb-4 max-w-xs">
+          <Field label="부재료명 검색">
+            <input
+              type="text"
+              value={packagingNameQuery}
+              onChange={(event) => setPackagingNameQuery(event.target.value)}
+              placeholder="부재료명 입력"
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            />
+          </Field>
+        </div>
+
         {packagingLoading ? (
           <LoadingBlock lines={6} />
         ) : packagingMaterials.length === 0 ? (
@@ -7392,7 +7463,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
                 </tr>
               </thead>
               <tbody>
-                {packagingMaterials.map((material) => (
+                {filteredPackagingMaterials.map((material) => (
                   <tr key={material.id} className="border-b border-gray-800/80">
                     <td className="px-3 py-3 text-white">{material.material_name}</td>
                     <td className="px-3 py-3 text-gray-200">{material.material_code || '-'}</td>
