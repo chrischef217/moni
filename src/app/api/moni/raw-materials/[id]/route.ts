@@ -3,6 +3,7 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+const RAW_MATERIAL_INGREDIENT_TYPES = ['원재료', '반제품', '기타'] as const
 
 function text(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -59,8 +60,19 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     const isActive = boolValue(body.is_active)
+    const ingredientTypeRaw = text(body.ingredient_type)
+    const ingredientType =
+      ingredientTypeRaw && RAW_MATERIAL_INGREDIENT_TYPES.includes(ingredientTypeRaw as (typeof RAW_MATERIAL_INGREDIENT_TYPES)[number])
+        ? ingredientTypeRaw
+        : ingredientTypeRaw === null
+          ? null
+          : '__INVALID__'
+    if (ingredientType === '__INVALID__') {
+      return NextResponse.json({ ok: false, error: '재료유형은 원재료/반제품/기타만 허용됩니다.' }, { status: 400 })
+    }
     const payload = {
       item_name: text(body.item_name),
+      ingredient_type: ingredientType,
       food_type: text(body.food_type),
       country_of_origin: text(body.country_of_origin),
       spec: text(body.spec),

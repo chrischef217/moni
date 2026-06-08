@@ -3,6 +3,7 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+const PACKAGING_INGREDIENT_TYPES = ['부재료', '기타'] as const
 
 function text(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : ''
@@ -76,8 +77,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     const materialName = text(body?.material_name)
+    const ingredientType = text(body?.ingredient_type) || '부재료'
     if (!materialName) {
       return NextResponse.json({ ok: false, error: '부재료명을 입력해 주세요.' }, { status: 400 })
+    }
+
+    if (!PACKAGING_INGREDIENT_TYPES.includes(ingredientType as (typeof PACKAGING_INGREDIENT_TYPES)[number])) {
+      return NextResponse.json({ ok: false, error: '재료유형은 부재료/기타만 허용됩니다.' }, { status: 400 })
     }
 
     const codeFromBody = text(body?.material_code)
@@ -86,6 +92,7 @@ export async function POST(request: NextRequest) {
     const payload = {
       id: materialCode,
       material_name: materialName,
+      ingredient_type: ingredientType,
       material_code: materialCode,
       spec: text(body?.spec) || null,
       material_type: text(body?.material_type) || null,

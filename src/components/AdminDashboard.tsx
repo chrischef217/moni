@@ -310,6 +310,7 @@ type FoodTypesPayload = {
 type RawMaterialRow = {
   id: string
   item_name: string
+  ingredient_type?: string | null
   food_type_name?: string | null
   food_type?: string | null
   country_of_origin?: string | null
@@ -354,6 +355,7 @@ type SububuRow = {
 type PackagingMaterialRow = {
   id: string
   material_name: string
+  ingredient_type?: string | null
   material_code?: string | null
   spec?: string | null
   material_type?: string | null
@@ -400,6 +402,7 @@ function getRawMaterialDisplayName(material: RawMaterialRow): string {
 type PackagingFormState = {
   id?: string
   material_name: string
+  ingredient_type: string
   material_code: string
   spec: string
   material_type: string
@@ -600,6 +603,7 @@ type RecipeFormState = {
 
 type MaterialFormState = {
   item_name: string
+  ingredient_type: string
   food_type: string
   country_of_origin: string
   spec: string
@@ -1110,8 +1114,11 @@ function emptyRecipeForm(): RecipeFormState {
 }
 
 function emptyMaterialForm(material: RawMaterialRow | null): MaterialFormState {
+  const ingredientTypeRaw = String(material?.ingredient_type ?? '').trim()
+  const ingredientType = ['원재료', '반제품', '기타'].includes(ingredientTypeRaw) ? ingredientTypeRaw : '원재료'
   return {
     item_name: material?.item_name ?? '',
+    ingredient_type: ingredientType,
     food_type: material?.food_type ?? material?.food_type_name ?? '',
     country_of_origin: material?.country_of_origin ?? '',
     spec: material?.spec ?? '',
@@ -1125,6 +1132,8 @@ function emptyMaterialForm(material: RawMaterialRow | null): MaterialFormState {
 }
 
 function emptyPackagingForm(material?: PackagingMaterialRow | null): PackagingFormState {
+  const ingredientTypeRaw = String(material?.ingredient_type ?? '').trim()
+  const ingredientType = ['부재료', '기타'].includes(ingredientTypeRaw) ? ingredientTypeRaw : '부재료'
   const normalizedType = PACKAGING_TYPE_OPTIONS.includes((material?.material_type ?? '').trim() as (typeof PACKAGING_TYPE_OPTIONS)[number])
     ? ((material?.material_type ?? '').trim() as (typeof PACKAGING_TYPE_OPTIONS)[number])
     : '포장재'
@@ -1132,6 +1141,7 @@ function emptyPackagingForm(material?: PackagingMaterialRow | null): PackagingFo
   return {
     id: material?.id,
     material_name: material?.material_name ?? '',
+    ingredient_type: ingredientType,
     material_code: material?.material_code ?? '',
     spec: material?.spec ?? '',
     material_type: normalizedType,
@@ -2035,13 +2045,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
   useEffect(() => {
     if (mainMenu !== 'production') return
-    if (productionTab === 'prod-products') {
-      void loadProductCatalog({ preserveSelected: true })
+    if (productionTab === 'prod-recipe-mapping') {
+      setProductionTab('prod-products')
       return
     }
-    if (productionTab === 'prod-recipe-mapping') {
-      void loadRecipeMaterialMappings()
-      void loadLatestRecipeMappingHistory()
+    if (productionTab === 'prod-products') {
+      void loadProductCatalog({ preserveSelected: true })
       return
     }
     if (productionTab === 'prod-materials') {
@@ -2927,12 +2936,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     })
   }
 
-  function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) {
-    updateProductRecipeRow(localId, {
-      raw_material_ref_id: String(material.id),
-      raw_material_name: material.item_name,
-      raw_material_open: false,
-      raw_material_highlight: 0,
+function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) {
+  const ingredientType = String(material.ingredient_type ?? '').trim() || '원재료'
+  updateProductRecipeRow(localId, {
+    raw_material_ref_id: String(material.id),
+    raw_material_name: material.item_name,
+    ingredient_type: ingredientType,
+    raw_material_open: false,
+    raw_material_highlight: 0,
       raw_material_notice: '',
     })
   }
@@ -2977,9 +2988,11 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       (material) => normalizeMaterialName(material.item_name) === normalizedName,
     )
     if (activeMatch) {
+      const ingredientType = String(activeMatch.ingredient_type ?? '').trim() || '\uC6D0\uC7AC\uB8CC'
       updateProductRecipeRow(localId, {
         raw_material_ref_id: String(activeMatch.id),
         raw_material_name: activeMatch.item_name,
+        ingredient_type: ingredientType,
         raw_material_open: false,
         raw_material_highlight: 0,
         raw_material_notice: '이미 등록된 원재료를 선택했습니다.',
@@ -3023,6 +3036,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       updateProductRecipeRow(localId, {
         raw_material_ref_id: payload.material?.id ? String(payload.material.id) : '',
         raw_material_name: nextName,
+        ingredient_type: String(payload.material?.ingredient_type ?? '').trim() || '\uC6D0\uC7AC\uB8CC',
         raw_material_open: false,
         raw_material_highlight: 0,
         raw_material_adding: false,
@@ -3057,6 +3071,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         method: 'PATCH',
         body: JSON.stringify({
           item_name: material.item_name,
+          ingredient_type: material.ingredient_type || '원재료',
           food_type: material.food_type ?? material.food_type_name ?? '',
           country_of_origin: material.country_of_origin ?? '',
           spec: material.spec ?? '',
@@ -3080,6 +3095,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       updateProductRecipeRow(localId, {
         raw_material_ref_id: String(material.id),
         raw_material_name: material.item_name,
+        ingredient_type: String(material.ingredient_type ?? '').trim() || '\uC6D0\uC7AC\uB8CC',
         raw_material_open: false,
         raw_material_highlight: 0,
         raw_material_adding: false,
@@ -3649,9 +3665,10 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   async function togglePackagingMaterialActive(material: PackagingMaterialRow, nextActive: boolean) {
-    const actionLabel = nextActive ? '다시 활성화' : '비활성화'
-    const confirmed = window.confirm(`"${material.material_name}" 항목을 ${actionLabel}할까요?`)
+    const actionLabel = nextActive ? '?? ???' : '????'
+    const confirmed = window.confirm(`"${material.material_name}" ??? ${actionLabel}????`)
     if (!confirmed) return
+
     setPackagingSaving(true)
     setPackagingError('')
     try {
@@ -3659,6 +3676,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         method: 'PATCH',
         body: JSON.stringify({
           material_name: material.material_name,
+          ingredient_type: material.ingredient_type || '???',
           spec: material.spec ?? '',
           material_type: material.material_type ?? '',
           supplier: material.supplier ?? '',
@@ -3669,7 +3687,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       })
       await loadPackagingMaterials(packagingView)
     } catch (error) {
-      setPackagingError(error instanceof Error ? error.message : `${actionLabel} 처리 중 오류가 발생했습니다.`)
+      setPackagingError(error instanceof Error ? error.message : `${actionLabel} ?? ? ??? ??????.`)
     } finally {
       setPackagingSaving(false)
     }
@@ -3985,6 +4003,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       return
     }
 
+    
+
+    const ingredientType = packagingForm.ingredient_type.trim()
+    if (!['???', '??'].includes(ingredientType)) {
+      setPackagingError('????? ??? ?? ??? ??? ? ????.')
+      return
+    }
+
     setPackagingSaving(true)
     setPackagingError('')
     try {
@@ -3992,7 +4018,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         material_name: materialName,
         material_code: packagingForm.material_code.trim(),
         spec: packagingForm.spec.trim(),
-        material_type: packagingForm.material_type.trim() || '포장재',
+        material_type: packagingForm.material_type.trim() || '???',
+        ingredient_type: ingredientType,
         supplier: packagingForm.supplier.trim(),
         current_stock: currentStock,
         unit_price: unitPrice,
@@ -5124,6 +5151,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
         method: 'PATCH',
         body: JSON.stringify({
           item_name: materialForm.item_name.trim(),
+          ingredient_type: materialForm.ingredient_type.trim() || '원재료',
           food_type: materialForm.food_type.trim(),
           country_of_origin: materialForm.country_of_origin.trim(),
           spec: materialForm.spec.trim(),
@@ -5417,11 +5445,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       tabMap.get('prod-quality') ?? { key: 'prod-quality', label: '품질 관리' },
       tabMap.get('prod-compliance') ?? { key: 'prod-compliance', label: '규정준수 모니터' },
     ]
+    const visibleTabs = orderedTabs.filter((item) => item.key !== 'prod-recipe-mapping')
 
     return (
       <div className="overflow-x-auto border-b border-gray-800 bg-gray-800/70">
         <div className="flex min-w-max gap-1 px-4 md:px-6">
-          {orderedTabs.map((item) => (
+          {visibleTabs.map((item) => (
             <button
               key={item.key}
               type="button"
@@ -10047,6 +10076,16 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               ))}
             </select>
           </Field>
+          <Field label="재료유형">
+            <select
+              value={packagingForm.ingredient_type}
+              onChange={(event) => setPackagingForm((prev) => ({ ...prev, ingredient_type: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+            >
+              <option value="부재료">부재료</option>
+              <option value="기타">기타</option>
+            </select>
+          </Field>
           <Field label="매입처">
             <input
               value={packagingForm.supplier}
@@ -10363,6 +10402,17 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
               onChange={(event) => setMaterialForm((prev) => ({ ...prev, item_name: event.target.value }))}
               className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
             />
+          </Field>
+          <Field label="재료유형">
+            <select
+              value={materialForm.ingredient_type}
+              onChange={(event) => setMaterialForm((prev) => ({ ...prev, ingredient_type: event.target.value }))}
+              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+            >
+              <option value="원재료">원재료</option>
+              <option value="반제품">반제품</option>
+              <option value="기타">기타</option>
+            </select>
           </Field>
           <Field label="식품유형">
             <input

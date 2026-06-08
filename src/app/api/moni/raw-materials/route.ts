@@ -3,6 +3,7 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+const RAW_MATERIAL_INGREDIENT_TYPES = ['원재료', '반제품', '기타'] as const
 
 function text(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : ''
@@ -134,10 +135,15 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     const itemName = text(body?.item_name)
     const packingWeightG = numberValue(body?.packing_weight_g)
+    const ingredientType = text(body?.ingredient_type) || '원재료'
     const businessId = normalizeBusinessId(body?.business_id)
 
     if (!itemName) {
       return NextResponse.json({ ok: false, error: '원재료명을 입력해 주세요.' }, { status: 400 })
+    }
+
+    if (!RAW_MATERIAL_INGREDIENT_TYPES.includes(ingredientType as (typeof RAW_MATERIAL_INGREDIENT_TYPES)[number])) {
+      return NextResponse.json({ ok: false, error: '재료유형은 원재료/반제품/기타만 허용됩니다.' }, { status: 400 })
     }
 
     const supabase = createMoniServiceRoleClient()
@@ -187,6 +193,7 @@ export async function POST(request: NextRequest) {
       id,
       item_name: itemName,
       item_code: id,
+      ingredient_type: ingredientType,
       packing_weight_g: packingWeightG,
       current_stock_g: 0,
       is_active: true,
