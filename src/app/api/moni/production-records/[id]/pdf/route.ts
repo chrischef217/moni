@@ -50,6 +50,17 @@ function formatEaRemainder(ea: number, remainderG: number) {
   return `${new Intl.NumberFormat('ko-KR').format(ea)}ea + 잔량 ${formatGram(remainderG)}`
 }
 
+function resolvePackingUnitG(value: unknown): number | null {
+  const parsed = parseNumber(value)
+  if (parsed === null || parsed <= 0) return null
+  return parsed
+}
+
+function calcEaByPackingUnit(quantityG: number, packingUnitG: number | null) {
+  if (!Number.isFinite(quantityG) || quantityG <= 0 || packingUnitG === null || packingUnitG <= 0) return null
+  return Math.ceil(quantityG / packingUnitG)
+}
+
 type RecipeRow = {
   id?: string | null
   product_id?: string | null
@@ -111,17 +122,26 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       productionUnitName || (productionUnitWeightG !== null && productionUnitWeightG > 0 ? `${formatGram(productionUnitWeightG)} 단위` : '')
 
     let productReportNumber = ''
+    let productPackingUnitG: number | null = null
     if (productId) {
-      const byId = await supabase.from('products').select('report_number').eq('id', productId).limit(1)
+      const byId = await supabase.from('products').select('report_number, weight_g').eq('id', productId).limit(1)
       if (byId.error) throw new Error(byId.error.message || '제품 정보 조회에 실패했습니다.')
       productReportNumber = String(byId.data?.[0]?.report_number ?? '').trim()
+      productPackingUnitG = resolvePackingUnitG(byId.data?.[0]?.weight_g)
     }
     if (!productReportNumber && productName) {
-      const byName = await supabase.from('products').select('report_number').eq('product_name', productName).limit(1)
+      const byName = await supabase.from('products').select('report_number, weight_g').eq('product_name', productName).limit(1)
       if (byName.error) throw new Error(byName.error.message || '제품 정보 조회에 실패했습니다.')
       productReportNumber = String(byName.data?.[0]?.report_number ?? '').trim()
+      if (productPackingUnitG === null) {
+        productPackingUnitG = resolvePackingUnitG(byName.data?.[0]?.weight_g)
+      }
     }
     if (!productReportNumber) productReportNumber = '미등록'
+
+    const recordPackingUnitG = resolvePackingUnitG(data.production_unit_weight_g)
+    const packingUnitG = recordPackingUnitG ?? productPackingUnitG
+    const plannedEaByPacking = calcEaByPackingUnit(plannedQuantityG, packingUnitG)
 
     let recipeRows: RecipeRow[] = []
 
@@ -315,10 +335,16 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
           <td class="value">${escapeHtml(productReportNumber)}</td>
         </tr>
         <tr>
+          <th>패킹단위</th>
+          <td class="value number">${packingUnitG !== null ? escapeHtml(formatGram(packingUnitG)) : '패킹단위 미등록'}</td>
+          <th></th>
+          <td class="value">-</td>
+        </tr>
+        <tr>
           <th>예정수량</th>
           <td class="value number">${formatGram(data.planned_quantity_g)}</td>
           <th>예정수량(ea)</th>
-          <td class="value number">${plannedEaRemainderText ? escapeHtml(plannedEaRemainderText) : '-'}</td>
+          <td class="value number">${plannedEaByPacking !== null ? `${escapeHtml(formatNumber(plannedEaByPacking))}ea` : '계산불가'}</td>
         </tr>
         ${
           productionUnitLabel

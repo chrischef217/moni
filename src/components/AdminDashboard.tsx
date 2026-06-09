@@ -937,6 +937,33 @@ function formatPlannedUnitForRecord(record: ProductionRecord) {
   return formatEaRemainder(ea, remainderG)
 }
 
+function resolvePackingUnitGForRecord(record: ProductionRecord, productMeta?: ProductOption | null) {
+  const recordUnitG = Number(record.production_unit_weight_g ?? NaN)
+  if (Number.isFinite(recordUnitG) && recordUnitG > 0) return recordUnitG
+
+  const productWeightG = Number(productMeta?.weight_g ?? NaN)
+  if (Number.isFinite(productWeightG) && productWeightG > 0) return productWeightG
+
+  const fromSpec = parsePackingUnitWeights(String(productMeta?.product_spec ?? ''))
+  if (fromSpec.length > 0) {
+    const first = Number(fromSpec[0] ?? NaN)
+    if (Number.isFinite(first) && first > 0) return first
+  }
+
+  return null
+}
+
+function formatPackingUnitGText(value: number | null | undefined) {
+  return value && value > 0 ? `${formatNumber(value)}g` : '미등록'
+}
+
+function calcEaByPackingUnit(quantityG: number | null | undefined, packingUnitG: number | null | undefined) {
+  const quantity = Number(quantityG ?? NaN)
+  const unit = Number(packingUnitG ?? NaN)
+  if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unit) || unit <= 0) return null
+  return Math.ceil(quantity / unit)
+}
+
 function normalizeStatusCode(status: string | null | undefined) {
   const raw = String(status ?? '').trim().toLowerCase()
   if (!raw) return ''
@@ -4909,6 +4936,9 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         const sample = Number(row.sample_quantity_g ?? 0)
         const loss = Math.max(planned - (actual + defect + sample), 0)
         const meta = findProductMeta(row)
+        const packingUnitG = resolvePackingUnitGForRecord(row, meta)
+        const plannedEa = calcEaByPackingUnit(planned, packingUnitG)
+        const completedEa = calcEaByPackingUnit(actual, packingUnitG)
 
         return `<section class="sheet">
   <h1>생산일보</h1>
@@ -4921,9 +4951,15 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       <tr><th>생산단위</th><td>${escapeHtmlForPrint(row.production_unit_name || '-')}</td><th>상태</th><td>${escapeHtmlForPrint(
           statusCode === 'confirmed' ? '확정' : '생산완료',
         )}</td></tr>
+      <tr><th>패킹단위</th><td>${escapeHtmlForPrint(formatPackingUnitGText(packingUnitG))}</td><th>예정수량(ea)</th><td>${escapeHtmlForPrint(
+          plannedEa !== null ? `${formatNumber(plannedEa)}ea` : '계산불가',
+        )}</td></tr>
       <tr><th>예정량</th><td>${escapeHtmlForPrint(`${formatNumber(planned)}g`)}</td><th>완료량</th><td>${escapeHtmlForPrint(
           `${formatNumber(actual)}g`,
         )}</td></tr>
+      <tr><th>완료수량(ea)</th><td>${escapeHtmlForPrint(
+          completedEa !== null ? `${formatNumber(completedEa)}ea` : '계산불가',
+        )}</td><th></th><td></td></tr>
       <tr><th>불량량</th><td>${escapeHtmlForPrint(`${formatNumber(defect)}g`)}</td><th>샘플량</th><td>${escapeHtmlForPrint(
           `${formatNumber(sample)}g`,
         )}</td></tr>
@@ -5872,8 +5908,11 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <th className="px-3 py-2 font-medium">LOT</th>
                     <th className="px-3 py-2 font-medium">제품명</th>
                     <th className="px-3 py-2 font-medium">품목보고번호</th>
+                    <th className="px-3 py-2 font-medium">패킹단위</th>
                     <th className="px-3 py-2 font-medium">예정량</th>
+                    <th className="px-3 py-2 font-medium">예정수량(ea)</th>
                     <th className="px-3 py-2 font-medium">완료량(g)</th>
+                    <th className="px-3 py-2 font-medium">완료수량(ea)</th>
                     <th className="px-3 py-2 font-medium">불량량(g)</th>
                     <th className="px-3 py-2 font-medium">샘플량(g)</th>
                     <th className="px-3 py-2 font-medium">상태</th>
@@ -5885,18 +5924,28 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     const statusCode = normalizeStatusCode(record.status)
                     const plannedUnitText = formatPlannedUnitForRecord(record)
                     const productMeta = findProductMeta(record)
+                    const packingUnitG = resolvePackingUnitGForRecord(record, productMeta)
+                    const plannedEa = calcEaByPackingUnit(record.planned_quantity_g, packingUnitG)
+                    const completedEa = calcEaByPackingUnit(record.actual_quantity_g, packingUnitG)
                     return (
                       <tr key={record.id} className="border-b border-gray-800/80">
                         <td className="px-3 py-3 font-mono text-gray-300">{record.lot_number || '-'}</td>
                         <td className="px-3 py-3 text-white">{record.product_name || '-'}</td>
                         <td className="px-3 py-3 text-gray-200">{reportNumberText(productMeta?.report_number)}</td>
+                        <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{formatPackingUnitGText(packingUnitG)}</td>
                         <td className="px-3 py-3 text-gray-200">
                           <div>{formatNumber(record.planned_quantity_g)}g</div>
                           {plannedUnitText ? (
                             <div className="mt-1 text-xs text-gray-400">{plannedUnitText}</div>
                           ) : null}
                         </td>
+                        <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
+                          {plannedEa !== null ? `${formatNumber(plannedEa)}ea` : '계산불가'}
+                        </td>
                         <td className="px-3 py-3 text-green-400">{formatNumber(record.actual_quantity_g)}g</td>
+                        <td className="px-3 py-3 text-green-300 whitespace-nowrap">
+                          {completedEa !== null ? `${formatNumber(completedEa)}ea` : '계산불가'}
+                        </td>
                         <td className="px-3 py-3 text-amber-300">{formatNumber(record.defect_quantity_g)}g</td>
                         <td className="px-3 py-3 text-blue-300">{formatNumber(record.sample_quantity_g)}g</td>
                         <td className="px-3 py-3 text-gray-200">
@@ -8023,8 +8072,11 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <th className="w-28 px-3 py-3 font-medium whitespace-nowrap">생산일자</th>
                     <th className="w-32 px-3 py-3 font-medium whitespace-nowrap">LOT</th>
                     <th className="min-w-[160px] px-3 py-3 font-medium whitespace-nowrap">제품명</th>
-                    <th className="w-24 px-3 py-3 text-right font-medium whitespace-nowrap">예정량</th>
-                    <th className="w-24 px-3 py-3 text-right font-medium whitespace-nowrap">완료량</th>
+                    <th className="w-24 px-3 py-3 text-right font-medium whitespace-nowrap">패킹단위</th>
+                    <th className="w-24 px-3 py-3 text-right font-medium whitespace-nowrap">예정량(g)</th>
+                    <th className="w-24 px-3 py-3 text-right font-medium whitespace-nowrap">예정수량(ea)</th>
+                    <th className="w-24 px-3 py-3 text-right font-medium whitespace-nowrap">완료량(g)</th>
+                    <th className="w-24 px-3 py-3 text-right font-medium whitespace-nowrap">완료수량(ea)</th>
                     <th className="w-40 px-3 py-3 font-medium whitespace-nowrap">작업</th>
                   </tr>
                 </thead>
@@ -8033,6 +8085,10 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     const planned = Number(record.planned_quantity_g ?? 0)
                     const actual = Number(record.actual_quantity_g ?? 0)
                     const checked = dailySelectedIds.includes(record.id)
+                    const productMeta = findProductMeta(record)
+                    const packingUnitG = resolvePackingUnitGForRecord(record, productMeta)
+                    const plannedEa = calcEaByPackingUnit(planned, packingUnitG)
+                    const completedEa = calcEaByPackingUnit(actual, packingUnitG)
 
                     return (
                       <tr key={record.id} className="border-b border-gray-800/80 hover:bg-gray-900/30">
@@ -8055,8 +8111,15 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                             {record.product_name || '-'}
                           </span>
                         </td>
+                        <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">{formatPackingUnitGText(packingUnitG)}</td>
                         <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">{formatNumber(planned)}g</td>
+                        <td className="px-3 py-3 text-right text-gray-200 whitespace-nowrap">
+                          {plannedEa !== null ? `${formatNumber(plannedEa)}ea` : '계산불가'}
+                        </td>
                         <td className="px-3 py-3 text-right text-green-400 whitespace-nowrap">{formatNumber(actual)}g</td>
+                        <td className="px-3 py-3 text-right text-green-300 whitespace-nowrap">
+                          {completedEa !== null ? `${formatNumber(completedEa)}ea` : '계산불가'}
+                        </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-1">
                             <button
