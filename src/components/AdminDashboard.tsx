@@ -2605,6 +2605,23 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   function packingUnitsDisplayTextForList(product: ProductOption, units?: ProductionUnit[]) {
+    const masterWeight = Number(product.weight_g ?? NaN)
+    if (Number.isFinite(masterWeight) && masterWeight > 0) {
+      return formatPackingUnitGText(masterWeight)
+    }
+
+    const firstUnitWeight = Number(
+      (units ?? []).find((unit) => Number(unit.unit_weight_g ?? 0) > 0)?.unit_weight_g ?? NaN,
+    )
+    if (Number.isFinite(firstUnitWeight) && firstUnitWeight > 0) {
+      return formatPackingUnitGText(firstUnitWeight)
+    }
+
+    const firstSpecWeight = Number(parsePackingUnitWeights(product.product_spec ?? '')[0] ?? NaN)
+    if (Number.isFinite(firstSpecWeight) && firstSpecWeight > 0) {
+      return formatPackingUnitGText(firstSpecWeight)
+    }
+
     const fromUnits = (units ?? [])
       .map((unit) => Number(unit.unit_weight_g ?? 0))
       .filter((weight) => Number.isFinite(weight) && weight > 0)
@@ -10463,7 +10480,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
               <option value="냉동">냉동</option>
             </select>
           </Field>
-          <Field label="소비기한(일)">
+          <Field label="소비기한(월)">
             <input
               type="number"
               value={materialForm.shelf_life_days}
