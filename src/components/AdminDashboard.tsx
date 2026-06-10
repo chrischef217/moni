@@ -2605,21 +2605,67 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   }
 
   function packingUnitsDisplayTextForList(product: ProductOption, units?: ProductionUnit[]) {
+    const fromUnitsPreferred = (units ?? [])
+      .map((unit) => Number(unit.unit_weight_g ?? 0))
+      .filter((weight) => Number.isFinite(weight) && weight > 0)
+
+    const specTextForList = String(product.product_spec ?? '')
+    const parsedWithUnit: number[] = []
+    const unitPatternForList = /(\d[\d,]*(?:\.\d+)?)\s*(kg|g)\b/gi
+    let matchedForList = unitPatternForList.exec(specTextForList)
+    while (matchedForList) {
+      const numeric = Number(String(matchedForList[1] ?? '').replace(/,/g, ''))
+      if (Number.isFinite(numeric) && numeric > 0) {
+        parsedWithUnit.push(String(matchedForList[2] ?? '').toLowerCase() === 'kg' ? numeric * 1000 : numeric)
+      }
+      matchedForList = unitPatternForList.exec(specTextForList)
+    }
+
+    const fromSpecPreferred =
+      parsedWithUnit.length > 0 ? parsedWithUnit : parsePackingUnitWeights(specTextForList)
+    const masterWeightPreferred = Number(product.weight_g ?? NaN)
+
+    const sourceWeightsPreferred =
+      fromUnitsPreferred.length > 0
+        ? fromUnitsPreferred
+        : fromSpecPreferred.length > 0
+          ? fromSpecPreferred
+          : Number.isFinite(masterWeightPreferred) && masterWeightPreferred > 0
+            ? [masterWeightPreferred]
+            : []
+
+    if (sourceWeightsPreferred.length > 0) {
+      const deduped: number[] = []
+      for (const valueG of sourceWeightsPreferred) {
+        if (!deduped.some((existing) => Math.abs(existing - valueG) < 0.0001)) {
+          deduped.push(valueG)
+        }
+      }
+
+      const labels = deduped
+        .map((valueG) => formatKgFromGramValue(valueG))
+        .filter((value): value is string => Boolean(value))
+
+      if (labels.length > 0) {
+        return labels.join(' / ')
+      }
+    }
+
     const masterWeight = Number(product.weight_g ?? NaN)
     if (Number.isFinite(masterWeight) && masterWeight > 0) {
-      return formatPackingUnitGText(masterWeight)
+      return formatKgFromGramValue(masterWeight) ?? '미등록'
     }
 
     const firstUnitWeight = Number(
       (units ?? []).find((unit) => Number(unit.unit_weight_g ?? 0) > 0)?.unit_weight_g ?? NaN,
     )
     if (Number.isFinite(firstUnitWeight) && firstUnitWeight > 0) {
-      return formatPackingUnitGText(firstUnitWeight)
+      return formatKgFromGramValue(firstUnitWeight) ?? '미등록'
     }
 
     const firstSpecWeight = Number(parsePackingUnitWeights(product.product_spec ?? '')[0] ?? NaN)
     if (Number.isFinite(firstSpecWeight) && firstSpecWeight > 0) {
-      return formatPackingUnitGText(firstSpecWeight)
+      return formatKgFromGramValue(firstSpecWeight) ?? '미등록'
     }
 
     const fromUnits = (units ?? [])
@@ -2627,7 +2673,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       .filter((weight) => Number.isFinite(weight) && weight > 0)
     if (fromUnits.length > 0) {
       return fromUnits
-        .map((value) => formatKgDisplayWithoutConversion(value))
+        .map((value) => formatKgFromGramValue(value))
         .filter((value): value is string => Boolean(value))
         .join(' / ')
     }
@@ -2635,12 +2681,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     const fromSpec = parsePackingUnitWeights(product.product_spec ?? '')
     if (fromSpec.length > 0) {
       return fromSpec
-        .map((value) => formatKgDisplayWithoutConversion(value))
+        .map((value) => formatKgFromGramValue(value))
         .filter((value): value is string => Boolean(value))
         .join(' / ')
     }
     if (product.weight_g !== null && product.weight_g !== undefined && Number(product.weight_g) > 0) {
-      return formatKgDisplayWithoutConversion(Number(product.weight_g)) ?? '미등록'
+      return formatKgFromGramValue(Number(product.weight_g)) ?? '미등록'
     }
     return '미등록'
   }
