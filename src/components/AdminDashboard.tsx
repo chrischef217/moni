@@ -255,6 +255,7 @@ type ConfirmDialogState = {
   open: boolean
   title: string
   message: string
+  details?: string[]
   confirmText: string
   cancelText: string
   variant: 'danger' | 'default'
@@ -695,6 +696,7 @@ const EMPTY_CONFIRM_DIALOG: ConfirmDialogState = {
   open: false,
   title: '',
   message: '',
+  details: [],
   confirmText: '확인',
   cancelText: '취소',
   variant: 'default',
@@ -3720,6 +3722,80 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       setPackagingError(error instanceof Error ? error.message : '부재료 목록을 불러오지 못했습니다.')
     } finally {
       setPackagingLoading(false)
+    }
+  }
+
+  async function getLinkedProductsForRawMaterial(material: RawMaterialRow): Promise<string[]> {
+    const payload = await readJson<RecipeMaterialMappingsPayload>('/api/moni/raw-material-mapping?view=recipes&status=all')
+    const rows = payload.rows ?? []
+    const targetId = String(material.id)
+    const targetName = String(material.item_name ?? '').trim()
+    const linkedRows = rows.filter((row) => {
+      if (row.mapping_status !== 'mapped') return false
+      const byRef = String(row.current_raw_material_ref_id ?? '') === targetId
+      const byName = !row.current_raw_material_ref_id && targetName && String(row.current_raw_material_name ?? '') === targetName
+      return byRef || byName
+    })
+    return Array.from(new Set(linkedRows.map((row) => row.product_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'))
+  }
+
+  async function applyRawMaterialActive(material: RawMaterialRow, nextActive: boolean) {
+    const actionLabel = nextActive ? '다시 활성화' : '비활성화'
+    await readJson<RawMaterialsPayload>(`/api/moni/raw-materials/${encodeURIComponent(material.id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        item_name: material.item_name,
+        food_type: material.food_type ?? material.food_type_name ?? '',
+        country_of_origin: material.country_of_origin ?? '',
+        spec: material.spec ?? '',
+        storage_type: material.storage_type ?? '',
+        shelf_life_days: material.shelf_life_days ?? null,
+        supplier: material.supplier ?? '',
+        supplier_contact: material.supplier_contact ?? '',
+        supplier_address: material.supplier_address ?? '',
+        supplier_biz_number: material.supplier_biz_number ?? '',
+        is_active: nextActive,
+      }),
+    })
+    await loadMaterials(materialsView)
+    return actionLabel
+  }
+
+  async function deactivateRawMaterialWithWarning(material: RawMaterialRow) {
+    setMaterialSaving(true)
+    setMaterialsError('')
+    try {
+      const linkedProducts = await getLinkedProductsForRawMaterial(material)
+      if (linkedProducts.length > 0) {
+        setConfirmDialog({
+          open: true,
+          title: '원재료 비활성화 확인',
+          message: '이미 연결된 원재료가 있습니다. 아래 제품에 연결되어 있습니다.',
+          details: linkedProducts,
+          confirmText: '확인',
+          cancelText: '취소',
+          variant: 'danger',
+          onConfirm: () => {
+            void (async () => {
+              setMaterialSaving(true)
+              setMaterialsError('')
+              try {
+                await applyRawMaterialActive(material, false)
+              } catch (error) {
+                setMaterialsError(error instanceof Error ? error.message : '비활성화 처리 중 오류가 발생했습니다.')
+              } finally {
+                setMaterialSaving(false)
+              }
+            })()
+          },
+        })
+        return
+      }
+      await applyRawMaterialActive(material, false)
+    } catch (error) {
+      setMaterialsError(error instanceof Error ? error.message : '연결된 제품 확인 중 오류가 발생했습니다.')
+    } finally {
+      setMaterialSaving(false)
     }
   }
 
@@ -6948,7 +7024,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation()
-                                void toggleRawMaterialActive(material, false)
+                                void deactivateRawMaterialWithWarning(material)
                               }}
                               disabled={materialSaving}
                               className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-red-500 hover:text-red-200 disabled:opacity-60"
@@ -10020,6 +10096,16 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
           >
             <h4 className="text-lg font-semibold text-gray-900">{confirmDialog.title}</h4>
             <p className="mt-2 text-sm leading-relaxed text-gray-700">{confirmDialog.message}</p>
+            {confirmDialog.details && confirmDialog.details.length > 0 ? (
+              <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs font-semibold text-gray-600">연결된 제품</p>
+                <ul className="mt-2 max-h-40 list-disc space-y-1 overflow-y-auto pl-5 text-sm text-gray-800">
+                  {confirmDialog.details.map((name) => (
+                    <li key={name}>{name}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
