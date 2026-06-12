@@ -1693,7 +1693,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [materialsLoading, setMaterialsLoading] = useState(true)
   const [materialsError, setMaterialsError] = useState('')
   const [materials, setMaterials] = useState<RawMaterialRow[]>([])
-  const [materialsView] = useState<'active' | 'inactive'>('active')
+  const [materialsView, setMaterialsView] = useState<'active' | 'inactive'>('active')
   const [materialsNameQuery, setMaterialsNameQuery] = useState('')
   const [materialsSummary, setMaterialsSummary] = useState<MaterialSummary>(EMPTY_MATERIAL_SUMMARY)
   const [selectedMaterial, setSelectedMaterial] = useState<RawMaterialRow | null>(null)
@@ -1735,7 +1735,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [packagingLoading, setPackagingLoading] = useState(true)
   const [packagingError, setPackagingError] = useState('')
   const [packagingMaterials, setPackagingMaterials] = useState<PackagingMaterialRow[]>([])
-  const [packagingView] = useState<'active' | 'inactive'>('active')
+  const [packagingView, setPackagingView] = useState<'active' | 'inactive'>('active')
   const [packagingNameQuery, setPackagingNameQuery] = useState('')
   const [packagingSummary, setPackagingSummary] = useState<MaterialSummary>(EMPTY_MATERIAL_SUMMARY)
   const [showPackagingModal, setShowPackagingModal] = useState(false)
@@ -6840,7 +6840,26 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
               <span className="font-semibold text-green-300">{formatNumber(materialsSummary.active)}</span>개 / 비활성{' '}
               <span className="font-semibold text-amber-300">{formatNumber(materialsSummary.inactive)}</span>개
             </p>
-
+            <div className="inline-flex rounded-lg border border-gray-700 bg-gray-950 p-1">
+              <button
+                type="button"
+                onClick={() => setMaterialsView('active')}
+                className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
+                  materialsView === 'active' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                활성 보기
+              </button>
+              <button
+                type="button"
+                onClick={() => setMaterialsView('inactive')}
+                className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
+                  materialsView === 'inactive' ? 'bg-amber-500 text-gray-950' : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                비활성 보기
+              </button>
+            </div>
           </div>
 
           <div className="mb-4 max-w-xs">
@@ -7526,7 +7545,26 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             <span className="font-semibold text-green-300">{formatNumber(packagingSummary.active)}</span>개 / 비활성{' '}
             <span className="font-semibold text-amber-300">{formatNumber(packagingSummary.inactive)}</span>개
           </p>
-
+          <div className="inline-flex rounded-lg border border-gray-700 bg-gray-950 p-1">
+            <button
+              type="button"
+              onClick={() => setPackagingView('active')}
+              className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
+                packagingView === 'active' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              활성 보기
+            </button>
+            <button
+              type="button"
+              onClick={() => setPackagingView('inactive')}
+              className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
+                packagingView === 'inactive' ? 'bg-amber-500 text-gray-950' : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              비활성 보기
+            </button>
+          </div>
         </div>
 
         <div className="mb-4 max-w-xs">
