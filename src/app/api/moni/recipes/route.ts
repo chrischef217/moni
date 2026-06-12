@@ -21,14 +21,11 @@ async function fetchProductAndMaterialOptions() {
   const supabase = createMoniServiceRoleClient()
   const [productsResult, rawMaterialsResult] = await Promise.all([
     supabase.from('products').select('*').order('product_name', { ascending: true }),
-    supabase
-      .from('raw_materials')
-      .select('*')
-      .order('item_name', { ascending: true }),
+    supabase.from('raw_materials').select('*').order('item_name', { ascending: true }),
   ])
 
   if (productsResult.error) throw new Error(productsResult.error.message || '제품 목록 조회 실패')
-  if (rawMaterialsResult.error) throw new Error(rawMaterialsResult.error.message || '원료 목록 조회 실패')
+  if (rawMaterialsResult.error) throw new Error(rawMaterialsResult.error.message || '원재료 목록 조회 실패')
 
   return {
     products: productsResult.data ?? [],
@@ -65,7 +62,7 @@ export async function GET(request: NextRequest) {
         .in('food_type_id', foodTypeIds)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: false })
-      if (mappingResult.error) throw new Error(mappingResult.error.message || '실제원료 매핑 조회 실패')
+      if (mappingResult.error) throw new Error(mappingResult.error.message || '실제원재료 매핑 조회 실패')
       mappings = mappingResult.data ?? []
     }
 
@@ -125,24 +122,19 @@ export async function PUT(request: NextRequest) {
     if (!productId || !productName) {
       return NextResponse.json({ ok: false, error: '제품 정보가 필요합니다.' }, { status: 400 })
     }
-
     if (rows.length === 0) {
       return NextResponse.json({ ok: false, error: '저장할 레시피 항목이 없습니다.' }, { status: 400 })
     }
 
-    const parsedRows = rows.map((row, index) => {
-      const foodTypeName = toText(row.food_type_name)
-      const ratioPercent = toNumber(row.ratio_percent)
-      return {
-        id: toText(row.id),
-        food_type_id: toText(row.food_type_id),
-        food_type_name: foodTypeName,
-        ratio_percent: ratioPercent,
-        ingredient_type: toText(row.ingredient_type) || '원재료',
-        semi_product_id: toText(row.semi_product_id) || null,
-        sort_order: toNumber(row.sort_order) ?? index + 1,
-      }
-    })
+    const parsedRows = rows.map((row, index) => ({
+      id: toText(row.id),
+      food_type_id: toText(row.food_type_id),
+      food_type_name: toText(row.food_type_name),
+      ratio_percent: toNumber(row.ratio_percent),
+      ingredient_type: toText(row.ingredient_type) || '원재료',
+      semi_product_id: toText(row.semi_product_id) || null,
+      sort_order: toNumber(row.sort_order) ?? index + 1,
+    }))
 
     const invalidRow = parsedRows.find(
       (row) => !row.food_type_name || row.ratio_percent === null || row.ratio_percent < 0,
@@ -227,6 +219,12 @@ export async function PUT(request: NextRequest) {
 
     const deleteIds = existingIdList.filter((id) => !savedIds.includes(id))
     for (const id of deleteIds) {
+      const mappingDelete = await supabase
+        .from('raw_material_mapping')
+        .delete()
+        .eq('recipe_id', id)
+      if (mappingDelete.error) throw new Error(mappingDelete.error.message || '연결된 원재료 매핑 삭제 실패')
+
       const deleted = await supabase.from('recipes').delete().eq('id', id).eq('product_id', productId)
       if (deleted.error) throw new Error(deleted.error.message || '레시피 삭제 실패')
     }
@@ -255,6 +253,12 @@ export async function DELETE(request: NextRequest) {
     }
 
     const supabase = createMoniServiceRoleClient()
+    const mappingDelete = await supabase
+      .from('raw_material_mapping')
+      .delete()
+      .eq('recipe_id', id)
+    if (mappingDelete.error) throw new Error(mappingDelete.error.message || '연결된 원재료 매핑 삭제 실패')
+
     const { error } = await supabase.from('recipes').delete().eq('id', id)
     if (error) throw new Error(error.message || '레시피 삭제 실패')
 
