@@ -3731,12 +3731,19 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
     const targetId = String(material.id)
     const targetName = String(material.item_name ?? '').trim()
     const linkedRows = rows.filter((row) => {
-      if (row.mapping_status !== 'mapped') return false
       const byRef = String(row.current_raw_material_ref_id ?? '') === targetId
       const byName = !row.current_raw_material_ref_id && targetName && String(row.current_raw_material_name ?? '') === targetName
       return byRef || byName
     })
-    return Array.from(new Set(linkedRows.map((row) => row.product_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'))
+    const linkedLabels = linkedRows
+      .map((row) => {
+        const product = String(row.product_name ?? '').trim()
+        const recipeItem = String(row.recipe_item_name ?? '').trim()
+        if (!product) return ''
+        return recipeItem ? `${product} · ${recipeItem}` : product
+      })
+      .filter(Boolean)
+    return Array.from(new Set(linkedLabels)).sort((a, b) => a.localeCompare(b, 'ko'))
   }
 
   async function applyRawMaterialActive(material: RawMaterialRow, nextActive: boolean) {
@@ -3800,6 +3807,10 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
   }
 
   async function toggleRawMaterialActive(material: RawMaterialRow, nextActive: boolean) {
+    if (!nextActive) {
+      await deactivateRawMaterialWithWarning(material)
+      return
+    }
     const actionLabel = nextActive ? '다시 활성화' : '비활성화'
     const confirmed = window.confirm(`"${material.item_name}" 항목을 ${actionLabel}할까요?`)
     if (!confirmed) return
