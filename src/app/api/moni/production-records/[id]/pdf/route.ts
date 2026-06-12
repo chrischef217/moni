@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
@@ -33,7 +33,7 @@ function formatGram(value: unknown) {
   return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(parsed)}g`
 }
 
-// 원재료 필요량 행은 단위 접미사 없이 숫자만 표시한다.
+// ?먯옱猷??꾩슂???됱? ?⑥쐞 ?묐????놁씠 ?レ옄留??쒖떆?쒕떎.
 function formatRequiredGram(value: number) {
   if (!Number.isFinite(value)) return '-'
   const abs = Math.abs(value)
@@ -47,7 +47,7 @@ function formatRequiredGram(value: number) {
 }
 
 function formatEaRemainder(ea: number, remainderG: number) {
-  return `${new Intl.NumberFormat('ko-KR').format(ea)}ea + 잔량 ${formatGram(remainderG)}`
+  return `${new Intl.NumberFormat('ko-KR').format(ea)}ea + ?붾웾 ${formatGram(remainderG)}`
 }
 
 function resolvePackingUnitG(value: unknown): number | null {
@@ -64,9 +64,12 @@ function calcEaByPackingUnit(quantityG: number, packingUnitG: number | null) {
 type RecipeRow = {
   id?: string | null
   product_id?: string | null
+  product_name?: string | null
   food_type_id?: string | null
   food_type_name?: string | null
   ratio_percent?: number | string | null
+  ingredient_type?: string | null
+  semi_product_id?: string | null
 }
 
 type MappingRow = {
@@ -90,12 +93,27 @@ function normalizeKey(value: unknown) {
   return String(value ?? '').trim().toLowerCase().replace(/\s+/g, '')
 }
 
+function isRawIngredient(value: string | null | undefined) {
+  const raw = normalizeKey(String(value ?? ''))
+  if (!raw) return true
+  if (raw === '원재료' || raw === 'raw') return true
+  if (raw === '제품/반제품' || raw === '제품반제품' || raw === 'productsemi' || raw === 'hybridsemi') return true
+  return false
+}
+
+function isPureSemiIngredient(value: string | null | undefined) {
+  const raw = normalizeKey(String(value ?? ''))
+  if (!raw) return false
+  if (raw === '반제품' || raw === 'semi' || raw === 'semiproduct') return true
+  return false
+}
+
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createMoniServiceRoleClient()
     const { data, error } = await supabase.from('production_records').select('*').eq('id', params.id).maybeSingle()
-    if (error) throw new Error(error.message || '제조기록서 조회에 실패했습니다.')
-    if (!data) return NextResponse.json({ ok: false, error: '제조기록서를 찾을 수 없습니다.' }, { status: 404 })
+    if (error) throw new Error(error.message || '?쒖“湲곕줉??議고쉶???ㅽ뙣?덉뒿?덈떎.')
+    if (!data) return NextResponse.json({ ok: false, error: '?쒖“湲곕줉?쒕? 李얠쓣 ???놁뒿?덈떎.' }, { status: 404 })
 
     const productId = String(data.product_id ?? '').trim()
     const productName = String(data.product_name ?? '').trim()
@@ -119,19 +137,19 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     const plannedEaRemainderText =
       plannedEa !== null && plannedRemainderG !== null ? formatEaRemainder(plannedEa, plannedRemainderG) : ''
     const productionUnitLabel =
-      productionUnitName || (productionUnitWeightG !== null && productionUnitWeightG > 0 ? `${formatGram(productionUnitWeightG)} 단위` : '')
+      productionUnitName || (productionUnitWeightG !== null && productionUnitWeightG > 0 ? `${formatGram(productionUnitWeightG)} ?⑥쐞` : '')
 
     let productReportNumber = ''
     let productPackingUnitG: number | null = null
     if (productId) {
       const byId = await supabase.from('products').select('report_number, weight_g').eq('id', productId).limit(1)
-      if (byId.error) throw new Error(byId.error.message || '제품 정보 조회에 실패했습니다.')
+      if (byId.error) throw new Error(byId.error.message || '?쒗뭹 ?뺣낫 議고쉶???ㅽ뙣?덉뒿?덈떎.')
       productReportNumber = String(byId.data?.[0]?.report_number ?? '').trim()
       productPackingUnitG = resolvePackingUnitG(byId.data?.[0]?.weight_g)
     }
     if (!productReportNumber && productName) {
       const byName = await supabase.from('products').select('report_number, weight_g').eq('product_name', productName).limit(1)
-      if (byName.error) throw new Error(byName.error.message || '제품 정보 조회에 실패했습니다.')
+      if (byName.error) throw new Error(byName.error.message || '?쒗뭹 ?뺣낫 議고쉶???ㅽ뙣?덉뒿?덈떎.')
       productReportNumber = String(byName.data?.[0]?.report_number ?? '').trim()
       if (productPackingUnitG === null) {
         productPackingUnitG = resolvePackingUnitG(byName.data?.[0]?.weight_g)
@@ -148,22 +166,22 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     if (productId) {
       const byProductId = await supabase
         .from('recipes')
-        .select('id, product_id, food_type_id, food_type_name, ratio_percent')
+        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
         .eq('product_id', productId)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
-      if (byProductId.error) throw new Error(byProductId.error.message || '레시피 조회에 실패했습니다.')
+      if (byProductId.error) throw new Error(byProductId.error.message || '?덉떆??議고쉶???ㅽ뙣?덉뒿?덈떎.')
       recipeRows = (byProductId.data ?? []) as RecipeRow[]
     }
 
     if (recipeRows.length === 0 && productName) {
       const byProductName = await supabase
         .from('recipes')
-        .select('id, product_id, food_type_id, food_type_name, ratio_percent')
+        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
         .eq('product_name', productName)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
-      if (byProductName.error) throw new Error(byProductName.error.message || '레시피 조회에 실패했습니다.')
+      if (byProductName.error) throw new Error(byProductName.error.message || '?덉떆??議고쉶???ㅽ뙣?덉뒿?덈떎.')
       recipeRows = (byProductName.data ?? []) as RecipeRow[]
     }
 
@@ -178,7 +196,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       .or(materialBusinessScope)
       .order('created_at', { ascending: false })
       .limit(5000)
-    if (mappingQuery.error) throw new Error(mappingQuery.error.message || '원재료 매핑 조회에 실패했습니다.')
+    if (mappingQuery.error) throw new Error(mappingQuery.error.message || '?먯옱猷?留ㅽ븨 議고쉶???ㅽ뙣?덉뒿?덈떎.')
     const allMappings = (mappingQuery.data ?? []) as MappingRow[]
 
     const mappingRefIds = Array.from(
@@ -192,7 +210,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     let mappedMaterialsById = new Map<string, string>()
     if (mappingRefIds.length > 0) {
       const mappedMaterialsQuery = await supabase.from('raw_materials').select('id, item_name').in('id', mappingRefIds).limit(5000)
-      if (mappedMaterialsQuery.error) throw new Error(mappedMaterialsQuery.error.message || '원재료 조회에 실패했습니다.')
+      if (mappedMaterialsQuery.error) throw new Error(mappedMaterialsQuery.error.message || '?먯옱猷?議고쉶???ㅽ뙣?덉뒿?덈떎.')
       mappedMaterialsById = new Map(
         ((mappedMaterialsQuery.data ?? []) as MaterialRow[])
           .map((material) => [String(material.id ?? '').trim(), String(material.item_name ?? '').trim()] as const)
@@ -206,7 +224,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       .eq('is_active', true)
       .or(materialBusinessScope)
       .limit(5000)
-    if (directMaterialQuery.error) throw new Error(directMaterialQuery.error.message || '원재료 조회에 실패했습니다.')
+    if (directMaterialQuery.error) throw new Error(directMaterialQuery.error.message || '?먯옱猷?議고쉶???ㅽ뙣?덉뒿?덈떎.')
     const directMaterialByName = new Map(
       ((directMaterialQuery.data ?? []) as Array<{ item_name?: string | null }>)
         .map((material) => String(material.item_name ?? '').trim())
@@ -224,56 +242,126 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       return String(mapping.raw_material_name ?? '').trim()
     }
 
-    const requirementRows = recipeRows
-      .map((row) => {
+    const recipeCache = new Map<string, RecipeRow[]>()
+    const loadRecipesByProduct = async (targetProductId: string, targetProductName: string) => {
+      const key = `${targetProductId}::${targetProductName}`
+      const cached = recipeCache.get(key)
+      if (cached) return cached
+
+      let rows: RecipeRow[] = []
+      if (targetProductId) {
+        const byId = await supabase
+          .from('recipes')
+          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
+          .eq('product_id', targetProductId)
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true })
+        if (byId.error) throw new Error(byId.error.message || '레시피 조회에 실패했습니다.')
+        rows = (byId.data ?? []) as RecipeRow[]
+      }
+      if (rows.length === 0 && targetProductName) {
+        const byName = await supabase
+          .from('recipes')
+          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
+          .eq('product_name', targetProductName)
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true })
+        if (byName.error) throw new Error(byName.error.message || '레시피 조회에 실패했습니다.')
+        rows = (byName.data ?? []) as RecipeRow[]
+      }
+      recipeCache.set(key, rows)
+      return rows
+    }
+
+    const expandedRows: Array<{ row: RecipeRow; ratioPercent: number }> = []
+    const expandRows = async (rows: RecipeRow[], ratioFactor: number, depth: number, visited: Set<string>) => {
+      for (const row of rows) {
         const ratio = parseNumber(row.ratio_percent) ?? 0
-        const recipeId = String(row.id ?? '').trim()
-        const recipeProductId = String(row.product_id ?? '').trim() || productId
-        const foodTypeId = String(row.food_type_id ?? '').trim()
-        const foodTypeName = String(row.food_type_name ?? '').trim()
+        if (ratio <= 0) continue
+        const effectiveRatio = (ratioFactor * ratio) / 100
+        if (effectiveRatio <= 0) continue
 
-        const recipeScoped = allMappings.find(
-          (mapping) =>
-            String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'recipe' &&
-            String(mapping.recipe_id ?? '').trim() === recipeId,
-        )
-        const productScoped = allMappings.find(
-          (mapping) =>
-            String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'product' &&
-            String(mapping.product_id ?? '').trim() === recipeProductId &&
-            String(mapping.food_type_id ?? '').trim() === foodTypeId,
-        )
-        const globalScoped = allMappings.find(
-          (mapping) =>
-            String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'global' &&
-            String(mapping.food_type_id ?? '').trim() === foodTypeId,
-        )
-        const preferredMapping = recipeScoped ?? productScoped ?? globalScoped
-
-        let displayMaterialName = resolveMappedMaterialName(preferredMapping)
-        if (!displayMaterialName && foodTypeName) {
-          const nameFallbackMapping = allMappings.find(
-            (mapping) => normalizeKey(mapping.raw_material_name) === normalizeKey(foodTypeName),
-          )
-          displayMaterialName = resolveMappedMaterialName(nameFallbackMapping)
-        }
-        if (!displayMaterialName && foodTypeName) {
-          displayMaterialName = directMaterialByName.get(normalizeKey(foodTypeName)) || ''
+        const semiProductId = String(row.semi_product_id ?? '').trim()
+        if (isPureSemiIngredient(row.ingredient_type) && semiProductId && depth < 5) {
+          const visitKey = `${semiProductId}::${String(row.id ?? '').trim()}`
+          if (visited.has(visitKey)) continue
+          const nextVisited = new Set(visited)
+          nextVisited.add(visitKey)
+          const semiRecipes = await loadRecipesByProduct(semiProductId, '')
+          if (semiRecipes.length > 0) {
+            await expandRows(semiRecipes, effectiveRatio, depth + 1, nextVisited)
+            continue
+          }
         }
 
-        return {
-          materialDisplayName: displayMaterialName || (foodTypeName ? `미연결: ${foodTypeName}` : '미연결'),
+        if (isRawIngredient(row.ingredient_type)) {
+          expandedRows.push({ row, ratioPercent: effectiveRatio })
+        }
+      }
+    }
+
+    await expandRows(recipeRows, 100, 0, new Set<string>())
+
+    const requirementAggregate = new Map<string, { materialDisplayName: string; ratioPercent: number; requiredG: number }>()
+    for (const expanded of expandedRows) {
+      const row = expanded.row
+      const ratio = expanded.ratioPercent
+      const recipeId = String(row.id ?? '').trim()
+      const recipeProductId = String(row.product_id ?? '').trim() || productId
+      const foodTypeId = String(row.food_type_id ?? '').trim()
+      const foodTypeName = String(row.food_type_name ?? '').trim()
+
+      const recipeScoped = allMappings.find(
+        (mapping) =>
+          String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'recipe' &&
+          String(mapping.recipe_id ?? '').trim() === recipeId,
+      )
+      const productScoped = allMappings.find(
+        (mapping) =>
+          String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'product' &&
+          String(mapping.product_id ?? '').trim() === recipeProductId &&
+          String(mapping.food_type_id ?? '').trim() === foodTypeId,
+      )
+      const globalScoped = allMappings.find(
+        (mapping) =>
+          String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'global' &&
+          String(mapping.food_type_id ?? '').trim() === foodTypeId,
+      )
+      const preferredMapping = recipeScoped ?? productScoped ?? globalScoped
+
+      let displayMaterialName = resolveMappedMaterialName(preferredMapping)
+      if (!displayMaterialName && foodTypeName) {
+        const nameFallbackMapping = allMappings.find(
+          (mapping) => normalizeKey(mapping.raw_material_name) === normalizeKey(foodTypeName),
+        )
+        displayMaterialName = resolveMappedMaterialName(nameFallbackMapping)
+      }
+      if (!displayMaterialName && foodTypeName) {
+        displayMaterialName = directMaterialByName.get(normalizeKey(foodTypeName)) || ''
+      }
+      const materialDisplayName = displayMaterialName || (foodTypeName ? `미연결: ${foodTypeName}` : '미연결')
+      const requiredG = plannedQuantityG > 0 ? (plannedQuantityG * ratio) / 100 : 0
+      const key = normalizeKey(materialDisplayName)
+      const prev = requirementAggregate.get(key)
+      if (prev) {
+        prev.ratioPercent += ratio
+        prev.requiredG += requiredG
+        requirementAggregate.set(key, prev)
+      } else {
+        requirementAggregate.set(key, {
+          materialDisplayName,
           ratioPercent: ratio,
-          requiredG: plannedQuantityG > 0 ? (plannedQuantityG * ratio) / 100 : 0,
-        }
-      })
-      .filter((row) => row.materialDisplayName && row.ratioPercent > 0)
+          requiredG,
+        })
+      }
+    }
 
+    const requirementRows = Array.from(requirementAggregate.values()).filter((row) => row.ratioPercent > 0)
     const html = `<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>작업지시서 ${escapeHtml(data.lot_number)}</title>
+  <title>?묒뾽吏?쒖꽌 ${escapeHtml(data.lot_number)}</title>
   <style>
     @page { size: A4; margin: 14mm; }
     * { box-sizing: border-box; }
@@ -310,9 +398,9 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   </style>
 </head>
 <body>
-  <div class="no-print"><button onclick="window.print()">인쇄 / PDF 저장</button></div>
+  <div class="no-print"><button onclick="window.print()">?몄뇙 / PDF ???/button></div>
   <main class="page">
-    <h1>작업지시서 / 제조기록서</h1>
+    <h1>?묒뾽吏?쒖꽌 / ?쒖“湲곕줉??/h1>
 
     <table class="compact">
       <colgroup>
@@ -325,31 +413,31 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         <tr>
           <th>LOT</th>
           <td class="value">${escapeHtml(data.lot_number)}</td>
-          <th>생산일자</th>
+          <th>?앹궛?쇱옄</th>
           <td class="value">${escapeHtml(data.work_date)}</td>
         </tr>
         <tr>
-          <th>제품명</th>
+          <th>?쒗뭹紐?/th>
           <td class="value">${escapeHtml(data.product_name)}</td>
-          <th>품목보고번호</th>
+          <th>?덈ぉ蹂닿퀬踰덊샇</th>
           <td class="value">${escapeHtml(productReportNumber)}</td>
         </tr>
         <tr>
-          <th>패킹단위</th>
+          <th>?⑦궧?⑥쐞</th>
           <td class="value number">${packingUnitG !== null ? escapeHtml(formatGram(packingUnitG)) : '패킹단위 미등록'}</td>
           <th></th>
           <td class="value">-</td>
         </tr>
         <tr>
-          <th>예정수량</th>
+          <th>?덉젙?섎웾</th>
           <td class="value number">${formatGram(data.planned_quantity_g)}</td>
-          <th>예정수량(ea)</th>
-          <td class="value number">${plannedEaByPacking !== null ? `${escapeHtml(formatNumber(plannedEaByPacking))}ea` : '계산불가'}</td>
+          <th>?덉젙?섎웾(ea)</th>
+          <td class="value number">${plannedEaByPacking !== null ? `${escapeHtml(formatNumber(plannedEaByPacking))}ea` : '怨꾩궛遺덇?'}</td>
         </tr>
         ${
           productionUnitLabel
             ? `<tr>
-          <th>생산단위</th>
+          <th>?앹궛?⑥쐞</th>
           <td class="value">${escapeHtml(productionUnitLabel)}</td>
           <th></th>
           <td class="value">-</td>
@@ -359,13 +447,13 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       </tbody>
     </table>
 
-    <div class="section-title">원재료 필요량(예정 기준)</div>
+    <div class="section-title">?먯옱猷??꾩슂???덉젙 湲곗?)</div>
     <table>
       <thead>
         <tr>
-          <th>원재료명(식품유형)</th>
-          <th class="number">배합비율(%)</th>
-          <th class="number">필요량(g)</th>
+          <th>?먯옱猷뚮챸(?앺뭹?좏삎)</th>
+          <th class="number">諛고빀鍮꾩쑉(%)</th>
+          <th class="number">?꾩슂??g)</th>
         </tr>
       </thead>
       <tbody>
@@ -380,12 +468,12 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
                   </tr>`,
                 )
                 .join('')
-            : '<tr><td colspan="3">등록된 레시피가 없어 원재료 필요량을 계산할 수 없습니다.</td></tr>'
+            : '<tr><td colspan="3">?깅줉???덉떆?쇨? ?놁뼱 ?먯옱猷??꾩슂?됱쓣 怨꾩궛?????놁뒿?덈떎.</td></tr>'
         }
       </tbody>
     </table>
 
-    <div class="section-title">생산 완료 후 기입란</div>
+    <div class="section-title">?앹궛 ?꾨즺 ??湲곗엯?</div>
     <div class="fill-grid">
       <table class="fill-table">
         <colgroup>
@@ -394,41 +482,41 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         </colgroup>
         <tbody>
           <tr>
-            <th>완료수량</th>
+            <th>?꾨즺?섎웾</th>
             <td class="input-cell">
               <div class="entry-wrap">
                 <div class="entry-space"></div>
-                <div class="unit-hints">□ ea&nbsp;&nbsp;□ kg&nbsp;&nbsp;□ g</div>
+                <div class="unit-hints">??ea&nbsp;&nbsp;??kg&nbsp;&nbsp;??g</div>
               </div>
             </td>
           </tr>
           <tr>
-            <th>불량수량</th>
+            <th>遺덈웾?섎웾</th>
             <td class="input-cell">
               <div class="entry-wrap">
                 <div class="entry-space"></div>
-                <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+                <div class="unit-hints">??kg&nbsp;&nbsp;??g</div>
               </div>
             </td>
           </tr>
           <tr>
-            <th>샘플수량</th>
+            <th>?섑뵆?섎웾</th>
             <td class="input-cell">
               <div style="display:flex;flex-direction:column;gap:6px;">
                 <div class="entry-wrap">
-                  <div class="entry-space">샘플 1: ______</div>
-                  <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+                  <div class="entry-space">?섑뵆 1: ______</div>
+                  <div class="unit-hints">??kg&nbsp;&nbsp;??g</div>
                 </div>
                 <div class="entry-wrap">
-                  <div class="entry-space">샘플 2: ______</div>
-                  <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+                  <div class="entry-space">?섑뵆 2: ______</div>
+                  <div class="unit-hints">??kg&nbsp;&nbsp;??g</div>
                 </div>
                 <div class="entry-wrap">
-                  <div class="entry-space">샘플 3: ______</div>
-                  <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
+                  <div class="entry-space">?섑뵆 3: ______</div>
+                  <div class="unit-hints">??kg&nbsp;&nbsp;??g</div>
                 </div>
                 <div class="entry-wrap">
-                  <div class="entry-space">샘플 합계: ______ g</div>
+                  <div class="entry-space">?섑뵆 ?⑷퀎: ______ g</div>
                 </div>
               </div>
             </td>
@@ -437,8 +525,8 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       </table>
       <table class="sign-table">
         <tbody>
-          <tr><th>작성자 서명</th><td></td></tr>
-          <tr><th>확인자 서명</th><td></td></tr>
+          <tr><th>?묒꽦???쒕챸</th><td></td></tr>
+          <tr><th>?뺤씤???쒕챸</th><td></td></tr>
         </tbody>
       </table>
     </div>
@@ -452,7 +540,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : '제조기록서 PDF 생성 중 오류가 발생했습니다.'
+    const message = error instanceof Error ? error.message : '?쒖“湲곕줉??PDF ?앹꽦 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

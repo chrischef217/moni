@@ -1144,7 +1144,7 @@ function emptyRecipeForm(): RecipeFormState {
 
 function emptyMaterialForm(material: RawMaterialRow | null): MaterialFormState {
   const ingredientTypeRaw = String(material?.ingredient_type ?? '').trim()
-  const ingredientType = ['원재료', '반제품', '기타'].includes(ingredientTypeRaw) ? ingredientTypeRaw : '원재료'
+  const ingredientType = ['원재료', '반제품', '제품/반제품', '기타'].includes(ingredientTypeRaw) ? ingredientTypeRaw : '원재료'
   return {
     item_name: material?.item_name ?? '',
     ingredient_type: ingredientType,
@@ -6706,6 +6706,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
               >
                 <option value="원재료">원재료</option>
                 <option value="반제품">반제품</option>
+                <option value="제품/반제품">제품/반제품</option>
                 <option value="부재료">부재료</option>
               </select>
             </Field>
@@ -10048,6 +10049,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                             <option value="원재료">원재료</option>
                             <option value="부재료">부재료</option>
                             <option value="반제품">반제품</option>
+                            <option value="제품/반제품">제품/반제품</option>
                             <option value="기타">기타</option>
                           </select>
                         </td>
@@ -10622,6 +10624,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             >
               <option value="원재료">원재료</option>
               <option value="반제품">반제품</option>
+              <option value="제품/반제품">제품/반제품</option>
               <option value="기타">기타</option>
             </select>
           </Field>

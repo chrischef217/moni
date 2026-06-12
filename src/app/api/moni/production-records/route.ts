@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
@@ -46,6 +46,7 @@ type RecipeRow = {
   food_type_name: string
   ratio_percent: number | string | null
   ingredient_type: string | null
+  semi_product_id?: string | null
 }
 
 type MappingRow = {
@@ -73,6 +74,7 @@ type DeductionPreviewRow = {
   item_code: string | null
   material_name: string
   food_type_name: string
+  source_label?: string
   required_g: number
   current_stock_g: number
   remaining_stock_g: number
@@ -81,6 +83,7 @@ type DeductionPreviewRow = {
 
 type DeductionPreview = {
   materials: DeductionPreviewRow[]
+  breakdown: DeductionPreviewRow[]
   totalRequiredG: number
   hasInsufficient: boolean
   hasMissingMapping: boolean
@@ -139,10 +142,10 @@ function normalizeStatus(value: unknown, fallback: string) {
   const raw = toText(value).toLowerCase()
   if (!raw) return fallback
 
-  if (raw === 'planned' || raw === 'plan' || raw === 'scheduled' || raw === '예정') return 'planned'
-  if (raw === 'completed' || raw === 'complete' || raw === 'done' || raw === '완료') return 'completed'
-  if (raw === 'confirmed' || raw === 'confirm' || raw === '확정') return 'confirmed'
-  if (raw === 'in_progress' || raw === 'inprogress' || raw === '진행중') return 'in_progress'
+  if (raw === 'planned' || raw === 'plan' || raw === 'scheduled') return 'planned'
+  if (raw === 'completed' || raw === 'complete' || raw === 'done') return 'completed'
+  if (raw === 'confirmed' || raw === 'confirm') return 'confirmed'
+  if (raw === 'in_progress' || raw === 'inprogress' || raw === 'progress') return 'in_progress'
   return raw
 }
 
@@ -185,8 +188,17 @@ function isRawIngredient(value: string | null | undefined) {
   if (!raw) return true
   if (raw === '원재료') return true
   if (raw === 'raw') return true
+  if (raw === '제품/반제품' || raw === '제품반제품' || raw === 'productsemi' || raw === 'hybridsemi') return true
   return false
 }
+
+function isPureSemiIngredient(value: string | null | undefined) {
+  const raw = normalizeKey(String(value ?? ''))
+  if (!raw) return false
+  if (raw === '반제품' || raw === 'semi' || raw === 'semiproduct') return true
+  return false
+}
+
 
 function toRecordRow(row: Record<string, unknown>): RecordRow {
   return {
@@ -239,7 +251,7 @@ async function fetchProducts() {
     .order('product_name', { ascending: true })
     .limit(500)
 
-  if (error) throw new ApiError(500, error.message || '제품 목록 조회에 실패했습니다.', 'query.products')
+  if (error) throw new ApiError(500, error.message || '?쒗뭹 紐⑸줉 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.products')
   return ((data ?? []) as ProductOption[]).map((item) => ({
     id: String(item.id),
     product_name: String(item.product_name ?? ''),
@@ -257,7 +269,7 @@ async function generateLotNumber(workDate: string) {
     .order('lot_number', { ascending: false })
     .limit(500)
 
-  if (error) throw new ApiError(500, error.message || 'LOT 생성에 실패했습니다.', 'query.lot')
+  if (error) throw new ApiError(500, error.message || 'LOT ?앹꽦???ㅽ뙣?덉뒿?덈떎.', 'query.lot')
 
   let maxSeq = 0
   for (const row of (data ?? []) as Array<{ lot_number?: string | null }>) {
@@ -271,8 +283,8 @@ async function generateLotNumber(workDate: string) {
 async function fetchRecordById(id: string) {
   const supabase = createMoniServiceRoleClient()
   const { data, error } = await supabase.from('production_records').select('*').eq('id', id).maybeSingle()
-  if (error) throw new ApiError(500, error.message || '생산기록 조회에 실패했습니다.', 'query.record')
-  if (!data) throw new ApiError(404, '대상 생산기록을 찾을 수 없습니다.', 'query.record')
+  if (error) throw new ApiError(500, error.message || '?앹궛湲곕줉 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.record')
+  if (!data) throw new ApiError(404, '????앹궛湲곕줉??李얠쓣 ???놁뒿?덈떎.', 'query.record')
   return data as Record<string, unknown>
 }
 
@@ -286,10 +298,10 @@ async function ensureNoExistingOutboundConfirm(recordId: string, lotNumber: stri
     .ilike('note', `%production_record_id=${recordId}%`)
     .limit(1)
   if (byRecord.error) {
-    throw new ApiError(500, byRecord.error.message || '중복 확정 검증 조회에 실패했습니다.', 'validation.duplicate.record')
+    throw new ApiError(500, byRecord.error.message || '以묐났 ?뺤젙 寃利?議고쉶???ㅽ뙣?덉뒿?덈떎.', 'validation.duplicate.record')
   }
   if ((byRecord.data ?? []).length > 0) {
-    throw new ApiError(409, '이미 확정 처리된 생산기록입니다. (production_record_id 중복)', 'validation.duplicate.record')
+    throw new ApiError(409, '?대? ?뺤젙 泥섎━???앹궛湲곕줉?낅땲?? (production_record_id 以묐났)', 'validation.duplicate.record')
   }
 
   const byLot = await supabase
@@ -299,10 +311,10 @@ async function ensureNoExistingOutboundConfirm(recordId: string, lotNumber: stri
     .ilike('note', `%lot_number=${lotNumber}%`)
     .limit(1)
   if (byLot.error) {
-    throw new ApiError(500, byLot.error.message || 'LOT 중복 확정 검증 조회에 실패했습니다.', 'validation.duplicate.lot')
+    throw new ApiError(500, byLot.error.message || 'LOT 以묐났 ?뺤젙 寃利?議고쉶???ㅽ뙣?덉뒿?덈떎.', 'validation.duplicate.lot')
   }
   if ((byLot.data ?? []).length > 0) {
-    throw new ApiError(409, '이미 확정 처리된 LOT 번호입니다. (lot_number 중복)', 'validation.duplicate.lot')
+    throw new ApiError(409, '?대? ?뺤젙 泥섎━??LOT 踰덊샇?낅땲?? (lot_number 以묐났)', 'validation.duplicate.lot')
   }
 }
 
@@ -316,7 +328,7 @@ async function hasExistingOutboundConfirm(recordId: string, lotNumber: string) {
     .ilike('note', `%production_record_id=${recordId}%`)
     .limit(1)
   if (byRecord.error) {
-    throw new ApiError(500, byRecord.error.message || '취소 검증 조회에 실패했습니다.', 'validation.cancel.record')
+    throw new ApiError(500, byRecord.error.message || '痍⑥냼 寃利?議고쉶???ㅽ뙣?덉뒿?덈떎.', 'validation.cancel.record')
   }
   if ((byRecord.data ?? []).length > 0) return true
 
@@ -327,7 +339,7 @@ async function hasExistingOutboundConfirm(recordId: string, lotNumber: string) {
     .ilike('note', `%lot_number=${lotNumber}%`)
     .limit(1)
   if (byLot.error) {
-    throw new ApiError(500, byLot.error.message || '취소 검증 조회에 실패했습니다.', 'validation.cancel.lot')
+    throw new ApiError(500, byLot.error.message || '痍⑥냼 寃利?議고쉶???ㅽ뙣?덉뒿?덈떎.', 'validation.cancel.lot')
   }
   return (byLot.data ?? []).length > 0
 }
@@ -351,7 +363,7 @@ async function updateRecordWithOptionalQuantityOk(
       .select('*')
       .single()
     if (error) {
-      throw new ApiError(500, error.message || '생산기록 업데이트에 실패했습니다.', 'mutate.record.update')
+      throw new ApiError(500, error.message || '?앹궛湲곕줉 ?낅뜲?댄듃???ㅽ뙣?덉뒿?덈떎.', 'mutate.record.update')
     }
     return data as Record<string, unknown>
   }
@@ -367,12 +379,12 @@ async function updateRecordWithOptionalQuantityOk(
 
   const firstMessage = firstTry.error.message || ''
   if (!firstMessage.toLowerCase().includes('quantity_ok_g') && !firstMessage.toLowerCase().includes('column')) {
-    throw new ApiError(500, firstMessage || '생산기록 업데이트에 실패했습니다.', 'mutate.record.update')
+    throw new ApiError(500, firstMessage || '?앹궛湲곕줉 ?낅뜲?댄듃???ㅽ뙣?덉뒿?덈떎.', 'mutate.record.update')
   }
 
   const fallback = await supabase.from('production_records').update(basePatch).eq('id', id).select('*').single()
   if (fallback.error) {
-    throw new ApiError(500, fallback.error.message || '생산기록 업데이트에 실패했습니다.', 'mutate.record.update')
+    throw new ApiError(500, fallback.error.message || '?앹궛湲곕줉 ?낅뜲?댄듃???ㅽ뙣?덉뒿?덈떎.', 'mutate.record.update')
   }
   return fallback.data as Record<string, unknown>
 }
@@ -407,7 +419,7 @@ async function updateRecordWithResilientColumns(
     const { data, error } = await supabase.from('production_records').update(payload).eq('id', id).select('*').single()
     if (!error) return data as Record<string, unknown>
 
-    const message = error.message || '생산기록 업데이트에 실패했습니다.'
+    const message = error.message || '?앹궛湲곕줉 ?낅뜲?댄듃???ㅽ뙣?덉뒿?덈떎.'
     const missingColumn = optionalColumns.find(
       (columnName) =>
         Object.prototype.hasOwnProperty.call(workingPatch, columnName) &&
@@ -445,7 +457,7 @@ async function insertRecordWithResilientColumns(payload: Record<string, unknown>
       return insertResult.data as Record<string, unknown>
     }
 
-    const message = insertResult.error.message || '제조기록 저장에 실패했습니다.'
+    const message = insertResult.error.message || '?쒖“湲곕줉 ??μ뿉 ?ㅽ뙣?덉뒿?덈떎.'
     const missingColumn = optionalColumns.find(
       (columnName) =>
         Object.prototype.hasOwnProperty.call(workingPayload, columnName) &&
@@ -475,7 +487,7 @@ async function resolveRecipes(record: Record<string, unknown>) {
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
     if (byId.error) {
-      throw new ApiError(500, byId.error.message || '레시피 조회에 실패했습니다.', 'validation.recipes.query')
+      throw new ApiError(500, byId.error.message || '?덉떆??議고쉶???ㅽ뙣?덉뒿?덈떎.', 'validation.recipes.query')
     }
     recipes = (byId.data ?? []) as RecipeRow[]
   }
@@ -488,11 +500,105 @@ async function resolveRecipes(record: Record<string, unknown>) {
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
     if (byName.error) {
-      throw new ApiError(500, byName.error.message || '레시피 조회에 실패했습니다.', 'validation.recipes.query')
+      throw new ApiError(500, byName.error.message || '?덉떆??議고쉶???ㅽ뙣?덉뒿?덈떎.', 'validation.recipes.query')
     }
     recipes = (byName.data ?? []) as RecipeRow[]
   }
   return recipes
+}
+
+type ExpandedRecipeRow = {
+  recipe: RecipeRow
+  effective_ratio_percent: number
+  source_label: string
+}
+
+async function resolveExpandedRecipes(record: Record<string, unknown>) {
+  const supabase = createMoniServiceRoleClient()
+  const cache = new Map<string, RecipeRow[]>()
+
+  const loadRecipesByProduct = async (productId: string, productName: string) => {
+    const key = `${productId}::${productName}`
+    const cached = cache.get(key)
+    if (cached) return cached
+
+    let rows: RecipeRow[] = []
+    if (productId) {
+      const byId = await supabase
+        .from('recipes')
+        .select('*')
+        .eq('product_id', productId)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+      if (byId.error) throw new ApiError(500, byId.error.message || '레시피 조회에 실패했습니다.', 'validation.recipes.query')
+      rows = (byId.data ?? []) as RecipeRow[]
+    }
+
+    if (rows.length === 0 && productName) {
+      const byName = await supabase
+        .from('recipes')
+        .select('*')
+        .eq('product_name', productName)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+      if (byName.error) throw new ApiError(500, byName.error.message || '레시피 조회에 실패했습니다.', 'validation.recipes.query')
+      rows = (byName.data ?? []) as RecipeRow[]
+    }
+
+    cache.set(key, rows)
+    return rows
+  }
+
+  const expanded: ExpandedRecipeRow[] = []
+  const productId = toText(record.product_id)
+  const productName = toText(record.product_name)
+  const rootRecipes = await loadRecipesByProduct(productId, productName)
+
+  const expand = async (
+    rows: RecipeRow[],
+    ratioFactorPercent: number,
+    sourceLabel: string,
+    depth: number,
+    visited: Set<string>,
+  ) => {
+    for (const row of rows) {
+      const ratio = parseNumber(row.ratio_percent) ?? 0
+      if (ratio <= 0) continue
+      const effectiveRatio = (ratioFactorPercent * ratio) / 100
+      if (effectiveRatio <= 0) continue
+
+      const ingredientType = toText(row.ingredient_type)
+      const semiProductId = toText(row.semi_product_id)
+      const rowProductId = toText(row.product_id)
+      const rowProductName = toText(row.product_name)
+
+      if (isPureSemiIngredient(ingredientType) && semiProductId && depth < 5) {
+        const visitKey = `${semiProductId}::${toText(row.id)}`
+        if (visited.has(visitKey)) continue
+        const nextVisited = new Set(visited)
+        nextVisited.add(visitKey)
+        const semiRecipes = await loadRecipesByProduct(semiProductId, '')
+        if (semiRecipes.length > 0) {
+          const semiSource = rowProductName || sourceLabel || productName || '반제품'
+          await expand(semiRecipes, effectiveRatio, semiSource, depth + 1, nextVisited)
+          continue
+        }
+      }
+
+      expanded.push({
+        recipe: {
+          ...row,
+          product_id: rowProductId || productId || null,
+          product_name: rowProductName || productName || '',
+        },
+        effective_ratio_percent: effectiveRatio,
+        source_label: sourceLabel || rowProductName || productName || '완제품',
+      })
+    }
+  }
+
+  await expand(rootRecipes, 100, productName || '완제품', 0, new Set<string>())
+  return expanded
 }
 
 async function buildDeductionPreview(record: Record<string, unknown>): Promise<DeductionPreview> {
@@ -503,12 +609,12 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
   const plannedQuantityG = parseNumber(record.planned_quantity_g)
 
   if (actualQuantityG < 0 || defectQuantityG < 0 || sampleQuantityG < 0) {
-    throw new ApiError(400, '완료/불량/샘플 수량은 0 이상이어야 합니다.', 'validation.actual_quantity')
+    throw new ApiError(400, '?꾨즺/遺덈웾/?섑뵆 ?섎웾? 0 ?댁긽?댁뼱???⑸땲??', 'validation.actual_quantity')
   }
 
   const enteredQuantityG = actualQuantityG + defectQuantityG + sampleQuantityG
   if (enteredQuantityG <= 0) {
-    throw new ApiError(400, '완료/불량/샘플 합계가 0 이하입니다.', 'validation.actual_quantity')
+    throw new ApiError(400, '?꾨즺/遺덈웾/?섑뵆 ?⑷퀎媛 0 ?댄븯?낅땲??', 'validation.actual_quantity')
   }
 
   let lossQuantityG = 0
@@ -516,12 +622,12 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
 
   if (plannedQuantityG !== null) {
     if (plannedQuantityG <= 0) {
-      throw new ApiError(422, '예정수량이 없어 차감 기준량을 계산할 수 없습니다.', 'validation.planned_quantity')
+      throw new ApiError(422, '?덉젙?섎웾???놁뼱 李④컧 湲곗??됱쓣 怨꾩궛?????놁뒿?덈떎.', 'validation.planned_quantity')
     }
     if (enteredQuantityG > plannedQuantityG) {
       throw new ApiError(
         409,
-        '완료/불량/샘플 합계가 예정수량을 초과하여 차감 미리보기를 계산할 수 없습니다.',
+        '?꾨즺/遺덈웾/?섑뵆 ?⑷퀎媛 ?덉젙?섎웾??珥덇낵?섏뿬 李④컧 誘몃━蹂닿린瑜?怨꾩궛?????놁뒿?덈떎.',
         'validation.deduction_basis',
       )
     }
@@ -530,19 +636,19 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
   }
 
   if (deductionBasisG <= 0) {
-    throw new ApiError(400, '차감 기준량이 0 이하입니다.', 'validation.deduction_basis')
+    throw new ApiError(400, '李④컧 湲곗??됱씠 0 ?댄븯?낅땲??', 'validation.deduction_basis')
   }
 
-  const allRecipes = await resolveRecipes(record)
-  const recipes = allRecipes.filter((recipe) => isRawIngredient(recipe.ingredient_type))
+  const expandedRecipes = await resolveExpandedRecipes(record)
+  const recipes = expandedRecipes.filter((entry) => isRawIngredient(entry.recipe.ingredient_type))
   const businessId = toText(record.business_id) || '20220523011'
   const materialBusinessScope = `business_id.eq.${businessId},business_id.eq.default,business_id.is.null`
   if (recipes.length === 0) {
-    throw new ApiError(422, '원재료 레시피가 없어 생산 확정을 진행할 수 없습니다.', 'validation.recipes.empty')
+    throw new ApiError(422, '?먯옱猷??덉떆?쇨? ?놁뼱 ?앹궛 ?뺤젙??吏꾪뻾?????놁뒿?덈떎.', 'validation.recipes.empty')
   }
 
   const foodTypeIds = Array.from(
-    new Set(recipes.map((recipe) => toText(recipe.food_type_id)).filter((foodTypeId) => !!foodTypeId)),
+    new Set(recipes.map((entry) => toText(entry.recipe.food_type_id)).filter((foodTypeId) => !!foodTypeId)),
   )
 
   let mappings: MappingRow[] = []
@@ -555,7 +661,7 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: false })
     if (mappingResult.error) {
-      throw new ApiError(500, mappingResult.error.message || '원재료 매핑 조회에 실패했습니다.', 'validation.mappings.query')
+      throw new ApiError(500, mappingResult.error.message || '?먯옱猷?留ㅽ븨 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'validation.mappings.query')
     }
     mappings = (mappingResult.data ?? []) as MappingRow[]
   }
@@ -566,7 +672,7 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
     .or(materialBusinessScope)
     .limit(5000)
   if (materialsResult.error) {
-    throw new ApiError(500, materialsResult.error.message || '원재료 재고 조회에 실패했습니다.', 'validation.materials.query')
+    throw new ApiError(500, materialsResult.error.message || '?먯옱猷??ш퀬 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'validation.materials.query')
   }
 
   const materials = (materialsResult.data ?? []) as MaterialRow[]
@@ -608,8 +714,10 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
   }
 
   const aggregated = new Map<string, DeductionPreviewRow>()
-  for (const recipe of recipes) {
-    const ratio = parseNumber(recipe.ratio_percent) ?? 0
+  const breakdownRows: DeductionPreviewRow[] = []
+  for (const entry of recipes) {
+    const recipe = entry.recipe
+    const ratio = entry.effective_ratio_percent
     if (ratio <= 0) continue
 
     const requiredG = (deductionBasisG * ratio) / 100
@@ -638,6 +746,18 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
     const currentStockG = parseNumber(targetMaterial?.current_stock_g) ?? 0
     const previous = aggregated.get(key)
 
+    breakdownRows.push({
+      material_id: targetMaterial ? toText(targetMaterial.id) : null,
+      item_code: targetMaterial ? toText(targetMaterial.item_code) || toText(targetMaterial.id) : null,
+      material_name: targetMaterial ? toText(targetMaterial.item_name) : mappedMaterialName || foodTypeName,
+      food_type_name: foodTypeName,
+      source_label: entry.source_label,
+      required_g: requiredG,
+      current_stock_g: currentStockG,
+      remaining_stock_g: currentStockG - requiredG,
+      insufficient: !targetMaterial || currentStockG - requiredG < 0,
+    })
+
     if (previous) {
       const nextRequired = previous.required_g + requiredG
       previous.required_g = nextRequired
@@ -661,11 +781,12 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
 
   const materialsPreview = Array.from(aggregated.values()).sort((a, b) => b.required_g - a.required_g)
   if (materialsPreview.length === 0) {
-    throw new ApiError(422, '유효한 레시피 비율이 없어 사용량을 계산할 수 없습니다.', 'validation.recipes.usable')
+    throw new ApiError(422, '?좏슚???덉떆??鍮꾩쑉???놁뼱 ?ъ슜?됱쓣 怨꾩궛?????놁뒿?덈떎.', 'validation.recipes.usable')
   }
 
   return {
     materials: materialsPreview,
+    breakdown: breakdownRows,
     totalRequiredG: materialsPreview.reduce((sum, item) => sum + item.required_g, 0),
     hasInsufficient: materialsPreview.some((item) => item.insufficient),
     hasMissingMapping: materialsPreview.some((item) => !item.material_id),
@@ -704,11 +825,11 @@ export async function GET(request: NextRequest) {
     if (normalizedStatusFilter) {
       query = query.eq('status', normalizedStatusFilter)
     } else if (!includeCancelled) {
-      query = query.or('status.is.null,status.not.in.(cancelled,canceled,취소)')
+      query = query.or('status.is.null,status.not.in.(cancelled,canceled,痍⑥냼)')
     }
 
     const { data, error } = await query
-    if (error) throw new ApiError(500, error.message || '제조기록 조회에 실패했습니다.', 'query.records')
+    if (error) throw new ApiError(500, error.message || '?쒖“湲곕줉 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.records')
 
     return NextResponse.json(
       {
@@ -719,7 +840,7 @@ export async function GET(request: NextRequest) {
       { status: 200 },
     )
   } catch (error) {
-    const apiError = toApiError(error, '제조기록 조회 중 오류가 발생했습니다.', 'query.records')
+    const apiError = toApiError(error, '?쒖“湲곕줉 議고쉶 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.', 'query.records')
     return NextResponse.json({ ok: false, error: apiError.message, stage: apiError.stage }, { status: apiError.status })
   }
 }
@@ -728,7 +849,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     if (!body) {
-      return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: '?붿껌 蹂몃Ц???꾩슂?⑸땲??' }, { status: 400 })
     }
 
     const supabase = createMoniServiceRoleClient()
@@ -742,24 +863,24 @@ export async function POST(request: NextRequest) {
     const productionUnitWeightG = parseNumber(body.production_unit_weight_g)
 
     if (planned !== null && planned < 0) {
-      return NextResponse.json({ ok: false, error: '계획 수량은 0 이상이어야 합니다.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: '怨꾪쉷 ?섎웾? 0 ?댁긽?댁뼱???⑸땲??' }, { status: 400 })
     }
     if (actual !== null && actual < 0) {
-      return NextResponse.json({ ok: false, error: '실제 수량은 0 이상이어야 합니다.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: '?ㅼ젣 ?섎웾? 0 ?댁긽?댁뼱???⑸땲??' }, { status: 400 })
     }
 
     if (sample < 0) {
-      return NextResponse.json({ ok: false, error: '샘플수량은 0 이상이어야 합니다.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: '?섑뵆?섎웾? 0 ?댁긽?댁뼱???⑸땲??' }, { status: 400 })
     }
 
     const defectAuto = planned !== null && actual !== null ? Math.max(planned - actual, 0) : 0
     const defect = parseNumber(body.defect_quantity_g) ?? defectAuto
     if (defect < 0) {
-      return NextResponse.json({ ok: false, error: '불량수량은 0 이상이어야 합니다.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: '遺덈웾?섎웾? 0 ?댁긽?댁뼱???⑸땲??' }, { status: 400 })
     }
     if (planned !== null && actual !== null && actual + defect + sample > planned) {
       return NextResponse.json(
-        { ok: false, error: '실제 완료량 + 불량수량 + 샘플수량 합계가 예정수량을 초과할 수 없습니다.' },
+        { ok: false, error: '?ㅼ젣 ?꾨즺??+ 遺덈웾?섎웾 + ?섑뵆?섎웾 ?⑷퀎媛 ?덉젙?섎웾??珥덇낵?????놁뒿?덈떎.' },
         { status: 400 },
       )
     }
@@ -771,12 +892,12 @@ export async function POST(request: NextRequest) {
         .select('product_name')
         .eq('id', productId)
         .maybeSingle()
-      if (productError) throw new ApiError(500, productError.message || '제품 조회에 실패했습니다.', 'query.product')
+      if (productError) throw new ApiError(500, productError.message || '?쒗뭹 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.product')
       productName = toText((productData as { product_name?: unknown } | null)?.product_name)
     }
 
     if (!productName) {
-      return NextResponse.json({ ok: false, error: '제품명을 입력해 주세요.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: '?쒗뭹紐낆쓣 ?낅젰??二쇱꽭??' }, { status: 400 })
     }
 
     if (!productId && productName) {
@@ -785,7 +906,7 @@ export async function POST(request: NextRequest) {
         .select('id, product_name')
         .eq('product_name', productName)
         .limit(1)
-      if (findProductError) throw new ApiError(500, findProductError.message || '제품 조회에 실패했습니다.', 'query.product')
+      if (findProductError) throw new ApiError(500, findProductError.message || '?쒗뭹 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.product')
 
       const existingProduct = existingProducts?.[0] as { id?: string | number; product_name?: string } | undefined
       if (existingProduct?.id) {
@@ -806,7 +927,7 @@ export async function POST(request: NextRequest) {
           .select('id, product_name')
           .single()
         if (insertProductError) {
-          throw new ApiError(500, insertProductError.message || '제품 생성에 실패했습니다.', 'mutate.product')
+          throw new ApiError(500, insertProductError.message || '?쒗뭹 ?앹꽦???ㅽ뙣?덉뒿?덈떎.', 'mutate.product')
         }
         productId = String((insertedProduct as { id?: string | number }).id ?? newProductId)
       }
@@ -845,7 +966,7 @@ export async function POST(request: NextRequest) {
       worker_name: toText(body.worker_name) || null,
       start_time: toText(body.start_time) || null,
       end_time: toText(body.end_time) || null,
-      inspection_result: toText(body.inspection_result) || '적합',
+      inspection_result: toText(body.inspection_result) || '?곹빀',
       inspection_note: toText(body.inspection_note) || null,
       sanitation_check: typeof body.sanitation_check === 'boolean' ? body.sanitation_check : true,
       note: toText(body.note) || null,
@@ -864,7 +985,7 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     )
   } catch (error) {
-    const apiError = toApiError(error, '제조기록 저장 중 오류가 발생했습니다.', 'mutate.record.insert')
+    const apiError = toApiError(error, '?쒖“湲곕줉 ???以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.', 'mutate.record.insert')
     return NextResponse.json({ ok: false, error: apiError.message, stage: apiError.stage }, { status: apiError.status })
   }
 }
@@ -873,13 +994,13 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     if (!body) {
-      return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: '?붿껌 蹂몃Ц???꾩슂?⑸땲??' }, { status: 400 })
     }
 
     const action = toText(body.action).toLowerCase()
     const recordId = toText(body.id) || toText(body.record_id)
     if (!recordId) {
-      return NextResponse.json({ ok: false, error: 'record_id가 필요합니다.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'record_id媛 ?꾩슂?⑸땲??' }, { status: 400 })
     }
 
     const record = await fetchRecordById(recordId)
@@ -887,15 +1008,15 @@ export async function PATCH(request: NextRequest) {
 
     if (action === 'update_planned') {
       if (isConfirmed(recordStatus)) {
-        return NextResponse.json({ ok: false, error: '확정된 작업지시서는 예정수량을 수정할 수 없습니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: '?뺤젙???묒뾽吏?쒖꽌???덉젙?섎웾???섏젙?????놁뒿?덈떎.' }, { status: 409 })
       }
       if (recordStatus !== 'planned') {
-        return NextResponse.json({ ok: false, error: 'planned 상태에서만 예정수량을 수정할 수 있습니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: 'planned ?곹깭?먯꽌留??덉젙?섎웾???섏젙?????덉뒿?덈떎.' }, { status: 409 })
       }
 
       const plannedQuantityG = parseNumber(body.planned_quantity_g)
       if (plannedQuantityG === null || plannedQuantityG <= 0) {
-        return NextResponse.json({ ok: false, error: 'planned_quantity_g는 0보다 커야 합니다.' }, { status: 400 })
+        return NextResponse.json({ ok: false, error: 'planned_quantity_g??0蹂대떎 而ㅼ빞 ?⑸땲??' }, { status: 400 })
       }
 
       const productionUnitWeightG =
@@ -915,22 +1036,22 @@ export async function PATCH(request: NextRequest) {
         planned_remainder_g: plannedRemainderG,
       })
       return NextResponse.json(
-        { ok: true, record: toRecordRow(updated), message: '예정수량이 수정되었습니다.' },
+        { ok: true, record: toRecordRow(updated), message: '?덉젙?섎웾???섏젙?섏뿀?듬땲??' },
         { status: 200 },
       )
     }
 
     if (action === 'complete') {
       if (isConfirmed(recordStatus)) {
-        return NextResponse.json({ ok: false, error: '이미 확정된 생산기록입니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: '?대? ?뺤젙???앹궛湲곕줉?낅땲??' }, { status: 409 })
       }
 
       if (recordStatus === 'cancelled') {
-        return NextResponse.json({ ok: false, error: '취소된 작업지시서는 완료 처리할 수 없습니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: '痍⑥냼???묒뾽吏?쒖꽌???꾨즺 泥섎━?????놁뒿?덈떎.' }, { status: 409 })
       }
 
       if (!(recordStatus === 'planned' || recordStatus === 'completed')) {
-        return NextResponse.json({ ok: false, error: 'planned 또는 completed 상태에서만 완료 입력이 가능합니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: 'planned ?먮뒗 completed ?곹깭?먯꽌留??꾨즺 ?낅젰??媛?ν빀?덈떎.' }, { status: 409 })
       }
 
       const hasPerFieldInput =
@@ -947,7 +1068,7 @@ export async function PATCH(request: NextRequest) {
         const sampleUnitRaw = toText(body.sample_input_unit).toLowerCase()
         if (defectUnitRaw === 'ea' || sampleUnitRaw === 'ea') {
           return NextResponse.json(
-            { ok: false, error: '불량수량과 샘플수량은 g 또는 kg 단위로 입력해야 합니다.' },
+            { ok: false, error: '遺덈웾?섎웾怨??섑뵆?섎웾? g ?먮뒗 kg ?⑥쐞濡??낅젰?댁빞 ?⑸땲??' },
             { status: 400 },
           )
         }
@@ -957,14 +1078,14 @@ export async function PATCH(request: NextRequest) {
 
         if (!actualInputUnit || !defectInputUnit || !sampleInputUnit) {
           return NextResponse.json(
-            { ok: false, error: 'actual_input_unit, defect_input_unit, sample_input_unit??ea|kg|g媛 ?꾩슂?⑸땲??' },
+            { ok: false, error: 'actual_input_unit, defect_input_unit, sample_input_unit??ea|kg|g揶쎛 ?袁⑹뒄??몃빍??' },
             { status: 400 },
           )
         }
 
         const actualInputValue = parseNumber(body.actual_input_value)
         if (actualInputValue === null) {
-          return NextResponse.json({ ok: false, error: 'actual_input_value媛 ?꾩슂?⑸땲??' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'actual_input_value揶쎛 ?袁⑹뒄??몃빍??' }, { status: 400 })
         }
 
         const defectInputValueRaw = body.defect_input_value
@@ -973,10 +1094,10 @@ export async function PATCH(request: NextRequest) {
         const sampleInputValue = parseNumber(sampleInputValueRaw)
 
         if (defectInputValueRaw !== undefined && defectInputValue === null) {
-          return NextResponse.json({ ok: false, error: 'defect_input_value瑜??뺤긽?곸쑝濡??낅젰??二쇱꽭??' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'defect_input_value???類ㅺ맒?怨몄몵嚥???낆젾??雅뚯눘苑??' }, { status: 400 })
         }
         if (sampleInputValueRaw !== undefined && sampleInputValue === null) {
-          return NextResponse.json({ ok: false, error: 'sample_input_value瑜??뺤긽?곸쑝濡??낅젰??二쇱꽭??' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'sample_input_value???類ㅺ맒?怨몄몵嚥???낆젾??雅뚯눘苑??' }, { status: 400 })
         }
 
         const toQuantityByUnit = (
@@ -985,18 +1106,18 @@ export async function PATCH(request: NextRequest) {
           fieldName: string,
         ): { grams: number; ea: number | null } | NextResponse => {
           if (value < 0) {
-            return NextResponse.json({ ok: false, error: `${fieldName}? 0 ?댁긽?댁뼱???⑸땲??` }, { status: 400 })
+            return NextResponse.json({ ok: false, error: `${fieldName}?? 0 ??곴맒??곷선????몃빍??` }, { status: 400 })
           }
 
           if (unit === 'ea') {
             if (productionUnitWeightG === null || productionUnitWeightG <= 0) {
               return NextResponse.json(
-                { ok: false, error: `${fieldName}??ea濡??낅젰?섎㈃ production_unit_weight_g媛 ?꾩슂?⑸땲??` },
+                { ok: false, error: `${fieldName}??ea嚥???낆젾??롢늺 production_unit_weight_g揶쎛 ?袁⑹뒄??몃빍??` },
                 { status: 400 },
               )
             }
             if (!Number.isInteger(value)) {
-              return NextResponse.json({ ok: false, error: `${fieldName}??ea ?낅젰 ???뺤닔?ъ빞 ?⑸땲??` }, { status: 400 })
+              return NextResponse.json({ ok: false, error: `${fieldName}??ea ??낆젾 ???類ㅻ땾??鍮???몃빍??` }, { status: 400 })
             }
             return { grams: value * productionUnitWeightG, ea: value }
           }
@@ -1020,11 +1141,11 @@ export async function PATCH(request: NextRequest) {
           }
         }
 
-        const actualConverted = toQuantityByUnit(actualInputValue, actualInputUnit, '?꾨즺?섎웾')
+        const actualConverted = toQuantityByUnit(actualInputValue, actualInputUnit, '?袁⑥┷??롮쎗')
         if (actualConverted instanceof NextResponse) return actualConverted
-        const defectConverted = toQuantityByUnit(defectInputValue ?? 0, defectInputUnit, '遺덈웾?섎웾')
+        const defectConverted = toQuantityByUnit(defectInputValue ?? 0, defectInputUnit, '?븍뜄???롮쎗')
         if (defectConverted instanceof NextResponse) return defectConverted
-        const sampleConverted = toQuantityByUnit(sampleInputValue ?? 0, sampleInputUnit, '?섑뵆?섎웾')
+        const sampleConverted = toQuantityByUnit(sampleInputValue ?? 0, sampleInputUnit, '??묐탣??롮쎗')
         if (sampleConverted instanceof NextResponse) return sampleConverted
 
         const actualQuantityG = actualConverted.grams
@@ -1040,11 +1161,11 @@ export async function PATCH(request: NextRequest) {
         const plannedCandidate = parseNumber(body.planned_quantity_g)
         const plannedQuantityG = plannedCandidate ?? parseNumber(record.planned_quantity_g)
         if (plannedQuantityG === null || plannedQuantityG <= 0) {
-          return NextResponse.json({ ok: false, error: '?덉젙?섎웾???놁뼱 ?꾨즺 ?낅젰??吏꾪뻾?????놁뒿?덈떎.' }, { status: 422 })
+          return NextResponse.json({ ok: false, error: '??됱젟??롮쎗????곷선 ?袁⑥┷ ??낆젾??筌욊쑵六??????곷뮸??덈뼄.' }, { status: 422 })
         }
         if (actualQuantityG + defectQuantityG + sampleQuantityG > plannedQuantityG) {
           return NextResponse.json(
-            { ok: false, error: '?ㅼ젣 ?꾨즺??+ 遺덈웾?섎웾 + ?섑뵆?섎웾 ?⑷퀎媛 ?덉젙?섎웾??珥덇낵?????놁뒿?덈떎.' },
+            { ok: false, error: '??쇱젫 ?袁⑥┷??+ ?븍뜄???롮쎗 + ??묐탣??롮쎗 ??룻롥첎? ??됱젟??롮쎗???λ뜃???????곷뮸??덈뼄.' },
             { status: 400 },
           )
         }
@@ -1074,19 +1195,19 @@ export async function PATCH(request: NextRequest) {
         )
 
         return NextResponse.json(
-          { ok: true, record: toRecordRow(updated), message: '?앹궛 ?꾨즺濡?泥섎━?덉뒿?덈떎.' },
+          { ok: true, record: toRecordRow(updated), message: '??밴텦 ?袁⑥┷嚥?筌ｌ꼶???됰뮸??덈뼄.' },
           { status: 200 },
         )
       }
 
       const inputUnitRaw = toText(body.input_unit).toLowerCase()
       if (inputUnitRaw && !['ea', 'kg', 'g'].includes(inputUnitRaw)) {
-        return NextResponse.json({ ok: false, error: 'input_unit은 ea, kg, g 중 하나여야 합니다.' }, { status: 400 })
+        return NextResponse.json({ ok: false, error: 'input_unit? ea, kg, g 以??섎굹?ъ빞 ?⑸땲??' }, { status: 400 })
       }
       const inputUnit = inputUnitRaw || 'g'
       if (inputUnit === 'ea') {
         return NextResponse.json(
-          { ok: false, error: '불량수량과 샘플수량은 g 또는 kg 단위로 입력해야 합니다.' },
+          { ok: false, error: '遺덈웾?섎웾怨??섑뵆?섎웾? g ?먮뒗 kg ?⑥쐞濡??낅젰?댁빞 ?⑸땲??' },
           { status: 400 },
         )
       }
@@ -1100,7 +1221,7 @@ export async function PATCH(request: NextRequest) {
       if (inputUnit === 'ea') {
         if (productionUnitWeightG === null || productionUnitWeightG <= 0) {
           return NextResponse.json(
-            { ok: false, error: 'production_unit_weight_g가 없어 ea 입력을 처리할 수 없습니다.' },
+            { ok: false, error: 'production_unit_weight_g媛 ?놁뼱 ea ?낅젰??泥섎━?????놁뒿?덈떎.' },
             { status: 400 },
           )
         }
@@ -1110,22 +1231,22 @@ export async function PATCH(request: NextRequest) {
         const sampleQuantityEaRaw = parseNumber(body.sample_quantity_ea)
 
         if (actualQuantityEaRaw === null || !Number.isInteger(actualQuantityEaRaw)) {
-          return NextResponse.json({ ok: false, error: 'actual_quantity_ea는 정수여야 합니다.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'actual_quantity_ea???뺤닔?ъ빞 ?⑸땲??' }, { status: 400 })
         }
         if (actualQuantityEaRaw < 0) {
-          return NextResponse.json({ ok: false, error: 'actual_quantity_ea는 0 이상이어야 합니다.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'actual_quantity_ea??0 ?댁긽?댁뼱???⑸땲??' }, { status: 400 })
         }
         if (defectQuantityEaRaw !== null && !Number.isInteger(defectQuantityEaRaw)) {
-          return NextResponse.json({ ok: false, error: 'defect_quantity_ea는 정수여야 합니다.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'defect_quantity_ea???뺤닔?ъ빞 ?⑸땲??' }, { status: 400 })
         }
         if (sampleQuantityEaRaw !== null && !Number.isInteger(sampleQuantityEaRaw)) {
-          return NextResponse.json({ ok: false, error: 'sample_quantity_ea는 정수여야 합니다.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'sample_quantity_ea???뺤닔?ъ빞 ?⑸땲??' }, { status: 400 })
         }
 
         const defectQuantityEa = defectQuantityEaRaw ?? 0
         const sampleQuantityEa = sampleQuantityEaRaw ?? 0
         if (defectQuantityEa < 0 || sampleQuantityEa < 0) {
-          return NextResponse.json({ ok: false, error: '불량수량/샘플수량은 0 이상이어야 합니다.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: '遺덈웾?섎웾/?섑뵆?섎웾? 0 ?댁긽?댁뼱???⑸땲??' }, { status: 400 })
         }
 
         actualQuantityEa = actualQuantityEaRaw
@@ -1137,11 +1258,11 @@ export async function PATCH(request: NextRequest) {
         defectQuantityG = parseNumber(body.defect_quantity_g) ?? 0
         sampleQuantityG = parseNumber(body.sample_quantity_g) ?? 0
         if (actualQuantityG === null || actualQuantityG < 0) {
-          return NextResponse.json({ ok: false, error: 'actual_quantity_g는 0 이상이어야 합니다.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'actual_quantity_g??0 ?댁긽?댁뼱???⑸땲??' }, { status: 400 })
         }
 
         if (defectQuantityG < 0 || sampleQuantityG < 0) {
-          return NextResponse.json({ ok: false, error: '불량수량/샘플수량은 0 이상이어야 합니다.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: '遺덈웾?섎웾/?섑뵆?섎웾? 0 ?댁긽?댁뼱???⑸땲??' }, { status: 400 })
         }
 
         actualQuantityEa =
@@ -1151,17 +1272,17 @@ export async function PATCH(request: NextRequest) {
       }
 
       if (actualQuantityG === null) {
-        return NextResponse.json({ ok: false, error: 'actual_quantity_g가 없어 완료 입력을 처리할 수 없습니다.' }, { status: 400 })
+        return NextResponse.json({ ok: false, error: 'actual_quantity_g媛 ?놁뼱 ?꾨즺 ?낅젰??泥섎━?????놁뒿?덈떎.' }, { status: 400 })
       }
 
       const plannedCandidate = parseNumber(body.planned_quantity_g)
       const plannedQuantityG = plannedCandidate ?? parseNumber(record.planned_quantity_g)
       if (plannedQuantityG === null || plannedQuantityG <= 0) {
-        return NextResponse.json({ ok: false, error: '예정수량이 없어 완료 입력을 진행할 수 없습니다.' }, { status: 422 })
+        return NextResponse.json({ ok: false, error: '?덉젙?섎웾???놁뼱 ?꾨즺 ?낅젰??吏꾪뻾?????놁뒿?덈떎.' }, { status: 422 })
       }
       if (actualQuantityG + defectQuantityG + sampleQuantityG > plannedQuantityG) {
         return NextResponse.json(
-          { ok: false, error: '실제 완료량 + 불량수량 + 샘플수량 합계가 예정수량을 초과할 수 없습니다.' },
+          { ok: false, error: '?ㅼ젣 ?꾨즺??+ 遺덈웾?섎웾 + ?섑뵆?섎웾 ?⑷퀎媛 ?덉젙?섎웾??珥덇낵?????놁뒿?덈떎.' },
           { status: 400 },
         )
       }
@@ -1191,32 +1312,32 @@ export async function PATCH(request: NextRequest) {
       )
 
       return NextResponse.json(
-        { ok: true, record: toRecordRow(updated), message: '생산 완료로 처리했습니다.' },
+        { ok: true, record: toRecordRow(updated), message: '?앹궛 ?꾨즺濡?泥섎━?덉뒿?덈떎.' },
         { status: 200 },
       )
     }
 
     if (action === 'cancel') {
       if (isConfirmed(recordStatus)) {
-        return NextResponse.json({ ok: false, error: '확정된 작업지시서는 취소할 수 없습니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: '?뺤젙???묒뾽吏?쒖꽌??痍⑥냼?????놁뒿?덈떎.' }, { status: 409 })
       }
 
       if (recordStatus === 'cancelled') {
         return NextResponse.json(
-          { ok: true, record: toRecordRow(record), message: '이미 취소된 작업지시서입니다.' },
+          { ok: true, record: toRecordRow(record), message: '?대? 痍⑥냼???묒뾽吏?쒖꽌?낅땲??' },
           { status: 200 },
         )
       }
 
       if (!(recordStatus === 'planned' || recordStatus === 'completed')) {
-        return NextResponse.json({ ok: false, error: 'planned 또는 completed 상태만 취소할 수 있습니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: 'planned ?먮뒗 completed ?곹깭留?痍⑥냼?????덉뒿?덈떎.' }, { status: 409 })
       }
 
       const lotNumber = toText(record.lot_number) || recordId
       const hasOutbound = await hasExistingOutboundConfirm(recordId, lotNumber)
       if (hasOutbound) {
         return NextResponse.json(
-          { ok: false, error: '원재료 차감 이력이 있어 취소할 수 없습니다. (확정된 기록일 수 있습니다.)' },
+          { ok: false, error: '?먯옱猷?李④컧 ?대젰???덉뼱 痍⑥냼?????놁뒿?덈떎. (?뺤젙??湲곕줉?????덉뒿?덈떎.)' },
           { status: 409 },
         )
       }
@@ -1225,24 +1346,24 @@ export async function PATCH(request: NextRequest) {
         const supabase = createMoniServiceRoleClient()
         const { error: deleteError } = await supabase.from('production_records').delete().eq('id', recordId)
         if (deleteError) {
-          throw new ApiError(500, deleteError.message || '작업지시서 삭제에 실패했습니다.', 'mutate.record.delete')
+          throw new ApiError(500, deleteError.message || '?묒뾽吏?쒖꽌 ??젣???ㅽ뙣?덉뒿?덈떎.', 'mutate.record.delete')
         }
         return record
       })()
       return NextResponse.json(
-        { ok: true, record: toRecordRow(cancelled), message: '작업지시서가 삭제되었습니다.' },
+        { ok: true, record: toRecordRow(cancelled), message: '?묒뾽吏?쒖꽌媛 ??젣?섏뿀?듬땲??' },
         { status: 200 },
       )
     }
 
     if (action === 'revert_completion') {
       if (recordStatus === 'cancelled') {
-        return NextResponse.json({ ok: false, error: '취소된 작업지시서입니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: '痍⑥냼???묒뾽吏?쒖꽌?낅땲??' }, { status: 409 })
       }
 
       if (!(recordStatus === 'completed' || recordStatus === 'confirmed')) {
         return NextResponse.json(
-          { ok: false, error: '생산완료 또는 확정된 기록만 되돌릴 수 있습니다.' },
+          { ok: false, error: '?앹궛?꾨즺 ?먮뒗 ?뺤젙??湲곕줉留??섎룎由????덉뒿?덈떎.' },
           { status: 409 },
         )
       }
@@ -1258,7 +1379,7 @@ export async function PATCH(request: NextRequest) {
           .or(`note.ilike.%production_record_id=${recordId}%,note.ilike.%lot_number=${lotNumber}%`)
 
         if (txQuery.error) {
-          throw new ApiError(500, txQuery.error.message || '소모 이력 조회에 실패했습니다.', 'query.outbound')
+          throw new ApiError(500, txQuery.error.message || '?뚮え ?대젰 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.outbound')
         }
 
         const txRows = (txQuery.data ?? []) as Array<{
@@ -1281,7 +1402,7 @@ export async function PATCH(request: NextRequest) {
               .eq('id', materialId)
               .maybeSingle()
             if (materialResult.error) {
-              throw new ApiError(500, materialResult.error.message || '원재료 조회에 실패했습니다.', 'query.material')
+              throw new ApiError(500, materialResult.error.message || '?먯옱猷?議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.material')
             }
             if (!materialResult.data) continue
 
@@ -1293,7 +1414,7 @@ export async function PATCH(request: NextRequest) {
               .update({ current_stock_g: nextStock })
               .eq('id', materialId)
             if (updateResult.error) {
-              throw new ApiError(500, updateResult.error.message || '원재료 재고 복원에 실패했습니다.', 'mutate.stock.rollback')
+              throw new ApiError(500, updateResult.error.message || '?먯옱猷??ш퀬 蹂듭썝???ㅽ뙣?덉뒿?덈떎.', 'mutate.stock.rollback')
             }
 
             rollbackStocks.push({ id: materialId, previous: currentStock })
@@ -1303,7 +1424,7 @@ export async function PATCH(request: NextRequest) {
           if (txIds.length > 0) {
             const deleteResult = await supabase.from('raw_material_transactions').delete().in('id', txIds)
             if (deleteResult.error) {
-              throw new ApiError(500, deleteResult.error.message || '소모 이력 복원에 실패했습니다.', 'mutate.tx.rollback')
+              throw new ApiError(500, deleteResult.error.message || '?뚮え ?대젰 蹂듭썝???ㅽ뙣?덉뒿?덈떎.', 'mutate.tx.rollback')
             }
           }
         } catch (error) {
@@ -1323,7 +1444,7 @@ export async function PATCH(request: NextRequest) {
       })
 
       return NextResponse.json(
-        { ok: true, record: toRecordRow(reverted), message: '생산일보 항목을 작업지시 단계로 되돌렸습니다.' },
+        { ok: true, record: toRecordRow(reverted), message: '?앹궛?쇰낫 ??ぉ???묒뾽吏???④퀎濡??섎룎?몄뒿?덈떎.' },
         { status: 200 },
       )
     }
@@ -1350,10 +1471,10 @@ export async function PATCH(request: NextRequest) {
 
     if (action === 'confirm') {
       if (recordStatus === 'cancelled') {
-        return NextResponse.json({ ok: false, error: '취소된 작업지시서는 확정할 수 없습니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: '痍⑥냼???묒뾽吏?쒖꽌???뺤젙?????놁뒿?덈떎.' }, { status: 409 })
       }
       if (isConfirmed(recordStatus)) {
-        return NextResponse.json({ ok: false, error: '이미 확정된 생산기록입니다.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: '?대? ?뺤젙???앹궛湲곕줉?낅땲??' }, { status: 409 })
       }
 
       const lotNumber = toText(record.lot_number) || recordId
@@ -1362,13 +1483,13 @@ export async function PATCH(request: NextRequest) {
       const preview = await buildDeductionPreview(record)
       if (preview.hasMissingMapping) {
         return NextResponse.json(
-          { ok: false, error: '원재료 미매핑 항목이 있어 확정할 수 없습니다.', preview },
+          { ok: false, error: '?먯옱猷?誘몃ℓ????ぉ???덉뼱 ?뺤젙?????놁뒿?덈떎.', preview },
           { status: 422 },
         )
       }
       if (preview.hasInsufficient) {
         return NextResponse.json(
-          { ok: false, error: '원재료 재고가 부족하여 확정할 수 없습니다.', preview },
+          { ok: false, error: '?먯옱猷??ш퀬媛 遺議깊븯???뺤젙?????놁뒿?덈떎.', preview },
           { status: 409 },
         )
       }
@@ -1380,7 +1501,7 @@ export async function PATCH(request: NextRequest) {
 
       const stockPlan = preview.materials.map((item) => {
         if (!item.material_id) {
-          throw new ApiError(422, `원재료 매핑이 없어 확정할 수 없습니다: ${item.food_type_name}`, 'validation.mappings')
+          throw new ApiError(422, `?먯옱猷?留ㅽ븨???놁뼱 ?뺤젙?????놁뒿?덈떎: ${item.food_type_name}`, 'validation.mappings')
         }
         return {
           materialId: item.material_id,
@@ -1393,22 +1514,30 @@ export async function PATCH(request: NextRequest) {
         }
       })
 
-      const transactionRows = stockPlan.map((plan, index) => ({
-        id: makeTransactionId(index),
-        item_code: plan.itemCode,
-        item_name: plan.materialName,
-        txn_type: 'OUTBOUND',
-        quantity_g: plan.requiredG,
-        unit_price: null,
-        supplier: null,
-        note: confirmNote,
-        txn_date: txDate,
-        raw_material_id: plan.materialId,
-        raw_material_name: plan.materialName,
-        food_type_name: plan.foodTypeName || null,
-        total_quantity_g: plan.requiredG,
-        business_id: businessId,
-      }))
+      const transactionSourceRows = preview.breakdown.length > 0 ? preview.breakdown : preview.materials
+      const transactionRows = transactionSourceRows
+        .filter((item) => !!item.material_id)
+        .map((item, index) => {
+          const sourceNote = item.source_label ? `${confirmNote};source_product=${item.source_label}` : confirmNote
+          const materialId = toText(item.material_id)
+          const materialName = item.material_name
+          return {
+            id: makeTransactionId(index),
+            item_code: item.item_code || materialId,
+            item_name: materialName,
+            txn_type: 'OUTBOUND',
+            quantity_g: item.required_g,
+            unit_price: null,
+            supplier: null,
+            note: sourceNote,
+            txn_date: txDate,
+            raw_material_id: materialId,
+            raw_material_name: materialName,
+            food_type_name: item.food_type_name || null,
+            total_quantity_g: item.required_g,
+            business_id: businessId,
+          }
+        })
 
       const updatedMaterialIds: string[] = []
       const insertedTransactionIds = transactionRows.map((row) => row.id)
@@ -1439,10 +1568,10 @@ export async function PATCH(request: NextRequest) {
           .eq('id', plan.materialId)
         if (stockResult.error) {
           const rollbackFailures = await rollbackStocks()
-          const rollbackHint = rollbackFailures.length > 0 ? ` (rollback 실패: ${rollbackFailures.join(', ')})` : ''
+          const rollbackHint = rollbackFailures.length > 0 ? ` (rollback ?ㅽ뙣: ${rollbackFailures.join(', ')})` : ''
           throw new ApiError(
             500,
-            `확정 처리 실패(재고 차감 단계): ${plan.materialName}${rollbackHint}`,
+            `?뺤젙 泥섎━ ?ㅽ뙣(?ш퀬 李④컧 ?④퀎): ${plan.materialName}${rollbackHint}`,
             'mutate.stock',
           )
         }
@@ -1452,10 +1581,10 @@ export async function PATCH(request: NextRequest) {
       const txResult = await supabase.from('raw_material_transactions').insert(transactionRows)
       if (txResult.error) {
         const rollbackFailures = await rollbackStocks()
-        const rollbackHint = rollbackFailures.length > 0 ? ` (rollback 실패: ${rollbackFailures.join(', ')})` : ''
+        const rollbackHint = rollbackFailures.length > 0 ? ` (rollback ?ㅽ뙣: ${rollbackFailures.join(', ')})` : ''
         throw new ApiError(
           500,
-          `확정 처리 실패(수불 기록 단계): ${txResult.error.message}${rollbackHint}`,
+          `?뺤젙 泥섎━ ?ㅽ뙣(?섎텋 湲곕줉 ?④퀎): ${txResult.error.message}${rollbackHint}`,
           'mutate.transactions',
         )
       }
@@ -1471,14 +1600,14 @@ export async function PATCH(request: NextRequest) {
       } catch (error) {
         const txRollbackFailed = await rollbackTransactions()
         const stockRollbackFailures = await rollbackStocks()
-        const txRollbackHint = txRollbackFailed ? ' / transaction rollback 실패' : ''
+        const txRollbackHint = txRollbackFailed ? ' / transaction rollback ?ㅽ뙣' : ''
         const stockRollbackHint =
-          stockRollbackFailures.length > 0 ? ` / stock rollback 실패: ${stockRollbackFailures.join(', ')}` : ''
+          stockRollbackFailures.length > 0 ? ` / stock rollback ?ㅽ뙣: ${stockRollbackFailures.join(', ')}` : ''
         const message =
-          error instanceof Error ? error.message : '생산기록 상태 변경 중 알 수 없는 오류가 발생했습니다.'
+          error instanceof Error ? error.message : '?앹궛湲곕줉 ?곹깭 蹂寃?以??????녿뒗 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
         throw new ApiError(
           500,
-          `확정 처리 실패(상태 변경 단계): ${message}${txRollbackHint}${stockRollbackHint}`,
+          `?뺤젙 泥섎━ ?ㅽ뙣(?곹깭 蹂寃??④퀎): ${message}${txRollbackHint}${stockRollbackHint}`,
           'mutate.record',
         )
       }
@@ -1500,9 +1629,9 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({ ok: false, error: '지원하지 않는 action입니다.' }, { status: 400 })
+    return NextResponse.json({ ok: false, error: '吏?먰븯吏 ?딅뒗 action?낅땲??' }, { status: 400 })
   } catch (error) {
-    const apiError = toApiError(error, '생산 처리 중 오류가 발생했습니다.', 'patch.unknown')
+    const apiError = toApiError(error, '?앹궛 泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.', 'patch.unknown')
     return NextResponse.json({ ok: false, error: apiError.message, stage: apiError.stage }, { status: apiError.status })
   }
 }
