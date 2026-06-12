@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-const RAW_MATERIAL_INGREDIENT_TYPES = ['원재료', '반제품', '기타'] as const
+const RAW_MATERIAL_INGREDIENT_TYPES = ['원재료', '반제품', '제품/반제품', '기타'] as const
 
 function text(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -68,7 +68,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           ? null
           : '__INVALID__'
     if (ingredientType === '__INVALID__') {
-      return NextResponse.json({ ok: false, error: '재료유형은 원재료/반제품/기타만 허용됩니다.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: '재료유형은 원재료/반제품/제품/반제품/기타만 허용됩니다.' }, { status: 400 })
     }
     const payload = {
       item_name: text(body.item_name),
@@ -92,18 +92,18 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       .select('id, item_name, business_id')
       .eq('id', id)
       .maybeSingle()
-    if (beforeError) throw new Error(beforeError.message || '원재료 조회 실패')
+    if (beforeError) throw new Error(beforeError.message || '?먯옱猷?議고쉶 ?ㅽ뙣')
     if (!beforeRow) {
-      return NextResponse.json({ ok: false, error: '원재료를 찾을 수 없습니다.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: '?먯옱猷뚮? 李얠쓣 ???놁뒿?덈떎.' }, { status: 404 })
     }
 
     const oldName = text(beforeRow.item_name) ?? ''
     const businessId = text(beforeRow.business_id)
 
     const { data, error } = await supabase.from('raw_materials').update(payload).eq('id', id).select('*').maybeSingle()
-    if (error) throw new Error(error.message || '원재료 수정 실패')
+    if (error) throw new Error(error.message || '?먯옱猷??섏젙 ?ㅽ뙣')
     if (!data) {
-      return NextResponse.json({ ok: false, error: '원재료를 찾을 수 없습니다.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: '?먯옱猷뚮? 李얠쓣 ???놁뒿?덈떎.' }, { status: 404 })
     }
 
     const newName = text(data.item_name) ?? ''
@@ -117,7 +117,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         .update({ raw_material_name: newName })
         .eq('raw_material_ref_id', id)
       if (refMappingError && !isMissingColumnError(refMappingError.message, 'raw_material_ref_id')) {
-        throw new Error(refMappingError.message || '?먯옱猷??곌껐紐?媛깆떊 ?ㅽ뙣')
+        throw new Error(refMappingError.message || '?癒?삺???怨뚭퍙筌?揶쏄퉮????쎈솭')
       }
 
       const candidates: MappingRow[] = []
@@ -132,15 +132,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
             .select('id, raw_material_name, business_id')
             .is('business_id', null),
         ])
-        if (sameBusinessResult.error) throw new Error(sameBusinessResult.error.message || '원재료 연결 조회 실패')
-        if (nullBusinessResult.error) throw new Error(nullBusinessResult.error.message || '원재료 연결 조회 실패')
+        if (sameBusinessResult.error) throw new Error(sameBusinessResult.error.message || '?먯옱猷??곌껐 議고쉶 ?ㅽ뙣')
+        if (nullBusinessResult.error) throw new Error(nullBusinessResult.error.message || '?먯옱猷??곌껐 議고쉶 ?ㅽ뙣')
         candidates.push(...((sameBusinessResult.data ?? []) as MappingRow[]), ...((nullBusinessResult.data ?? []) as MappingRow[]))
       } else {
         const { data: nullBusinessRows, error: nullBusinessError } = await supabase
           .from('raw_material_mapping')
           .select('id, raw_material_name, business_id')
           .is('business_id', null)
-        if (nullBusinessError) throw new Error(nullBusinessError.message || '원재료 연결 조회 실패')
+        if (nullBusinessError) throw new Error(nullBusinessError.message || '?먯옱猷??곌껐 議고쉶 ?ㅽ뙣')
         candidates.push(...((nullBusinessRows ?? []) as MappingRow[]))
       }
 
@@ -158,13 +158,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           .from('raw_material_mapping')
           .update({ raw_material_name: newName })
           .in('id', mappingIds)
-        if (mappingError) throw new Error(mappingError.message || '원재료 연결명 갱신 실패')
+        if (mappingError) throw new Error(mappingError.message || '?먯옱猷??곌껐紐?媛깆떊 ?ㅽ뙣')
       }
     }
 
     return NextResponse.json({ ok: true, material: data }, { status: 200 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : '원재료 수정 중 오류가 발생했습니다.'
+    const message = error instanceof Error ? error.message : '?먯옱猷??섏젙 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }
+
