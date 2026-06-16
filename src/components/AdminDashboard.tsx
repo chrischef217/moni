@@ -189,6 +189,7 @@ type FoodType = {
 
 type RawMaterialMapping = {
   id: string
+  created_at?: string | null
   food_type_id: string
   recipe_id?: string | null
   product_id?: string | null
@@ -3247,10 +3248,13 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
     product: ProductOption,
     preferredRecipeMaterialNames?: Map<string, string>,
   ) {
-    const [recipePayload, mappingPayload] = await Promise.all([
+    const [recipePayload, mappingPayload, directMappingPayload] = await Promise.all([
       readJson<RecipesPayload>(`/api/moni/recipes?product_id=${encodeURIComponent(String(product.id))}`),
       readJson<RecipeMaterialMappingsPayload>(
         `/api/moni/raw-material-mapping?view=recipes&product_id=${encodeURIComponent(String(product.id))}&status=all&business_id=${encodeURIComponent(product.business_id || '20220523011')}`,
+      ),
+      readJson<{ mappings?: RawMaterialMapping[] }>(
+        `/api/moni/raw-material-mapping?product_id=${encodeURIComponent(String(product.id))}&mapping_scope=recipe`,
       ),
     ])
 
@@ -3260,24 +3264,40 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         (mappingPayload.rawMaterials as RawMaterialRow[] | undefined) ??
         recipeRawMaterials,
     )
-    const mappingNameByRecipeId = new Map<string, string | null>()
-    const mappingRefIdByRecipeId = new Map<string, string | null>()
+    const mappingNameByRecipeId = new Map<string, string>()
+    const mappingRefIdByRecipeId = new Map<string, string>()
+    const directMappings = (directMappingPayload.mappings ?? [])
+      .filter((row) => row.is_default !== false)
+      .sort((a, b) => {
+        const aTime = new Date(String(a.created_at ?? 0)).getTime()
+        const bTime = new Date(String(b.created_at ?? 0)).getTime()
+        return bTime - aTime
+      })
+
+    for (const mapping of directMappings) {
+      const recipeId = String(mapping.recipe_id ?? '').trim()
+      if (!recipeId || mappingNameByRecipeId.has(recipeId)) continue
+      const mappedName = String(mapping.raw_material_name ?? '').trim()
+      const mappedRefId = String(mapping.raw_material_ref_id ?? '').trim()
+      if (!mappedName && !mappedRefId) continue
+      if (mappedName) mappingNameByRecipeId.set(recipeId, mappedName)
+      if (mappedRefId) mappingRefIdByRecipeId.set(recipeId, mappedRefId)
+    }
+
     for (const row of mappingPayload.rows ?? []) {
-      const hasMappedValue = Boolean(
-        (row.current_raw_material_name && String(row.current_raw_material_name).trim()) ||
-          (row.current_raw_material_ref_id && String(row.current_raw_material_ref_id).trim()),
-      )
-      if (!hasMappedValue) continue
-      mappingNameByRecipeId.set(String(row.recipe_id), row.current_raw_material_name ?? null)
-      mappingRefIdByRecipeId.set(String(row.recipe_id), row.current_raw_material_ref_id ?? null)
+      const recipeId = String(row.recipe_id ?? '').trim()
+      if (!recipeId || mappingNameByRecipeId.has(recipeId)) continue
+      const mappedName = String(row.current_raw_material_name ?? '').trim()
+      const mappedRefId = String(row.current_raw_material_ref_id ?? '').trim()
+      if (!mappedName && !mappedRefId) continue
+      if (mappedName) mappingNameByRecipeId.set(recipeId, mappedName)
+      if (mappedRefId) mappingRefIdByRecipeId.set(recipeId, mappedRefId)
     }
 
     setProductRecipeRows(
       (recipePayload.recipes ?? []).map((recipe, index) => {
         const recipeKey = String(recipe.id)
-        const mappedName = mappingNameByRecipeId.has(recipeKey)
-          ? (mappingNameByRecipeId.get(recipeKey) ?? '')
-          : preferredRecipeMaterialNames?.get(recipeKey) ?? ''
+        const mappedName = mappingNameByRecipeId.get(recipeKey) ?? preferredRecipeMaterialNames?.get(recipeKey) ?? ''
         const mappedRefId = mappingRefIdByRecipeId.get(recipeKey) ?? ''
         return makeProductRecipeDraftRow(recipe, index, mappedName, mappedRefId)
       }),
