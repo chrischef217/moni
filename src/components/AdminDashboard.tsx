@@ -3263,7 +3263,11 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
     const mappingNameByRecipeId = new Map<string, string | null>()
     const mappingRefIdByRecipeId = new Map<string, string | null>()
     for (const row of mappingPayload.rows ?? []) {
-      if (row.mapping_status !== 'mapped') continue
+      const hasMappedValue = Boolean(
+        (row.current_raw_material_name && String(row.current_raw_material_name).trim()) ||
+          (row.current_raw_material_ref_id && String(row.current_raw_material_ref_id).trim()),
+      )
+      if (!hasMappedValue) continue
       mappingNameByRecipeId.set(String(row.recipe_id), row.current_raw_material_name ?? null)
       mappingRefIdByRecipeId.set(String(row.recipe_id), row.current_raw_material_ref_id ?? null)
     }
@@ -3404,7 +3408,9 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         }
 
         const targetRecipe = recipeBySortOrder.get(row.sort_order)
-        if (!targetRecipe?.id || !targetRecipe.food_type_id) continue
+        if (!targetRecipe?.id || !targetRecipe.food_type_id) {
+          throw new Error('레시피 저장은 완료되었지만 원재료 연결 대상(recipe_id/food_type_id)을 확인하지 못했습니다. 다시 시도해 주세요.')
+        }
         preferredRecipeMaterialNames.set(String(targetRecipe.id), resolvedRawMaterialName)
 
         await readJson('/api/moni/raw-material-mapping', {
