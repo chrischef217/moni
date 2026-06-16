@@ -52,7 +52,12 @@ function normalizeBusinessId(value: unknown): string {
 }
 
 function businessScopeFilter(businessId: string): string {
-  return `business_id.eq.${businessId},business_id.eq.default,business_id.is.null`
+  const scopedIds = Array.from(
+    new Set([toText(businessId), '20220523011', 'default'].filter((value) => value.length > 0)),
+  )
+  const clauses = scopedIds.map((value) => `business_id.eq.${value}`)
+  clauses.push('business_id.is.null')
+  return clauses.join(',')
 }
 
 function businessPriority(value: unknown, businessId: string): number {
