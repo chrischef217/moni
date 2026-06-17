@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
@@ -33,7 +33,6 @@ function formatGram(value: unknown) {
   return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(parsed)}g`
 }
 
-// ?먯옱猷??꾩슂???됱? ?⑥쐞 ?묐????놁씠 ?レ옄留??쒖떆?쒕떎.
 function formatRequiredGram(value: number) {
   if (!Number.isFinite(value)) return '-'
   const abs = Math.abs(value)
@@ -47,7 +46,7 @@ function formatRequiredGram(value: number) {
 }
 
 function formatEaRemainder(ea: number, remainderG: number) {
-  return `${new Intl.NumberFormat('ko-KR').format(ea)}ea + ?붾웾 ${formatGram(remainderG)}`
+  return `${new Intl.NumberFormat('ko-KR').format(ea)}ea + 잔량 ${formatGram(remainderG)}`
 }
 
 function resolvePackingUnitG(value: unknown): number | null {
@@ -70,6 +69,8 @@ type RecipeRow = {
   ratio_percent?: number | string | null
   ingredient_type?: string | null
   semi_product_id?: string | null
+  raw_material_ref_id?: string | null
+  raw_material_name?: string | null
 }
 
 type MappingRow = {
@@ -96,35 +97,17 @@ type ProductMetaRow = {
   weight_g?: number | string | null
 }
 
-type SemiInstructionMaterialRow = {
+type UnifiedWorkOrderRow = {
   material_name: string
-  required_g: number
-  ratio_percent: number
-  unresolved?: boolean
-}
-
-type SemiInstructionRow = {
-  recipe_item_name: string
-  linked_product_id: string | null
-  linked_product_name: string
-  required_production_g: number
-  packing_unit_g: number | null
-  planned_quantity_ea: number | null
-  materials: SemiInstructionMaterialRow[]
-  unresolved_reason?: string
-  has_nested_semi?: boolean
-}
-
-type FinalRequirementRow = {
-  material_name: string
-  required_g: number
-  ratio_percent: number
+  production_product_g: number
+  semi_product_g: Record<string, number>
+  final_input_g: number
   unresolved?: boolean
 }
 
 type WorkOrderExpansionPayload = {
-  semi_instructions: SemiInstructionRow[]
-  final_requirements: FinalRequirementRow[]
+  semi_product_columns: Array<{ product_id: string; product_name: string; packing_unit_g: number | null }>
+  rows: UnifiedWorkOrderRow[]
   has_nested_semi: boolean
   unresolved_items: string[]
 }
@@ -152,8 +135,8 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   try {
     const supabase = createMoniServiceRoleClient()
     const { data, error } = await supabase.from('production_records').select('*').eq('id', params.id).maybeSingle()
-    if (error) throw new Error(error.message || '?쒖“湲곕줉??議고쉶???ㅽ뙣?덉뒿?덈떎.')
-    if (!data) return NextResponse.json({ ok: false, error: '?쒖“湲곕줉?쒕? 李얠쓣 ???놁뒿?덈떎.' }, { status: 404 })
+    if (error) throw new Error(error.message || '제조기록서 조회에 실패했습니다.')
+    if (!data) return NextResponse.json({ ok: false, error: '제조기록서를 찾을 수 없습니다.' }, { status: 404 })
 
     const productId = String(data.product_id ?? '').trim()
     const productName = String(data.product_name ?? '').trim()
@@ -177,19 +160,19 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     const plannedEaRemainderText =
       plannedEa !== null && plannedRemainderG !== null ? formatEaRemainder(plannedEa, plannedRemainderG) : ''
     const productionUnitLabel =
-      productionUnitName || (productionUnitWeightG !== null && productionUnitWeightG > 0 ? `${formatGram(productionUnitWeightG)} ?⑥쐞` : '')
+      productionUnitName || (productionUnitWeightG !== null && productionUnitWeightG > 0 ? `${formatGram(productionUnitWeightG)} 단위` : '')
 
     let productReportNumber = ''
     let productPackingUnitG: number | null = null
     if (productId) {
       const byId = await supabase.from('products').select('report_number, weight_g').eq('id', productId).limit(1)
-      if (byId.error) throw new Error(byId.error.message || '?쒗뭹 ?뺣낫 議고쉶???ㅽ뙣?덉뒿?덈떎.')
+      if (byId.error) throw new Error(byId.error.message || '제품 정보 조회에 실패했습니다.')
       productReportNumber = String(byId.data?.[0]?.report_number ?? '').trim()
       productPackingUnitG = resolvePackingUnitG(byId.data?.[0]?.weight_g)
     }
     if (!productReportNumber && productName) {
       const byName = await supabase.from('products').select('report_number, weight_g').eq('product_name', productName).limit(1)
-      if (byName.error) throw new Error(byName.error.message || '?쒗뭹 ?뺣낫 議고쉶???ㅽ뙣?덉뒿?덈떎.')
+      if (byName.error) throw new Error(byName.error.message || '제품 정보 조회에 실패했습니다.')
       productReportNumber = String(byName.data?.[0]?.report_number ?? '').trim()
       if (productPackingUnitG === null) {
         productPackingUnitG = resolvePackingUnitG(byName.data?.[0]?.weight_g)
@@ -202,26 +185,24 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     const plannedEaByPacking = calcEaByPackingUnit(plannedQuantityG, packingUnitG)
 
     let recipeRows: RecipeRow[] = []
-
     if (productId) {
       const byProductId = await supabase
         .from('recipes')
-        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
+        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id, raw_material_ref_id, raw_material_name')
         .eq('product_id', productId)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
-      if (byProductId.error) throw new Error(byProductId.error.message || '?덉떆??議고쉶???ㅽ뙣?덉뒿?덈떎.')
+      if (byProductId.error) throw new Error(byProductId.error.message || '레시피 조회에 실패했습니다.')
       recipeRows = (byProductId.data ?? []) as RecipeRow[]
     }
-
     if (recipeRows.length === 0 && productName) {
       const byProductName = await supabase
         .from('recipes')
-        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
+        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id, raw_material_ref_id, raw_material_name')
         .eq('product_name', productName)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
-      if (byProductName.error) throw new Error(byProductName.error.message || '?덉떆??議고쉶???ㅽ뙣?덉뒿?덈떎.')
+      if (byProductName.error) throw new Error(byProductName.error.message || '레시피 조회에 실패했습니다.')
       recipeRows = (byProductName.data ?? []) as RecipeRow[]
     }
 
@@ -236,13 +217,10 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       .or(materialBusinessScope)
       .order('created_at', { ascending: false })
       .limit(5000)
-    if (mappingQuery.error) throw new Error(mappingQuery.error.message || '?먯옱猷?留ㅽ븨 議고쉶???ㅽ뙣?덉뒿?덈떎.')
+    if (mappingQuery.error) throw new Error(mappingQuery.error.message || '원재료 매핑 조회에 실패했습니다.')
     const allMappings = (mappingQuery.data ?? []) as MappingRow[]
-    const rawMaterialsQuery = await supabase
-      .from('raw_materials')
-      .select('id, item_name, linked_product_id')
-      .or(materialBusinessScope)
-      .limit(5000)
+
+    const rawMaterialsQuery = await supabase.from('raw_materials').select('id, item_name, linked_product_id').or(materialBusinessScope).limit(5000)
     if (rawMaterialsQuery.error) throw new Error(rawMaterialsQuery.error.message || '원재료 조회에 실패했습니다.')
     const rawMaterials = (rawMaterialsQuery.data ?? []) as MaterialRow[]
     const rawMaterialById = new Map(
@@ -295,7 +273,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       if (targetProductId) {
         const byId = await supabase
           .from('recipes')
-          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
+          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id, raw_material_ref_id, raw_material_name')
           .eq('product_id', targetProductId)
           .eq('is_active', true)
           .order('sort_order', { ascending: true })
@@ -305,7 +283,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       if (rows.length === 0 && targetProductName) {
         const byName = await supabase
           .from('recipes')
-          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
+          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id, raw_material_ref_id, raw_material_name')
           .eq('product_name', targetProductName)
           .eq('is_active', true)
           .order('sort_order', { ascending: true })
@@ -330,40 +308,59 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     const resolveMappedMaterial = (row: RecipeRow) => {
       const preferred = resolvePreferredMapping(row)
       const foodTypeName = String(row.food_type_name ?? '').trim()
+
+      const rowRefId = String(row.raw_material_ref_id ?? '').trim()
+      const rowRawName = String(row.raw_material_name ?? '').trim()
+
       const mappedRefId = String(preferred?.raw_material_ref_id ?? preferred?.raw_material_id ?? '').trim()
       const mappedRawName = String(preferred?.raw_material_name ?? '').trim()
-      const byRef = mappedRefId ? rawMaterialById.get(mappedRefId) : undefined
+
+      const byRowRef = rowRefId ? rawMaterialById.get(rowRefId) : undefined
+      const byRowRawName = rowRawName ? rawMaterialByName.get(normalizeKey(rowRawName)) : undefined
+      const byMappedRef = mappedRefId ? rawMaterialById.get(mappedRefId) : undefined
       const byMappedName = mappedRawName ? rawMaterialByName.get(normalizeKey(mappedRawName)) : undefined
       const fallbackMapping = foodTypeName ? mappingByRawNameFallback.get(normalizeKey(foodTypeName)) : undefined
       const fallbackMappingName = String(fallbackMapping?.raw_material_name ?? '').trim()
       const byFallbackMappingName = fallbackMappingName ? rawMaterialByName.get(normalizeKey(fallbackMappingName)) : undefined
       const byFoodTypeName = foodTypeName ? rawMaterialByName.get(normalizeKey(foodTypeName)) : undefined
-      const materialRow = byRef ?? byMappedName ?? byFallbackMappingName ?? byFoodTypeName
+
+      const materialRow = byRowRef ?? byRowRawName ?? byMappedRef ?? byMappedName ?? byFallbackMappingName ?? byFoodTypeName
       const materialName =
-        String(materialRow?.item_name ?? '').trim() || mappedRawName || fallbackMappingName || (foodTypeName ? `미연결: ${foodTypeName}` : '미연결')
+        String(materialRow?.item_name ?? '').trim() ||
+        rowRawName ||
+        mappedRawName ||
+        fallbackMappingName ||
+        (foodTypeName ? `미연결: ${foodTypeName}` : '미연결')
       const materialId = String(materialRow?.id ?? '').trim() || null
       const linkedProductId = String(materialRow?.linked_product_id ?? '').trim() || null
-      return { materialId, materialName, linkedProductId, unresolved: !materialRow && !mappedRawName && !fallbackMappingName }
-    }
-
-    const finalAggregate = new Map<string, FinalRequirementRow>()
-    const addFinalRequirement = (materialName: string, materialId: string | null, requiredG: number, ratioPercent: number, unresolved?: boolean) => {
-      if (!Number.isFinite(requiredG) || requiredG <= 0) return
-      const key = materialId ? `id:${materialId}` : `name:${normalizeKey(materialName)}`
-      const prev = finalAggregate.get(key)
-      if (prev) {
-        prev.required_g += requiredG
-        prev.ratio_percent += ratioPercent
-        prev.unresolved = prev.unresolved || !!unresolved
-        finalAggregate.set(key, prev)
-        return
+      return {
+        materialId,
+        materialName,
+        linkedProductId,
+        unresolved: !materialRow && !rowRawName && !mappedRawName && !fallbackMappingName,
       }
-      finalAggregate.set(key, { material_name: materialName, required_g: requiredG, ratio_percent: ratioPercent, unresolved })
     }
 
-    const semiInstructionRows: SemiInstructionRow[] = []
     const unresolvedItems: string[] = []
     let hasNestedSemi = false
+    const semiColumnsOrdered: string[] = []
+    const semiColumnMeta = new Map<string, { product_id: string; product_name: string; packing_unit_g: number | null }>()
+    const rowAccumulator = new Map<string, UnifiedWorkOrderRow>()
+
+    const getOrCreateRow = (materialName: string, materialId: string | null, unresolved?: boolean) => {
+      const key = materialId ? `id:${materialId}` : `name:${normalizeKey(materialName) || materialName}`
+      const found = rowAccumulator.get(key)
+      if (found) return found
+      const created: UnifiedWorkOrderRow = {
+        material_name: materialName,
+        production_product_g: 0,
+        semi_product_g: {},
+        final_input_g: 0,
+        unresolved: !!unresolved,
+      }
+      rowAccumulator.set(key, created)
+      return created
+    }
 
     const candidateSemiProductIds = new Set<string>()
     for (const row of recipeRows) {
@@ -373,10 +370,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     }
     const productsMetaById = new Map<string, ProductMetaRow>()
     if (candidateSemiProductIds.size > 0) {
-      const productMetaQuery = await supabase
-        .from('products')
-        .select('id, product_name, weight_g')
-        .in('id', Array.from(candidateSemiProductIds))
+      const productMetaQuery = await supabase.from('products').select('id, product_name, weight_g').in('id', Array.from(candidateSemiProductIds))
       if (!productMetaQuery.error) {
         for (const item of (productMetaQuery.data ?? []) as ProductMetaRow[]) {
           const id = String(item.id ?? '').trim()
@@ -393,56 +387,41 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 
       if (isRawIngredient(row.ingredient_type)) {
         const resolved = resolveMappedMaterial(row)
-        addFinalRequirement(resolved.materialName, resolved.materialId, requiredG, ratioPercent, resolved.unresolved)
+        const target = getOrCreateRow(resolved.materialName, resolved.materialId, resolved.unresolved)
+        target.production_product_g += requiredG
+        target.final_input_g += requiredG
+        target.unresolved = target.unresolved || resolved.unresolved
         continue
       }
 
-      if (!isPureSemiIngredient(row.ingredient_type)) {
-        continue
-      }
+      if (!isPureSemiIngredient(row.ingredient_type)) continue
 
       const resolvedSemi = resolveMappedMaterial(row)
       const linkedProductId = resolvedSemi.linkedProductId
       const recipeItemName = String(row.food_type_name ?? '').trim() || '반제품'
 
       if (!linkedProductId) {
-        semiInstructionRows.push({
-          recipe_item_name: recipeItemName,
-          linked_product_id: null,
-          linked_product_name: '미연결',
-          required_production_g: requiredG,
-          packing_unit_g: null,
-          planned_quantity_ea: null,
-          materials: [],
-          unresolved_reason: 'linked_product_id 미연결',
-        })
         unresolvedItems.push(`${recipeItemName}: 연결 반제품 미설정`)
         continue
       }
 
       const linkedProductMeta = productsMetaById.get(linkedProductId)
       const linkedProductName = String(linkedProductMeta?.product_name ?? '').trim() || linkedProductId
-      const linkedPackingUnitG = resolvePackingUnitG(linkedProductMeta?.weight_g)
-      const linkedPlannedEa = calcEaByPackingUnit(requiredG, linkedPackingUnitG)
-      const semiRecipes = await loadRecipesByProduct(linkedProductId, linkedProductName)
-
-      if (semiRecipes.length === 0) {
-        semiInstructionRows.push({
-          recipe_item_name: recipeItemName,
-          linked_product_id: linkedProductId,
-          linked_product_name: linkedProductName,
-          required_production_g: requiredG,
-          packing_unit_g: linkedPackingUnitG,
-          planned_quantity_ea: linkedPlannedEa,
-          materials: [],
-          unresolved_reason: '연결된 반제품 레시피 없음',
+      if (!semiColumnMeta.has(linkedProductName)) {
+        semiColumnMeta.set(linkedProductName, {
+          product_id: linkedProductId,
+          product_name: linkedProductName,
+          packing_unit_g: resolvePackingUnitG(linkedProductMeta?.weight_g),
         })
+        semiColumnsOrdered.push(linkedProductName)
+      }
+
+      const semiRecipes = await loadRecipesByProduct(linkedProductId, linkedProductName)
+      if (semiRecipes.length === 0) {
         unresolvedItems.push(`${recipeItemName}: 연결 반제품 레시피 없음`)
         continue
       }
 
-      const semiMaterials: SemiInstructionMaterialRow[] = []
-      let semiHasNested = false
       for (const semiRecipe of semiRecipes) {
         const childRatio = parseNumber(semiRecipe.ratio_percent) ?? 0
         if (childRatio <= 0) continue
@@ -450,52 +429,32 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         if (childRequiredG <= 0) continue
 
         if (isPureSemiIngredient(semiRecipe.ingredient_type)) {
-          semiHasNested = true
           hasNestedSemi = true
           const nestedName = String(semiRecipe.food_type_name ?? '').trim() || '반제품'
-          semiMaterials.push({
-            material_name: `미전개 반제품: ${nestedName}`,
-            required_g: childRequiredG,
-            ratio_percent: childRatio,
-            unresolved: true,
-          })
-          unresolvedItems.push(`${recipeItemName}: 하위 반제품(${nestedName})은 다음 단계 전개 필요`)
+          unresolvedItems.push(`${recipeItemName}: 하위 반제품(${nestedName})은 미전개`)
           continue
         }
-
-        if (!isRawIngredient(semiRecipe.ingredient_type)) {
-          continue
-        }
+        if (!isRawIngredient(semiRecipe.ingredient_type)) continue
 
         const resolvedChild = resolveMappedMaterial(semiRecipe)
-        semiMaterials.push({
-          material_name: resolvedChild.materialName,
-          required_g: childRequiredG,
-          ratio_percent: childRatio,
-          unresolved: resolvedChild.unresolved,
-        })
-        addFinalRequirement(resolvedChild.materialName, resolvedChild.materialId, childRequiredG, (ratioPercent * childRatio) / 100, resolvedChild.unresolved)
+        const target = getOrCreateRow(resolvedChild.materialName, resolvedChild.materialId, resolvedChild.unresolved)
+        target.semi_product_g[linkedProductId] = (target.semi_product_g[linkedProductId] ?? 0) + childRequiredG
+        target.final_input_g += childRequiredG
+        target.unresolved = target.unresolved || resolvedChild.unresolved
       }
-
-      semiInstructionRows.push({
-        recipe_item_name: recipeItemName,
-        linked_product_id: linkedProductId,
-        linked_product_name: linkedProductName,
-        required_production_g: requiredG,
-        packing_unit_g: linkedPackingUnitG,
-        planned_quantity_ea: linkedPlannedEa,
-        materials: semiMaterials,
-        has_nested_semi: semiHasNested,
-      })
     }
 
-    const requirementRows = Array.from(finalAggregate.values())
-      .filter((row) => row.ratio_percent > 0)
-      .sort((a, b) => b.required_g - a.required_g)
+    for (const row of Array.from(rowAccumulator.values())) {
+      if (!Number.isFinite(row.final_input_g) || row.final_input_g <= 0) {
+        row.final_input_g = row.production_product_g + Object.values(row.semi_product_g).reduce((sum, value) => sum + value, 0)
+      }
+    }
 
     const expansionPayload: WorkOrderExpansionPayload = {
-      semi_instructions: semiInstructionRows,
-      final_requirements: requirementRows,
+      semi_product_columns: semiColumnsOrdered
+        .map((name) => semiColumnMeta.get(name))
+        .filter((item): item is { product_id: string; product_name: string; packing_unit_g: number | null } => !!item),
+      rows: Array.from(rowAccumulator.values()).sort((a, b) => b.final_input_g - a.final_input_g),
       has_nested_semi: hasNestedSemi,
       unresolved_items: Array.from(new Set(unresolvedItems)),
     }
@@ -516,17 +475,42 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         { status: 200 },
       )
     }
+
+    const unifiedHeaders = [
+      '원재료명',
+      '생산제품(g)',
+      ...expansionPayload.semi_product_columns.map((column) => `${column.product_name}(g)`),
+      '최종 투입량(g)',
+    ]
+
+    const unifiedRowsHtml =
+      expansionPayload.rows.length > 0
+        ? expansionPayload.rows
+            .map((row) => {
+              const semiCells = expansionPayload.semi_product_columns
+                .map((column) => `<td class="number">${formatRequiredGram(row.semi_product_g[column.product_id] ?? 0)}</td>`)
+                .join('')
+              return `<tr>
+                <td>${escapeHtml(row.material_name)}</td>
+                <td class="number">${formatRequiredGram(row.production_product_g)}</td>
+                ${semiCells}
+                <td class="number">${formatRequiredGram(row.final_input_g)}</td>
+              </tr>`
+            })
+            .join('')
+        : `<tr><td colspan="${unifiedHeaders.length}">원재료 필요량을 계산할 수 없습니다.</td></tr>`
+
     const html = `<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>?묒뾽吏?쒖꽌 ${escapeHtml(data.lot_number)}</title>
+  <title>작업지시서 ${escapeHtml(data.lot_number)}</title>
   <style>
     @page { size: A4; margin: 14mm; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Arial, "Malgun Gothic", sans-serif; color: #111827; background: #f3f4f6; }
     .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 14mm; }
-    h1 { margin: 0 0 10px; text-align: center; font-size: 24px; letter-spacing: 0; }
+    h1 { margin: 0 0 10px; text-align: center; font-size: 24px; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
     th, td { border: 1px solid #111827; padding: 7px 8px; vertical-align: middle; }
     th { background: #e5e7eb; text-align: left; white-space: nowrap; }
@@ -534,7 +518,6 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     .compact { table-layout: fixed; }
     .compact col.label { width: 18%; }
     .compact col.value { width: 32%; }
-    .compact td.value { word-break: break-word; }
     .number { text-align: right; white-space: nowrap; }
     .fill-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-top: 8px; align-items: stretch; }
     .fill-table { table-layout: fixed; margin-top: 0; height: 100%; }
@@ -557,9 +540,9 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   </style>
 </head>
 <body>
-  <div class="no-print"><button onclick="window.print()">?몄뇙 / PDF ???/button></div>
+  <div class="no-print"><button onclick="window.print()">인쇄 / PDF 저장</button></div>
   <main class="page">
-    <h1>?묒뾽吏?쒖꽌 / ?쒖“湲곕줉??/h1>
+    <h1>작업지시서 / 제조기록서</h1>
 
     <table class="compact">
       <colgroup>
@@ -571,111 +554,49 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       <tbody>
         <tr>
           <th>LOT</th>
-          <td class="value">${escapeHtml(data.lot_number)}</td>
-          <th>?앹궛?쇱옄</th>
-          <td class="value">${escapeHtml(data.work_date)}</td>
+          <td>${escapeHtml(data.lot_number)}</td>
+          <th>생산일자</th>
+          <td>${escapeHtml(data.work_date)}</td>
         </tr>
         <tr>
-          <th>?쒗뭹紐?/th>
-          <td class="value">${escapeHtml(data.product_name)}</td>
-          <th>?덈ぉ蹂닿퀬踰덊샇</th>
-          <td class="value">${escapeHtml(productReportNumber)}</td>
+          <th>제품명</th>
+          <td>${escapeHtml(data.product_name)}</td>
+          <th>품목보고번호</th>
+          <td>${escapeHtml(productReportNumber)}</td>
         </tr>
         <tr>
-          <th>?⑦궧?⑥쐞</th>
-          <td class="value number">${packingUnitG !== null ? escapeHtml(formatGram(packingUnitG)) : '패킹단위 미등록'}</td>
-          <th></th>
-          <td class="value">-</td>
-        </tr>
-        <tr>
-          <th>?덉젙?섎웾</th>
-          <td class="value number">${formatGram(data.planned_quantity_g)}</td>
-          <th>?덉젙?섎웾(ea)</th>
-          <td class="value number">${plannedEaByPacking !== null ? `${escapeHtml(formatNumber(plannedEaByPacking))}ea` : '怨꾩궛遺덇?'}</td>
-        </tr>
-        ${
-          productionUnitLabel
-            ? `<tr>
-          <th>?앹궛?⑥쐞</th>
-          <td class="value">${escapeHtml(productionUnitLabel)}</td>
-          <th></th>
-          <td class="value">-</td>
-        </tr>`
-            : ''
-        }
-      </tbody>
-    </table>
-
-    <div class="section-title">반제품 생산 지시</div>
-    <table>
-      <thead>
-        <tr>
-          <th>레시피 항목(반제품)</th>
-          <th>연결 제품</th>
-          <th class="number">필요 생산량(g)</th>
           <th>패킹단위</th>
-          <th class="number">예정수량(ea)</th>
-          <th>반제품 생산 원재료</th>
+          <td class="number">${packingUnitG !== null ? escapeHtml(formatGram(packingUnitG)) : '패킹단위 미등록'}</td>
+          <th>예정량</th>
+          <td class="number">${formatGram(data.planned_quantity_g)}</td>
         </tr>
-      </thead>
-      <tbody>
-        ${
-          expansionPayload.semi_instructions.length > 0
-            ? expansionPayload.semi_instructions
-                .map((item) => {
-                  const materialsText =
-                    item.materials.length > 0
-                      ? item.materials
-                          .map((material) => `${material.material_name} (${formatRequiredGram(material.required_g)}g)`)
-                          .join(', ')
-                      : item.unresolved_reason || '-'
-                  return `<tr>
-                    <td>${escapeHtml(item.recipe_item_name)}</td>
-                    <td>${escapeHtml(item.linked_product_name)}</td>
-                    <td class="number">${formatRequiredGram(item.required_production_g)}</td>
-                    <td>${item.packing_unit_g !== null ? escapeHtml(formatGram(item.packing_unit_g)) : '패킹단위 미등록'}</td>
-                    <td class="number">${item.planned_quantity_ea !== null ? `${escapeHtml(formatNumber(item.planned_quantity_ea))}ea` : '계산불가'}</td>
-                    <td>${escapeHtml(materialsText)}</td>
-                  </tr>`
-                })
-                .join('')
-            : '<tr><td colspan="6">반제품 원재료 전개 대상이 없습니다.</td></tr>'
-        }
+        <tr>
+          <th>예정수량(ea)</th>
+          <td class="number">${plannedEaByPacking !== null ? `${escapeHtml(formatNumber(plannedEaByPacking))}ea` : '계산불가'}</td>
+          <th>생산단위</th>
+          <td>${productionUnitLabel ? escapeHtml(productionUnitLabel) : '-'}</td>
+        </tr>
       </tbody>
     </table>
 
-    <div class="section-title">최종 합산 원재료 필요량</div>
+    <div class="section-title">원재료 필요량</div>
     <table>
       <thead>
         <tr>
-          <th>원재료명</th>
-          <th class="number">諛고빀鍮꾩쑉(%)</th>
-          <th class="number">?꾩슂??g)</th>
+          ${unifiedHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
-        ${
-          requirementRows.length > 0
-            ? requirementRows
-                .map(
-                  (row) => `<tr>
-                    <td>${escapeHtml(row.material_name)}</td>
-                    <td class="number">${formatNumber(row.ratio_percent)}</td>
-                    <td class="number">${formatRequiredGram(row.required_g)}</td>
-                  </tr>`,
-                )
-                .join('')
-            : '<tr><td colspan="3">?깅줉???덉떆?쇨? ?놁뼱 ?먯옱猷??꾩슂?됱쓣 怨꾩궛?????놁뒿?덈떎.</td></tr>'
-        }
+        ${unifiedRowsHtml}
       </tbody>
     </table>
     ${
       expansionPayload.unresolved_items.length > 0
-        ? `<p style="margin-top:8px;font-size:12px;color:#b45309;">미연결/미전개 항목: ${escapeHtml(expansionPayload.unresolved_items.join(' / '))}</p>`
+        ? `<p style="margin-top:8px;font-size:12px;color:#b45309;">미연결/미전개: ${escapeHtml(expansionPayload.unresolved_items.join(' / '))}</p>`
         : ''
     }
 
-    <div class="section-title">?앹궛 ?꾨즺 ??湲곗엯?</div>
+    <div class="section-title">생산 완료 후 기입란</div>
     <div class="fill-grid">
       <table class="fill-table">
         <colgroup>
@@ -684,41 +605,41 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         </colgroup>
         <tbody>
           <tr>
-            <th>?꾨즺?섎웾</th>
+            <th>완료수량</th>
             <td class="input-cell">
               <div class="entry-wrap">
                 <div class="entry-space"></div>
-                <div class="unit-hints">??ea&nbsp;&nbsp;??kg&nbsp;&nbsp;??g</div>
+                <div class="unit-hints">□ ea&nbsp;&nbsp;□ kg&nbsp;&nbsp;□ g</div>
               </div>
             </td>
           </tr>
           <tr>
-            <th>遺덈웾?섎웾</th>
+            <th>불량수량</th>
             <td class="input-cell">
               <div class="entry-wrap">
                 <div class="entry-space"></div>
-                <div class="unit-hints">??kg&nbsp;&nbsp;??g</div>
+                <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
               </div>
             </td>
           </tr>
           <tr>
-            <th>?섑뵆?섎웾</th>
+            <th>샘플수량</th>
             <td class="input-cell">
               <div style="display:flex;flex-direction:column;gap:6px;">
                 <div class="entry-wrap">
-                  <div class="entry-space">?섑뵆 1: ______</div>
-                  <div class="unit-hints">??kg&nbsp;&nbsp;??g</div>
+                  <div class="entry-space">샘플 1: ______</div>
+                  <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
                 </div>
                 <div class="entry-wrap">
-                  <div class="entry-space">?섑뵆 2: ______</div>
-                  <div class="unit-hints">??kg&nbsp;&nbsp;??g</div>
+                  <div class="entry-space">샘플 2: ______</div>
+                  <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
                 </div>
                 <div class="entry-wrap">
-                  <div class="entry-space">?섑뵆 3: ______</div>
-                  <div class="unit-hints">??kg&nbsp;&nbsp;??g</div>
+                  <div class="entry-space">샘플 3: ______</div>
+                  <div class="unit-hints">□ kg&nbsp;&nbsp;□ g</div>
                 </div>
                 <div class="entry-wrap">
-                  <div class="entry-space">?섑뵆 ?⑷퀎: ______ g</div>
+                  <div class="entry-space">샘플 합계: ______ g</div>
                 </div>
               </div>
             </td>
@@ -727,8 +648,8 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       </table>
       <table class="sign-table">
         <tbody>
-          <tr><th>?묒꽦???쒕챸</th><td></td></tr>
-          <tr><th>?뺤씤???쒕챸</th><td></td></tr>
+          <tr><th>작성자 서명</th><td></td></tr>
+          <tr><th>확인자 서명</th><td></td></tr>
         </tbody>
       </table>
     </div>
@@ -742,7 +663,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : '?쒖“湲곕줉??PDF ?앹꽦 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
+    const message = error instanceof Error ? error.message : '작업지시서 PDF 생성 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }
