@@ -182,6 +182,39 @@ type DeductionPreviewSummary = {
   planned_quantity_g: number | null
 }
 
+type WorkOrderSemiInstructionMaterial = {
+  material_name: string
+  required_g: number
+  ratio_percent: number
+  unresolved?: boolean
+}
+
+type WorkOrderSemiInstruction = {
+  recipe_item_name: string
+  linked_product_id: string | null
+  linked_product_name: string
+  required_production_g: number
+  packing_unit_g: number | null
+  planned_quantity_ea: number | null
+  materials: WorkOrderSemiInstructionMaterial[]
+  unresolved_reason?: string
+  has_nested_semi?: boolean
+}
+
+type WorkOrderFinalRequirement = {
+  material_name: string
+  required_g: number
+  ratio_percent: number
+  unresolved?: boolean
+}
+
+type WorkOrderExpansionPreview = {
+  semi_instructions: WorkOrderSemiInstruction[]
+  final_requirements: WorkOrderFinalRequirement[]
+  has_nested_semi: boolean
+  unresolved_items: string[]
+}
+
 type FoodType = {
   id: string
   type_name: string
@@ -1566,6 +1599,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   } | null>(null)
 
   const [selectedRecord, setSelectedRecord] = useState<ProductionRecord | null>(null)
+  const [workOrderExpansionPreview, setWorkOrderExpansionPreview] = useState<WorkOrderExpansionPreview | null>(null)
+  const [workOrderExpansionLoading, setWorkOrderExpansionLoading] = useState(false)
+  const [workOrderExpansionError, setWorkOrderExpansionError] = useState('')
   const [showProductionModal, setShowProductionModal] = useState(false)
   const [productionForm, setProductionForm] = useState<ProductionFormState>(emptyProductionForm())
   const [productionSaving, setProductionSaving] = useState(false)
@@ -2085,6 +2121,41 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
     void loadProductDetailUnits(selectedProductId)
   }, [selectedProductId])
+
+  useEffect(() => {
+    const recordId = selectedRecord?.id
+    if (!recordId) {
+      setWorkOrderExpansionPreview(null)
+      setWorkOrderExpansionError('')
+      setWorkOrderExpansionLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setWorkOrderExpansionLoading(true)
+    setWorkOrderExpansionError('')
+
+    void (async () => {
+      try {
+        const payload = await readJson<{ expansion?: WorkOrderExpansionPreview }>(
+          `/api/moni/production-records/${recordId}/pdf?format=json`,
+          { method: 'GET' },
+        )
+        if (cancelled) return
+        setWorkOrderExpansionPreview(payload.expansion ?? null)
+      } catch (error) {
+        if (cancelled) return
+        setWorkOrderExpansionPreview(null)
+        setWorkOrderExpansionError(error instanceof Error ? error.message : '작업지시서 전개 정보를 불러오지 못했습니다.')
+      } finally {
+        if (!cancelled) setWorkOrderExpansionLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedRecord?.id])
 
   useEffect(() => {
     setDailySelectedIds((prev) => prev.filter((id) => dailyReportRows.some((row) => row.id === id)))
@@ -10637,7 +10708,12 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         open={!!selectedRecord}
         title="제조기록서 상세"
         description={selectedRecord?.lot_number || ''}
-        onClose={() => setSelectedRecord(null)}
+        onClose={() => {
+          setSelectedRecord(null)
+          setWorkOrderExpansionPreview(null)
+          setWorkOrderExpansionError('')
+          setWorkOrderExpansionLoading(false)
+        }}
       >
         {selectedRecord ? (
           <div className="grid gap-4 md:grid-cols-2">
@@ -10670,6 +10746,83 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                 <p>위생점검 여부: {selectedRecord.sanitation_check ? '확인' : '미확인'}</p>
                 <p>비고: {selectedRecord.note || '-'}</p>
               </div>
+            </SectionCard>
+            <SectionCard title="반제품 생산 지시" className="md:col-span-2">
+              {workOrderExpansionLoading ? (
+                <LoadingBlock lines={3} />
+              ) : workOrderExpansionError ? (
+                <p className="text-sm text-red-300">{workOrderExpansionError}</p>
+              ) : workOrderExpansionPreview?.semi_instructions?.length ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="text-gray-400">
+                      <tr className="border-b border-gray-700">
+                        <th className="px-3 py-2 font-medium">레시피 항목</th>
+                        <th className="px-3 py-2 font-medium">연결 반제품</th>
+                        <th className="px-3 py-2 font-medium">필요 생산량(g)</th>
+                        <th className="px-3 py-2 font-medium">패킹단위</th>
+                        <th className="px-3 py-2 font-medium">예정수량(ea)</th>
+                        <th className="px-3 py-2 font-medium">반제품 원재료</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {workOrderExpansionPreview.semi_instructions.map((item, index) => (
+                        <tr key={`${item.recipe_item_name}-${index}`} className="border-b border-gray-800/80">
+                          <td className="px-3 py-3 text-gray-200">{item.recipe_item_name}</td>
+                          <td className="px-3 py-3 text-white">{item.linked_product_name || '미연결'}</td>
+                          <td className="px-3 py-3 text-gray-200">{formatNumber(item.required_production_g)}g</td>
+                          <td className="px-3 py-3 text-gray-200">{formatPackingUnitGText(item.packing_unit_g)}</td>
+                          <td className="px-3 py-3 text-gray-200">
+                            {item.planned_quantity_ea !== null ? `${formatNumber(item.planned_quantity_ea)}ea` : '계산불가'}
+                          </td>
+                          <td className="px-3 py-3 text-gray-200">
+                            {item.materials.length > 0
+                              ? item.materials.map((material) => `${material.material_name} (${formatNumber(material.required_g)}g)`).join(', ')
+                              : item.unresolved_reason || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">반제품 전개 대상이 없습니다.</p>
+              )}
+            </SectionCard>
+            <SectionCard title="최종 합산 원재료 필요량" className="md:col-span-2">
+              {workOrderExpansionLoading ? (
+                <LoadingBlock lines={3} />
+              ) : workOrderExpansionError ? (
+                <p className="text-sm text-red-300">{workOrderExpansionError}</p>
+              ) : workOrderExpansionPreview?.final_requirements?.length ? (
+                <div className="space-y-2">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="text-gray-400">
+                        <tr className="border-b border-gray-700">
+                          <th className="px-3 py-2 font-medium">원재료</th>
+                          <th className="px-3 py-2 font-medium">합산 비율(%)</th>
+                          <th className="px-3 py-2 font-medium">필요량(g)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workOrderExpansionPreview.final_requirements.map((item, index) => (
+                          <tr key={`${item.material_name}-${index}`} className="border-b border-gray-800/80">
+                            <td className="px-3 py-3 text-white">{item.material_name}</td>
+                            <td className="px-3 py-3 text-gray-200">{formatNumber(item.ratio_percent)}</td>
+                            <td className="px-3 py-3 text-green-300">{formatNumber(item.required_g)}g</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {workOrderExpansionPreview.unresolved_items?.length ? (
+                    <p className="text-xs text-amber-300">미연결/미전개: {workOrderExpansionPreview.unresolved_items.join(' / ')}</p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">합산 원재료 정보가 없습니다.</p>
+              )}
             </SectionCard>
             <div className="md:col-span-2 flex justify-end">
               <button

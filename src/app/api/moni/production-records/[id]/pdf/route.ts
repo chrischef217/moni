@@ -87,6 +87,46 @@ type MappingRow = {
 type MaterialRow = {
   id?: string | null
   item_name?: string | null
+  linked_product_id?: string | null
+}
+
+type ProductMetaRow = {
+  id?: string | null
+  product_name?: string | null
+  weight_g?: number | string | null
+}
+
+type SemiInstructionMaterialRow = {
+  material_name: string
+  required_g: number
+  ratio_percent: number
+  unresolved?: boolean
+}
+
+type SemiInstructionRow = {
+  recipe_item_name: string
+  linked_product_id: string | null
+  linked_product_name: string
+  required_production_g: number
+  packing_unit_g: number | null
+  planned_quantity_ea: number | null
+  materials: SemiInstructionMaterialRow[]
+  unresolved_reason?: string
+  has_nested_semi?: boolean
+}
+
+type FinalRequirementRow = {
+  material_name: string
+  required_g: number
+  ratio_percent: number
+  unresolved?: boolean
+}
+
+type WorkOrderExpansionPayload = {
+  semi_instructions: SemiInstructionRow[]
+  final_requirements: FinalRequirementRow[]
+  has_nested_semi: boolean
+  unresolved_items: string[]
 }
 
 function normalizeKey(value: unknown) {
@@ -198,48 +238,51 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       .limit(5000)
     if (mappingQuery.error) throw new Error(mappingQuery.error.message || '?먯옱猷?留ㅽ븨 議고쉶???ㅽ뙣?덉뒿?덈떎.')
     const allMappings = (mappingQuery.data ?? []) as MappingRow[]
-
-    const mappingRefIds = Array.from(
-      new Set(
-        allMappings
-          .map((mapping) => String(mapping.raw_material_ref_id ?? mapping.raw_material_id ?? '').trim())
-          .filter((value) => value.length > 0),
-      ),
-    )
-
-    let mappedMaterialsById = new Map<string, string>()
-    if (mappingRefIds.length > 0) {
-      const mappedMaterialsQuery = await supabase.from('raw_materials').select('id, item_name').in('id', mappingRefIds).limit(5000)
-      if (mappedMaterialsQuery.error) throw new Error(mappedMaterialsQuery.error.message || '?먯옱猷?議고쉶???ㅽ뙣?덉뒿?덈떎.')
-      mappedMaterialsById = new Map(
-        ((mappedMaterialsQuery.data ?? []) as MaterialRow[])
-          .map((material) => [String(material.id ?? '').trim(), String(material.item_name ?? '').trim()] as const)
-          .filter(([id, name]) => id && name),
-      )
-    }
-
-    const directMaterialQuery = await supabase
+    const rawMaterialsQuery = await supabase
       .from('raw_materials')
-      .select('item_name')
-      .eq('is_active', true)
+      .select('id, item_name, linked_product_id')
       .or(materialBusinessScope)
       .limit(5000)
-    if (directMaterialQuery.error) throw new Error(directMaterialQuery.error.message || '?먯옱猷?議고쉶???ㅽ뙣?덉뒿?덈떎.')
-    const directMaterialByName = new Map(
-      ((directMaterialQuery.data ?? []) as Array<{ item_name?: string | null }>)
-        .map((material) => String(material.item_name ?? '').trim())
-        .filter((name) => name.length > 0)
-        .map((name) => [normalizeKey(name), name] as const),
+    if (rawMaterialsQuery.error) throw new Error(rawMaterialsQuery.error.message || '원재료 조회에 실패했습니다.')
+    const rawMaterials = (rawMaterialsQuery.data ?? []) as MaterialRow[]
+    const rawMaterialById = new Map(
+      rawMaterials
+        .map((material) => [String(material.id ?? '').trim(), material] as const)
+        .filter(([id]) => id.length > 0),
+    )
+    const rawMaterialByName = new Map(
+      rawMaterials
+        .map((material) => [normalizeKey(material.item_name), material] as const)
+        .filter(([key]) => key.length > 0),
     )
 
-    const resolveMappedMaterialName = (mapping: MappingRow | null | undefined) => {
-      if (!mapping) return ''
-      const refId = String(mapping.raw_material_ref_id ?? mapping.raw_material_id ?? '').trim()
-      if (refId) {
-        const mappedName = mappedMaterialsById.get(refId)
-        if (mappedName) return mappedName
+    const recipeScopeMappings = new Map<string, MappingRow[]>()
+    const productScopeMappings = new Map<string, MappingRow[]>()
+    const globalScopeMappings = new Map<string, MappingRow[]>()
+    const mappingByRawNameFallback = new Map<string, MappingRow>()
+    for (const mapping of allMappings) {
+      const scope = String(mapping.mapping_scope ?? '').trim().toLowerCase()
+      const recipeId = String(mapping.recipe_id ?? '').trim()
+      const productIdKey = String(mapping.product_id ?? '').trim()
+      const foodTypeIdKey = String(mapping.food_type_id ?? '').trim()
+      if (scope === 'recipe' && recipeId) {
+        const list = recipeScopeMappings.get(recipeId) ?? []
+        list.push(mapping)
+        recipeScopeMappings.set(recipeId, list)
+      } else if (scope === 'product' && productIdKey && foodTypeIdKey) {
+        const key = `${productIdKey}::${foodTypeIdKey}`
+        const list = productScopeMappings.get(key) ?? []
+        list.push(mapping)
+        productScopeMappings.set(key, list)
+      } else if (scope === 'global' && foodTypeIdKey) {
+        const list = globalScopeMappings.get(foodTypeIdKey) ?? []
+        list.push(mapping)
+        globalScopeMappings.set(foodTypeIdKey, list)
       }
-      return String(mapping.raw_material_name ?? '').trim()
+      const rawNameKey = normalizeKey(mapping.raw_material_name)
+      if (rawNameKey && !mappingByRawNameFallback.has(rawNameKey)) {
+        mappingByRawNameFallback.set(rawNameKey, mapping)
+      }
     }
 
     const recipeCache = new Map<string, RecipeRow[]>()
@@ -273,90 +316,206 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       return rows
     }
 
-    const expandedRows: Array<{ row: RecipeRow; ratioPercent: number }> = []
-    const expandRows = async (rows: RecipeRow[], ratioFactor: number, depth: number, visited: Set<string>) => {
-      for (const row of rows) {
-        const ratio = parseNumber(row.ratio_percent) ?? 0
-        if (ratio <= 0) continue
-        const effectiveRatio = (ratioFactor * ratio) / 100
-        if (effectiveRatio <= 0) continue
-
-        const semiProductId = String(row.semi_product_id ?? '').trim()
-        if (isPureSemiIngredient(row.ingredient_type) && semiProductId && depth < 5) {
-          const visitKey = `${semiProductId}::${String(row.id ?? '').trim()}`
-          if (visited.has(visitKey)) continue
-          const nextVisited = new Set(visited)
-          nextVisited.add(visitKey)
-          const semiRecipes = await loadRecipesByProduct(semiProductId, '')
-          if (semiRecipes.length > 0) {
-            await expandRows(semiRecipes, effectiveRatio, depth + 1, nextVisited)
-            continue
-          }
-        }
-
-        if (isRawIngredient(row.ingredient_type)) {
-          expandedRows.push({ row, ratioPercent: effectiveRatio })
-        }
-      }
-    }
-
-    await expandRows(recipeRows, 100, 0, new Set<string>())
-
-    const requirementAggregate = new Map<string, { materialDisplayName: string; ratioPercent: number; requiredG: number }>()
-    for (const expanded of expandedRows) {
-      const row = expanded.row
-      const ratio = expanded.ratioPercent
+    const resolvePreferredMapping = (row: RecipeRow) => {
       const recipeId = String(row.id ?? '').trim()
       const recipeProductId = String(row.product_id ?? '').trim() || productId
       const foodTypeId = String(row.food_type_id ?? '').trim()
+      const recipeCandidate = recipeId ? (recipeScopeMappings.get(recipeId) ?? [])[0] : null
+      const productCandidate =
+        recipeProductId && foodTypeId ? (productScopeMappings.get(`${recipeProductId}::${foodTypeId}`) ?? [])[0] : null
+      const globalCandidate = foodTypeId ? (globalScopeMappings.get(foodTypeId) ?? [])[0] : null
+      return recipeCandidate ?? productCandidate ?? globalCandidate ?? null
+    }
+
+    const resolveMappedMaterial = (row: RecipeRow) => {
+      const preferred = resolvePreferredMapping(row)
       const foodTypeName = String(row.food_type_name ?? '').trim()
+      const mappedRefId = String(preferred?.raw_material_ref_id ?? preferred?.raw_material_id ?? '').trim()
+      const mappedRawName = String(preferred?.raw_material_name ?? '').trim()
+      const byRef = mappedRefId ? rawMaterialById.get(mappedRefId) : undefined
+      const byMappedName = mappedRawName ? rawMaterialByName.get(normalizeKey(mappedRawName)) : undefined
+      const fallbackMapping = foodTypeName ? mappingByRawNameFallback.get(normalizeKey(foodTypeName)) : undefined
+      const fallbackMappingName = String(fallbackMapping?.raw_material_name ?? '').trim()
+      const byFallbackMappingName = fallbackMappingName ? rawMaterialByName.get(normalizeKey(fallbackMappingName)) : undefined
+      const byFoodTypeName = foodTypeName ? rawMaterialByName.get(normalizeKey(foodTypeName)) : undefined
+      const materialRow = byRef ?? byMappedName ?? byFallbackMappingName ?? byFoodTypeName
+      const materialName =
+        String(materialRow?.item_name ?? '').trim() || mappedRawName || fallbackMappingName || (foodTypeName ? `미연결: ${foodTypeName}` : '미연결')
+      const materialId = String(materialRow?.id ?? '').trim() || null
+      const linkedProductId = String(materialRow?.linked_product_id ?? '').trim() || null
+      return { materialId, materialName, linkedProductId, unresolved: !materialRow && !mappedRawName && !fallbackMappingName }
+    }
 
-      const recipeScoped = allMappings.find(
-        (mapping) =>
-          String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'recipe' &&
-          String(mapping.recipe_id ?? '').trim() === recipeId,
-      )
-      const productScoped = allMappings.find(
-        (mapping) =>
-          String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'product' &&
-          String(mapping.product_id ?? '').trim() === recipeProductId &&
-          String(mapping.food_type_id ?? '').trim() === foodTypeId,
-      )
-      const globalScoped = allMappings.find(
-        (mapping) =>
-          String(mapping.mapping_scope ?? '').trim().toLowerCase() === 'global' &&
-          String(mapping.food_type_id ?? '').trim() === foodTypeId,
-      )
-      const preferredMapping = recipeScoped ?? productScoped ?? globalScoped
-
-      let displayMaterialName = resolveMappedMaterialName(preferredMapping)
-      if (!displayMaterialName && foodTypeName) {
-        const nameFallbackMapping = allMappings.find(
-          (mapping) => normalizeKey(mapping.raw_material_name) === normalizeKey(foodTypeName),
-        )
-        displayMaterialName = resolveMappedMaterialName(nameFallbackMapping)
-      }
-      if (!displayMaterialName && foodTypeName) {
-        displayMaterialName = directMaterialByName.get(normalizeKey(foodTypeName)) || ''
-      }
-      const materialDisplayName = displayMaterialName || (foodTypeName ? `미연결: ${foodTypeName}` : '미연결')
-      const requiredG = plannedQuantityG > 0 ? (plannedQuantityG * ratio) / 100 : 0
-      const key = normalizeKey(materialDisplayName)
-      const prev = requirementAggregate.get(key)
+    const finalAggregate = new Map<string, FinalRequirementRow>()
+    const addFinalRequirement = (materialName: string, materialId: string | null, requiredG: number, ratioPercent: number, unresolved?: boolean) => {
+      if (!Number.isFinite(requiredG) || requiredG <= 0) return
+      const key = materialId ? `id:${materialId}` : `name:${normalizeKey(materialName)}`
+      const prev = finalAggregate.get(key)
       if (prev) {
-        prev.ratioPercent += ratio
-        prev.requiredG += requiredG
-        requirementAggregate.set(key, prev)
-      } else {
-        requirementAggregate.set(key, {
-          materialDisplayName,
-          ratioPercent: ratio,
-          requiredG,
-        })
+        prev.required_g += requiredG
+        prev.ratio_percent += ratioPercent
+        prev.unresolved = prev.unresolved || !!unresolved
+        finalAggregate.set(key, prev)
+        return
+      }
+      finalAggregate.set(key, { material_name: materialName, required_g: requiredG, ratio_percent: ratioPercent, unresolved })
+    }
+
+    const semiInstructionRows: SemiInstructionRow[] = []
+    const unresolvedItems: string[] = []
+    let hasNestedSemi = false
+
+    const candidateSemiProductIds = new Set<string>()
+    for (const row of recipeRows) {
+      if (!isPureSemiIngredient(row.ingredient_type)) continue
+      const resolved = resolveMappedMaterial(row)
+      if (resolved.linkedProductId) candidateSemiProductIds.add(resolved.linkedProductId)
+    }
+    const productsMetaById = new Map<string, ProductMetaRow>()
+    if (candidateSemiProductIds.size > 0) {
+      const productMetaQuery = await supabase
+        .from('products')
+        .select('id, product_name, weight_g')
+        .in('id', Array.from(candidateSemiProductIds))
+      if (!productMetaQuery.error) {
+        for (const item of (productMetaQuery.data ?? []) as ProductMetaRow[]) {
+          const id = String(item.id ?? '').trim()
+          if (id) productsMetaById.set(id, item)
+        }
       }
     }
 
-    const requirementRows = Array.from(requirementAggregate.values()).filter((row) => row.ratioPercent > 0)
+    for (const row of recipeRows) {
+      const ratioPercent = parseNumber(row.ratio_percent) ?? 0
+      if (ratioPercent <= 0) continue
+      const requiredG = plannedQuantityG > 0 ? (plannedQuantityG * ratioPercent) / 100 : 0
+      if (requiredG <= 0) continue
+
+      if (isRawIngredient(row.ingredient_type)) {
+        const resolved = resolveMappedMaterial(row)
+        addFinalRequirement(resolved.materialName, resolved.materialId, requiredG, ratioPercent, resolved.unresolved)
+        continue
+      }
+
+      if (!isPureSemiIngredient(row.ingredient_type)) {
+        continue
+      }
+
+      const resolvedSemi = resolveMappedMaterial(row)
+      const linkedProductId = resolvedSemi.linkedProductId
+      const recipeItemName = String(row.food_type_name ?? '').trim() || '반제품'
+
+      if (!linkedProductId) {
+        semiInstructionRows.push({
+          recipe_item_name: recipeItemName,
+          linked_product_id: null,
+          linked_product_name: '미연결',
+          required_production_g: requiredG,
+          packing_unit_g: null,
+          planned_quantity_ea: null,
+          materials: [],
+          unresolved_reason: 'linked_product_id 미연결',
+        })
+        unresolvedItems.push(`${recipeItemName}: 연결 반제품 미설정`)
+        continue
+      }
+
+      const linkedProductMeta = productsMetaById.get(linkedProductId)
+      const linkedProductName = String(linkedProductMeta?.product_name ?? '').trim() || linkedProductId
+      const linkedPackingUnitG = resolvePackingUnitG(linkedProductMeta?.weight_g)
+      const linkedPlannedEa = calcEaByPackingUnit(requiredG, linkedPackingUnitG)
+      const semiRecipes = await loadRecipesByProduct(linkedProductId, linkedProductName)
+
+      if (semiRecipes.length === 0) {
+        semiInstructionRows.push({
+          recipe_item_name: recipeItemName,
+          linked_product_id: linkedProductId,
+          linked_product_name: linkedProductName,
+          required_production_g: requiredG,
+          packing_unit_g: linkedPackingUnitG,
+          planned_quantity_ea: linkedPlannedEa,
+          materials: [],
+          unresolved_reason: '연결된 반제품 레시피 없음',
+        })
+        unresolvedItems.push(`${recipeItemName}: 연결 반제품 레시피 없음`)
+        continue
+      }
+
+      const semiMaterials: SemiInstructionMaterialRow[] = []
+      let semiHasNested = false
+      for (const semiRecipe of semiRecipes) {
+        const childRatio = parseNumber(semiRecipe.ratio_percent) ?? 0
+        if (childRatio <= 0) continue
+        const childRequiredG = (requiredG * childRatio) / 100
+        if (childRequiredG <= 0) continue
+
+        if (isPureSemiIngredient(semiRecipe.ingredient_type)) {
+          semiHasNested = true
+          hasNestedSemi = true
+          const nestedName = String(semiRecipe.food_type_name ?? '').trim() || '반제품'
+          semiMaterials.push({
+            material_name: `미전개 반제품: ${nestedName}`,
+            required_g: childRequiredG,
+            ratio_percent: childRatio,
+            unresolved: true,
+          })
+          unresolvedItems.push(`${recipeItemName}: 하위 반제품(${nestedName})은 다음 단계 전개 필요`)
+          continue
+        }
+
+        if (!isRawIngredient(semiRecipe.ingredient_type)) {
+          continue
+        }
+
+        const resolvedChild = resolveMappedMaterial(semiRecipe)
+        semiMaterials.push({
+          material_name: resolvedChild.materialName,
+          required_g: childRequiredG,
+          ratio_percent: childRatio,
+          unresolved: resolvedChild.unresolved,
+        })
+        addFinalRequirement(resolvedChild.materialName, resolvedChild.materialId, childRequiredG, (ratioPercent * childRatio) / 100, resolvedChild.unresolved)
+      }
+
+      semiInstructionRows.push({
+        recipe_item_name: recipeItemName,
+        linked_product_id: linkedProductId,
+        linked_product_name: linkedProductName,
+        required_production_g: requiredG,
+        packing_unit_g: linkedPackingUnitG,
+        planned_quantity_ea: linkedPlannedEa,
+        materials: semiMaterials,
+        has_nested_semi: semiHasNested,
+      })
+    }
+
+    const requirementRows = Array.from(finalAggregate.values())
+      .filter((row) => row.ratio_percent > 0)
+      .sort((a, b) => b.required_g - a.required_g)
+
+    const expansionPayload: WorkOrderExpansionPayload = {
+      semi_instructions: semiInstructionRows,
+      final_requirements: requirementRows,
+      has_nested_semi: hasNestedSemi,
+      unresolved_items: Array.from(new Set(unresolvedItems)),
+    }
+
+    const formatMode = _request.nextUrl.searchParams.get('format')?.trim().toLowerCase() ?? ''
+    if (formatMode === 'json') {
+      return NextResponse.json(
+        {
+          ok: true,
+          record: {
+            id: data.id,
+            lot_number: data.lot_number,
+            product_name: data.product_name,
+            planned_quantity_g: plannedQuantityG,
+          },
+          expansion: expansionPayload,
+        },
+        { status: 200 },
+      )
+    }
     const html = `<!doctype html>
 <html lang="ko">
 <head>
@@ -447,11 +606,49 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       </tbody>
     </table>
 
-    <div class="section-title">?먯옱猷??꾩슂???덉젙 湲곗?)</div>
+    <div class="section-title">반제품 생산 지시</div>
     <table>
       <thead>
         <tr>
-          <th>?먯옱猷뚮챸(?앺뭹?좏삎)</th>
+          <th>레시피 항목(반제품)</th>
+          <th>연결 제품</th>
+          <th class="number">필요 생산량(g)</th>
+          <th>패킹단위</th>
+          <th class="number">예정수량(ea)</th>
+          <th>반제품 생산 원재료</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${
+          expansionPayload.semi_instructions.length > 0
+            ? expansionPayload.semi_instructions
+                .map((item) => {
+                  const materialsText =
+                    item.materials.length > 0
+                      ? item.materials
+                          .map((material) => `${material.material_name} (${formatRequiredGram(material.required_g)}g)`)
+                          .join(', ')
+                      : item.unresolved_reason || '-'
+                  return `<tr>
+                    <td>${escapeHtml(item.recipe_item_name)}</td>
+                    <td>${escapeHtml(item.linked_product_name)}</td>
+                    <td class="number">${formatRequiredGram(item.required_production_g)}</td>
+                    <td>${item.packing_unit_g !== null ? escapeHtml(formatGram(item.packing_unit_g)) : '패킹단위 미등록'}</td>
+                    <td class="number">${item.planned_quantity_ea !== null ? `${escapeHtml(formatNumber(item.planned_quantity_ea))}ea` : '계산불가'}</td>
+                    <td>${escapeHtml(materialsText)}</td>
+                  </tr>`
+                })
+                .join('')
+            : '<tr><td colspan="6">반제품 원재료 전개 대상이 없습니다.</td></tr>'
+        }
+      </tbody>
+    </table>
+
+    <div class="section-title">최종 합산 원재료 필요량</div>
+    <table>
+      <thead>
+        <tr>
+          <th>원재료명</th>
           <th class="number">諛고빀鍮꾩쑉(%)</th>
           <th class="number">?꾩슂??g)</th>
         </tr>
@@ -462,9 +659,9 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
             ? requirementRows
                 .map(
                   (row) => `<tr>
-                    <td>${escapeHtml(row.materialDisplayName)}</td>
-                    <td class="number">${formatNumber(row.ratioPercent)}</td>
-                    <td class="number">${formatRequiredGram(row.requiredG)}</td>
+                    <td>${escapeHtml(row.material_name)}</td>
+                    <td class="number">${formatNumber(row.ratio_percent)}</td>
+                    <td class="number">${formatRequiredGram(row.required_g)}</td>
                   </tr>`,
                 )
                 .join('')
@@ -472,6 +669,11 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         }
       </tbody>
     </table>
+    ${
+      expansionPayload.unresolved_items.length > 0
+        ? `<p style="margin-top:8px;font-size:12px;color:#b45309;">미연결/미전개 항목: ${escapeHtml(expansionPayload.unresolved_items.join(' / '))}</p>`
+        : ''
+    }
 
     <div class="section-title">?앹궛 ?꾨즺 ??湲곗엯?</div>
     <div class="fill-grid">
