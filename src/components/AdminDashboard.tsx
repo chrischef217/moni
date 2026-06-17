@@ -1541,6 +1541,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [recordsError, setRecordsError] = useState('')
   const [records, setRecords] = useState<ProductionRecord[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
+  const [productView, setProductView] = useState<'active' | 'inactive'>('active')
   const [productCatalogLoading, setProductCatalogLoading] = useState(false)
   const [productCatalogError, setProductCatalogError] = useState('')
   const [productCatalog, setProductCatalog] = useState<ProductOption[]>([])
@@ -2010,9 +2011,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
   const filteredProductCatalog = useMemo(() => {
     const keyword = productNameQuery.trim().toLowerCase()
-    if (!keyword) return productCatalog
-    return productCatalog.filter((product) => String(product.product_name ?? '').toLowerCase().includes(keyword))
-  }, [productCatalog, productNameQuery])
+    const byStatus = productCatalog.filter((product) =>
+      productView === 'active' ? product.is_active !== false : product.is_active === false,
+    )
+    if (!keyword) return byStatus
+    return byStatus.filter((product) => String(product.product_name ?? '').toLowerCase().includes(keyword))
+  }, [productCatalog, productNameQuery, productView])
 
   const filteredMaterials = useMemo(() => {
     const keyword = materialsNameQuery.trim().toLowerCase()
@@ -7336,6 +7340,26 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             }
           >
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-gray-900/60 px-4 py-3 text-sm">
+              <div className="inline-flex items-center rounded-xl border border-gray-700 bg-gray-900/80 p-1">
+                <button
+                  type="button"
+                  onClick={() => setProductView('active')}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    productView === 'active' ? 'bg-green-500 text-white' : 'text-gray-300 hover:text-white'
+                  }`}
+                >
+                  활성 제품
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProductView('inactive')}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    productView === 'inactive' ? 'bg-amber-500 text-gray-950' : 'text-gray-300 hover:text-white'
+                  }`}
+                >
+                  비활성 보기
+                </button>
+              </div>
               <p className="text-gray-300">
                 전체 제품 <span className="font-semibold text-white">{formatNumber(productSummary.total)}</span>개 / 활성{' '}
                 <span className="font-semibold text-green-300">{formatNumber(productSummary.active)}</span>개 / 비활성{' '}
