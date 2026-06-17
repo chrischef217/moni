@@ -2011,12 +2011,15 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
 
   const filteredProductCatalog = useMemo(() => {
     const keyword = productNameQuery.trim().toLowerCase()
-    const byStatus = productCatalog.filter((product) =>
+    if (!keyword) return productCatalog
+    return productCatalog.filter((product) => String(product.product_name ?? '').toLowerCase().includes(keyword))
+  }, [productCatalog, productNameQuery])
+
+  const visibleProductCatalog = useMemo(() => {
+    return filteredProductCatalog.filter((product) =>
       productView === 'active' ? product.is_active !== false : product.is_active === false,
     )
-    if (!keyword) return byStatus
-    return byStatus.filter((product) => String(product.product_name ?? '').toLowerCase().includes(keyword))
-  }, [productCatalog, productNameQuery, productView])
+  }, [filteredProductCatalog, productView])
 
   const filteredMaterials = useMemo(() => {
     const keyword = materialsNameQuery.trim().toLowerCase()
@@ -7400,7 +7403,14 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProductCatalog.map((product) => {
+                    {visibleProductCatalog.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-400">
+                          {productView === 'active' ? '활성 제품이 없습니다.' : '비활성 제품이 없습니다.'}
+                        </td>
+                      </tr>
+                    ) : null}
+                    {visibleProductCatalog.map((product) => {
                       const shelfLifeText =
                         product.shelf_life_days !== null && product.shelf_life_days !== undefined
                           ? `${formatNumber(product.shelf_life_days)}개월`
