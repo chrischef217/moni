@@ -313,6 +313,8 @@ type RawMaterialRow = {
   id: string
   item_name: string
   ingredient_type?: string | null
+  linked_product_id?: string | null
+  linked_product_name?: string | null
   food_type_name?: string | null
   food_type?: string | null
   country_of_origin?: string | null
@@ -606,6 +608,7 @@ type RecipeFormState = {
 type MaterialFormState = {
   item_name: string
   ingredient_type: string
+  linked_product_id: string
   food_type: string
   country_of_origin: string
   spec: string
@@ -1149,6 +1152,7 @@ function emptyMaterialForm(material: RawMaterialRow | null): MaterialFormState {
   return {
     item_name: material?.item_name ?? '',
     ingredient_type: ingredientType,
+    linked_product_id: material?.linked_product_id ? String(material.linked_product_id) : '',
     food_type: material?.food_type ?? material?.food_type_name ?? '',
     country_of_origin: material?.country_of_origin ?? '',
     spec: material?.spec ?? '',
@@ -1995,6 +1999,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       if (key && !map.has(key)) map.set(key, product)
     }
     return map
+  }, [productCatalog])
+
+  const semiFinishedProductOptions = useMemo(() => {
+    return productCatalog.filter(
+      (product) => String(product.product_type ?? '').trim() === '반제품' && product.is_active !== false,
+    )
   }, [productCatalog])
 
   const selectedManagedProduct = useMemo(() => {
@@ -5371,6 +5381,10 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         body: JSON.stringify({
           item_name: materialForm.item_name.trim(),
           ingredient_type: materialForm.ingredient_type.trim() || '원재료',
+          linked_product_id:
+            (materialForm.ingredient_type.trim() || '원재료') === '반제품'
+              ? materialForm.linked_product_id.trim() || null
+              : null,
           food_type: materialForm.food_type.trim(),
           country_of_origin: materialForm.country_of_origin.trim(),
           spec: materialForm.spec.trim(),
@@ -7014,6 +7028,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <th className="px-3 py-2 font-medium">소비기한</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">현재재고</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">재료유형</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">연결 반제품</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap text-right">작업</th>
                   </tr>
                 </thead>
@@ -7038,6 +7053,13 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                       </td>
                       <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock_g)}g</td>
                       <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{material.ingredient_type || '원재료'}</td>
+                      <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
+                        {material.ingredient_type === '반제품'
+                          ? material.linked_product_name ||
+                            productCatalogById.get(String(material.linked_product_id ?? '').trim())?.product_name ||
+                            '미연결'
+                          : '-'}
+                      </td>
                       <td className="px-3 py-3 text-right">
                         <div className="inline-flex items-center gap-2">
                           <button
@@ -10679,7 +10701,16 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
           <Field label="재료유형">
             <select
               value={materialForm.ingredient_type}
-              onChange={(event) => setMaterialForm((prev) => ({ ...prev, ingredient_type: event.target.value }))}
+              onChange={(event) =>
+                setMaterialForm((prev) => {
+                  const nextType = event.target.value
+                  return {
+                    ...prev,
+                    ingredient_type: nextType,
+                    linked_product_id: nextType === '반제품' ? prev.linked_product_id : '',
+                  }
+                })
+              }
               className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
             >
               <option value="원재료">원재료</option>
@@ -10688,6 +10719,22 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
               <option value="기타">기타</option>
             </select>
           </Field>
+          {materialForm.ingredient_type === '반제품' ? (
+            <Field label="연결 반제품">
+              <select
+                value={materialForm.linked_product_id}
+                onChange={(event) => setMaterialForm((prev) => ({ ...prev, linked_product_id: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3 py-2 text-white outline-none focus:border-green-500"
+              >
+                <option value="">미연결</option>
+                {semiFinishedProductOptions.map((product) => (
+                  <option key={product.id} value={String(product.id)}>
+                    {product.product_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
           <Field label="식품유형">
             <input
               value={materialForm.food_type}

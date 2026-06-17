@@ -4,6 +4,7 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 const RAW_MATERIAL_INGREDIENT_TYPES = ['원재료', '반제품', '제품/반제품', '기타'] as const
+const PRODUCT_CATEGORY_SEMIFINISHED = '반제품'
 
 function text(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -41,6 +42,22 @@ function isMissingColumnError(message: string, columnName: string): boolean {
   return text.includes(column) && (text.includes('does not exist') || text.includes('schema cache') || text.includes('column'))
 }
 
+async function validateLinkedSemifinishedProductId(
+  supabase: ReturnType<typeof createMoniServiceRoleClient>,
+  linkedProductId: string,
+) {
+  const { data, error } = await supabase
+    .from('products')
+    .select('id, product_type')
+    .eq('id', linkedProductId)
+    .maybeSingle()
+  if (error) throw new Error(error.message || '연결 반제품 검증에 실패했습니다.')
+  if (!data) throw new Error('선택한 연결 반제품을 찾을 수 없습니다.')
+  if (text(data.product_type) !== PRODUCT_CATEGORY_SEMIFINISHED) {
+    throw new Error('연결 반제품은 제품구분이 반제품인 제품만 선택할 수 있습니다.')
+  }
+}
+
 type MappingRow = {
   id: string
   raw_material_name: string | null
@@ -70,7 +87,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (ingredientType === '__INVALID__') {
       return NextResponse.json({ ok: false, error: '재료유형은 원재료/반제품/제품/반제품/기타만 허용됩니다.' }, { status: 400 })
     }
-    const payload = {
+    const hasLinkedProductField = Object.prototype.hasOwnProperty.call(body, 'linked_product_id')
+    const linkedProductIdInput = hasLinkedProductField ? text(body.linked_product_id) : undefined
+    const payload: Record<string, unknown> = {
       item_name: text(body.item_name),
       ingredient_type: ingredientType,
       food_type: text(body.food_type),
@@ -87,20 +106,52 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     const supabase = createMoniServiceRoleClient()
 
-    const { data: beforeRow, error: beforeError } = await supabase
+    let beforeRowResult = await supabase
       .from('raw_materials')
-      .select('id, item_name, business_id')
+      .select('id, item_name, business_id, ingredient_type, linked_product_id')
       .eq('id', id)
       .maybeSingle()
+    if (beforeRowResult.error && isMissingColumnError(beforeRowResult.error.message, 'linked_product_id')) {
+      beforeRowResult = await supabase
+        .from('raw_materials')
+        .select('id, item_name, business_id, ingredient_type')
+        .eq('id', id)
+        .maybeSingle()
+    }
+    const { data: beforeRow, error: beforeError } = beforeRowResult
     if (beforeError) throw new Error(beforeError.message || '?먯옱猷?議고쉶 ?ㅽ뙣')
     if (!beforeRow) {
       return NextResponse.json({ ok: false, error: '?먯옱猷뚮? 李얠쓣 ???놁뒿?덈떎.' }, { status: 404 })
     }
 
+    const effectiveIngredientType = ingredientType ?? text(beforeRow.ingredient_type) ?? '원재료'
+    let linkedProductId: string | null | undefined
+    if (effectiveIngredientType === PRODUCT_CATEGORY_SEMIFINISHED) {
+      if (linkedProductIdInput === undefined) {
+        linkedProductId = text(beforeRow.linked_product_id)
+      } else {
+        linkedProductId = linkedProductIdInput
+      }
+      if (linkedProductId) {
+        await validateLinkedSemifinishedProductId(supabase, linkedProductId)
+      }
+    } else {
+      linkedProductId = null
+    }
+    if (linkedProductId !== undefined) {
+      payload.linked_product_id = linkedProductId
+    }
+
     const oldName = text(beforeRow.item_name) ?? ''
     const businessId = text(beforeRow.business_id)
 
-    const { data, error } = await supabase.from('raw_materials').update(payload).eq('id', id).select('*').maybeSingle()
+    let updateResult = await supabase.from('raw_materials').update(payload).eq('id', id).select('*').maybeSingle()
+    if (updateResult.error && isMissingColumnError(updateResult.error.message, 'linked_product_id')) {
+      const fallbackPayload: Record<string, unknown> = { ...payload }
+      delete fallbackPayload.linked_product_id
+      updateResult = await supabase.from('raw_materials').update(fallbackPayload).eq('id', id).select('*').maybeSingle()
+    }
+    const { data, error } = updateResult
     if (error) throw new Error(error.message || '?먯옱猷??섏젙 ?ㅽ뙣')
     if (!data) {
       return NextResponse.json({ ok: false, error: '?먯옱猷뚮? 李얠쓣 ???놁뒿?덈떎.' }, { status: 404 })
