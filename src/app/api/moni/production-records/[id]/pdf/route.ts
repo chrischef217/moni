@@ -69,8 +69,6 @@ type RecipeRow = {
   ratio_percent?: number | string | null
   ingredient_type?: string | null
   semi_product_id?: string | null
-  raw_material_ref_id?: string | null
-  raw_material_name?: string | null
 }
 
 type MappingRow = {
@@ -188,7 +186,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     if (productId) {
       const byProductId = await supabase
         .from('recipes')
-        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id, raw_material_ref_id, raw_material_name')
+        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
         .eq('product_id', productId)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
@@ -198,7 +196,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     if (recipeRows.length === 0 && productName) {
       const byProductName = await supabase
         .from('recipes')
-        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id, raw_material_ref_id, raw_material_name')
+        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
         .eq('product_name', productName)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
@@ -273,7 +271,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       if (targetProductId) {
         const byId = await supabase
           .from('recipes')
-          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id, raw_material_ref_id, raw_material_name')
+          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
           .eq('product_id', targetProductId)
           .eq('is_active', true)
           .order('sort_order', { ascending: true })
@@ -283,7 +281,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       if (rows.length === 0 && targetProductName) {
         const byName = await supabase
           .from('recipes')
-          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id, raw_material_ref_id, raw_material_name')
+          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
           .eq('product_name', targetProductName)
           .eq('is_active', true)
           .order('sort_order', { ascending: true })
@@ -309,14 +307,9 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       const preferred = resolvePreferredMapping(row)
       const foodTypeName = String(row.food_type_name ?? '').trim()
 
-      const rowRefId = String(row.raw_material_ref_id ?? '').trim()
-      const rowRawName = String(row.raw_material_name ?? '').trim()
-
       const mappedRefId = String(preferred?.raw_material_ref_id ?? preferred?.raw_material_id ?? '').trim()
       const mappedRawName = String(preferred?.raw_material_name ?? '').trim()
 
-      const byRowRef = rowRefId ? rawMaterialById.get(rowRefId) : undefined
-      const byRowRawName = rowRawName ? rawMaterialByName.get(normalizeKey(rowRawName)) : undefined
       const byMappedRef = mappedRefId ? rawMaterialById.get(mappedRefId) : undefined
       const byMappedName = mappedRawName ? rawMaterialByName.get(normalizeKey(mappedRawName)) : undefined
       const fallbackMapping = foodTypeName ? mappingByRawNameFallback.get(normalizeKey(foodTypeName)) : undefined
@@ -324,10 +317,9 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       const byFallbackMappingName = fallbackMappingName ? rawMaterialByName.get(normalizeKey(fallbackMappingName)) : undefined
       const byFoodTypeName = foodTypeName ? rawMaterialByName.get(normalizeKey(foodTypeName)) : undefined
 
-      const materialRow = byRowRef ?? byRowRawName ?? byMappedRef ?? byMappedName ?? byFallbackMappingName ?? byFoodTypeName
+      const materialRow = byMappedRef ?? byMappedName ?? byFallbackMappingName ?? byFoodTypeName
       const materialName =
         String(materialRow?.item_name ?? '').trim() ||
-        rowRawName ||
         mappedRawName ||
         fallbackMappingName ||
         (foodTypeName ? `미연결: ${foodTypeName}` : '미연결')
@@ -337,7 +329,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         materialId,
         materialName,
         linkedProductId,
-        unresolved: !materialRow && !rowRawName && !mappedRawName && !fallbackMappingName,
+        unresolved: !materialRow && !mappedRawName && !fallbackMappingName,
       }
     }
 
