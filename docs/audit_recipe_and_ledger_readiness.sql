@@ -255,9 +255,25 @@ tx_base as (
   select
     rt.id,
     coalesce(rt.txn_type, '') as txn_type,
-    coalesce(rt.lot_number, '') as lot_number,
-    coalesce(rt.note, '') as note,
-    nullif(to_jsonb(rt)->>'production_record_id', '') as production_record_id_text,
+    coalesce(
+      nullif(to_jsonb(rt)->>'lot_number', ''),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'note', ''), '.*lot_number=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'note', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'memo', ''), '.*lot_number=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'memo', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'description', ''), '.*lot_number=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'description', '')),
+      ''
+    ) as lot_number,
+    coalesce(
+      nullif(to_jsonb(rt)->>'note', ''),
+      nullif(to_jsonb(rt)->>'memo', ''),
+      nullif(to_jsonb(rt)->>'description', ''),
+      ''
+    ) as note,
+    coalesce(
+      nullif(to_jsonb(rt)->>'production_record_id', ''),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'note', ''), '.*production_record_id=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'note', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'memo', ''), '.*production_record_id=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'memo', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'description', ''), '.*production_record_id=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'description', ''))
+    ) as production_record_id_text,
     case
       when coalesce(to_jsonb(rt)->>'quantity_g', '') ~ '^-?\\d+(\\.\\d+)?$' then (to_jsonb(rt)->>'quantity_g')::numeric
       when coalesce(to_jsonb(rt)->>'qty_g', '') ~ '^-?\\d+(\\.\\d+)?$' then (to_jsonb(rt)->>'qty_g')::numeric
@@ -767,9 +783,25 @@ with tx_base as (
   select
     rt.id,
     coalesce(rt.txn_type, '') as txn_type,
-    coalesce(rt.lot_number, '') as lot_number,
-    coalesce(rt.note, '') as note,
-    nullif(to_jsonb(rt)->>'production_record_id', '') as production_record_id_text
+    coalesce(
+      nullif(to_jsonb(rt)->>'lot_number', ''),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'note', ''), '.*lot_number=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'note', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'memo', ''), '.*lot_number=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'memo', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'description', ''), '.*lot_number=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'description', '')),
+      ''
+    ) as lot_number,
+    coalesce(
+      nullif(to_jsonb(rt)->>'note', ''),
+      nullif(to_jsonb(rt)->>'memo', ''),
+      nullif(to_jsonb(rt)->>'description', ''),
+      ''
+    ) as note,
+    coalesce(
+      nullif(to_jsonb(rt)->>'production_record_id', ''),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'note', ''), '.*production_record_id=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'note', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'memo', ''), '.*production_record_id=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'memo', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'description', ''), '.*production_record_id=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'description', ''))
+    ) as production_record_id_text
   from raw_material_transactions rt
 ),
 tx_confirm_outbound as (
@@ -812,7 +844,12 @@ with tx_base as (
   select
     rt.id,
     coalesce(rt.txn_type, '') as txn_type,
-    coalesce(rt.note, '') as note
+    coalesce(
+      nullif(to_jsonb(rt)->>'note', ''),
+      nullif(to_jsonb(rt)->>'memo', ''),
+      nullif(to_jsonb(rt)->>'description', ''),
+      ''
+    ) as note
   from raw_material_transactions rt
 )
 select
@@ -1047,8 +1084,18 @@ tx_base as (
   select
     rt.id,
     coalesce(rt.txn_type, '') as txn_type,
-    coalesce(rt.note, '') as note,
-    nullif(to_jsonb(rt)->>'production_record_id', '') as production_record_id_text
+    coalesce(
+      nullif(to_jsonb(rt)->>'note', ''),
+      nullif(to_jsonb(rt)->>'memo', ''),
+      nullif(to_jsonb(rt)->>'description', ''),
+      ''
+    ) as note,
+    coalesce(
+      nullif(to_jsonb(rt)->>'production_record_id', ''),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'note', ''), '.*production_record_id=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'note', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'memo', ''), '.*production_record_id=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'memo', '')),
+      nullif(regexp_replace(coalesce(to_jsonb(rt)->>'description', ''), '.*production_record_id=([^; ]+).*', '\1'), coalesce(to_jsonb(rt)->>'description', ''))
+    ) as production_record_id_text
   from raw_material_transactions rt
 ),
 dup_record as (
