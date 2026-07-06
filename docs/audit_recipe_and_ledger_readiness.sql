@@ -372,6 +372,19 @@ where coalesce(actual_quantity_g, 0) <= 0
 ;
 
 -- 문제 생산기록 상세
+with production_scope as (
+  select
+    pr.id,
+    pr.lot_number,
+    pr.work_date,
+    pr.product_id,
+    pr.product_name,
+    pr.planned_quantity_g,
+    pr.actual_quantity_g,
+    pr.status
+  from production_records pr
+  where coalesce(lower(pr.status), '') not in ('cancelled', 'canceled', 'deleted', 'void')
+)
 select
   ps.id,
   ps.work_date,
