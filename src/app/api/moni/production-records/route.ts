@@ -492,18 +492,6 @@ async function resolveRecipes(record: Record<string, unknown>) {
     recipes = (byId.data ?? []) as RecipeRow[]
   }
 
-  if (recipes.length === 0 && productName) {
-    const byName = await supabase
-      .from('recipes')
-      .select('*')
-      .eq('product_name', productName)
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true })
-    if (byName.error) {
-      throw new ApiError(500, byName.error.message || '?덉떆??議고쉶???ㅽ뙣?덉뒿?덈떎.', 'validation.recipes.query')
-    }
-    recipes = (byName.data ?? []) as RecipeRow[]
-  }
   return recipes
 }
 
@@ -532,17 +520,6 @@ async function resolveExpandedRecipes(record: Record<string, unknown>) {
         .order('sort_order', { ascending: true })
       if (byId.error) throw new ApiError(500, byId.error.message || '레시피 조회에 실패했습니다.', 'validation.recipes.query')
       rows = (byId.data ?? []) as RecipeRow[]
-    }
-
-    if (rows.length === 0 && productName) {
-      const byName = await supabase
-        .from('recipes')
-        .select('*')
-        .eq('product_name', productName)
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true })
-      if (byName.error) throw new ApiError(500, byName.error.message || '레시피 조회에 실패했습니다.', 'validation.recipes.query')
-      rows = (byName.data ?? []) as RecipeRow[]
     }
 
     cache.set(key, rows)
@@ -896,41 +873,12 @@ export async function POST(request: NextRequest) {
       productName = toText((productData as { product_name?: unknown } | null)?.product_name)
     }
 
-    if (!productName) {
-      return NextResponse.json({ ok: false, error: '?쒗뭹紐낆쓣 ?낅젰??二쇱꽭??' }, { status: 400 })
+    if (!productId) {
+      return NextResponse.json({ ok: false, error: 'product_id is required. Register or select a product first.' }, { status: 400 })
     }
 
-    if (!productId && productName) {
-      const { data: existingProducts, error: findProductError } = await supabase
-        .from('products')
-        .select('id, product_name')
-        .eq('product_name', productName)
-        .limit(1)
-      if (findProductError) throw new ApiError(500, findProductError.message || '?쒗뭹 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.product')
-
-      const existingProduct = existingProducts?.[0] as { id?: string | number; product_name?: string } | undefined
-      if (existingProduct?.id) {
-        productId = String(existingProduct.id)
-        productName = toText(existingProduct.product_name) || productName
-      } else {
-        const newProductId = makeProductId()
-        const { data: insertedProduct, error: insertProductError } = await supabase
-          .from('products')
-          .insert({
-            id: newProductId,
-            product_name: productName,
-            product_code: newProductId,
-            product_type: toText(body.product_type) || '완제품',
-            is_active: true,
-            business_id: toText(body.business_id) || 'default',
-          })
-          .select('id, product_name')
-          .single()
-        if (insertProductError) {
-          throw new ApiError(500, insertProductError.message || '?쒗뭹 ?앹꽦???ㅽ뙣?덉뒿?덈떎.', 'mutate.product')
-        }
-        productId = String((insertedProduct as { id?: string | number }).id ?? newProductId)
-      }
+    if (!productName) {
+      return NextResponse.json({ ok: false, error: '?쒗뭹紐낆쓣 ?낅젰??二쇱꽭??' }, { status: 400 })
     }
 
     const lotNumber = await generateLotNumber(workDate)

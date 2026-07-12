@@ -168,13 +168,11 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       productReportNumber = String(byId.data?.[0]?.report_number ?? '').trim()
       productPackingUnitG = resolvePackingUnitG(byId.data?.[0]?.weight_g)
     }
-    if (!productReportNumber && productName) {
-      const byName = await supabase.from('products').select('report_number, weight_g').eq('product_name', productName).limit(1)
-      if (byName.error) throw new Error(byName.error.message || '제품 정보 조회에 실패했습니다.')
-      productReportNumber = String(byName.data?.[0]?.report_number ?? '').trim()
-      if (productPackingUnitG === null) {
-        productPackingUnitG = resolvePackingUnitG(byName.data?.[0]?.weight_g)
-      }
+    if (!productId) {
+      return NextResponse.json(
+        { ok: false, error: 'Production record has no valid product_id. Please link the product first.' },
+        { status: 422 },
+      )
     }
     if (!productReportNumber) productReportNumber = '미등록'
 
@@ -192,16 +190,6 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         .order('sort_order', { ascending: true })
       if (byProductId.error) throw new Error(byProductId.error.message || '레시피 조회에 실패했습니다.')
       recipeRows = (byProductId.data ?? []) as RecipeRow[]
-    }
-    if (recipeRows.length === 0 && productName) {
-      const byProductName = await supabase
-        .from('recipes')
-        .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
-        .eq('product_name', productName)
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true })
-      if (byProductName.error) throw new Error(byProductName.error.message || '레시피 조회에 실패했습니다.')
-      recipeRows = (byProductName.data ?? []) as RecipeRow[]
     }
 
     const businessId = String(data.business_id ?? '').trim() || '20220523011'
@@ -277,16 +265,6 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
           .order('sort_order', { ascending: true })
         if (byId.error) throw new Error(byId.error.message || '레시피 조회에 실패했습니다.')
         rows = (byId.data ?? []) as RecipeRow[]
-      }
-      if (rows.length === 0 && targetProductName) {
-        const byName = await supabase
-          .from('recipes')
-          .select('id, product_id, product_name, food_type_id, food_type_name, ratio_percent, ingredient_type, semi_product_id')
-          .eq('product_name', targetProductName)
-          .eq('is_active', true)
-          .order('sort_order', { ascending: true })
-        if (byName.error) throw new Error(byName.error.message || '레시피 조회에 실패했습니다.')
-        rows = (byName.data ?? []) as RecipeRow[]
       }
       recipeCache.set(key, rows)
       return rows
