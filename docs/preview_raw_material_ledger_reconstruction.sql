@@ -549,16 +549,23 @@ production_scope as (
   from leaf_usage lu
   where coalesce(lu.raw_material_id, '') <> ''
   group by lu.production_date, lu.raw_material_id
-), opening_calc as (
+), running_balance_scope as (
   select
     du.raw_material_id,
-    min(sum(du.inbound_g - du.outbound_g) over (
+    du.event_date,
+    du.source,
+    sum(du.inbound_g - du.outbound_g) over (
       partition by du.raw_material_id
       order by du.event_date, du.source
       rows between unbounded preceding and current row
-    )) as min_running_without_opening
+    ) as running_delta_without_opening
   from daily_union du
-  group by du.raw_material_id
+), opening_calc as (
+  select
+    rbs.raw_material_id,
+    min(rbs.running_delta_without_opening) as min_running_without_opening
+  from running_balance_scope rbs
+  group by rbs.raw_material_id
 ), opening_reco as (
   select
     oc.raw_material_id,
