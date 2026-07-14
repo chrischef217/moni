@@ -53,7 +53,7 @@ with production_scope as (
     and nullif(to_jsonb(pr)->>'product_id', '') is not null
 ), recipe_scope as (
   select
-    r.id as recipe_id,
+    r.id::text as recipe_id,
     nullif(to_jsonb(r)->>'product_id', '') as product_id,
     coalesce(nullif(to_jsonb(r)->>'food_type_id', ''), nullif(to_jsonb(r)->>'food_type_name', '')) as food_key,
     coalesce(nullif(to_jsonb(r)->>'food_type_name', ''), '(무명)') as food_type_name,
@@ -89,7 +89,7 @@ with production_scope as (
     and nullif(to_jsonb(pr)->>'product_id', '') is not null
 ), recipe_scope as (
   select
-    r.id as recipe_id,
+    r.id::text as recipe_id,
     nullif(to_jsonb(r)->>'product_id', '') as product_id,
     nullif(to_jsonb(r)->>'food_type_id', '') as food_type_id,
     coalesce(nullif(to_jsonb(r)->>'food_type_name', ''), '(무명)') as food_type_name,
@@ -177,7 +177,7 @@ production_scope as (
     and nullif(to_jsonb(pr)->>'product_id', '') is not null
 ), recipe_scope as (
   select
-    r.id as recipe_id,
+    r.id::text as recipe_id,
     nullif(to_jsonb(r)->>'product_id', '') as product_id,
     nullif(to_jsonb(r)->>'food_type_id', '') as food_type_id,
     coalesce(nullif(to_jsonb(r)->>'food_type_name', ''), '(무명)') as food_type_name,
@@ -302,7 +302,7 @@ production_scope as (
     and nullif(to_jsonb(pr)->>'product_id', '') is not null
 ), recipe_scope as (
   select
-    r.id as recipe_id,
+    r.id::text as recipe_id,
     nullif(to_jsonb(r)->>'product_id', '') as product_id,
     nullif(to_jsonb(r)->>'food_type_id', '') as food_type_id,
     coalesce(nullif(to_jsonb(r)->>'food_type_name', ''), '(무명)') as food_type_name,
@@ -438,7 +438,7 @@ production_scope as (
     and nullif(to_jsonb(pr)->>'product_id', '') is not null
 ), recipe_scope as (
   select
-    r.id as recipe_id,
+    r.id::text as recipe_id,
     nullif(to_jsonb(r)->>'product_id', '') as product_id,
     nullif(to_jsonb(r)->>'food_type_id', '') as food_type_id,
     coalesce((to_jsonb(r)->>'ratio_percent')::numeric, 0) as ratio_percent,
@@ -629,7 +629,7 @@ production_scope as (
     and nullif(to_jsonb(pr)->>'product_id', '') is not null
 ), recipe_scope as (
   select
-    r.id as recipe_id,
+    r.id::text as recipe_id,
     nullif(to_jsonb(r)->>'product_id', '') as product_id,
     nullif(to_jsonb(r)->>'food_type_id', '') as food_type_id,
     coalesce((to_jsonb(r)->>'ratio_percent')::numeric, 0) as ratio_percent,
@@ -755,4 +755,3 @@ select
     then true
     else false
   end as readiness_for_ledger_insert;
-
