@@ -290,16 +290,26 @@ order by production_record_id, depth, recipe_id;
  * SECTION 5) 최종 leaf 원재료 사용량(반제품 자체 제외)
  * ================================================== */
 with recursive
-production_scope as (
+production_base as (
   select
     pr.id as production_record_id,
-    nullif(to_jsonb(pr)->>'product_id', '') as root_product_id,
-    coalesce((to_jsonb(pr)->>'actual_quantity_g')::numeric, 0) as root_actual_g,
-    coalesce(to_jsonb(pr)->>'work_date', '') as production_date
+    coalesce(to_jsonb(pr)->>'work_date', '') as work_date,
+    nullif(to_jsonb(pr)->>'product_id', '') as product_id,
+    coalesce(nullif(to_jsonb(pr)->>'product_name', ''), '') as snapshot_product_name,
+    coalesce((to_jsonb(pr)->>'planned_quantity_g')::numeric, 0) as planned_quantity_g,
+    coalesce((to_jsonb(pr)->>'actual_quantity_g')::numeric, 0) as actual_quantity_g,
+    coalesce(lower(to_jsonb(pr)->>'status'), '') as status
   from production_records pr
-  where coalesce((to_jsonb(pr)->>'actual_quantity_g')::numeric, 0) > 0
-    and coalesce(lower(to_jsonb(pr)->>'status'), '') not in ('void', 'cancelled', 'canceled', 'deleted')
-    and nullif(to_jsonb(pr)->>'product_id', '') is not null
+  where coalesce(lower(to_jsonb(pr)->>'status'), '') not in ('void', 'cancelled', 'canceled', 'deleted')
+), production_scope as (
+  select
+    pb.production_record_id,
+    pb.product_id as root_product_id,
+    pb.actual_quantity_g as root_actual_g,
+    pb.work_date as production_date
+  from production_base pb
+  where pb.actual_quantity_g > 0
+    and pb.product_id is not null
 ), recipe_scope as (
   select
     r.id::text as recipe_id,
@@ -727,23 +737,151 @@ production_scope as (
     coalesce(r.raw_material_id, e.mapped_raw_material_id),
     coalesce(r.raw_material_name, e.mapped_raw_material_name, '(미매핑)'),
     coalesce(r.is_stock_managed, true)
+), tx_scope as (
+  select
+    coalesce(to_jsonb(rt)->>'transaction_date', to_jsonb(rt)->>'date', '') as tx_date,
+    coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) as raw_material_id,
+    coalesce((to_jsonb(rt)->>'inbound_quantity_g')::numeric, case when lower(coalesce(to_jsonb(rt)->>'transaction_type', '')) in ('inbound', '입고') then coalesce((to_jsonb(rt)->>'quantity_g')::numeric, 0) else 0 end) as inbound_g,
+    coalesce((to_jsonb(rt)->>'outbound_quantity_g')::numeric, case when lower(coalesce(to_jsonb(rt)->>'transaction_type', '')) in ('outbound', '소모', '출고') then coalesce((to_jsonb(rt)->>'quantity_g')::numeric, 0) else 0 end) as outbound_g
+  from raw_material_transactions rt
+), daily_union as (
+  select
+    tx.tx_date as event_date,
+    tx.raw_material_id,
+    sum(tx.inbound_g) as inbound_g,
+    sum(tx.outbound_g) as outbound_g,
+    'actual_tx' as source
+  from tx_scope tx
+  where coalesce(tx.raw_material_id, '') <> ''
+  group by tx.tx_date, tx.raw_material_id
+
+  union all
+
+  select
+    lu.production_date as event_date,
+    lu.raw_material_id,
+    0::numeric as inbound_g,
+    sum(lu.required_g) as outbound_g,
+    'production_preview' as source
+  from leaf_usage lu
+  where coalesce(lu.raw_material_id, '') <> ''
+  group by lu.production_date, lu.raw_material_id
+), running_balance_scope as (
+  select
+    du.raw_material_id,
+    du.event_date,
+    du.source,
+    du.inbound_g,
+    du.outbound_g,
+    sum(du.inbound_g - du.outbound_g) over (
+      partition by du.raw_material_id
+      order by du.event_date, du.source
+      rows between unbounded preceding and current row
+    ) as running_delta_without_opening
+  from daily_union du
+), opening_calc as (
+  select
+    rbs.raw_material_id,
+    min(rbs.running_delta_without_opening) as min_running_without_opening
+  from running_balance_scope rbs
+  group by rbs.raw_material_id
+), opening_reco as (
+  select
+    oc.raw_material_id,
+    greatest(0, -oc.min_running_without_opening) as minimum_opening_no_negative_g
+  from opening_calc oc
+), tx_sum as (
+  select
+    tx.raw_material_id,
+    sum(tx.inbound_g) as tx_inbound_sum_g,
+    sum(tx.outbound_g) as tx_outbound_sum_g
+  from tx_scope tx
+  group by tx.raw_material_id
+), preview_sum as (
+  select
+    lu.raw_material_id,
+    sum(lu.required_g) as preview_outbound_sum_g
+  from leaf_usage lu
+  group by lu.raw_material_id
+), opening_final as (
+  select
+    rs.raw_material_id,
+    rs.raw_material_name,
+    rs.current_stock_g,
+    rs.is_stock_managed,
+    orc.minimum_opening_no_negative_g,
+    (rs.current_stock_g - coalesce(ts.tx_inbound_sum_g, 0) + coalesce(ts.tx_outbound_sum_g, 0) + coalesce(ps.preview_outbound_sum_g, 0)) as opening_to_match_current_stock_g,
+    greatest(
+      orc.minimum_opening_no_negative_g,
+      (rs.current_stock_g - coalesce(ts.tx_inbound_sum_g, 0) + coalesce(ts.tx_outbound_sum_g, 0) + coalesce(ps.preview_outbound_sum_g, 0))
+    ) as recommended_opening_g
+  from raw_scope rs
+  join opening_reco orc on orc.raw_material_id = rs.raw_material_id
+  left join tx_sum ts on ts.raw_material_id = rs.raw_material_id
+  left join preview_sum ps on ps.raw_material_id = rs.raw_material_id
+  where rs.is_stock_managed = true
+    and rs.raw_material_id <> 'ITEM-1780680500370'
+), running_with_opening as (
+  select
+    rbs.raw_material_id,
+    rbs.event_date,
+    rbs.source,
+    (ofn.recommended_opening_g + rbs.running_delta_without_opening) as running_balance_g
+  from running_balance_scope rbs
+  join opening_final ofn on ofn.raw_material_id = rbs.raw_material_id
 ), stock_neg_check as (
   select
     count(*) as negative_row_count
-  from leaf_usage lu
-  join raw_scope rs on rs.raw_material_id = lu.raw_material_id
-  where lu.is_stock_managed = true
-    and lu.raw_material_id <> 'ITEM-1780680500370'
-    and (rs.current_stock_g - lu.required_g) < 0
+  from running_with_opening rwo
+  where rwo.running_balance_g < 0
+), reconciliation_check as (
+  select
+    ofn.raw_material_id,
+    max(rwo.running_balance_g) filter (
+      where (rwo.event_date, rwo.source) = (
+        select max(rwo2.event_date), max(rwo2.source)
+        from running_with_opening rwo2
+        where rwo2.raw_material_id = ofn.raw_material_id
+      )
+    ) as final_virtual_stock_g,
+    ofn.current_stock_g
+  from opening_final ofn
+  left join running_with_opening rwo on rwo.raw_material_id = ofn.raw_material_id
+  group by ofn.raw_material_id, ofn.current_stock_g
+), reconciliation_gap as (
+  select
+    rc.raw_material_id,
+    coalesce(rc.final_virtual_stock_g, ofn.recommended_opening_g) as final_virtual_stock_g,
+    rc.current_stock_g,
+    coalesce(rc.final_virtual_stock_g, ofn.recommended_opening_g) - rc.current_stock_g as final_stock_gap_g
+  from reconciliation_check rc
+  join opening_final ofn on ofn.raw_material_id = rc.raw_material_id
 ), opening_candidate as (
   select
-    count(distinct lu.raw_material_id) as opening_balance_candidate_count
-  from leaf_usage lu
-  where lu.is_stock_managed = true
-    and lu.raw_material_id <> 'ITEM-1780680500370'
+    count(distinct ofn.raw_material_id) as opening_balance_candidate_count
+  from opening_final ofn
+), excluded_records as (
+  select
+    pb.production_record_id,
+    pb.work_date,
+    pb.product_id,
+    pb.snapshot_product_name,
+    pb.planned_quantity_g,
+    pb.actual_quantity_g,
+    pb.status,
+    case
+      when pb.product_id is null then 'product_id 없음'
+      when pb.actual_quantity_g <= 0 then 'actual_quantity_g null/0'
+      else '기타'
+    end as exclusion_reason
+  from production_base pb
+  where pb.product_id is null or pb.actual_quantity_g <= 0
 )
 select
+  (select count(*) from production_base) as total_non_cancelled_production_count,
   (select count(*) from production_scope) as production_record_count,
+  (select count(*) from production_base pb where pb.product_id is not null and pb.actual_quantity_g <= 0) as excluded_nonpositive_actual_count,
+  (select count(*) from production_base pb where pb.product_id is null) as excluded_missing_product_id_count,
   (select count(*) from leaf_usage) as final_leaf_usage_row_count,
   (select count(distinct raw_material_id) from leaf_usage where is_stock_managed = true and raw_material_id <> 'ITEM-1780680500370') as distinct_stock_material_count,
   (select count(*) from leaf_usage where is_stock_managed = false) as non_stock_usage_row_count,
@@ -752,13 +890,48 @@ select
   (select count(*) from leaf_usage where unresolved_flag = 1) as unresolved_mapping_count,
   (select count(*) from leaf_usage where cycle_flag = 1) as expansion_cycle_count,
   (select negative_row_count from stock_neg_check) as stock_negative_balance_count,
-  0::bigint as reconciliation_gap_material_count,
+  (select count(*) from reconciliation_gap where final_stock_gap_g <> 0) as reconciliation_gap_material_count,
   (select opening_balance_candidate_count from opening_candidate) as opening_balance_candidate_count,
   (select count(*) from leaf_usage) as production_outbound_candidate_count,
   case
     when (select count(*) from leaf_usage where unresolved_flag = 1) = 0
      and (select count(*) from leaf_usage where cycle_flag = 1) = 0
      and (select negative_row_count from stock_neg_check) = 0
+     and (select count(*) from reconciliation_gap where final_stock_gap_g <> 0) = 0
+     and (select count(*) from production_base pb where pb.product_id is null) = 0
     then true
     else false
   end as readiness_for_ledger_insert;
+
+/* ==================================================
+ * SECTION 8) 제외된 생산기록 상세
+ * ================================================== */
+with production_base as (
+  select
+    pr.id as production_record_id,
+    coalesce(to_jsonb(pr)->>'work_date', '') as work_date,
+    nullif(to_jsonb(pr)->>'product_id', '') as product_id,
+    coalesce(nullif(to_jsonb(pr)->>'product_name', ''), '') as snapshot_product_name,
+    coalesce((to_jsonb(pr)->>'planned_quantity_g')::numeric, 0) as planned_quantity_g,
+    coalesce((to_jsonb(pr)->>'actual_quantity_g')::numeric, 0) as actual_quantity_g,
+    coalesce(lower(to_jsonb(pr)->>'status'), '') as status
+  from production_records pr
+  where coalesce(lower(to_jsonb(pr)->>'status'), '') not in ('void', 'cancelled', 'canceled', 'deleted')
+)
+select
+  pb.production_record_id,
+  pb.work_date,
+  pb.product_id,
+  pb.snapshot_product_name as product_name,
+  pb.planned_quantity_g,
+  pb.actual_quantity_g,
+  pb.status,
+  case
+    when pb.product_id is null then 'product_id 없음'
+    when pb.actual_quantity_g <= 0 then 'actual_quantity_g null/0'
+    else '기타'
+  end as exclusion_reason
+from production_base pb
+where pb.product_id is null
+   or pb.actual_quantity_g <= 0
+order by pb.work_date, pb.production_record_id;
