@@ -530,16 +530,18 @@ production_scope as (
     and coalesce(r.semifinished_usage_type, 'stock') = 'inline'
   )
   group by e.production_date, coalesce(r.raw_material_id, e.mapped_raw_material_id), coalesce(r.raw_material_name, e.mapped_raw_material_name, '(미매핑)'), coalesce(r.is_stock_managed, true)
-), tx_scope as (
+), tx_base as (
   select
+    to_jsonb(rt)->>'id' as transaction_id,
     coalesce(
       nullif(to_jsonb(rt)->>'txn_date', ''),
       nullif(to_jsonb(rt)->>'transaction_date', ''),
-      nullif(to_jsonb(rt)->>'date', ''),
       nullif(to_jsonb(rt)->>'created_at', ''),
       ''
     ) as tx_date,
-    coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) as raw_material_id,
+    nullif(to_jsonb(rt)->>'item_code', '') as transaction_item_code,
+    coalesce(to_jsonb(rt)->>'item_name', '') as transaction_item_name,
+    coalesce(to_jsonb(rt)->>'raw_material_name', '') as transaction_raw_material_name,
     upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) as normalized_tx_type,
     coalesce(
       (nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric,
@@ -561,20 +563,49 @@ production_scope as (
       when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('INBOUND', '입고', 'OUTBOUND', '소모', '출고') then 0
       else 1
     end as unknown_tx_type_flag,
-    case when coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') = '' then 1 else 0 end as blank_tx_date_flag,
-    case when coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) is null then 1 else 0 end as blank_raw_material_id_flag,
+    case when coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') = '' then 1 else 0 end as blank_tx_date_flag,
+    case when nullif(to_jsonb(rt)->>'item_code', '') is null then 1 else 0 end as blank_item_code_flag,
     coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), '') as raw_tx_type
   from raw_material_transactions rt
+), tx_scope as (
+  select
+    tb.*,
+    resolved.resolved_raw_material_id,
+    resolved.resolved_raw_material_name,
+    case
+      when tb.transaction_item_code is null then 'BLANK_ITEM_CODE'
+      when resolved.material_resolution_status is null then 'UNMATCHED'
+      else resolved.material_resolution_status
+    end as material_resolution_status,
+    case when tb.transaction_item_code is not null and resolved.resolved_raw_material_id is null then 1 else 0 end as unmatched_transaction_material_flag
+  from tx_base tb
+  left join lateral (
+    select
+      rm.id as resolved_raw_material_id,
+      coalesce(nullif(to_jsonb(rm)->>'item_name', ''), '(무명)') as resolved_raw_material_name,
+      case
+        when nullif(to_jsonb(rm)->>'item_code', '') = tb.transaction_item_code then 'ITEM_CODE_MATCH'
+        when rm.id = tb.transaction_item_code then 'ID_MATCH'
+      end as material_resolution_status
+    from raw_materials rm
+    where tb.transaction_item_code is not null
+      and (
+        nullif(to_jsonb(rm)->>'item_code', '') = tb.transaction_item_code
+        or rm.id = tb.transaction_item_code
+      )
+    order by case when nullif(to_jsonb(rm)->>'item_code', '') = tb.transaction_item_code then 0 else 1 end
+    limit 1
+  ) resolved on true
 ), daily_union as (
   select
     tx.tx_date as event_date,
-    tx.raw_material_id,
+    tx.resolved_raw_material_id as raw_material_id,
     sum(tx.inbound_g) as inbound_g,
     sum(tx.outbound_g) as outbound_g,
     'actual_tx' as source
   from tx_scope tx
-  where coalesce(tx.raw_material_id, '') <> ''
-  group by tx.tx_date, tx.raw_material_id
+  where coalesce(tx.resolved_raw_material_id, '') <> ''
+  group by tx.tx_date, tx.resolved_raw_material_id
 
   union all
 
@@ -618,11 +649,11 @@ production_scope as (
   from raw_materials rm
 ), tx_sum as (
   select
-    tx.raw_material_id,
+    tx.resolved_raw_material_id as raw_material_id,
     sum(tx.inbound_g) as tx_inbound_sum_g,
     sum(tx.outbound_g) as tx_outbound_sum_g
   from tx_scope tx
-  group by tx.raw_material_id
+  group by tx.resolved_raw_material_id
 ), preview_sum as (
   select
     lu.raw_material_id,
@@ -661,16 +692,18 @@ order by rc.raw_material_name;
 /* ==================================================
  * SECTION 7) 거래내역 스키마 해석 검증
  * ================================================== */
-with tx_scope as (
+with tx_base as (
   select
+    to_jsonb(rt)->>'id' as transaction_id,
     coalesce(
       nullif(to_jsonb(rt)->>'txn_date', ''),
       nullif(to_jsonb(rt)->>'transaction_date', ''),
-      nullif(to_jsonb(rt)->>'date', ''),
       nullif(to_jsonb(rt)->>'created_at', ''),
       ''
     ) as tx_date,
-    coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) as raw_material_id,
+    nullif(to_jsonb(rt)->>'item_code', '') as transaction_item_code,
+    coalesce(to_jsonb(rt)->>'item_name', '') as transaction_item_name,
+    coalesce(to_jsonb(rt)->>'raw_material_name', '') as transaction_raw_material_name,
     upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) as normalized_tx_type,
     coalesce(
       (nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric,
@@ -692,10 +725,39 @@ with tx_scope as (
       when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('INBOUND', '입고', 'OUTBOUND', '소모', '출고') then 0
       else 1
     end as unknown_tx_type_flag,
-    case when coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') = '' then 1 else 0 end as blank_tx_date_flag,
-    case when coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) is null then 1 else 0 end as blank_raw_material_id_flag,
+    case when coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') = '' then 1 else 0 end as blank_tx_date_flag,
+    case when nullif(to_jsonb(rt)->>'item_code', '') is null then 1 else 0 end as blank_item_code_flag,
     coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), '') as raw_tx_type
   from raw_material_transactions rt
+), tx_scope as (
+  select
+    tb.*,
+    resolved.resolved_raw_material_id,
+    resolved.resolved_raw_material_name,
+    case
+      when tb.transaction_item_code is null then 'BLANK_ITEM_CODE'
+      when resolved.material_resolution_status is null then 'UNMATCHED'
+      else resolved.material_resolution_status
+    end as material_resolution_status,
+    case when tb.transaction_item_code is not null and resolved.resolved_raw_material_id is null then 1 else 0 end as unmatched_transaction_material_flag
+  from tx_base tb
+  left join lateral (
+    select
+      rm.id as resolved_raw_material_id,
+      coalesce(nullif(to_jsonb(rm)->>'item_name', ''), '(무명)') as resolved_raw_material_name,
+      case
+        when nullif(to_jsonb(rm)->>'item_code', '') = tb.transaction_item_code then 'ITEM_CODE_MATCH'
+        when rm.id = tb.transaction_item_code then 'ID_MATCH'
+      end as material_resolution_status
+    from raw_materials rm
+    where tb.transaction_item_code is not null
+      and (
+        nullif(to_jsonb(rm)->>'item_code', '') = tb.transaction_item_code
+        or rm.id = tb.transaction_item_code
+      )
+    order by case when nullif(to_jsonb(rm)->>'item_code', '') = tb.transaction_item_code then 0 else 1 end
+    limit 1
+  ) resolved on true
 )
 select
   count(*) as transaction_count,
@@ -705,7 +767,8 @@ select
   coalesce(sum(inbound_g), 0) as existing_inbound_g,
   coalesce(sum(outbound_g), 0) as existing_outbound_g,
   coalesce(sum(blank_tx_date_flag), 0) as blank_tx_date_count,
-  coalesce(sum(blank_raw_material_id_flag), 0) as blank_raw_material_id_count
+  coalesce(sum(blank_item_code_flag), 0) as blank_item_code_count,
+  coalesce(sum(unmatched_transaction_material_flag), 0) as unmatched_transaction_material_count
 from tx_scope;
 
 with tx_scope as (
@@ -723,6 +786,40 @@ select
 from tx_scope
 group by raw_tx_type, normalized_tx_type
 order by row_count desc, raw_tx_type;
+
+select
+  to_jsonb(rt)->>'id' as transaction_id,
+  coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') as txn_date,
+  coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), '') as raw_tx_type,
+  nullif(to_jsonb(rt)->>'item_code', '') as item_code,
+  coalesce(to_jsonb(rt)->>'item_name', '') as item_name,
+  coalesce(to_jsonb(rt)->>'raw_material_name', '') as raw_material_name,
+  resolved.resolved_raw_material_id,
+  resolved.resolved_raw_material_name,
+  case
+    when nullif(to_jsonb(rt)->>'item_code', '') is null then 'BLANK_ITEM_CODE'
+    when resolved.material_resolution_status is null then 'UNMATCHED'
+    else resolved.material_resolution_status
+  end as material_resolution_status
+from raw_material_transactions rt
+left join lateral (
+  select
+    rm.id as resolved_raw_material_id,
+    coalesce(nullif(to_jsonb(rm)->>'item_name', ''), '(무명)') as resolved_raw_material_name,
+    case
+      when nullif(to_jsonb(rm)->>'item_code', '') = nullif(to_jsonb(rt)->>'item_code', '') then 'ITEM_CODE_MATCH'
+      when rm.id = nullif(to_jsonb(rt)->>'item_code', '') then 'ID_MATCH'
+    end as material_resolution_status
+  from raw_materials rm
+  where nullif(to_jsonb(rt)->>'item_code', '') is not null
+    and (
+      nullif(to_jsonb(rm)->>'item_code', '') = nullif(to_jsonb(rt)->>'item_code', '')
+      or rm.id = nullif(to_jsonb(rt)->>'item_code', '')
+    )
+  order by case when nullif(to_jsonb(rm)->>'item_code', '') = nullif(to_jsonb(rt)->>'item_code', '') then 0 else 1 end
+  limit 1
+) resolved on true
+order by txn_date, transaction_id;
 
 /* ==================================================
  * SECTION 8) 제외된 생산기록 상세
@@ -874,16 +971,18 @@ production_base as (
     coalesce(r.raw_material_id, e.mapped_raw_material_id),
     coalesce(r.raw_material_name, e.mapped_raw_material_name, '(미매핑)'),
     coalesce(r.is_stock_managed, true)
-), tx_scope as (
+), tx_base as (
   select
+    to_jsonb(rt)->>'id' as transaction_id,
     coalesce(
       nullif(to_jsonb(rt)->>'txn_date', ''),
       nullif(to_jsonb(rt)->>'transaction_date', ''),
-      nullif(to_jsonb(rt)->>'date', ''),
       nullif(to_jsonb(rt)->>'created_at', ''),
       ''
     ) as tx_date,
-    coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) as raw_material_id,
+    nullif(to_jsonb(rt)->>'item_code', '') as transaction_item_code,
+    coalesce(to_jsonb(rt)->>'item_name', '') as transaction_item_name,
+    coalesce(to_jsonb(rt)->>'raw_material_name', '') as transaction_raw_material_name,
     upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) as normalized_tx_type,
     coalesce(
       (nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric,
@@ -905,20 +1004,49 @@ production_base as (
       when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('INBOUND', '입고', 'OUTBOUND', '소모', '출고') then 0
       else 1
     end as unknown_tx_type_flag,
-    case when coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') = '' then 1 else 0 end as blank_tx_date_flag,
-    case when coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) is null then 1 else 0 end as blank_raw_material_id_flag,
+    case when coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') = '' then 1 else 0 end as blank_tx_date_flag,
+    case when nullif(to_jsonb(rt)->>'item_code', '') is null then 1 else 0 end as blank_item_code_flag,
     coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), '') as raw_tx_type
   from raw_material_transactions rt
+), tx_scope as (
+  select
+    tb.*,
+    resolved.resolved_raw_material_id,
+    resolved.resolved_raw_material_name,
+    case
+      when tb.transaction_item_code is null then 'BLANK_ITEM_CODE'
+      when resolved.material_resolution_status is null then 'UNMATCHED'
+      else resolved.material_resolution_status
+    end as material_resolution_status,
+    case when tb.transaction_item_code is not null and resolved.resolved_raw_material_id is null then 1 else 0 end as unmatched_transaction_material_flag
+  from tx_base tb
+  left join lateral (
+    select
+      rm.id as resolved_raw_material_id,
+      coalesce(nullif(to_jsonb(rm)->>'item_name', ''), '(무명)') as resolved_raw_material_name,
+      case
+        when nullif(to_jsonb(rm)->>'item_code', '') = tb.transaction_item_code then 'ITEM_CODE_MATCH'
+        when rm.id = tb.transaction_item_code then 'ID_MATCH'
+      end as material_resolution_status
+    from raw_materials rm
+    where tb.transaction_item_code is not null
+      and (
+        nullif(to_jsonb(rm)->>'item_code', '') = tb.transaction_item_code
+        or rm.id = tb.transaction_item_code
+      )
+    order by case when nullif(to_jsonb(rm)->>'item_code', '') = tb.transaction_item_code then 0 else 1 end
+    limit 1
+  ) resolved on true
 ), daily_union as (
   select
     tx.tx_date as event_date,
-    tx.raw_material_id,
+    tx.resolved_raw_material_id as raw_material_id,
     sum(tx.inbound_g) as inbound_g,
     sum(tx.outbound_g) as outbound_g,
     'actual_tx' as source
   from tx_scope tx
-  where coalesce(tx.raw_material_id, '') <> ''
-  group by tx.tx_date, tx.raw_material_id
+  where coalesce(tx.resolved_raw_material_id, '') <> ''
+  group by tx.tx_date, tx.resolved_raw_material_id
 
   union all
 
@@ -957,11 +1085,11 @@ production_base as (
   from opening_calc oc
 ), tx_sum as (
   select
-    tx.raw_material_id,
+    tx.resolved_raw_material_id as raw_material_id,
     sum(tx.inbound_g) as tx_inbound_sum_g,
     sum(tx.outbound_g) as tx_outbound_sum_g
   from tx_scope tx
-  group by tx.raw_material_id
+  group by tx.resolved_raw_material_id
 ), preview_sum as (
   select
     lu.raw_material_id,
@@ -1036,7 +1164,8 @@ production_base as (
     coalesce(sum(case when tx.normalized_tx_type in ('OUTBOUND', '소모', '출고') then 1 else 0 end), 0) as outbound_transaction_count,
     coalesce(sum(tx.unknown_tx_type_flag), 0) as unknown_tx_type_count,
     coalesce(sum(tx.blank_tx_date_flag), 0) as blank_tx_date_count,
-    coalesce(sum(tx.blank_raw_material_id_flag), 0) as blank_raw_material_id_count
+    coalesce(sum(tx.blank_item_code_flag), 0) as blank_item_code_count,
+    coalesce(sum(tx.unmatched_transaction_material_flag), 0) as unmatched_transaction_material_count
   from tx_scope tx
 ), excluded_records as (
   select
@@ -1065,7 +1194,8 @@ select
   (select outbound_transaction_count from tx_schema_summary) as outbound_transaction_count,
   (select unknown_tx_type_count from tx_schema_summary) as unknown_tx_type_count,
   (select blank_tx_date_count from tx_schema_summary) as blank_tx_date_count,
-  (select blank_raw_material_id_count from tx_schema_summary) as blank_raw_material_id_count,
+  (select blank_item_code_count from tx_schema_summary) as blank_item_code_count,
+  (select unmatched_transaction_material_count from tx_schema_summary) as unmatched_transaction_material_count,
   (select count(*) from leaf_usage) as final_leaf_usage_row_count,
   (select count(distinct raw_material_id) from leaf_usage where is_stock_managed = true and raw_material_id <> 'ITEM-1780680500370') as distinct_stock_material_count,
   (select count(*) from leaf_usage where is_stock_managed = false) as non_stock_usage_row_count,
@@ -1085,7 +1215,8 @@ select
      and (select count(*) from production_base pb where pb.product_id is null) = 0
      and (select unknown_tx_type_count from tx_schema_summary) = 0
      and (select blank_tx_date_count from tx_schema_summary) = 0
-     and (select blank_raw_material_id_count from tx_schema_summary) = 0
+     and (select blank_item_code_count from tx_schema_summary) = 0
+     and (select unmatched_transaction_material_count from tx_schema_summary) = 0
     then true
     else false
   end as readiness_for_ledger_insert;
