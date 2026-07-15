@@ -532,10 +532,38 @@ production_scope as (
   group by e.production_date, coalesce(r.raw_material_id, e.mapped_raw_material_id), coalesce(r.raw_material_name, e.mapped_raw_material_name, '(미매핑)'), coalesce(r.is_stock_managed, true)
 ), tx_scope as (
   select
-    coalesce(to_jsonb(rt)->>'transaction_date', to_jsonb(rt)->>'date', '') as tx_date,
+    coalesce(
+      nullif(to_jsonb(rt)->>'txn_date', ''),
+      nullif(to_jsonb(rt)->>'transaction_date', ''),
+      nullif(to_jsonb(rt)->>'date', ''),
+      nullif(to_jsonb(rt)->>'created_at', ''),
+      ''
+    ) as tx_date,
     coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) as raw_material_id,
-    coalesce((to_jsonb(rt)->>'inbound_quantity_g')::numeric, case when lower(coalesce(to_jsonb(rt)->>'transaction_type', '')) in ('inbound', '입고') then coalesce((to_jsonb(rt)->>'quantity_g')::numeric, 0) else 0 end) as inbound_g,
-    coalesce((to_jsonb(rt)->>'outbound_quantity_g')::numeric, case when lower(coalesce(to_jsonb(rt)->>'transaction_type', '')) in ('outbound', '소모', '출고') then coalesce((to_jsonb(rt)->>'quantity_g')::numeric, 0) else 0 end) as outbound_g
+    upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) as normalized_tx_type,
+    coalesce(
+      (nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric,
+      (nullif(to_jsonb(rt)->>'inbound_quantity_g', ''))::numeric,
+      (nullif(to_jsonb(rt)->>'outbound_quantity_g', ''))::numeric,
+      0
+    ) as quantity_g,
+    case
+      when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('INBOUND', '입고')
+        then coalesce((nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric, (nullif(to_jsonb(rt)->>'inbound_quantity_g', ''))::numeric, 0)
+      else 0
+    end as inbound_g,
+    case
+      when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('OUTBOUND', '소모', '출고')
+        then coalesce((nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric, (nullif(to_jsonb(rt)->>'outbound_quantity_g', ''))::numeric, 0)
+      else 0
+    end as outbound_g,
+    case
+      when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('INBOUND', '입고', 'OUTBOUND', '소모', '출고') then 0
+      else 1
+    end as unknown_tx_type_flag,
+    case when coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') = '' then 1 else 0 end as blank_tx_date_flag,
+    case when coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) is null then 1 else 0 end as blank_raw_material_id_flag,
+    coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), '') as raw_tx_type
   from raw_material_transactions rt
 ), daily_union as (
   select
@@ -631,19 +659,128 @@ where rc.is_stock_managed = true
 order by rc.raw_material_name;
 
 /* ==================================================
- * SECTION 7) 최종 readiness summary (SELECT only)
+ * SECTION 7) 거래내역 스키마 해석 검증
  * ================================================== */
-with recursive
-production_scope as (
+with tx_scope as (
+  select
+    coalesce(
+      nullif(to_jsonb(rt)->>'txn_date', ''),
+      nullif(to_jsonb(rt)->>'transaction_date', ''),
+      nullif(to_jsonb(rt)->>'date', ''),
+      nullif(to_jsonb(rt)->>'created_at', ''),
+      ''
+    ) as tx_date,
+    coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) as raw_material_id,
+    upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) as normalized_tx_type,
+    coalesce(
+      (nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric,
+      (nullif(to_jsonb(rt)->>'inbound_quantity_g', ''))::numeric,
+      (nullif(to_jsonb(rt)->>'outbound_quantity_g', ''))::numeric,
+      0
+    ) as quantity_g,
+    case
+      when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('INBOUND', '입고')
+        then coalesce((nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric, (nullif(to_jsonb(rt)->>'inbound_quantity_g', ''))::numeric, 0)
+      else 0
+    end as inbound_g,
+    case
+      when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('OUTBOUND', '소모', '출고')
+        then coalesce((nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric, (nullif(to_jsonb(rt)->>'outbound_quantity_g', ''))::numeric, 0)
+      else 0
+    end as outbound_g,
+    case
+      when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('INBOUND', '입고', 'OUTBOUND', '소모', '출고') then 0
+      else 1
+    end as unknown_tx_type_flag,
+    case when coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') = '' then 1 else 0 end as blank_tx_date_flag,
+    case when coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) is null then 1 else 0 end as blank_raw_material_id_flag,
+    coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), '') as raw_tx_type
+  from raw_material_transactions rt
+)
+select
+  count(*) as transaction_count,
+  coalesce(sum(case when normalized_tx_type in ('INBOUND', '입고') then 1 else 0 end), 0) as inbound_transaction_count,
+  coalesce(sum(case when normalized_tx_type in ('OUTBOUND', '소모', '출고') then 1 else 0 end), 0) as outbound_transaction_count,
+  coalesce(sum(unknown_tx_type_flag), 0) as unknown_tx_type_count,
+  coalesce(sum(inbound_g), 0) as existing_inbound_g,
+  coalesce(sum(outbound_g), 0) as existing_outbound_g,
+  coalesce(sum(blank_tx_date_flag), 0) as blank_tx_date_count,
+  coalesce(sum(blank_raw_material_id_flag), 0) as blank_raw_material_id_count
+from tx_scope;
+
+with tx_scope as (
+  select
+    coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), '') as raw_tx_type,
+    upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) as normalized_tx_type,
+    coalesce((nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric, 0) as quantity_g
+  from raw_material_transactions rt
+)
+select
+  raw_tx_type,
+  normalized_tx_type,
+  count(*) as row_count,
+  sum(quantity_g) as total_quantity_g
+from tx_scope
+group by raw_tx_type, normalized_tx_type
+order by row_count desc, raw_tx_type;
+
+/* ==================================================
+ * SECTION 8) 제외된 생산기록 상세
+ * ================================================== */
+with production_base as (
   select
     pr.id as production_record_id,
-    nullif(to_jsonb(pr)->>'product_id', '') as root_product_id,
-    coalesce((to_jsonb(pr)->>'actual_quantity_g')::numeric, 0) as root_actual_g,
-    coalesce(to_jsonb(pr)->>'work_date', '') as production_date
+    coalesce(to_jsonb(pr)->>'work_date', '') as work_date,
+    nullif(to_jsonb(pr)->>'product_id', '') as product_id,
+    coalesce(nullif(to_jsonb(pr)->>'product_name', ''), '') as snapshot_product_name,
+    coalesce((to_jsonb(pr)->>'planned_quantity_g')::numeric, 0) as planned_quantity_g,
+    coalesce((to_jsonb(pr)->>'actual_quantity_g')::numeric, 0) as actual_quantity_g,
+    coalesce(lower(to_jsonb(pr)->>'status'), '') as status
   from production_records pr
-  where coalesce((to_jsonb(pr)->>'actual_quantity_g')::numeric, 0) > 0
-    and coalesce(lower(to_jsonb(pr)->>'status'), '') not in ('void', 'cancelled', 'canceled', 'deleted')
-    and nullif(to_jsonb(pr)->>'product_id', '') is not null
+  where coalesce(lower(to_jsonb(pr)->>'status'), '') not in ('void', 'cancelled', 'canceled', 'deleted')
+)
+select
+  pb.production_record_id,
+  pb.work_date,
+  pb.product_id,
+  pb.snapshot_product_name as product_name,
+  pb.planned_quantity_g,
+  pb.actual_quantity_g,
+  pb.status,
+  case
+    when pb.product_id is null then 'product_id 없음'
+    when pb.actual_quantity_g <= 0 then 'actual_quantity_g null/0'
+    else '기타'
+  end as exclusion_reason
+from production_base pb
+where pb.product_id is null
+   or pb.actual_quantity_g <= 0
+order by pb.work_date, pb.production_record_id;
+
+/* ==================================================
+ * SECTION 9) 최종 readiness summary (SELECT only)
+ * ================================================== */
+with recursive
+production_base as (
+  select
+    pr.id as production_record_id,
+    coalesce(to_jsonb(pr)->>'work_date', '') as work_date,
+    nullif(to_jsonb(pr)->>'product_id', '') as product_id,
+    coalesce(nullif(to_jsonb(pr)->>'product_name', ''), '') as snapshot_product_name,
+    coalesce((to_jsonb(pr)->>'planned_quantity_g')::numeric, 0) as planned_quantity_g,
+    coalesce((to_jsonb(pr)->>'actual_quantity_g')::numeric, 0) as actual_quantity_g,
+    coalesce(lower(to_jsonb(pr)->>'status'), '') as status
+  from production_records pr
+  where coalesce(lower(to_jsonb(pr)->>'status'), '') not in ('void', 'cancelled', 'canceled', 'deleted')
+), production_scope as (
+  select
+    pb.production_record_id,
+    pb.product_id as root_product_id,
+    pb.actual_quantity_g as root_actual_g,
+    pb.work_date as production_date
+  from production_base pb
+  where pb.actual_quantity_g > 0
+    and pb.product_id is not null
 ), recipe_scope as (
   select
     r.id::text as recipe_id,
@@ -739,10 +876,38 @@ production_scope as (
     coalesce(r.is_stock_managed, true)
 ), tx_scope as (
   select
-    coalesce(to_jsonb(rt)->>'transaction_date', to_jsonb(rt)->>'date', '') as tx_date,
+    coalesce(
+      nullif(to_jsonb(rt)->>'txn_date', ''),
+      nullif(to_jsonb(rt)->>'transaction_date', ''),
+      nullif(to_jsonb(rt)->>'date', ''),
+      nullif(to_jsonb(rt)->>'created_at', ''),
+      ''
+    ) as tx_date,
     coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) as raw_material_id,
-    coalesce((to_jsonb(rt)->>'inbound_quantity_g')::numeric, case when lower(coalesce(to_jsonb(rt)->>'transaction_type', '')) in ('inbound', '입고') then coalesce((to_jsonb(rt)->>'quantity_g')::numeric, 0) else 0 end) as inbound_g,
-    coalesce((to_jsonb(rt)->>'outbound_quantity_g')::numeric, case when lower(coalesce(to_jsonb(rt)->>'transaction_type', '')) in ('outbound', '소모', '출고') then coalesce((to_jsonb(rt)->>'quantity_g')::numeric, 0) else 0 end) as outbound_g
+    upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) as normalized_tx_type,
+    coalesce(
+      (nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric,
+      (nullif(to_jsonb(rt)->>'inbound_quantity_g', ''))::numeric,
+      (nullif(to_jsonb(rt)->>'outbound_quantity_g', ''))::numeric,
+      0
+    ) as quantity_g,
+    case
+      when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('INBOUND', '입고')
+        then coalesce((nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric, (nullif(to_jsonb(rt)->>'inbound_quantity_g', ''))::numeric, 0)
+      else 0
+    end as inbound_g,
+    case
+      when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('OUTBOUND', '소모', '출고')
+        then coalesce((nullif(to_jsonb(rt)->>'quantity_g', ''))::numeric, (nullif(to_jsonb(rt)->>'outbound_quantity_g', ''))::numeric, 0)
+      else 0
+    end as outbound_g,
+    case
+      when upper(trim(coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), ''))) in ('INBOUND', '입고', 'OUTBOUND', '소모', '출고') then 0
+      else 1
+    end as unknown_tx_type_flag,
+    case when coalesce(nullif(to_jsonb(rt)->>'txn_date', ''), nullif(to_jsonb(rt)->>'transaction_date', ''), nullif(to_jsonb(rt)->>'date', ''), nullif(to_jsonb(rt)->>'created_at', ''), '') = '' then 1 else 0 end as blank_tx_date_flag,
+    case when coalesce(nullif(to_jsonb(rt)->>'raw_material_id', ''), nullif(to_jsonb(rt)->>'material_id', '')) is null then 1 else 0 end as blank_raw_material_id_flag,
+    coalesce(nullif(to_jsonb(rt)->>'txn_type', ''), nullif(to_jsonb(rt)->>'transaction_type', ''), '') as raw_tx_type
   from raw_material_transactions rt
 ), daily_union as (
   select
@@ -834,20 +999,24 @@ production_scope as (
     count(*) as negative_row_count
   from running_with_opening rwo
   where rwo.running_balance_g < 0
+), final_balance_ranked as (
+  select
+    rwo.raw_material_id,
+    rwo.running_balance_g,
+    ofn.current_stock_g,
+    row_number() over (
+      partition by rwo.raw_material_id
+      order by rwo.event_date desc, rwo.source desc
+    ) as final_row_rank
+  from running_with_opening rwo
+  join opening_final ofn on ofn.raw_material_id = rwo.raw_material_id
 ), reconciliation_check as (
   select
-    ofn.raw_material_id,
-    max(rwo.running_balance_g) filter (
-      where (rwo.event_date, rwo.source) = (
-        select max(rwo2.event_date), max(rwo2.source)
-        from running_with_opening rwo2
-        where rwo2.raw_material_id = ofn.raw_material_id
-      )
-    ) as final_virtual_stock_g,
-    ofn.current_stock_g
-  from opening_final ofn
-  left join running_with_opening rwo on rwo.raw_material_id = ofn.raw_material_id
-  group by ofn.raw_material_id, ofn.current_stock_g
+    fbr.raw_material_id,
+    fbr.running_balance_g as final_virtual_stock_g,
+    fbr.current_stock_g
+  from final_balance_ranked fbr
+  where fbr.final_row_rank = 1
 ), reconciliation_gap as (
   select
     rc.raw_material_id,
@@ -860,6 +1029,15 @@ production_scope as (
   select
     count(distinct ofn.raw_material_id) as opening_balance_candidate_count
   from opening_final ofn
+), tx_schema_summary as (
+  select
+    count(*) as transaction_count,
+    coalesce(sum(case when tx.normalized_tx_type in ('INBOUND', '입고') then 1 else 0 end), 0) as inbound_transaction_count,
+    coalesce(sum(case when tx.normalized_tx_type in ('OUTBOUND', '소모', '출고') then 1 else 0 end), 0) as outbound_transaction_count,
+    coalesce(sum(tx.unknown_tx_type_flag), 0) as unknown_tx_type_count,
+    coalesce(sum(tx.blank_tx_date_flag), 0) as blank_tx_date_count,
+    coalesce(sum(tx.blank_raw_material_id_flag), 0) as blank_raw_material_id_count
+  from tx_scope tx
 ), excluded_records as (
   select
     pb.production_record_id,
@@ -882,6 +1060,12 @@ select
   (select count(*) from production_scope) as production_record_count,
   (select count(*) from production_base pb where pb.product_id is not null and pb.actual_quantity_g <= 0) as excluded_nonpositive_actual_count,
   (select count(*) from production_base pb where pb.product_id is null) as excluded_missing_product_id_count,
+  (select transaction_count from tx_schema_summary) as transaction_count,
+  (select inbound_transaction_count from tx_schema_summary) as inbound_transaction_count,
+  (select outbound_transaction_count from tx_schema_summary) as outbound_transaction_count,
+  (select unknown_tx_type_count from tx_schema_summary) as unknown_tx_type_count,
+  (select blank_tx_date_count from tx_schema_summary) as blank_tx_date_count,
+  (select blank_raw_material_id_count from tx_schema_summary) as blank_raw_material_id_count,
   (select count(*) from leaf_usage) as final_leaf_usage_row_count,
   (select count(distinct raw_material_id) from leaf_usage where is_stock_managed = true and raw_material_id <> 'ITEM-1780680500370') as distinct_stock_material_count,
   (select count(*) from leaf_usage where is_stock_managed = false) as non_stock_usage_row_count,
@@ -899,39 +1083,9 @@ select
      and (select negative_row_count from stock_neg_check) = 0
      and (select count(*) from reconciliation_gap where final_stock_gap_g <> 0) = 0
      and (select count(*) from production_base pb where pb.product_id is null) = 0
+     and (select unknown_tx_type_count from tx_schema_summary) = 0
+     and (select blank_tx_date_count from tx_schema_summary) = 0
+     and (select blank_raw_material_id_count from tx_schema_summary) = 0
     then true
     else false
   end as readiness_for_ledger_insert;
-
-/* ==================================================
- * SECTION 8) 제외된 생산기록 상세
- * ================================================== */
-with production_base as (
-  select
-    pr.id as production_record_id,
-    coalesce(to_jsonb(pr)->>'work_date', '') as work_date,
-    nullif(to_jsonb(pr)->>'product_id', '') as product_id,
-    coalesce(nullif(to_jsonb(pr)->>'product_name', ''), '') as snapshot_product_name,
-    coalesce((to_jsonb(pr)->>'planned_quantity_g')::numeric, 0) as planned_quantity_g,
-    coalesce((to_jsonb(pr)->>'actual_quantity_g')::numeric, 0) as actual_quantity_g,
-    coalesce(lower(to_jsonb(pr)->>'status'), '') as status
-  from production_records pr
-  where coalesce(lower(to_jsonb(pr)->>'status'), '') not in ('void', 'cancelled', 'canceled', 'deleted')
-)
-select
-  pb.production_record_id,
-  pb.work_date,
-  pb.product_id,
-  pb.snapshot_product_name as product_name,
-  pb.planned_quantity_g,
-  pb.actual_quantity_g,
-  pb.status,
-  case
-    when pb.product_id is null then 'product_id 없음'
-    when pb.actual_quantity_g <= 0 then 'actual_quantity_g null/0'
-    else '기타'
-  end as exclusion_reason
-from production_base pb
-where pb.product_id is null
-   or pb.actual_quantity_g <= 0
-order by pb.work_date, pb.production_record_id;
