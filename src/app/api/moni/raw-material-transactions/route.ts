@@ -9,6 +9,16 @@ type TxRow = Record<string, unknown>
 type MaterialMasterRow = {
   id?: string | number | null
   item_name?: string | null
+  country_of_origin?: string | null
+  origin?: string | null
+  country_origin?: string | null
+  origin_country?: string | null
+  source_country?: string | null
+}
+
+type MaterialDisplayMeta = {
+  name: string
+  displayName: string
 }
 
 function text(value: unknown): string {
@@ -39,12 +49,69 @@ function normalizeTypeLabel(typeCode: 'INBOUND' | 'OUTBOUND'): '입고' | '소�
   return typeCode === 'INBOUND' ? '입고' : '소모'
 }
 
+function normalizeLookup(value: unknown): string {
+  return text(value).toLowerCase().replace(/\s+/g, ' ')
+}
+
 function resolveDate(row: TxRow): string {
   return text(row.txn_date) || text(row.transaction_date) || text(row.created_at) || ''
 }
 
 function resolveMaterialId(row: TxRow): string {
-  return text(row.raw_material_id) || text(row.item_code)
+  return text(row.item_code) || text(row.raw_material_id)
+}
+
+function resolveMaterialOrigin(material: MaterialMasterRow): string {
+  return (
+    text(material.country_of_origin) ||
+    text(material.origin) ||
+    text(material.country_origin) ||
+    text(material.origin_country) ||
+    text(material.source_country)
+  )
+}
+
+function buildMaterialDisplayMap(rows: MaterialMasterRow[]): Map<string, MaterialDisplayMeta> {
+  const materials = rows
+    .map((material) => {
+      const id = text(material.id)
+      const name = text(material.item_name) || id
+      return {
+        id,
+        name,
+        origin: resolveMaterialOrigin(material),
+      }
+    })
+    .filter((material) => material.id && material.name)
+
+  const baseNameCounts = new Map<string, number>()
+  for (const material of materials) {
+    const key = normalizeLookup(material.name)
+    baseNameCounts.set(key, (baseNameCounts.get(key) ?? 0) + 1)
+  }
+
+  const provisional = materials.map((material) => {
+    const duplicateBaseName = (baseNameCounts.get(normalizeLookup(material.name)) ?? 0) > 1
+    const displayName = duplicateBaseName && material.origin ? `${material.name} (${material.origin})` : material.name
+    return { ...material, displayName }
+  })
+
+  const displayNameCounts = new Map<string, number>()
+  for (const material of provisional) {
+    const key = normalizeLookup(material.displayName)
+    displayNameCounts.set(key, (displayNameCounts.get(key) ?? 0) + 1)
+  }
+
+  const result = new Map<string, MaterialDisplayMeta>()
+  for (const material of provisional) {
+    const duplicateDisplayName = (displayNameCounts.get(normalizeLookup(material.displayName)) ?? 0) > 1
+    result.set(material.id, {
+      name: material.name,
+      displayName: duplicateDisplayName ? `${material.displayName} [${material.id}]` : material.displayName,
+    })
+  }
+
+  return result
 }
 
 function isInbound(txType: string) {
@@ -70,25 +137,21 @@ export async function GET(request: NextRequest) {
 
     const [{ data, error }, materialResult] = await Promise.all([
       query,
-      supabase.from('raw_materials').select('id, item_name'),
+      supabase.from('raw_materials').select('*'),
     ])
     if (error) throw new Error(error.message || '원재료 거래내역 조회에 실패했습니다.')
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 마스터 조회에 실패했습니다.')
 
-    const materialNameById = new Map<string, string>()
-    for (const material of (materialResult.data ?? []) as MaterialMasterRow[]) {
-      const id = text(material.id)
-      const name = text(material.item_name)
-      if (id && name) materialNameById.set(id, name)
-    }
-
+    const materialDisplayById = buildMaterialDisplayMap((materialResult.data ?? []) as MaterialMasterRow[])
     const runningBalanceByMaterial = new Map<string, number>()
-    const normalizedKeyword = materialName.toLowerCase()
+    const normalizedKeyword = normalizeLookup(materialName)
+
     const allRows = ((data ?? []) as TxRow[]).map((row) => {
       const resolvedMaterialId = resolveMaterialId(row)
       const transactionLabel = text(row.raw_material_name) || text(row.item_name)
-      const materialLabel = materialNameById.get(resolvedMaterialId) || transactionLabel || '원재료명 확인 필요'
-      const materialKey = resolvedMaterialId || `name:${materialLabel.toLowerCase()}`
+      const materialMeta = materialDisplayById.get(resolvedMaterialId)
+      const materialLabel = materialMeta?.displayName || transactionLabel || '원재료명 확인 필요'
+      const materialKey = resolvedMaterialId || `name:${normalizeLookup(materialLabel)}`
       const qtyG = numberValue(row.quantity_g ?? row.quantity ?? 0)
       const txTypeCode = normalizeTypeCode(text(row.txn_type) || text(row.transaction_type))
       const txType = normalizeTypeLabel(txTypeCode)
@@ -107,10 +170,15 @@ export async function GET(request: NextRequest) {
             ? note
             : '생산소모'
 
+      const itemCode = text(row.item_code) || resolvedMaterialId
+      const searchText = normalizeLookup(
+        [materialMeta?.name, materialLabel, transactionLabel, resolvedMaterialId, itemCode].filter(Boolean).join(' '),
+      )
+
       return {
         id: text(row.id),
         material_id: resolvedMaterialId,
-        item_code: text(row.item_code) || resolvedMaterialId,
+        item_code: itemCode,
         material_name: materialLabel,
         tx_date: resolveDate(row),
         tx_type: txType,
@@ -120,14 +188,17 @@ export async function GET(request: NextRequest) {
         outbound_g: outboundG,
         balance_g: nextBalance,
         note,
+        search_text: searchText,
       }
     })
 
-    const rows = allRows.filter((row) => {
-      if (materialId && row.material_id !== materialId && row.item_code !== materialId) return false
-      if (normalizedKeyword && !row.material_name.toLowerCase().includes(normalizedKeyword)) return false
-      return true
-    })
+    const rows = allRows
+      .filter((row) => {
+        if (materialId && row.material_id !== materialId && row.item_code !== materialId) return false
+        if (normalizedKeyword && !row.search_text.includes(normalizedKeyword)) return false
+        return true
+      })
+      .map(({ search_text: _searchText, ...row }) => row)
 
     return NextResponse.json(
       {
