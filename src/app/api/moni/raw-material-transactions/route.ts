@@ -153,7 +153,7 @@ function allocateBalancedIntegerGrams(rows: NormalizedLedgerRow[]): Map<number, 
 
   const result = new Map<number, number>()
 
-  for (const group of grouped.values()) {
+  for (const group of Array.from(grouped.values())) {
     const entries = group.map((row) => {
       const safeQuantity = Number.isFinite(row.quantityRawG) && row.quantityRawG > 0 ? row.quantityRawG : 0
       const floorG = Math.floor(safeQuantity)
