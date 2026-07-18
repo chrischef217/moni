@@ -4,6 +4,9 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const TRANSACTION_PAGE_SIZE = 1000
+const MAX_TRANSACTION_PAGES = 100
+
 type TxRow = Record<string, unknown>
 
 type MaterialMasterRow = {
@@ -76,6 +79,10 @@ function resolveDate(row: TxRow): string {
 
 function resolveTransactionMaterialRef(row: TxRow): string {
   return text(row.item_code) || text(row.raw_material_id)
+}
+
+function resolveQuantityG(row: TxRow): number {
+  return Math.max(0, numberValue(row.total_weight_g ?? row.quantity_g ?? row.quantity ?? 0))
 }
 
 function buildMaterialDisplayMap(rows: MaterialMasterRow[]): Map<string, MaterialDisplayMeta> {
@@ -207,33 +214,50 @@ export async function GET(request: NextRequest) {
     const to = text(request.nextUrl.searchParams.get('to'))
 
     const supabase = createMoniServiceRoleClient()
-    let query = supabase
-      .from('raw_material_transactions')
-      .select('*')
-      .order('txn_date', { ascending: true })
-      .order('created_at', { ascending: true })
+    const transactionRows: TxRow[] = []
+    let pageCount = 0
 
-    if (from) query = query.gte('txn_date', from)
-    if (to) query = query.lte('txn_date', to)
+    for (let offset = 0; pageCount < MAX_TRANSACTION_PAGES; offset += TRANSACTION_PAGE_SIZE) {
+      let pageQuery = supabase
+        .from('raw_material_transactions')
+        .select('*')
+        .order('txn_date', { ascending: true })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + TRANSACTION_PAGE_SIZE - 1)
 
-    const [{ data, error }, materialResult] = await Promise.all([
-      query,
-      supabase.from('raw_materials').select('id, item_code, item_name, country_of_origin'),
-    ])
-    if (error) throw new Error(error.message || '원재료 거래내역 조회에 실패했습니다.')
+      if (from) pageQuery = pageQuery.gte('txn_date', from)
+      if (to) pageQuery = pageQuery.lte('txn_date', to)
+
+      const { data, error } = await pageQuery
+      if (error) throw new Error(error.message || '원재료 거래내역 조회에 실패했습니다.')
+
+      const pageRows = (data ?? []) as TxRow[]
+      transactionRows.push(...pageRows)
+      pageCount += 1
+
+      if (pageRows.length < TRANSACTION_PAGE_SIZE) break
+      if (pageCount === MAX_TRANSACTION_PAGES) {
+        throw new Error(`원재료 거래내역이 ${MAX_TRANSACTION_PAGES * TRANSACTION_PAGE_SIZE}건을 초과해 전체 조회를 완료하지 못했습니다.`)
+      }
+    }
+
+    const materialResult = await supabase
+      .from('raw_materials')
+      .select('id, item_code, item_name, country_of_origin')
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 마스터 조회에 실패했습니다.')
 
     const materialByRef = buildMaterialDisplayMap((materialResult.data ?? []) as MaterialMasterRow[])
     const normalizedKeyword = normalizeLookup(materialName)
 
-    const normalizedRows = ((data ?? []) as TxRow[]).map((row, sourceIndex): NormalizedLedgerRow => {
+    const normalizedRows = transactionRows.map((row, sourceIndex): NormalizedLedgerRow => {
       const transactionMaterialRef = resolveTransactionMaterialRef(row)
       const materialMeta = materialByRef.get(transactionMaterialRef)
       const canonicalMaterialId = materialMeta?.id || transactionMaterialRef
       const transactionLabel = text(row.raw_material_name) || text(row.item_name)
       const materialLabel = materialMeta?.displayName || transactionLabel || '원재료명 확인 필요'
       const materialKey = canonicalMaterialId || `name:${normalizeLookup(materialLabel)}`
-      const quantityRawG = Math.max(0, numberValue(row.quantity_g ?? row.quantity ?? 0))
+      const quantityRawG = resolveQuantityG(row)
       const txTypeCode = normalizeTypeCode(text(row.txn_type) || text(row.transaction_type))
       const txType = normalizeTypeLabel(txTypeCode)
       const note = text(row.note)
@@ -309,8 +333,11 @@ export async function GET(request: NextRequest) {
         ok: true,
         material_id: materialId || null,
         material_name: materialName || null,
-        balance_mode: 'item_code_period_cumulative_balanced_integer_display',
+        balance_mode: 'item_code_full_dataset_cumulative_balanced_integer_display',
         rounding_mode: 'largest_remainder_per_material_and_direction',
+        pagination_mode: 'all_rows_range_pagination',
+        source_row_count: transactionRows.length,
+        page_count: pageCount,
         rows,
       },
       { status: 200 },
@@ -371,6 +398,7 @@ export async function POST(request: NextRequest) {
       txn_type: 'INBOUND',
       transaction_type: 'INBOUND',
       quantity_g: quantityG,
+      total_weight_g: quantityG,
       txn_date: txDate,
       transaction_date: txDate,
       supplier: counterparty || null,
@@ -432,7 +460,7 @@ export async function PATCH(request: NextRequest) {
     const rawMaterialId = resolveTransactionMaterialRef(txRow)
     if (!rawMaterialId) return NextResponse.json({ ok: false, error: '원재료 연결 정보가 없습니다.' }, { status: 422 })
 
-    const oldQuantityG = numberValue(txRow.quantity_g ?? txRow.quantity ?? 0)
+    const oldQuantityG = resolveQuantityG(txRow)
     const materialResult = await supabase
       .from('raw_materials')
       .select('id, item_name, current_stock_g')
@@ -460,6 +488,7 @@ export async function PATCH(request: NextRequest) {
         item_name: text(material.item_name) || rawMaterialId,
         raw_material_name: text(material.item_name) || rawMaterialId,
         quantity_g: nextQuantityG,
+        total_weight_g: nextQuantityG,
         txn_date: txDate,
         transaction_date: txDate,
         supplier: counterparty || null,
@@ -507,7 +536,7 @@ export async function DELETE(request: NextRequest) {
     const rawMaterialId = resolveTransactionMaterialRef(txRow)
     if (!rawMaterialId) return NextResponse.json({ ok: false, error: '원재료 연결 정보가 없습니다.' }, { status: 422 })
 
-    const qtyG = numberValue(txRow.quantity_g ?? txRow.quantity ?? 0)
+    const qtyG = resolveQuantityG(txRow)
     const materialResult = await supabase
       .from('raw_materials')
       .select('id, item_name, current_stock_g')
