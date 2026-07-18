@@ -94,6 +94,72 @@ body {
   animation: moni-row-flash 1.2s ease-out both;
 }
 
+/* 원료·부재료 수불 상세표: 내부 코드 대신 사용자 설명을 표시하고 열 폭을 안정화한다. */
+.space-y-4:has(> div > table thead th:nth-child(8)) > p.text-xs.text-gray-500 {
+  font-size: 0;
+}
+
+.space-y-4:has(> div > table thead th:nth-child(8)) > p.text-xs.text-gray-500::after {
+  content: '잔량은 선택한 기간의 거래를 날짜순으로 누적해 표시합니다.';
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.space-y-4 > div:has(> table thead th:nth-child(8)) {
+  max-height: 480px;
+}
+
+.space-y-4 > div:has(> table thead th:nth-child(8)) > table {
+  width: 100%;
+  min-width: 1040px !important;
+  table-layout: fixed;
+}
+
+.space-y-4 > div:has(> table thead th:nth-child(8)) th:nth-child(1),
+.space-y-4 > div:has(> table thead th:nth-child(8)) td:nth-child(1) {
+  width: 105px;
+  white-space: nowrap;
+}
+
+.space-y-4 > div:has(> table thead th:nth-child(8)) th:nth-child(2),
+.space-y-4 > div:has(> table thead th:nth-child(8)) td:nth-child(2) {
+  width: 70px;
+  white-space: nowrap;
+}
+
+.space-y-4 > div:has(> table thead th:nth-child(8)) th:nth-child(3),
+.space-y-4 > div:has(> table thead th:nth-child(8)) td:nth-child(3) {
+  width: 280px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.space-y-4 > div:has(> table thead th:nth-child(8)) th:nth-child(4),
+.space-y-4 > div:has(> table thead th:nth-child(8)) th:nth-child(5),
+.space-y-4 > div:has(> table thead th:nth-child(8)) th:nth-child(6),
+.space-y-4 > div:has(> table thead th:nth-child(8)) td:nth-child(4),
+.space-y-4 > div:has(> table thead th:nth-child(8)) td:nth-child(5),
+.space-y-4 > div:has(> table thead th:nth-child(8)) td:nth-child(6) {
+  width: 105px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.space-y-4 > div:has(> table thead th:nth-child(8)) th:nth-child(7),
+.space-y-4 > div:has(> table thead th:nth-child(8)) td:nth-child(7) {
+  width: 220px;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere;
+}
+
+.space-y-4 > div:has(> table thead th:nth-child(8)) th:nth-child(8),
+.space-y-4 > div:has(> table thead th:nth-child(8)) td:nth-child(8) {
+  width: 130px;
+  white-space: nowrap;
+}
+
 @media print {
   body {
     background: white !important;
