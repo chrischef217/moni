@@ -37,6 +37,7 @@ type NormalizedLedgerRow = {
   quantityRawG: number
   counterparty: string
   note: string
+  auditNote: string
   searchText: string
 }
 
@@ -71,6 +72,32 @@ function normalizeTypeLabel(typeCode: 'INBOUND' | 'OUTBOUND'): '입고' | '소�
 
 function normalizeLookup(value: unknown): string {
   return text(value).toLowerCase().replace(/\s+/g, ' ')
+}
+
+function parseLedgerMetadata(note: string): Record<string, string> {
+  const metadata: Record<string, string> = {}
+  for (const segment of note.split(';')) {
+    const separatorIndex = segment.indexOf('=')
+    if (separatorIndex <= 0) continue
+    const key = segment.slice(0, separatorIndex).trim()
+    const value = segment.slice(separatorIndex + 1).trim()
+    if (key && value) metadata[key] = value
+  }
+  return metadata
+}
+
+function inboundDisplayNote(rawNote: string, metadata: Record<string, string>): string {
+  const marker = metadata.marker || ''
+  if (marker === 'MONI_INTERNAL_INBOUND_V4') return '주간 소모량과 포장단위를 기준으로 생성된 입고'
+  if (marker.startsWith('MONI_SELF_SEMI_INBOUND')) return '자체생산 반제품 입고'
+  if (marker.startsWith('MONI_LEDGER_RECON')) return '기존 수불 내역 복원'
+  return rawNote
+}
+
+function outboundDisplayNote(metadata: Record<string, string>): string {
+  if (metadata.action === 'ledger_reconstruction') return '기존 생산기록 기준 소모 복원'
+  if (metadata.action === 'missing_outbound_correction') return '누락 소모 내역 보정'
+  return '생산확정 자동소모'
 }
 
 function resolveDate(row: TxRow): string {
@@ -260,13 +287,18 @@ export async function GET(request: NextRequest) {
       const quantityRawG = resolveQuantityG(row)
       const txTypeCode = normalizeTypeCode(text(row.txn_type) || text(row.transaction_type))
       const txType = normalizeTypeLabel(txTypeCode)
-      const note = text(row.note)
+      const rawNote = text(row.note)
+      const ledgerMetadata = parseLedgerMetadata(rawNote)
+      const outboundProductName = ledgerMetadata.product_name || text(row.product_name)
+      const outboundLot = ledgerMetadata.lot_number || text(row.lot_number)
       const counterparty =
         txTypeCode === 'INBOUND'
           ? text(row.supplier) || '입고'
-          : note.includes('production_record_id=') || note.includes('lot_number=')
-            ? note
-            : '생산소모'
+          : [outboundProductName || '생산소모', outboundLot ? `LOT ${outboundLot}` : ''].filter(Boolean).join(' · ')
+      const note =
+        txTypeCode === 'INBOUND'
+          ? inboundDisplayNote(rawNote, ledgerMetadata)
+          : outboundDisplayNote(ledgerMetadata)
       const itemCode = text(row.item_code) || materialMeta?.itemCode || canonicalMaterialId
       const txDate = resolveDate(row)
       const stableKey = [txDate, text(row.created_at), text(row.id), String(sourceIndex)].join('|')
@@ -288,6 +320,7 @@ export async function GET(request: NextRequest) {
         quantityRawG,
         counterparty,
         note,
+        auditNote: rawNote,
         searchText,
       }
     })
@@ -316,6 +349,7 @@ export async function GET(request: NextRequest) {
         outbound_g: outboundG,
         balance_g: nextBalance,
         note: row.note,
+        audit_note: row.auditNote,
         search_text: row.searchText,
       }
     })
