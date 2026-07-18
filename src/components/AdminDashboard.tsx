@@ -2108,7 +2108,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     void loadFoodTypes()
     void loadMaterials('active')
     void loadPackagingMaterials('active')
-    void loadSububu(daysAgoValue(29), todayValue())
+    void loadSububu(yearStartValue(), todayValue())
     void loadSanitation(daysAgoValue(29), todayValue())
   }, [])
 
