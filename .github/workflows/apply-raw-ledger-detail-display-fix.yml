@@ -1,0 +1,310 @@
+name: Apply raw ledger detail display fix
+
+on:
+  push:
+    branches:
+      - fix/raw-ledger-detail-display-20260718
+    paths:
+      - .github/workflows/apply-raw-ledger-detail-display-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-ledger-detail:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/raw-ledger-detail-display-20260718
+          fetch-depth: 0
+
+      - name: Patch API and detail table
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          api_path = Path('src/app/api/moni/raw-material-transactions/route.ts')
+          api = api_path.read_text(encoding='utf-8')
+
+          old = """  counterparty: string
+  note: string
+  searchText: string
+"""
+          new = """  counterparty: string
+  reference: string
+  note: string
+  auditNote: string
+  searchText: string
+"""
+          assert old in api, 'NormalizedLedgerRow fields not found'
+          api = api.replace(old, new, 1)
+
+          old = """function normalizeLookup(value: unknown): string {
+  return text(value).toLowerCase().replace(/\\s+/g, ' ')
+}
+"""
+          new = """function normalizeLookup(value: unknown): string {
+  return text(value).toLowerCase().replace(/\\s+/g, ' ')
+}
+
+function parseLedgerMetadata(note: string): Record<string, string> {
+  const metadata: Record<string, string> = {}
+  for (const segment of note.split(';')) {
+    const separatorIndex = segment.indexOf('=')
+    if (separatorIndex <= 0) continue
+    const key = segment.slice(0, separatorIndex).trim()
+    const value = segment.slice(separatorIndex + 1).trim()
+    if (key && value) metadata[key] = value
+  }
+  return metadata
+}
+
+function inboundDisplayNote(rawNote: string, metadata: Record<string, string>): string {
+  const marker = metadata.marker || ''
+  if (marker === 'MONI_INTERNAL_INBOUND_V4') return '주간 소모량 기준 입고'
+  if (marker.startsWith('MONI_SELF_SEMI_INBOUND')) return '자체생산 반제품 입고'
+  if (marker.startsWith('MONI_LEDGER_RECON')) return '기존 수불 내역 복원'
+  return rawNote
+}
+
+function outboundDisplayNote(metadata: Record<string, string>): string {
+  if (metadata.action === 'ledger_reconstruction') return '기존 생산기록 복원'
+  if (metadata.action === 'missing_outbound_correction') return '누락 소모 보정'
+  return '생산확정 자동소모'
+}
+"""
+          assert old in api, 'normalizeLookup block not found'
+          api = api.replace(old, new, 1)
+
+          old = """      const note = text(row.note)
+      const counterparty =
+        txTypeCode === 'INBOUND'
+          ? text(row.supplier) || '입고'
+          : note.includes('production_record_id=') || note.includes('lot_number=')
+            ? note
+            : '생산소모'
+"""
+          new = """      const rawNote = text(row.note)
+      const ledgerMetadata = parseLedgerMetadata(rawNote)
+      const counterparty =
+        txTypeCode === 'INBOUND'
+          ? text(row.supplier) || '입고'
+          : ledgerMetadata.product_name || text(row.product_name) || '생산소모'
+      const reference =
+        txTypeCode === 'OUTBOUND' && ledgerMetadata.lot_number ? `LOT ${ledgerMetadata.lot_number}` : ''
+      const note =
+        txTypeCode === 'INBOUND'
+          ? inboundDisplayNote(rawNote, ledgerMetadata)
+          : outboundDisplayNote(ledgerMetadata)
+"""
+          assert old in api, 'raw note/counterparty block not found'
+          api = api.replace(old, new, 1)
+
+          old = """        quantityRawG,
+        counterparty,
+        note,
+        searchText,
+"""
+          new = """        quantityRawG,
+        counterparty,
+        reference,
+        note,
+        auditNote: rawNote,
+        searchText,
+"""
+          assert old in api, 'normalized row return block not found'
+          api = api.replace(old, new, 1)
+
+          old = """        counterparty: row.counterparty,
+        inbound_g: inboundG,
+        outbound_g: outboundG,
+        balance_g: nextBalance,
+        note: row.note,
+"""
+          new = """        counterparty: row.counterparty,
+        reference: row.reference,
+        inbound_g: inboundG,
+        outbound_g: outboundG,
+        balance_g: nextBalance,
+        note: row.note,
+        audit_note: row.auditNote,
+"""
+          assert old in api, 'API response row block not found'
+          api = api.replace(old, new, 1)
+          api_path.write_text(api, encoding='utf-8')
+
+          ui_path = Path('src/components/AdminDashboard.tsx')
+          ui = ui_path.read_text(encoding='utf-8')
+
+          old = """  tx_type_code?: string
+  counterparty: string
+  inbound_g: number
+  outbound_g: number
+  balance_g: number
+  note: string
+"""
+          new = """  tx_type_code?: string
+  counterparty: string
+  reference?: string
+  inbound_g: number
+  outbound_g: number
+  balance_g: number
+  note: string
+  audit_note?: string
+"""
+          assert old in ui, 'RawMaterialTransactionRow fields not found'
+          ui = ui.replace(old, new, 1)
+
+          old = """          {sububuDetailBalanceMode ? (
+            <p className=\"text-xs text-gray-500\">잔량 표시는 {sububuDetailBalanceMode} 기준입니다.</p>
+          ) : null}
+"""
+          new = """          {sububuDetailBalanceMode ? (
+            <p className=\"text-xs text-gray-500\">잔량은 선택한 기간의 거래를 날짜순으로 누적해 표시합니다.</p>
+          ) : null}
+"""
+          assert old in ui, 'balance mode display block not found'
+          ui = ui.replace(old, new, 1)
+
+          old = """            <div className=\"max-h-[420px] overflow-auto rounded-xl border border-gray-700\">
+              <table className=\"min-w-full text-left text-sm\">
+                <thead className=\"sticky top-0 bg-gray-900 text-gray-400\">
+                  <tr className=\"border-b border-gray-700\">
+                    <th className=\"px-3 py-2 font-medium\">날짜</th>
+                    <th className=\"px-3 py-2 font-medium\">구분</th>
+                    <th className=\"px-3 py-2 font-medium\">거래처/사용처</th>
+                    <th className=\"px-3 py-2 font-medium\">입고(g)</th>
+                    <th className=\"px-3 py-2 font-medium\">소모(g)</th>
+                    <th className=\"px-3 py-2 font-medium\">잔량(g)</th>
+                    <th className=\"px-3 py-2 font-medium\">비고</th>
+                    <th className=\"px-3 py-2 font-medium\">작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sububuDetailRows.map((row) => (
+                    <tr key={row.id} className=\"border-b border-gray-800/80\">
+                      <td className=\"px-3 py-2 text-gray-200\">{row.tx_date || '-'}</td>
+                      <td className=\"px-3 py-2 text-white\">{row.tx_type || '-'}</td>
+                      <td className=\"px-3 py-2 text-gray-200\">{row.counterparty || '-'}</td>
+                      <td className=\"px-3 py-2 text-green-400\">{row.inbound_g ? formatNumber(row.inbound_g) : '-'}</td>
+                      <td className=\"px-3 py-2 text-amber-300\">{row.outbound_g ? formatNumber(row.outbound_g) : '-'}</td>
+                      <td className=\"px-3 py-2 text-gray-200\">{formatNumber(row.balance_g)}</td>
+                      <td className=\"max-w-[320px] truncate px-3 py-2 text-gray-400\" title={row.note || ''}>
+                        {row.note || '-'}
+                      </td>
+                      <td className=\"px-3 py-2\">
+                        <div className=\"flex flex-wrap gap-2\">
+                          <button
+                            type=\"button\"
+                            onClick={() => void editSububuDetailRow(row)}
+                            className=\"rounded-lg border border-gray-700 px-2.5 py-1 text-xs text-gray-200 hover:border-green-500 hover:text-white\"
+                          >
+                            수정
+                          </button>
+                          <button
+                            type=\"button\"
+                            onClick={() => void deleteSububuDetailRow(row)}
+                            className=\"rounded-lg border border-red-800/70 px-2.5 py-1 text-xs text-red-200 hover:border-red-600 hover:text-red-100\"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+"""
+          new = """            <div className=\"max-h-[480px] overflow-auto rounded-xl border border-gray-700\">
+              <table className=\"min-w-[1060px] w-full table-fixed text-left text-sm\">
+                <colgroup>
+                  <col className=\"w-[105px]\" />
+                  <col className=\"w-[70px]\" />
+                  <col className=\"w-[250px]\" />
+                  <col className=\"w-[105px]\" />
+                  <col className=\"w-[105px]\" />
+                  <col className=\"w-[105px]\" />
+                  <col className=\"w-[190px]\" />
+                  <col className=\"w-[130px]\" />
+                </colgroup>
+                <thead className=\"sticky top-0 bg-gray-900 text-gray-400\">
+                  <tr className=\"border-b border-gray-700\">
+                    <th className=\"px-3 py-2 font-medium whitespace-nowrap\">날짜</th>
+                    <th className=\"px-3 py-2 font-medium whitespace-nowrap\">구분</th>
+                    <th className=\"px-3 py-2 font-medium\">거래처/사용처</th>
+                    <th className=\"px-3 py-2 text-right font-medium whitespace-nowrap\">입고(g)</th>
+                    <th className=\"px-3 py-2 text-right font-medium whitespace-nowrap\">소모(g)</th>
+                    <th className=\"px-3 py-2 text-right font-medium whitespace-nowrap\">잔량(g)</th>
+                    <th className=\"px-3 py-2 font-medium\">비고</th>
+                    <th className=\"px-3 py-2 font-medium whitespace-nowrap\">작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sububuDetailRows.map((row) => {
+                    const typeCode = String(row.tx_type_code ?? '').toUpperCase()
+                    const isInbound = typeCode ? typeCode === 'INBOUND' : row.tx_type === '입고'
+                    return (
+                      <tr key={row.id} className=\"border-b border-gray-800/80 align-top\">
+                        <td className=\"px-3 py-3 text-gray-200 whitespace-nowrap\">{row.tx_date || '-'}</td>
+                        <td className=\"px-3 py-3 text-white whitespace-nowrap\">{row.tx_type || '-'}</td>
+                        <td className=\"px-3 py-3 text-gray-200\">
+                          <p className=\"break-words leading-5\">{row.counterparty || '-'}</p>
+                          {row.reference ? <p className=\"mt-1 font-mono text-xs text-gray-500\">{row.reference}</p> : null}
+                        </td>
+                        <td className=\"px-3 py-3 text-right text-green-400 whitespace-nowrap\">
+                          {row.inbound_g ? formatNumber(row.inbound_g) : '-'}
+                        </td>
+                        <td className=\"px-3 py-3 text-right text-amber-300 whitespace-nowrap\">
+                          {row.outbound_g ? formatNumber(row.outbound_g) : '-'}
+                        </td>
+                        <td className=\"px-3 py-3 text-right text-gray-200 whitespace-nowrap\">{formatNumber(row.balance_g)}</td>
+                        <td className=\"px-3 py-3 text-gray-400\">
+                          <p className=\"line-clamp-2 break-words leading-5\" title={row.note || ''}>{row.note || '-'}</p>
+                        </td>
+                        <td className=\"px-3 py-3\">
+                          {isInbound ? (
+                            <div className=\"flex flex-wrap gap-2\">
+                              <button
+                                type=\"button\"
+                                onClick={() => void editSububuDetailRow(row)}
+                                className=\"rounded-lg border border-gray-700 px-2.5 py-1 text-xs text-gray-200 hover:border-green-500 hover:text-white\"
+                              >
+                                수정
+                              </button>
+                              <button
+                                type=\"button\"
+                                onClick={() => void deleteSububuDetailRow(row)}
+                                className=\"rounded-lg border border-red-800/70 px-2.5 py-1 text-xs text-red-200 hover:border-red-600 hover:text-red-100\"
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          ) : (
+                            <span className=\"inline-flex rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-400\">자동기록</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+"""
+          assert old in ui, 'raw ledger detail table block not found'
+          ui = ui.replace(old, new, 1)
+          ui_path.write_text(ui, encoding='utf-8')
+          PY
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/api/moni/raw-material-transactions/route.ts src/components/AdminDashboard.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: present raw ledger detail in user-readable form"
+          git push origin HEAD:fix/raw-ledger-detail-display-20260718
