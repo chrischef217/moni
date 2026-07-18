@@ -824,6 +824,10 @@ function todayValue() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date())
 }
 
+function yearStartValue() {
+  return `${todayValue().slice(0, 4)}-01-01`
+}
+
 function daysAgoValue(days: number) {
   const date = new Date()
   date.setDate(date.getDate() - days)
@@ -1753,7 +1757,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [rawInboundError, setRawInboundError] = useState('')
 
   const [ledgerTab, setLedgerTab] = useState<'raw' | 'packaging'>('raw')
-  const [sububuDateFrom, setSububuDateFrom] = useState(daysAgoValue(29))
+  const [sububuDateFrom, setSububuDateFrom] = useState(yearStartValue())
   const [sububuDateTo, setSububuDateTo] = useState(todayValue())
   const [sububuLoading, setSububuLoading] = useState(true)
   const [sububuError, setSububuError] = useState('')
@@ -1761,7 +1765,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [sububuMaterialQuery, setSububuMaterialQuery] = useState('')
   const [showSububuDetailModal, setShowSububuDetailModal] = useState(false)
   const [sububuDetailTarget, setSububuDetailTarget] = useState('')
-  const [sububuDetailFrom, setSububuDetailFrom] = useState(daysAgoValue(29))
+  const [sububuDetailFrom, setSububuDetailFrom] = useState(yearStartValue())
   const [sububuDetailTo, setSububuDetailTo] = useState(todayValue())
   const [sububuDetailRows, setSububuDetailRows] = useState<RawMaterialTransactionRow[]>([])
   const [sububuDetailLoading, setSububuDetailLoading] = useState(false)
@@ -7896,7 +7900,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
     return (
       <SectionCard
         title="원료수불부"
-        description="원재료 수불부와 부재료 수불부를 분리해서 조회합니다."
+        description="기본 조회기간은 올해 1월 1일부터 오늘까지이며, 필요할 때 기간을 직접 변경할 수 있습니다."
         actions={
           <>
             <Field label="시작일" className="min-w-[140px]">
