@@ -20,6 +20,23 @@ type MaterialDisplayMeta = {
   displayName: string
 }
 
+type NormalizedLedgerRow = {
+  sourceIndex: number
+  stableKey: string
+  id: string
+  materialId: string
+  itemCode: string
+  materialName: string
+  materialKey: string
+  txDate: string
+  txTypeCode: 'INBOUND' | 'OUTBOUND'
+  txType: '입고' | '소모'
+  quantityRawG: number
+  counterparty: string
+  note: string
+  searchText: string
+}
+
 function text(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : ''
 }
@@ -110,8 +127,61 @@ function buildMaterialDisplayMap(rows: MaterialMasterRow[]): Map<string, Materia
   return result
 }
 
-function integerGram(value: unknown): number {
-  return Math.round(numberValue(value))
+function sumAccurately(values: number[]): number {
+  let sum = 0
+  let compensation = 0
+
+  for (const value of values) {
+    const adjusted = value - compensation
+    const next = sum + adjusted
+    compensation = next - sum - adjusted
+    sum = next
+  }
+
+  return sum
+}
+
+function allocateBalancedIntegerGrams(rows: NormalizedLedgerRow[]): Map<number, number> {
+  const grouped = new Map<string, NormalizedLedgerRow[]>()
+
+  for (const row of rows) {
+    const groupKey = `${row.materialKey}|${row.txTypeCode}`
+    const group = grouped.get(groupKey) ?? []
+    group.push(row)
+    grouped.set(groupKey, group)
+  }
+
+  const result = new Map<number, number>()
+
+  for (const group of Array.from(grouped.values())) {
+    const entries = group.map((row) => {
+      const safeQuantity = Number.isFinite(row.quantityRawG) && row.quantityRawG > 0 ? row.quantityRawG : 0
+      const floorG = Math.floor(safeQuantity)
+      return {
+        row,
+        floorG,
+        remainder: safeQuantity - floorG,
+      }
+    })
+
+    const exactTotal = sumAccurately(entries.map((entry) => entry.row.quantityRawG))
+    const roundedTotal = Math.round(exactTotal)
+    const floorTotal = entries.reduce((sum, entry) => sum + entry.floorG, 0)
+    const distributable = Math.max(0, Math.min(entries.length, roundedTotal - floorTotal))
+
+    const ranked = [...entries].sort((a, b) => {
+      const remainderDiff = b.remainder - a.remainder
+      if (Math.abs(remainderDiff) > Number.EPSILON) return remainderDiff
+      return a.row.stableKey.localeCompare(b.row.stableKey)
+    })
+
+    const incremented = new Set(ranked.slice(0, distributable).map((entry) => entry.row.sourceIndex))
+    for (const entry of entries) {
+      result.set(entry.row.sourceIndex, entry.floorG + (incremented.has(entry.row.sourceIndex) ? 1 : 0))
+    }
+  }
+
+  return result
 }
 
 function parsePositiveIntegerGram(quantityValue: unknown, unitValue: unknown): number | null {
@@ -154,53 +224,75 @@ export async function GET(request: NextRequest) {
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 마스터 조회에 실패했습니다.')
 
     const materialByRef = buildMaterialDisplayMap((materialResult.data ?? []) as MaterialMasterRow[])
-    const runningBalanceByMaterial = new Map<string, number>()
     const normalizedKeyword = normalizeLookup(materialName)
 
-    const allRows = ((data ?? []) as TxRow[]).map((row) => {
+    const normalizedRows = ((data ?? []) as TxRow[]).map((row, sourceIndex): NormalizedLedgerRow => {
       const transactionMaterialRef = resolveTransactionMaterialRef(row)
       const materialMeta = materialByRef.get(transactionMaterialRef)
       const canonicalMaterialId = materialMeta?.id || transactionMaterialRef
       const transactionLabel = text(row.raw_material_name) || text(row.item_name)
       const materialLabel = materialMeta?.displayName || transactionLabel || '원재료명 확인 필요'
       const materialKey = canonicalMaterialId || `name:${normalizeLookup(materialLabel)}`
-      const qtyG = integerGram(row.quantity_g ?? row.quantity ?? 0)
+      const quantityRawG = Math.max(0, numberValue(row.quantity_g ?? row.quantity ?? 0))
       const txTypeCode = normalizeTypeCode(text(row.txn_type) || text(row.transaction_type))
       const txType = normalizeTypeLabel(txTypeCode)
-      const inboundG = txTypeCode === 'INBOUND' ? qtyG : 0
-      const outboundG = txTypeCode === 'OUTBOUND' ? qtyG : 0
       const note = text(row.note)
-
-      const prevBalance = runningBalanceByMaterial.get(materialKey) ?? 0
-      const nextBalance = prevBalance + inboundG - outboundG
-      runningBalanceByMaterial.set(materialKey, nextBalance)
-
       const counterparty =
         txTypeCode === 'INBOUND'
           ? text(row.supplier) || '입고'
           : note.includes('production_record_id=') || note.includes('lot_number=')
             ? note
             : '생산소모'
-
       const itemCode = text(row.item_code) || materialMeta?.itemCode || canonicalMaterialId
+      const txDate = resolveDate(row)
+      const stableKey = [txDate, text(row.created_at), text(row.id), String(sourceIndex)].join('|')
       const searchText = normalizeLookup(
         [materialMeta?.name, materialLabel, transactionLabel, canonicalMaterialId, itemCode].filter(Boolean).join(' '),
       )
 
       return {
+        sourceIndex,
+        stableKey,
         id: text(row.id),
-        material_id: canonicalMaterialId,
-        item_code: itemCode,
-        material_name: materialLabel,
-        tx_date: resolveDate(row),
-        tx_type: txType,
-        tx_type_code: txTypeCode,
+        materialId: canonicalMaterialId,
+        itemCode,
+        materialName: materialLabel,
+        materialKey,
+        txDate,
+        txTypeCode,
+        txType,
+        quantityRawG,
         counterparty,
+        note,
+        searchText,
+      }
+    })
+
+    const allocatedQuantityByIndex = allocateBalancedIntegerGrams(normalizedRows)
+    const runningBalanceByMaterial = new Map<string, number>()
+
+    const allRows = normalizedRows.map((row) => {
+      const quantityG = allocatedQuantityByIndex.get(row.sourceIndex) ?? 0
+      const inboundG = row.txTypeCode === 'INBOUND' ? quantityG : 0
+      const outboundG = row.txTypeCode === 'OUTBOUND' ? quantityG : 0
+      const previousBalance = runningBalanceByMaterial.get(row.materialKey) ?? 0
+      const nextBalance = previousBalance + inboundG - outboundG
+      runningBalanceByMaterial.set(row.materialKey, nextBalance)
+
+      return {
+        id: row.id,
+        material_id: row.materialId,
+        item_code: row.itemCode,
+        material_name: row.materialName,
+        tx_date: row.txDate,
+        tx_type: row.txType,
+        tx_type_code: row.txTypeCode,
+        counterparty: row.counterparty,
         inbound_g: inboundG,
         outbound_g: outboundG,
         balance_g: nextBalance,
-        note,
-        search_text: searchText,
+        note: row.note,
+        search_text: row.searchText,
       }
     })
 
@@ -217,7 +309,8 @@ export async function GET(request: NextRequest) {
         ok: true,
         material_id: materialId || null,
         material_name: materialName || null,
-        balance_mode: 'item_code_period_cumulative_integer_display',
+        balance_mode: 'item_code_period_cumulative_balanced_integer_display',
+        rounding_mode: 'largest_remainder_per_material_and_direction',
         rows,
       },
       { status: 200 },
