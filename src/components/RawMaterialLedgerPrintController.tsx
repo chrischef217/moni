@@ -246,26 +246,26 @@ function buildPrintHtml({
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      color: #0f172a;
+      color: #000;
       background: #fff;
       font-family: Pretendard, "Noto Sans KR", "Malgun Gothic", Arial, sans-serif;
       font-size: 9pt;
       line-height: 1.35;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
+      -webkit-print-color-adjust: economy;
+      print-color-adjust: economy;
     }
     .document { width: 100%; }
     .topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-    .company { margin: 0; font-size: 10pt; font-weight: 800; color: #1e3a5f; }
-    .print-time { margin: 0; font-size: 8pt; color: #64748b; text-align: right; }
+    .company { margin: 0; font-size: 10pt; font-weight: 800; color: #000; }
+    .print-time { margin: 0; font-size: 8pt; color: #555; text-align: right; }
     h1 { margin: 4mm 0 5mm; text-align: center; font-size: 18pt; letter-spacing: -0.03em; }
-    .meta-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 0.55fr; border: 1px solid #94a3b8; }
-    .meta-cell { min-height: 14mm; padding: 3mm 4mm; border-right: 1px solid #cbd5e1; }
+    .meta-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 0.55fr; border: 1px solid #777; }
+    .meta-cell { min-height: 14mm; padding: 3mm 4mm; border-right: 1px solid #aaa; }
     .meta-cell:last-child { border-right: 0; }
-    .label { display: block; margin-bottom: 1mm; font-size: 7.5pt; color: #64748b; }
+    .label { display: block; margin-bottom: 1mm; font-size: 7.5pt; color: #555; }
     .value { font-size: 10pt; font-weight: 700; }
-    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 4mm; border: 1px solid #94a3b8; }
-    .summary-cell { padding: 3mm 4mm; border-right: 1px solid #cbd5e1; text-align: right; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 4mm; border: 1px solid #777; }
+    .summary-cell { padding: 3mm 4mm; border-right: 1px solid #aaa; text-align: right; }
     .summary-cell:last-child { border-right: 0; }
     .summary-cell .label { text-align: left; }
     .summary-value { font-size: 12pt; font-weight: 800; }
@@ -276,14 +276,14 @@ function buildPrintHtml({
       gap: 12px;
       margin: 2.5mm 0 4mm;
       padding: 2.5mm 4mm;
-      border: 1px solid #cbd5e1;
-      background: #f8fafc;
+      border: 1px solid #999;
+      background: #fff;
     }
     .stock-value { font-weight: 800; }
     .stock-status { font-weight: 800; }
-    .stock-status.match { color: #166534; }
-    .stock-status.mismatch { color: #b91c1c; }
-    .stock-status.neutral { color: #475569; }
+    .stock-status.match,
+    .stock-status.mismatch,
+    .stock-status.neutral { color: #000; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     col.no { width: 4%; }
     col.date { width: 10%; }
@@ -294,15 +294,19 @@ function buildPrintHtml({
     col.note { width: 28%; }
     thead { display: table-header-group; }
     tr { break-inside: avoid; page-break-inside: avoid; }
-    th, td { border: 1px solid #cbd5e1; padding: 2mm 2.2mm; vertical-align: middle; overflow-wrap: anywhere; }
-    th { background: #e2e8f0; color: #0f172a; font-size: 8pt; font-weight: 800; text-align: center; }
+    th, td { border: 1px solid #aaa; padding: 2mm 2.2mm; vertical-align: middle; overflow-wrap: anywhere; }
+    th { background: #eee; color: #000; font-size: 8pt; font-weight: 800; text-align: center; }
     td { font-size: 8.2pt; }
     td.center { text-align: center; }
     td.number { text-align: right; font-variant-numeric: tabular-nums; }
     td.strong { font-weight: 800; }
     .nowrap { white-space: nowrap; }
-    .footer { margin-top: 3mm; display: flex; justify-content: space-between; color: #64748b; font-size: 7.5pt; }
-    @media print { a { color: inherit; text-decoration: none; } }
+    .footer { margin-top: 3mm; display: flex; justify-content: space-between; color: #555; font-size: 7.5pt; }
+    @media print {
+      html, body, .document { background: #fff !important; color: #000 !important; }
+      * { color: #000 !important; box-shadow: none !important; text-shadow: none !important; }
+      a { color: #000 !important; text-decoration: none; }
+    }
   </style>
 </head>
 <body>
