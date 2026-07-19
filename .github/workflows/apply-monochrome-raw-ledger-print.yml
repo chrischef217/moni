@@ -1,0 +1,58 @@
+name: Apply monochrome raw ledger print patch
+
+on:
+  push:
+    branches:
+      - fix/raw-ledger-print-monochrome-20260719
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/raw-ledger-print-monochrome-20260719
+      - name: Apply exact monochrome print CSS patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/RawMaterialLedgerPrintController.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = {
+              '      color: #0f172a;': '      color: #000;',
+              '      -webkit-print-color-adjust: exact;\n      print-color-adjust: exact;': '      -webkit-print-color-adjust: economy;\n      print-color-adjust: economy;',
+              '    .company { margin: 0; font-size: 10pt; font-weight: 800; color: #1e3a5f; }': '    .company { margin: 0; font-size: 10pt; font-weight: 800; color: #000; }',
+              '    .print-time { margin: 0; font-size: 8pt; color: #64748b; text-align: right; }': '    .print-time { margin: 0; font-size: 8pt; color: #555; text-align: right; }',
+              '    .meta-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 0.55fr; border: 1px solid #94a3b8; }': '    .meta-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 0.55fr; border: 1px solid #777; }',
+              '    .meta-cell { min-height: 14mm; padding: 3mm 4mm; border-right: 1px solid #cbd5e1; }': '    .meta-cell { min-height: 14mm; padding: 3mm 4mm; border-right: 1px solid #aaa; }',
+              '    .label { display: block; margin-bottom: 1mm; font-size: 7.5pt; color: #64748b; }': '    .label { display: block; margin-bottom: 1mm; font-size: 7.5pt; color: #555; }',
+              '    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 4mm; border: 1px solid #94a3b8; }': '    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 4mm; border: 1px solid #777; }',
+              '    .summary-cell { padding: 3mm 4mm; border-right: 1px solid #cbd5e1; text-align: right; }': '    .summary-cell { padding: 3mm 4mm; border-right: 1px solid #aaa; text-align: right; }',
+              '      border: 1px solid #cbd5e1;\n      background: #f8fafc;': '      border: 1px solid #999;\n      background: #fff;',
+              '    .stock-status.match { color: #166534; }\n    .stock-status.mismatch { color: #b91c1c; }\n    .stock-status.neutral { color: #475569; }': '    .stock-status.match,\n    .stock-status.mismatch,\n    .stock-status.neutral { color: #000; }',
+              '    th, td { border: 1px solid #cbd5e1; padding: 2mm 2.2mm; vertical-align: middle; overflow-wrap: anywhere; }': '    th, td { border: 1px solid #aaa; padding: 2mm 2.2mm; vertical-align: middle; overflow-wrap: anywhere; }',
+              '    th { background: #e2e8f0; color: #0f172a; font-size: 8pt; font-weight: 800; text-align: center; }': '    th { background: #eee; color: #000; font-size: 8pt; font-weight: 800; text-align: center; }',
+              '    .footer { margin-top: 3mm; display: flex; justify-content: space-between; color: #64748b; font-size: 7.5pt; }': '    .footer { margin-top: 3mm; display: flex; justify-content: space-between; color: #555; font-size: 7.5pt; }',
+              '    @media print { a { color: inherit; text-decoration: none; } }': '    @media print {\n      html, body, .document { background: #fff !important; color: #000 !important; }\n      * { color: #000 !important; box-shadow: none !important; text-shadow: none !important; }\n      a { color: #000 !important; text-decoration: none; }\n    }',
+          }
+
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'Expected source text not found: {old}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/RawMaterialLedgerPrintController.tsx
+          git commit -m "fix: 원료수불 인쇄 문서를 흑백으로 변경"
+          git push origin HEAD:fix/raw-ledger-print-monochrome-20260719
