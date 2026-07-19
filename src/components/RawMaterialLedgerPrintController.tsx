@@ -3,6 +3,8 @@
 import { useEffect } from 'react'
 
 type LedgerPrintRow = {
+  id: string
+  materialName: string
   date: string
   type: string
   counterparty: string
@@ -23,19 +25,40 @@ type RawMaterialsPayload = {
   materials?: RawMaterialApiRow[]
 }
 
+type RawLedgerApiRow = {
+  id?: string | null
+  material_name?: string | null
+  tx_date?: string | null
+  tx_type?: string | null
+  counterparty?: string | null
+  inbound_g?: number | string | null
+  outbound_g?: number | string | null
+  balance_g?: number | string | null
+  note?: string | null
+}
+
+type RawLedgerPayload = {
+  ok?: boolean
+  rows?: RawLedgerApiRow[]
+}
+
 const PRINT_BUTTON_ATTRIBUTE = 'data-raw-ledger-print-button'
 
 function normalizeText(value: unknown): string {
   return String(value ?? '').trim().replace(/\s+/g, ' ')
 }
 
-function parseGram(value: string): number {
+function parseGram(value: unknown): number {
   const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
   return Number.isFinite(parsed) ? Math.round(parsed) : 0
 }
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Math.round(value))
+}
+
+function todayValue(): string {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date())
 }
 
 function escapeHtml(value: unknown): string {
@@ -70,18 +93,20 @@ function findRawLedgerTable(modal: HTMLElement): HTMLTableElement | null {
   )
 }
 
-function readLedgerRows(table: HTMLTableElement): LedgerPrintRow[] {
+function readVisibleLedgerRows(table: HTMLTableElement, materialName: string): LedgerPrintRow[] {
   return Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr'))
-    .map((row) => {
+    .map((row, index) => {
       const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'))
       if (cells.length < 7) return null
       return {
+        id: `visible-${index}`,
+        materialName,
         date: normalizeText(cells[0]?.textContent) || '-',
         type: normalizeText(cells[1]?.textContent) || '-',
         counterparty: normalizeText(cells[2]?.textContent) || '-',
-        inboundG: parseGram(cells[3]?.textContent ?? ''),
-        outboundG: parseGram(cells[4]?.textContent ?? ''),
-        balanceG: parseGram(cells[5]?.textContent ?? ''),
+        inboundG: parseGram(cells[3]?.textContent),
+        outboundG: parseGram(cells[4]?.textContent),
+        balanceG: parseGram(cells[5]?.textContent),
         note: normalizeText(cells[6]?.textContent) || '-',
       } satisfies LedgerPrintRow
     })
@@ -121,6 +146,35 @@ async function loadCurrentStock(materialName: string): Promise<number | null> {
   }
 }
 
+async function loadCumulativeLedgerRows(materialName: string, from: string, to: string): Promise<LedgerPrintRow[]> {
+  try {
+    const params = new URLSearchParams()
+    params.set('material_name', materialName)
+    if (to && to !== '-') params.set('to', to)
+    const response = await fetch(`/api/moni/raw-material-transactions?${params.toString()}`, { cache: 'no-store' })
+    if (!response.ok) return []
+    const payload = (await response.json().catch(() => null)) as RawLedgerPayload | null
+    const target = normalizeText(materialName)
+    const allRows = (payload?.rows ?? [])
+      .filter((row) => normalizeText(row.material_name) === target)
+      .map((row, index) => ({
+        id: normalizeText(row.id) || `api-${index}`,
+        materialName: normalizeText(row.material_name) || materialName,
+        date: normalizeText(row.tx_date) || '-',
+        type: normalizeText(row.tx_type) || '-',
+        counterparty: normalizeText(row.counterparty) || '-',
+        inboundG: parseGram(row.inbound_g),
+        outboundG: parseGram(row.outbound_g),
+        balanceG: parseGram(row.balance_g),
+        note: normalizeText(row.note) || '-',
+      }))
+
+    return allRows.filter((row) => (!from || from === '-' || row.date >= from) && (!to || to === '-' || row.date <= to))
+  } catch {
+    return []
+  }
+}
+
 function buildPrintHtml({
   materialName,
   from,
@@ -140,8 +194,9 @@ function buildPrintHtml({
   const totalInboundG = rows.reduce((sum, row) => sum + row.inboundG, 0)
   const totalOutboundG = rows.reduce((sum, row) => sum + row.outboundG, 0)
   const endingBalanceG = last?.balanceG ?? openingBalanceG + totalInboundG - totalOutboundG
+  const isCurrentPeriod = to === todayValue()
   const stockDiffG = currentStockG === null ? null : endingBalanceG - currentStockG
-  const stockMatches = stockDiffG === 0
+  const stockMatches = isCurrentPeriod && stockDiffG === 0
   const printedAt = new Intl.DateTimeFormat('ko-KR', {
     timeZone: 'Asia/Seoul',
     year: 'numeric',
@@ -175,9 +230,11 @@ function buildPrintHtml({
   const stockComparison =
     currentStockG === null
       ? `<span class="stock-status neutral">현재재고 확인 불가</span>`
-      : stockMatches
-        ? `<span class="stock-status match">기말잔량 일치 확인 ✓</span>`
-        : `<span class="stock-status mismatch">불일치 · 차이 ${formatNumber(stockDiffG ?? 0)}g</span>`
+      : !isCurrentPeriod
+        ? `<span class="stock-status neutral">과거 종료일 조회 · 현재재고 일치 비교 제외</span>`
+        : stockMatches
+          ? `<span class="stock-status match">기말잔량 일치 확인 ✓</span>`
+          : `<span class="stock-status mismatch">불일치 · 차이 ${formatNumber(stockDiffG ?? 0)}g</span>`
 
   return `<!doctype html>
 <html lang="ko">
@@ -245,9 +302,7 @@ function buildPrintHtml({
     td.strong { font-weight: 800; }
     .nowrap { white-space: nowrap; }
     .footer { margin-top: 3mm; display: flex; justify-content: space-between; color: #64748b; font-size: 7.5pt; }
-    @media print {
-      a { color: inherit; text-decoration: none; }
-    }
+    @media print { a { color: inherit; text-decoration: none; } }
   </style>
 </head>
 <body>
@@ -273,7 +328,7 @@ function buildPrintHtml({
     </section>
 
     <section class="stock-check">
-      <div>원재료 관리 현재재고: <span class="stock-value">${currentStockG === null ? '-' : `${formatNumber(currentStockG)}g`}</span></div>
+      <div>원재료 관리 현재재고(오늘 기준): <span class="stock-value">${currentStockG === null ? '-' : `${formatNumber(currentStockG)}g`}</span></div>
       ${stockComparison}
     </section>
 
@@ -302,8 +357,7 @@ function buildPrintHtml({
 
 async function printRawLedger(modal: HTMLElement): Promise<void> {
   const table = findRawLedgerTable(modal)
-  const rows = table ? readLedgerRows(table) : []
-  if (!table || rows.length === 0) {
+  if (!table) {
     window.alert('인쇄할 원료수불 거래 내역이 없습니다.')
     return
   }
@@ -313,6 +367,15 @@ async function printRawLedger(modal: HTMLElement): Promise<void> {
   const dateInputs = Array.from(modal.querySelectorAll<HTMLInputElement>('input[type="date"]'))
   const from = dateInputs[0]?.value || '-'
   const to = dateInputs[1]?.value || '-'
+  const visibleRows = readVisibleLedgerRows(table, materialName)
+  const cumulativeRows = await loadCumulativeLedgerRows(materialName, from, to)
+  const rows = cumulativeRows.length > 0 ? cumulativeRows : visibleRows
+
+  if (rows.length === 0) {
+    window.alert('인쇄할 원료수불 거래 내역이 없습니다.')
+    return
+  }
+
   const currentStockG = await loadCurrentStock(materialName)
   const html = buildPrintHtml({ materialName, from, to, rows, currentStockG })
 
@@ -338,9 +401,7 @@ async function printRawLedger(modal: HTMLElement): Promise<void> {
   printDocument.close()
 
   const printWindow = iframe.contentWindow
-  const cleanup = () => {
-    window.setTimeout(() => iframe.remove(), 500)
-  }
+  const cleanup = () => window.setTimeout(() => iframe.remove(), 500)
   printWindow.addEventListener('afterprint', cleanup, { once: true })
   window.setTimeout(() => {
     printWindow.focus()
@@ -351,8 +412,7 @@ async function printRawLedger(modal: HTMLElement): Promise<void> {
 
 function installPrintButton(): void {
   const modal = findRawLedgerModal()
-  if (!modal) return
-  if (modal.querySelector(`[${PRINT_BUTTON_ATTRIBUTE}]`)) return
+  if (!modal || modal.querySelector(`[${PRINT_BUTTON_ATTRIBUTE}]`)) return
 
   const title = modal.querySelector('h3')
   const header = title?.parentElement?.parentElement
