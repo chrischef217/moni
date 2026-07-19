@@ -19,6 +19,11 @@ function numberValue(value: unknown): number | null {
   return null
 }
 
+function integerGram(value: unknown): number {
+  const parsed = numberValue(value)
+  return parsed === null ? 0 : Math.round(parsed)
+}
+
 function makeRawMaterialId() {
   return `ITEM-${Date.now()}`
 }
@@ -142,6 +147,7 @@ export async function GET(request: NextRequest) {
       const meta = latestMeta.get(id) ?? latestMeta.get(name)
       return {
         ...item,
+        current_stock_g: integerGram(item.current_stock_g),
         food_type_name: meta?.food_type_name ?? null,
         packing_unit: meta?.packing_unit ?? null,
         linked_product_name: linkedProductNameById.get(String(item.linked_product_id ?? '').trim()) ?? null,
@@ -293,4 +299,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }
-
