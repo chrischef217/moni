@@ -86,20 +86,6 @@ function parseLedgerMetadata(note: string): Record<string, string> {
   return metadata
 }
 
-function inboundDisplayNote(rawNote: string, metadata: Record<string, string>): string {
-  const marker = metadata.marker || ''
-  if (marker === 'MONI_INTERNAL_INBOUND_V4') return '주간 소모량과 포장단위를 기준으로 생성된 입고'
-  if (marker.startsWith('MONI_SELF_SEMI_INBOUND')) return '자체생산 반제품 입고'
-  if (marker.startsWith('MONI_LEDGER_RECON')) return '기존 수불 내역 복원'
-  return rawNote
-}
-
-function outboundDisplayNote(metadata: Record<string, string>): string {
-  if (metadata.action === 'ledger_reconstruction') return '기존 생산기록 기준 소모 복원'
-  if (metadata.action === 'missing_outbound_correction') return '누락 소모 내역 보정'
-  return '생산확정 자동소모'
-}
-
 function resolveDate(row: TxRow): string {
   return text(row.txn_date) || text(row.transaction_date) || text(row.created_at) || ''
 }
@@ -295,10 +281,7 @@ export async function GET(request: NextRequest) {
         txTypeCode === 'INBOUND'
           ? text(row.supplier) || '입고'
           : [outboundProductName || '생산소모', outboundLot ? `LOT ${outboundLot}` : ''].filter(Boolean).join(' · ')
-      const note =
-        txTypeCode === 'INBOUND'
-          ? inboundDisplayNote(rawNote, ledgerMetadata)
-          : outboundDisplayNote(ledgerMetadata)
+      const note = ''
       const itemCode = text(row.item_code) || materialMeta?.itemCode || canonicalMaterialId
       const txDate = resolveDate(row)
       const stableKey = [txDate, text(row.created_at), text(row.id), String(sourceIndex)].join('|')
