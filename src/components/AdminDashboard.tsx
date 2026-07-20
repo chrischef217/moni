@@ -361,6 +361,7 @@ type RawMaterialRow = {
   current_stock_g?: number | null
   packing_unit?: string | null
   packing_weight_g?: number | null
+  unit_price_per_kg?: number | null
   supplier?: string | null
   supplier_contact?: string | null
   supplier_address?: string | null
@@ -7119,12 +7120,12 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <th className="px-3 py-2 font-medium">원재료명</th>
                     <th className="px-3 py-2 font-medium">식품유형</th>
                     <th className="px-3 py-2 font-medium">원산지</th>
-                    <th className="px-3 py-2 font-medium">규격</th>
+                    <th className="px-3 py-2 font-medium">규격(g)</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">개당 단가(원)</th>
                     <th className="px-3 py-2 font-medium">보관</th>
                     <th className="px-3 py-2 font-medium">소비기한</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">현재재고</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">재료유형</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">연결 반제품</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap text-right">작업</th>
                   </tr>
                 </thead>
@@ -7143,19 +7144,17 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                       <td className="px-3 py-3 text-gray-200">{material.food_type || material.food_type_name || '-'}</td>
                       <td className="px-3 py-3 text-gray-200">{material.country_of_origin || '-'}</td>
                       <td className="px-3 py-3 text-gray-200">{material.spec || material.packing_unit || '-'}</td>
+                      <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
+                        {material.unit_price_per_kg === null || material.unit_price_per_kg === undefined
+                          ? '-'
+                          : `${formatNumber(material.unit_price_per_kg)}원`}
+                      </td>
                       <td className="px-3 py-3 text-gray-200">{material.storage_type || '-'}</td>
                       <td className="px-3 py-3 text-gray-200">
                         {material.shelf_life_days ? `${material.shelf_life_days}일` : '-'}
                       </td>
                       <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock_g)}g</td>
                       <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{material.ingredient_type || '원재료'}</td>
-                      <td className="px-3 py-3 text-gray-200 whitespace-nowrap">
-                        {material.ingredient_type === '반제품'
-                          ? material.linked_product_name ||
-                            productCatalogById.get(String(material.linked_product_id ?? '').trim())?.product_name ||
-                            '미연결'
-                          : '-'}
-                      </td>
                       <td className="px-3 py-3 text-right">
                         <div className="inline-flex items-center gap-2">
                           <button
