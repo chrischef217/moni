@@ -56,35 +56,43 @@ export async function GET(request: NextRequest) {
 
     const [txResult, materialsResult] = await Promise.all([
       query,
-      supabase.from('packaging_materials').select('id, material_code, material_name'),
+      supabase.from('packaging_materials').select('id, material_code, material_name, unit_price'),
     ])
     if (txResult.error) throw new Error(txResult.error.message || '부재료 수불 내역 조회에 실패했습니다.')
     if (materialsResult.error) throw new Error(materialsResult.error.message || '부재료 목록 조회에 실패했습니다.')
 
-    const materialNameMap = new Map<string, string>()
-    for (const row of (materialsResult.data ?? []) as Array<{ id?: string | null; material_code?: string | null; material_name?: string | null }>) {
+    const materialMetaMap = new Map<string, { name: string; unitPrice: number }>()
+    for (const row of (materialsResult.data ?? []) as Array<{
+      id?: string | null
+      material_code?: string | null
+      material_name?: string | null
+      unit_price?: string | number | null
+    }>) {
       const name = text(row.material_name)
       if (!name) continue
       const id = text(row.id)
       const code = text(row.material_code)
-      if (id) materialNameMap.set(id, name)
-      if (code) materialNameMap.set(code, name)
+      const meta = { name, unitPrice: Math.max(0, numberValue(row.unit_price)) }
+      if (id) materialMetaMap.set(id, meta)
+      if (code) materialMetaMap.set(code, meta)
     }
 
     const keyword = materialName.trim().toLowerCase()
     const rows = []
-    let runningBalance = 0
+    const runningBalanceByMaterial = new Map<string, number>()
 
     for (const row of (txResult.data ?? []) as TxRow[]) {
       const code = text(row.material_code)
-      const name = (materialNameMap.get(code) ?? code) || '부재료명 확인 필요'
+      const materialMeta = materialMetaMap.get(code)
+      const name = (materialMeta?.name ?? code) || '부재료명 확인 필요'
       if (keyword && !name.toLowerCase().includes(keyword)) continue
 
       const qty = numberValue(row.quantity)
       const txType = normalizeType(text(row.txn_type))
       const inboundEa = txType === '입고' ? qty : 0
       const outboundEa = txType === '출고' ? qty : 0
-      runningBalance += inboundEa - outboundEa
+      const runningBalance = (runningBalanceByMaterial.get(code) ?? 0) + inboundEa - outboundEa
+      runningBalanceByMaterial.set(code, runningBalance)
 
       rows.push({
         id: text(row.id),
@@ -96,6 +104,7 @@ export async function GET(request: NextRequest) {
         inbound_ea: inboundEa,
         outbound_ea: outboundEa,
         balance_ea: runningBalance,
+        unit_price: materialMeta?.unitPrice ?? 0,
         note: text(row.note),
       })
     }
