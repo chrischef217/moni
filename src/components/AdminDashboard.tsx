@@ -386,6 +386,17 @@ type SububuRow = {
   inbound_g: number
   outbound_g: number
   balance_g: number
+  unit_price: number
+  packing_weight_g: number
+  tx_count: number
+}
+
+type PackagingLedgerSummaryRow = {
+  material_name: string
+  inbound_ea: number
+  outbound_ea: number
+  balance_ea: number
+  unit_price: number
   tx_count: number
 }
 
@@ -480,6 +491,8 @@ type RawMaterialTransactionRow = {
   inbound_g: number
   outbound_g: number
   balance_g: number
+  unit_price?: number
+  packing_weight_g?: number
   note: string
 }
 
@@ -501,6 +514,7 @@ type PackagingTransactionRow = {
   inbound_ea: number
   outbound_ea: number
   balance_ea: number
+  unit_price?: number
   note: string
 }
 
@@ -878,6 +892,10 @@ function formatNumber(value: number | null | undefined) {
   return new Intl.NumberFormat('ko-KR').format(Number(value ?? 0))
 }
 
+function formatWon(value: number | null | undefined) {
+  return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Math.round(Number(value ?? 0)))}원`
+}
+
 function formatKg(value: number | null | undefined) {
   return new Intl.NumberFormat('ko-KR', {
     minimumFractionDigits: 3,
@@ -1057,11 +1075,15 @@ function summarizeRawLedger(rows: RawMaterialTransactionRow[]) {
       inbound_g: 0,
       outbound_g: 0,
       balance_g: 0,
+      unit_price: 0,
+      packing_weight_g: 0,
       tx_count: 0,
     }
     current.inbound_g += Number(row.inbound_g ?? 0)
     current.outbound_g += Number(row.outbound_g ?? 0)
     current.balance_g = Number(row.balance_g ?? current.balance_g)
+    current.unit_price = Math.max(current.unit_price, Number(row.unit_price ?? 0))
+    current.packing_weight_g = Math.max(current.packing_weight_g, Number(row.packing_weight_g ?? 0))
     current.tx_count += 1
     map.set(key, current)
   }
@@ -1069,10 +1091,7 @@ function summarizeRawLedger(rows: RawMaterialTransactionRow[]) {
 }
 
 function summarizePackagingLedger(rows: PackagingTransactionRow[]) {
-  const map = new Map<
-    string,
-    { material_name: string; inbound_ea: number; outbound_ea: number; balance_ea: number; tx_count: number }
-  >()
+  const map = new Map<string, PackagingLedgerSummaryRow>()
   for (const row of rows) {
     const key = String(row.material_name || '').trim() || '부재료명 확인 필요'
     const current = map.get(key) ?? {
@@ -1080,11 +1099,13 @@ function summarizePackagingLedger(rows: PackagingTransactionRow[]) {
       inbound_ea: 0,
       outbound_ea: 0,
       balance_ea: 0,
+      unit_price: 0,
       tx_count: 0,
     }
     current.inbound_ea += Number(row.inbound_ea ?? 0)
     current.outbound_ea += Number(row.outbound_ea ?? 0)
     current.balance_ea = Number(row.balance_ea ?? current.balance_ea)
+    current.unit_price = Math.max(current.unit_price, Number(row.unit_price ?? 0))
     current.tx_count += 1
     map.set(key, current)
   }
@@ -7094,6 +7115,32 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-gray-400">
+                  <tr className="border-b border-green-900/60 bg-gray-900/70">
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">조회금액 합계</span>
+                      <span className="mt-1 block text-sm text-gray-200">포장단위 단가 기준</span>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">입고금액</span>
+                      <span className="mt-1 block text-base font-semibold text-green-400">{formatWon(rawValueSummary.inbound)}</span>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">소모금액</span>
+                      <span className="mt-1 block text-base font-semibold text-amber-300">{formatWon(rawValueSummary.outbound)}</span>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">잔량금액</span>
+                      <span className="mt-1 block text-base font-semibold text-gray-100">{formatWon(rawValueSummary.balance)}</span>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">단가 반영 상태</span>
+                      <span className={`mt-1 block text-sm ${rawValueSummary.unpricedItems > 0 ? 'text-amber-300' : 'text-green-300'}`}>
+                        {rawValueSummary.unpricedItems > 0
+                          ? `단가/포장중량 미등록 ${formatNumber(rawValueSummary.unpricedItems)}개 제외`
+                          : '전체 품목 반영'}
+                      </span>
+                    </th>
+                  </tr>
                   <tr className="border-b border-gray-700">
                     <th className="px-3 py-2 font-medium">원재료명</th>
                     <th className="px-3 py-2 font-medium">식품유형</th>
@@ -7832,6 +7879,32 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="text-gray-400">
+                <tr className="border-b border-green-900/60 bg-gray-900/70">
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">조회금액 합계</span>
+                    <span className="mt-1 block text-sm text-gray-200">ea 단가 기준</span>
+                  </th>
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">입고금액</span>
+                    <span className="mt-1 block text-base font-semibold text-green-400">{formatWon(packagingValueSummary.inbound)}</span>
+                  </th>
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">출고금액</span>
+                    <span className="mt-1 block text-base font-semibold text-amber-300">{formatWon(packagingValueSummary.outbound)}</span>
+                  </th>
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">잔량금액</span>
+                    <span className="mt-1 block text-base font-semibold text-gray-100">{formatWon(packagingValueSummary.balance)}</span>
+                  </th>
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">단가 반영 상태</span>
+                    <span className={`mt-1 block text-sm ${packagingValueSummary.unpricedItems > 0 ? 'text-amber-300' : 'text-green-300'}`}>
+                      {packagingValueSummary.unpricedItems > 0
+                        ? `미등록 ${formatNumber(packagingValueSummary.unpricedItems)}개 품목 제외`
+                        : '전체 품목 반영'}
+                    </span>
+                  </th>
+                </tr>
                 <tr className="border-b border-gray-700">
                   <th className="px-3 py-2 font-medium">부재료명</th>
                   <th className="px-3 py-2 font-medium">코드</th>
@@ -7896,6 +7969,35 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
 
   function renderLedgerManagement() {
     const packagingSummaryRows = summarizePackagingLedger(packagingLedgerRows)
+    const rawValueSummary = sububuMaterials.reduce(
+      (summary, material) => {
+        const unitPrice = Number(material.unit_price ?? 0)
+        const packingWeightG = Number(material.packing_weight_g ?? 0)
+        if (unitPrice <= 0 || packingWeightG <= 0) {
+          summary.unpricedItems += 1
+          return summary
+        }
+        summary.inbound += (Number(material.inbound_g ?? 0) / packingWeightG) * unitPrice
+        summary.outbound += (Number(material.outbound_g ?? 0) / packingWeightG) * unitPrice
+        summary.balance += (Number(material.balance_g ?? 0) / packingWeightG) * unitPrice
+        return summary
+      },
+      { inbound: 0, outbound: 0, balance: 0, unpricedItems: 0 },
+    )
+    const packagingValueSummary = packagingSummaryRows.reduce(
+      (summary, material) => {
+        const unitPrice = Number(material.unit_price ?? 0)
+        if (unitPrice <= 0) {
+          summary.unpricedItems += 1
+          return summary
+        }
+        summary.inbound += Number(material.inbound_ea ?? 0) * unitPrice
+        summary.outbound += Number(material.outbound_ea ?? 0) * unitPrice
+        summary.balance += Number(material.balance_ea ?? 0) * unitPrice
+        return summary
+      },
+      { inbound: 0, outbound: 0, balance: 0, unpricedItems: 0 },
+    )
 
     return (
       <SectionCard
