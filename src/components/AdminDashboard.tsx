@@ -7115,32 +7115,6 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-gray-400">
-                  <tr className="border-b border-green-900/60 bg-gray-900/70">
-                    <th className="px-3 py-3 font-medium">
-                      <span className="block text-xs text-gray-500">조회금액 합계</span>
-                      <span className="mt-1 block text-sm text-gray-200">포장단위 단가 기준</span>
-                    </th>
-                    <th className="px-3 py-3 font-medium">
-                      <span className="block text-xs text-gray-500">입고금액</span>
-                      <span className="mt-1 block text-base font-semibold text-green-400">{formatWon(rawValueSummary.inbound)}</span>
-                    </th>
-                    <th className="px-3 py-3 font-medium">
-                      <span className="block text-xs text-gray-500">소모금액</span>
-                      <span className="mt-1 block text-base font-semibold text-amber-300">{formatWon(rawValueSummary.outbound)}</span>
-                    </th>
-                    <th className="px-3 py-3 font-medium">
-                      <span className="block text-xs text-gray-500">잔량금액</span>
-                      <span className="mt-1 block text-base font-semibold text-gray-100">{formatWon(rawValueSummary.balance)}</span>
-                    </th>
-                    <th className="px-3 py-3 font-medium">
-                      <span className="block text-xs text-gray-500">단가 반영 상태</span>
-                      <span className={`mt-1 block text-sm ${rawValueSummary.unpricedItems > 0 ? 'text-amber-300' : 'text-green-300'}`}>
-                        {rawValueSummary.unpricedItems > 0
-                          ? `단가/포장중량 미등록 ${formatNumber(rawValueSummary.unpricedItems)}개 제외`
-                          : '전체 품목 반영'}
-                      </span>
-                    </th>
-                  </tr>
                   <tr className="border-b border-gray-700">
                     <th className="px-3 py-2 font-medium">원재료명</th>
                     <th className="px-3 py-2 font-medium">식품유형</th>
@@ -7879,32 +7853,6 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="text-gray-400">
-                <tr className="border-b border-green-900/60 bg-gray-900/70">
-                  <th className="px-3 py-3 font-medium">
-                    <span className="block text-xs text-gray-500">조회금액 합계</span>
-                    <span className="mt-1 block text-sm text-gray-200">ea 단가 기준</span>
-                  </th>
-                  <th className="px-3 py-3 font-medium">
-                    <span className="block text-xs text-gray-500">입고금액</span>
-                    <span className="mt-1 block text-base font-semibold text-green-400">{formatWon(packagingValueSummary.inbound)}</span>
-                  </th>
-                  <th className="px-3 py-3 font-medium">
-                    <span className="block text-xs text-gray-500">출고금액</span>
-                    <span className="mt-1 block text-base font-semibold text-amber-300">{formatWon(packagingValueSummary.outbound)}</span>
-                  </th>
-                  <th className="px-3 py-3 font-medium">
-                    <span className="block text-xs text-gray-500">잔량금액</span>
-                    <span className="mt-1 block text-base font-semibold text-gray-100">{formatWon(packagingValueSummary.balance)}</span>
-                  </th>
-                  <th className="px-3 py-3 font-medium">
-                    <span className="block text-xs text-gray-500">단가 반영 상태</span>
-                    <span className={`mt-1 block text-sm ${packagingValueSummary.unpricedItems > 0 ? 'text-amber-300' : 'text-green-300'}`}>
-                      {packagingValueSummary.unpricedItems > 0
-                        ? `미등록 ${formatNumber(packagingValueSummary.unpricedItems)}개 품목 제외`
-                        : '전체 품목 반영'}
-                    </span>
-                  </th>
-                </tr>
                 <tr className="border-b border-gray-700">
                   <th className="px-3 py-2 font-medium">부재료명</th>
                   <th className="px-3 py-2 font-medium">코드</th>
@@ -8078,6 +8026,32 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-gray-400">
+                  <tr className="border-b border-green-900/60 bg-gray-900/70">
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">조회금액 합계</span>
+                      <span className="mt-1 block text-sm text-gray-200">포장단위 단가 기준</span>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">입고금액</span>
+                      <span className="mt-1 block text-base font-semibold text-green-400">{formatWon(rawValueSummary.inbound)}</span>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">소모금액</span>
+                      <span className="mt-1 block text-base font-semibold text-amber-300">{formatWon(rawValueSummary.outbound)}</span>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">잔량금액</span>
+                      <span className="mt-1 block text-base font-semibold text-gray-100">{formatWon(rawValueSummary.balance)}</span>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">단가 반영 상태</span>
+                      <span className={`mt-1 block text-sm ${rawValueSummary.unpricedItems > 0 ? 'text-amber-300' : 'text-green-300'}`}>
+                        {rawValueSummary.unpricedItems > 0
+                          ? `단가/포장중량 미등록 ${formatNumber(rawValueSummary.unpricedItems)}개 제외`
+                          : '전체 품목 반영'}
+                      </span>
+                    </th>
+                  </tr>
                   <tr className="border-b border-gray-700">
                     <th className="px-3 py-2 font-medium">원재료명</th>
                     <th className="px-3 py-2 font-medium">입고(g)</th>
@@ -8114,6 +8088,32 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="text-gray-400">
+                <tr className="border-b border-green-900/60 bg-gray-900/70">
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">조회금액 합계</span>
+                    <span className="mt-1 block text-sm text-gray-200">ea 단가 기준</span>
+                  </th>
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">입고금액</span>
+                    <span className="mt-1 block text-base font-semibold text-green-400">{formatWon(packagingValueSummary.inbound)}</span>
+                  </th>
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">출고금액</span>
+                    <span className="mt-1 block text-base font-semibold text-amber-300">{formatWon(packagingValueSummary.outbound)}</span>
+                  </th>
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">잔량금액</span>
+                    <span className="mt-1 block text-base font-semibold text-gray-100">{formatWon(packagingValueSummary.balance)}</span>
+                  </th>
+                  <th className="px-3 py-3 font-medium">
+                    <span className="block text-xs text-gray-500">단가 반영 상태</span>
+                    <span className={`mt-1 block text-sm ${packagingValueSummary.unpricedItems > 0 ? 'text-amber-300' : 'text-green-300'}`}>
+                      {packagingValueSummary.unpricedItems > 0
+                        ? `미등록 ${formatNumber(packagingValueSummary.unpricedItems)}개 품목 제외`
+                        : '전체 품목 반영'}
+                    </span>
+                  </th>
+                </tr>
                 <tr className="border-b border-gray-700">
                   <th className="px-3 py-2 font-medium">부재료명</th>
                   <th className="px-3 py-2 font-medium">입고(ea)</th>
