@@ -281,7 +281,7 @@ export async function GET(request: NextRequest) {
         txTypeCode === 'INBOUND'
           ? text(row.supplier) || '입고'
           : [outboundProductName || '생산소모', outboundLot ? `LOT ${outboundLot}` : ''].filter(Boolean).join(' · ')
-      const note = ''
+      const note = txTypeCode === 'INBOUND' && !ledgerMetadata.marker ? rawNote : ''
       const itemCode = text(row.item_code) || materialMeta?.itemCode || canonicalMaterialId
       const txDate = resolveDate(row)
       const stableKey = [txDate, text(row.created_at), text(row.id), String(sourceIndex)].join('|')
@@ -420,7 +420,7 @@ export async function POST(request: NextRequest) {
       transaction_date: txDate,
       supplier: counterparty || null,
       unit_price: unitPrice,
-      note: note || counterparty || null,
+      note: note || null,
       business_id: businessId,
     }
     const txResult = await supabase.from('raw_material_transactions').insert(txPayload)
@@ -510,7 +510,7 @@ export async function PATCH(request: NextRequest) {
         transaction_date: txDate,
         supplier: counterparty || null,
         unit_price: unitPrice,
-        note: note || counterparty || null,
+        note: note || null,
       })
       .eq('id', id)
     if (updateTx.error) {
