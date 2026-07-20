@@ -161,6 +161,12 @@ function compactDate(dateString: string) {
   return dateString.replaceAll('-', '')
 }
 
+function isValidIsoDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
 function makeProductId() {
   return `PROD-${Date.now()}`
 }
@@ -278,6 +284,17 @@ async function generateLotNumber(workDate: string) {
     if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq
   }
   return `${prefix}-${maxSeq + 1}`
+}
+
+async function ensureLotNumberAvailable(lotNumber: string, exceptRecordId?: string) {
+  const supabase = createMoniServiceRoleClient()
+  let query = supabase.from('production_records').select('id').eq('lot_number', lotNumber).limit(1)
+  if (exceptRecordId) query = query.neq('id', exceptRecordId)
+  const { data, error } = await query
+  if (error) throw new ApiError(500, error.message || 'LOT 중복 확인에 실패했습니다.', 'validation.lot.lookup')
+  if ((data ?? []).length > 0) {
+    throw new ApiError(409, '이미 등록된 LOT입니다. 다른 LOT를 입력해 주세요.', 'validation.lot.duplicate')
+  }
 }
 
 async function fetchRecordById(id: string) {
@@ -831,6 +848,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = createMoniServiceRoleClient()
     const workDate = toText(body.work_date) || todayKst()
+    const requestedLotNumber = toText(body.lot_number)
     let productId = toText(body.product_id) || null
     const planned = parseNumber(body.planned_quantity_g)
     const actual = parseNumber(body.actual_quantity_g)
@@ -838,6 +856,10 @@ export async function POST(request: NextRequest) {
     const productionUnitId = toText(body.production_unit_id) || null
     const productionUnitName = toText(body.production_unit_name) || null
     const productionUnitWeightG = parseNumber(body.production_unit_weight_g)
+
+    if (!isValidIsoDate(workDate)) {
+      return NextResponse.json({ ok: false, error: '생산예정일은 YYYY-MM-DD 형식의 올바른 날짜여야 합니다.' }, { status: 400 })
+    }
 
     if (planned !== null && planned < 0) {
       return NextResponse.json({ ok: false, error: '怨꾪쉷 ?섎웾? 0 ?댁긽?댁뼱???⑸땲??' }, { status: 400 })
@@ -881,7 +903,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: '?쒗뭹紐낆쓣 ?낅젰??二쇱꽭??' }, { status: 400 })
     }
 
-    const lotNumber = await generateLotNumber(workDate)
+    const lotNumber = requestedLotNumber || (await generateLotNumber(workDate))
+    await ensureLotNumberAvailable(lotNumber)
     const status = normalizeStatus(body.status, actual && actual > 0 ? 'completed' : 'planned')
     const plannedQuantityEa =
       planned !== null && productionUnitWeightG !== null && productionUnitWeightG > 0
@@ -967,6 +990,16 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ ok: false, error: 'planned_quantity_g??0蹂대떎 而ㅼ빞 ?⑸땲??' }, { status: 400 })
       }
 
+      const workDate = toText(body.work_date) || toText(record.work_date)
+      const lotNumber = toText(body.lot_number) || toText(record.lot_number)
+      if (!isValidIsoDate(workDate)) {
+        return NextResponse.json({ ok: false, error: '생산예정일은 YYYY-MM-DD 형식의 올바른 날짜여야 합니다.' }, { status: 400 })
+      }
+      if (!lotNumber) {
+        return NextResponse.json({ ok: false, error: 'LOT를 입력해 주세요.' }, { status: 400 })
+      }
+      await ensureLotNumberAvailable(lotNumber, recordId)
+
       const productionUnitWeightG =
         parseNumber(body.production_unit_weight_g) ?? parseNumber(record.production_unit_weight_g)
       const plannedQuantityEa =
@@ -979,12 +1012,14 @@ export async function PATCH(request: NextRequest) {
           : 0
 
       const updated = await updateRecordWithResilientColumns(recordId, {
+        work_date: workDate,
+        lot_number: lotNumber,
         planned_quantity_g: plannedQuantityG,
         planned_quantity_ea: plannedQuantityEa,
         planned_remainder_g: plannedRemainderG,
       })
       return NextResponse.json(
-        { ok: true, record: toRecordRow(updated), message: '?덉젙?섎웾???섏젙?섏뿀?듬땲??' },
+        { ok: true, record: toRecordRow(updated), message: '작업지시서가 수정되었습니다.' },
         { status: 200 },
       )
     }
@@ -1265,27 +1300,27 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    if (action === 'cancel') {
+    if (action === 'cancel' || action === 'delete') {
       if (isConfirmed(recordStatus)) {
-        return NextResponse.json({ ok: false, error: '?뺤젙???묒뾽吏?쒖꽌??痍⑥냼?????놁뒿?덈떎.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: '확정된 작업지시서는 원재료 차감 이력이 있어 삭제할 수 없습니다.' }, { status: 409 })
       }
 
       if (recordStatus === 'cancelled') {
         return NextResponse.json(
-          { ok: true, record: toRecordRow(record), message: '?대? 痍⑥냼???묒뾽吏?쒖꽌?낅땲??' },
+          { ok: true, record: toRecordRow(record), message: '이미 삭제 처리된 작업지시서입니다.' },
           { status: 200 },
         )
       }
 
       if (!(recordStatus === 'planned' || recordStatus === 'completed')) {
-        return NextResponse.json({ ok: false, error: 'planned ?먮뒗 completed ?곹깭留?痍⑥냼?????덉뒿?덈떎.' }, { status: 409 })
+        return NextResponse.json({ ok: false, error: '예정 또는 완료 상태의 작업지시서만 삭제할 수 있습니다.' }, { status: 409 })
       }
 
       const lotNumber = toText(record.lot_number) || recordId
       const hasOutbound = await hasExistingOutboundConfirm(recordId, lotNumber)
       if (hasOutbound) {
         return NextResponse.json(
-          { ok: false, error: '?먯옱猷?李④컧 ?대젰???덉뼱 痍⑥냼?????놁뒿?덈떎. (?뺤젙??湲곕줉?????덉뒿?덈떎.)' },
+          { ok: false, error: '원재료 차감 이력이 있어 삭제할 수 없습니다. 생산 확정 이력을 먼저 확인해 주세요.' },
           { status: 409 },
         )
       }
@@ -1294,12 +1329,12 @@ export async function PATCH(request: NextRequest) {
         const supabase = createMoniServiceRoleClient()
         const { error: deleteError } = await supabase.from('production_records').delete().eq('id', recordId)
         if (deleteError) {
-          throw new ApiError(500, deleteError.message || '?묒뾽吏?쒖꽌 ??젣???ㅽ뙣?덉뒿?덈떎.', 'mutate.record.delete')
+          throw new ApiError(500, deleteError.message || '작업지시서 삭제에 실패했습니다.', 'mutate.record.delete')
         }
         return record
       })()
       return NextResponse.json(
-        { ok: true, record: toRecordRow(cancelled), message: '?묒뾽吏?쒖꽌媛 ??젣?섏뿀?듬땲??' },
+        { ok: true, record: toRecordRow(cancelled), message: '작업지시서가 삭제되었습니다.' },
         { status: 200 },
       )
     }

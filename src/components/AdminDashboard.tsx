@@ -182,39 +182,6 @@ type DeductionPreviewSummary = {
   planned_quantity_g: number | null
 }
 
-type WorkOrderSemiInstructionMaterial = {
-  material_name: string
-  required_g: number
-  ratio_percent: number
-  unresolved?: boolean
-}
-
-type WorkOrderSemiInstruction = {
-  recipe_item_name: string
-  linked_product_id: string | null
-  linked_product_name: string
-  required_production_g: number
-  packing_unit_g: number | null
-  planned_quantity_ea: number | null
-  materials: WorkOrderSemiInstructionMaterial[]
-  unresolved_reason?: string
-  has_nested_semi?: boolean
-}
-
-type WorkOrderFinalRequirement = {
-  material_name: string
-  required_g: number
-  ratio_percent: number
-  unresolved?: boolean
-}
-
-type WorkOrderExpansionPreview = {
-  semi_instructions: WorkOrderSemiInstruction[]
-  final_requirements: WorkOrderFinalRequirement[]
-  has_nested_semi: boolean
-  unresolved_items: string[]
-}
-
 type FoodType = {
   id: string
   type_name: string
@@ -605,6 +572,8 @@ type ProductionFormState = {
 }
 
 type WorkOrderFormState = {
+  work_date: string
+  lot_number: string
   product_id: string
   production_unit_id: string
   planned_quantity_kg: string
@@ -1503,11 +1472,10 @@ function ValidationMessage({
 
 type DashboardTableProps = {
   records: ProductionRecord[]
-  onOpenDetail: (record: ProductionRecord) => void
   onOpenPdf: (url: string) => void
 }
 
-function ProductionRecordTable({ records, onOpenDetail, onOpenPdf }: DashboardTableProps) {
+function ProductionRecordTable({ records, onOpenPdf }: DashboardTableProps) {
   if (records.length === 0) {
     return (
       <EmptyState
@@ -1528,7 +1496,6 @@ function ProductionRecordTable({ records, onOpenDetail, onOpenPdf }: DashboardTa
             <th className="px-3 py-2 font-medium">생산수량(g)</th>
             <th className="px-3 py-2 font-medium">검사결과</th>
             <th className="px-3 py-2 font-medium">상태</th>
-            <th className="px-3 py-2 font-medium">상세보기</th>
             <th className="px-3 py-2 font-medium">PDF출력</th>
           </tr>
         </thead>
@@ -1544,15 +1511,6 @@ function ProductionRecordTable({ records, onOpenDetail, onOpenPdf }: DashboardTa
               <td className="px-3 py-3 text-green-400">{formatNumber(record.actual_quantity_g)}g</td>
               <td className="px-3 py-3 text-gray-200">{normalizeInspection(record.inspection_result)}</td>
               <td className="px-3 py-3 text-gray-200">{normalizeStatus(record.status)}</td>
-              <td className="px-3 py-3">
-                <button
-                  type="button"
-                  onClick={() => onOpenDetail(record)}
-                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
-                >
-                  상세보기
-                </button>
-              </td>
               <td className="px-3 py-3">
                 <button
                   type="button"
@@ -1607,6 +1565,9 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [recordsLoading, setRecordsLoading] = useState(true)
   const [recordsError, setRecordsError] = useState('')
   const [records, setRecords] = useState<ProductionRecord[]>([])
+  const [workOrderRecordsLoading, setWorkOrderRecordsLoading] = useState(true)
+  const [workOrderRecordsError, setWorkOrderRecordsError] = useState('')
+  const [workOrderRecords, setWorkOrderRecords] = useState<ProductionRecord[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
   const [productView, setProductView] = useState<'active' | 'inactive'>('active')
   const [productCatalogLoading, setProductCatalogLoading] = useState(false)
@@ -1628,14 +1589,12 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     text: string
   } | null>(null)
 
-  const [selectedRecord, setSelectedRecord] = useState<ProductionRecord | null>(null)
-  const [workOrderExpansionPreview, setWorkOrderExpansionPreview] = useState<WorkOrderExpansionPreview | null>(null)
-  const [workOrderExpansionLoading, setWorkOrderExpansionLoading] = useState(false)
-  const [workOrderExpansionError, setWorkOrderExpansionError] = useState('')
   const [showProductionModal, setShowProductionModal] = useState(false)
   const [productionForm, setProductionForm] = useState<ProductionFormState>(emptyProductionForm())
   const [productionSaving, setProductionSaving] = useState(false)
   const [workOrderForm, setWorkOrderForm] = useState<WorkOrderFormState>({
+    work_date: todayValue(),
+    lot_number: '',
     product_id: '',
     production_unit_id: '',
     planned_quantity_kg: '',
@@ -1656,6 +1615,8 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const [completionTargetRecord, setCompletionTargetRecord] = useState<ProductionRecord | null>(null)
   const [showPlannedEditModal, setShowPlannedEditModal] = useState(false)
   const [plannedEditRecord, setPlannedEditRecord] = useState<ProductionRecord | null>(null)
+  const [plannedEditDate, setPlannedEditDate] = useState('')
+  const [plannedEditLot, setPlannedEditLot] = useState('')
   const [plannedEditKg, setPlannedEditKg] = useState('')
   const [productionActionBusy, setProductionActionBusy] = useState(false)
   const [productionActionMessage, setProductionActionMessage] = useState<{
@@ -1872,6 +1833,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   const canCreateWorkOrder = useMemo(() => {
     const plannedG = kgToG(workOrderForm.planned_quantity_kg)
     return (
+      !!workOrderForm.work_date &&
       !!workOrderForm.product_id &&
       !!workOrderForm.production_unit_id &&
       productionUnits.length > 0 &&
@@ -1884,6 +1846,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     productionActionBusy,
     productionUnits.length,
     productionUnitsLoading,
+    workOrderForm.work_date,
     workOrderForm.planned_quantity_kg,
     workOrderForm.product_id,
     workOrderForm.production_unit_id,
@@ -2022,13 +1985,21 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     return Math.max(planned - actual, 0)
   }, [productionForm.actual_quantity_g, productionForm.planned_quantity_g])
 
-  const todayWorkOrders = useMemo(() => {
+  const registeredWorkOrders = useMemo(() => {
     const today = todayValue()
-    return records.filter((record) => {
-      if ((record.work_date || '').slice(0, 10) !== today) return false
-      return normalizeStatusCode(record.status) !== 'cancelled'
-    })
-  }, [records])
+    return workOrderRecords
+      .filter((record) => {
+        const statusCode = normalizeStatusCode(record.status)
+        if (statusCode === 'cancelled') return false
+        if (statusCode === 'planned' || statusCode === 'in_progress') return true
+        return (record.work_date || '').slice(0, 10) === today
+      })
+      .sort((left, right) => {
+        const dateCompare = String(left.work_date || '').localeCompare(String(right.work_date || ''))
+        if (dateCompare !== 0) return dateCompare
+        return String(left.created_at || '').localeCompare(String(right.created_at || ''))
+      })
+  }, [workOrderRecords])
 
   const dailyReportRows = useMemo(() => {
     const from = productionDateFrom.trim()
@@ -2129,6 +2100,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     void loadCompanyInfo()
     void loadOverview()
     void loadProductionRecords(daysAgoValue(29), todayValue())
+    void loadWorkOrderRecords()
     void loadProductCatalog()
     void loadRecipes()
     void loadFoodTypes()
@@ -2151,41 +2123,6 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
     }
     void loadProductDetailUnits(selectedProductId)
   }, [selectedProductId])
-
-  useEffect(() => {
-    const recordId = selectedRecord?.id
-    if (!recordId) {
-      setWorkOrderExpansionPreview(null)
-      setWorkOrderExpansionError('')
-      setWorkOrderExpansionLoading(false)
-      return
-    }
-
-    let cancelled = false
-    setWorkOrderExpansionLoading(true)
-    setWorkOrderExpansionError('')
-
-    void (async () => {
-      try {
-        const payload = await readJson<{ expansion?: WorkOrderExpansionPreview }>(
-          `/api/moni/production-records/${recordId}/pdf?format=json`,
-          { method: 'GET' },
-        )
-        if (cancelled) return
-        setWorkOrderExpansionPreview(payload.expansion ?? null)
-      } catch (error) {
-        if (cancelled) return
-        setWorkOrderExpansionPreview(null)
-        setWorkOrderExpansionError(error instanceof Error ? error.message : '작업지시서 전개 정보를 불러오지 못했습니다.')
-      } finally {
-        if (!cancelled) setWorkOrderExpansionLoading(false)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [selectedRecord?.id])
 
   useEffect(() => {
     setDailySelectedIds((prev) => prev.filter((id) => dailyReportRows.some((row) => row.id === id)))
@@ -2439,6 +2376,20 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
       setRecordsError(error instanceof Error ? error.message : '제조기록서를 불러오지 못했습니다.')
     } finally {
       setRecordsLoading(false)
+    }
+  }
+
+  async function loadWorkOrderRecords() {
+    setWorkOrderRecordsLoading(true)
+    setWorkOrderRecordsError('')
+    try {
+      const payload = await readJson<ProductionRecordsPayload>('/api/moni/production-records?limit=1000')
+      setWorkOrderRecords(payload.records ?? [])
+      if ((payload.products ?? []).length > 0) setProducts(payload.products ?? [])
+    } catch (error) {
+      setWorkOrderRecordsError(error instanceof Error ? error.message : '작업지시서 목록을 불러오지 못했습니다.')
+    } finally {
+      setWorkOrderRecordsLoading(false)
     }
   }
 
@@ -4686,10 +4637,16 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
   }
 
   async function createWorkOrder() {
+    const workDate = workOrderForm.work_date.trim()
+    const lotNumber = workOrderForm.lot_number.trim()
     const productId = workOrderForm.product_id
     const plannedG = kgToG(workOrderForm.planned_quantity_kg)
     const selectedUnit =
       productionUnits.find((unit) => String(unit.id) === workOrderForm.production_unit_id) ?? null
+    if (!workDate) {
+      setProductionActionMessage({ tone: 'error', text: '생산예정일을 입력해 주세요.' })
+      return
+    }
     if (!productId) {
       setProductionActionMessage({ tone: 'error', text: '제품을 선택해 주세요.' })
       return
@@ -4718,7 +4675,8 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       await readJson('/api/moni/production-records', {
         method: 'POST',
         body: JSON.stringify({
-          work_date: todayValue(),
+          work_date: workDate,
+          lot_number: lotNumber || null,
           product_id: productId,
           product_name: selectedProduct.product_name,
           planned_quantity_g: plannedG,
@@ -4730,11 +4688,18 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         }),
       })
 
-      setWorkOrderForm({ product_id: '', production_unit_id: '', planned_quantity_kg: '' })
+      setWorkOrderForm({
+        work_date: workDate,
+        lot_number: '',
+        product_id: '',
+        production_unit_id: '',
+        planned_quantity_kg: '',
+      })
       setProductionActionMessage({ tone: 'success', text: '작업지시서가 생성되었습니다.' })
       await Promise.all([
         loadOverview(),
         loadProductionRecords(productionDateFrom, productionDateTo),
+        loadWorkOrderRecords(),
       ])
     } catch (error) {
       setProductionActionMessage({
@@ -4848,6 +4813,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       await Promise.all([
         loadOverview(),
         loadProductionRecords(productionDateFrom, productionDateTo),
+        loadWorkOrderRecords(),
       ])
     } catch (error) {
       setProductionActionMessage({
@@ -5053,6 +5019,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       await Promise.all([
         loadOverview(),
         loadProductionRecords(productionDateFrom, productionDateTo),
+        loadWorkOrderRecords(),
       ])
     } catch (error) {
       setProductionActionMessage({
@@ -5067,17 +5034,29 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
   function openPlannedEditModal(record: ProductionRecord) {
     const statusCode = normalizeStatusCode(record.status)
     if (statusCode !== 'planned') {
-      setProductionActionMessage({ tone: 'warning', text: 'planned 상태에서만 예정수량을 수정할 수 있습니다.' })
+      setProductionActionMessage({ tone: 'warning', text: '예정 상태의 작업지시서만 수정할 수 있습니다.' })
       return
     }
     setPlannedEditRecord(record)
+    setPlannedEditDate((record.work_date || '').slice(0, 10))
+    setPlannedEditLot(record.lot_number || '')
     setPlannedEditKg(record.planned_quantity_g && record.planned_quantity_g > 0 ? String(record.planned_quantity_g / 1000) : '')
     setShowPlannedEditModal(true)
   }
 
-  async function savePlannedQuantity() {
+  async function saveWorkOrderChanges() {
     if (!plannedEditRecord) return
+    const workDate = plannedEditDate.trim()
+    const lotNumber = plannedEditLot.trim()
     const plannedG = kgToG(plannedEditKg)
+    if (!workDate) {
+      setProductionActionMessage({ tone: 'error', text: '생산예정일을 입력해 주세요.' })
+      return
+    }
+    if (!lotNumber) {
+      setProductionActionMessage({ tone: 'error', text: 'LOT를 입력해 주세요.' })
+      return
+    }
     if (plannedG === null || plannedG <= 0) {
       setProductionActionMessage({ tone: 'error', text: '예정 생산량은 0보다 커야 합니다.' })
       return
@@ -5088,20 +5067,25 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       await callProductionAction({
         action: 'update_planned',
         record_id: plannedEditRecord.id,
+        work_date: workDate,
+        lot_number: lotNumber,
         planned_quantity_g: plannedG,
       })
       setShowPlannedEditModal(false)
       setPlannedEditRecord(null)
+      setPlannedEditDate('')
+      setPlannedEditLot('')
       setPlannedEditKg('')
-      setProductionActionMessage({ tone: 'success', text: '예정수량이 수정되었습니다.' })
+      setProductionActionMessage({ tone: 'success', text: '작업지시서가 수정되었습니다.' })
       await Promise.all([
         loadOverview(),
         loadProductionRecords(productionDateFrom, productionDateTo),
+        loadWorkOrderRecords(),
       ])
     } catch (error) {
       setProductionActionMessage({
         tone: 'error',
-        text: error instanceof Error ? error.message : '예정수량 수정에 실패했습니다.',
+        text: error instanceof Error ? error.message : '작업지시서 수정에 실패했습니다.',
       })
     } finally {
       setProductionActionBusy(false)
@@ -5115,11 +5099,11 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
   async function cancelWorkOrder(record: ProductionRecord) {
     const statusCode = normalizeStatusCode(record.status)
     if (statusCode === 'confirmed') {
-      setProductionActionMessage({ tone: 'error', text: '확정된 작업지시서는 취소할 수 없습니다.' })
+      setProductionActionMessage({ tone: 'error', text: '확정된 작업지시서는 원재료 차감 이력이 있어 삭제할 수 없습니다.' })
       return
     }
     if (!(statusCode === 'planned' || statusCode === 'completed')) {
-      setProductionActionMessage({ tone: 'error', text: 'planned 또는 completed 상태만 취소할 수 있습니다.' })
+      setProductionActionMessage({ tone: 'error', text: '예정 또는 완료 상태의 작업지시서만 삭제할 수 있습니다.' })
       return
     }
 
@@ -5130,7 +5114,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
     setProductionActionBusy(true)
     try {
       await callProductionAction({
-        action: 'cancel',
+        action: 'delete',
         record_id: record.id,
       })
 
@@ -5141,6 +5125,8 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       if (plannedEditRecord?.id === record.id) {
         setShowPlannedEditModal(false)
         setPlannedEditRecord(null)
+        setPlannedEditDate('')
+        setPlannedEditLot('')
         setPlannedEditKg('')
       }
       if (deductionPreviewRecordId === record.id) {
@@ -5153,11 +5139,12 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       await Promise.all([
         loadOverview(),
         loadProductionRecords(productionDateFrom, productionDateTo),
+        loadWorkOrderRecords(),
       ])
     } catch (error) {
       setProductionActionMessage({
         tone: 'error',
-        text: error instanceof Error ? error.message : '작업지시서 취소에 실패했습니다.',
+        text: error instanceof Error ? error.message : '작업지시서 삭제에 실패했습니다.',
       })
     } finally {
       setProductionActionBusy(false)
@@ -5181,6 +5168,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       await Promise.all([
         loadOverview(),
         loadProductionRecords(productionDateFrom, productionDateTo),
+        loadWorkOrderRecords(),
         loadSububu(sububuDateFrom, sububuDateTo, sububuMaterialQuery),
       ])
     } catch (error) {
@@ -5356,6 +5344,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
       await Promise.all([
         loadOverview(),
         loadProductionRecords(productionDateFrom, productionDateTo),
+        loadWorkOrderRecords(),
         loadMaterials(),
         loadSububu(sububuDateFrom, sububuDateTo),
       ])
@@ -5905,11 +5894,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
           {recordsLoading ? (
             <LoadingBlock lines={5} />
           ) : (
-            <ProductionRecordTable
-              records={filteredRecords}
-              onOpenDetail={setSelectedRecord}
-              onOpenPdf={openWindow}
-            />
+            <ProductionRecordTable records={filteredRecords} onOpenPdf={openWindow} />
           )}
         </SectionCard>
       </div>
@@ -5918,13 +5903,13 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
 
   function renderWorkOrders() {
     return (
-      <SectionCard title="작업 지시 / 제조기록서" description="생산 기록 목록과 상세 문서를 확인합니다.">
+      <SectionCard title="작업 지시 / 제조기록서" description="생산 기록 목록과 출력 문서를 확인합니다.">
         {recordsLoading ? (
           <LoadingBlock lines={5} />
         ) : recordsError ? (
           <EmptyState title="생산 기록을 불러오지 못했습니다" description={recordsError} />
         ) : (
-          <ProductionRecordTable records={records} onOpenDetail={setSelectedRecord} onOpenPdf={openWindow} />
+          <ProductionRecordTable records={records} onOpenPdf={openWindow} />
         )}
       </SectionCard>
     )
@@ -5943,7 +5928,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
 
         <SectionCard
           title="작업지시서 생성"
-          description="제품을 선택하고 생산단위를 등록/선택한 뒤 예정 생산량(kg)을 입력하면 작업지시서를 생성할 수 있습니다."
+          description="생산예정일과 LOT를 입력하고 제품·생산단위·예정 생산량을 선택해 작업지시서를 생성합니다. LOT를 비우면 자동 생성됩니다."
         >
           {productionUnitMessage ? (
             <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${messageToneClasses(productionUnitMessage.tone)}`}>
@@ -5951,7 +5936,25 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             </div>
           ) : null}
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <Field label="생산예정일">
+              <input
+                type="date"
+                value={workOrderForm.work_date}
+                onChange={(event) => setWorkOrderForm((prev) => ({ ...prev, work_date: event.target.value }))}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+
+            <Field label="LOT">
+              <input
+                value={workOrderForm.lot_number}
+                onChange={(event) => setWorkOrderForm((prev) => ({ ...prev, lot_number: event.target.value }))}
+                placeholder="비우면 자동 생성"
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+
             <Field label="제품 선택">
               <select
                 value={workOrderForm.product_id}
@@ -6191,18 +6194,21 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         </SectionCard>
 
         <SectionCard
-          title="오늘의 작업지시서 목록"
-          description="작업지시서 생성 후 완료 입력, 차감 확인, 확정 순서로 진행합니다."
+          title="등록된 작업지시서 목록"
+          description="예정·진행 작업지시서와 오늘 처리한 작업지시서를 확인하고 수정·삭제할 수 있습니다."
         >
-          {recordsLoading ? (
+          {workOrderRecordsLoading ? (
             <LoadingBlock lines={4} />
-          ) : todayWorkOrders.length === 0 ? (
-            <EmptyState title="오늘 작업지시서가 없습니다" description="상단에서 먼저 작업지시서를 생성하세요." />
+          ) : workOrderRecordsError ? (
+            <EmptyState title="작업지시서 목록을 불러오지 못했습니다" description={workOrderRecordsError} />
+          ) : registeredWorkOrders.length === 0 ? (
+            <EmptyState title="등록된 작업지시서가 없습니다" description="상단에서 새 작업지시서를 생성하세요." />
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-gray-400">
                   <tr className="border-b border-gray-700">
+                    <th className="px-3 py-2 font-medium">생산예정일</th>
                     <th className="px-3 py-2 font-medium">LOT</th>
                     <th className="px-3 py-2 font-medium">제품명</th>
                     <th className="px-3 py-2 font-medium">품목보고번호</th>
@@ -6218,7 +6224,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                   </tr>
                 </thead>
                 <tbody>
-                  {todayWorkOrders.map((record) => {
+                  {registeredWorkOrders.map((record) => {
                     const statusCode = normalizeStatusCode(record.status)
                     const plannedUnitText = formatPlannedUnitForRecord(record)
                     const productMeta = findProductMeta(record)
@@ -6227,6 +6233,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     const completedEa = calcEaByPackingUnit(record.actual_quantity_g, packingUnitG)
                     return (
                       <tr key={record.id} className="border-b border-gray-800/80">
+                        <td className="px-3 py-3 whitespace-nowrap text-gray-200">{record.work_date || '-'}</td>
                         <td className="px-3 py-3 font-mono text-gray-300">{record.lot_number || '-'}</td>
                         <td className="px-3 py-3 text-white">{record.product_name || '-'}</td>
                         <td className="px-3 py-3 text-gray-200">{reportNumberText(productMeta?.report_number)}</td>
@@ -6274,13 +6281,13 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                               </button>
                             )}
 
-                            {(statusCode === 'planned' || statusCode === 'in_progress') && (
+                            {statusCode === 'planned' && (
                               <button
                                 type="button"
                                 onClick={() => openPlannedEditModal(record)}
                                 className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                               >
-                                예정수량 수정
+                                수정
                               </button>
                             )}
 
@@ -6320,7 +6327,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                                 disabled={productionActionBusy}
                                 className="rounded-lg border border-red-800/70 px-3 py-1.5 text-xs text-red-200 hover:border-red-600 hover:text-red-100 disabled:opacity-60"
                               >
-                                취소
+                                삭제
                               </button>
                             )}
 
@@ -6602,7 +6609,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         >
           {recordsLoading ? (
             <LoadingBlock lines={4} />
-          ) : todayWorkOrders.length === 0 ? (
+          ) : registeredWorkOrders.length === 0 ? (
             <EmptyState title="오늘 작업지시서가 없습니다" description="상단에서 새 작업지시서를 먼저 생성해 주세요." />
           ) : (
             <div className="overflow-x-auto">
@@ -6620,7 +6627,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                   </tr>
                 </thead>
                 <tbody>
-                  {todayWorkOrders.map((record) => {
+                  {registeredWorkOrders.map((record) => {
                     const statusCode = normalizeStatusCode(record.status)
                     const plannedUnitText = formatPlannedUnitForRecord(record)
 
@@ -7127,7 +7134,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <th className="px-3 py-2 font-medium">규격(g)</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">개당 단가(원)</th>
                     <th className="px-3 py-2 font-medium">보관</th>
-                    <th className="px-3 py-2 font-medium">소비기한</th>
+                    <th className="px-3 py-2 font-medium">소비기한(개월)</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">현재재고</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">재료유형</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap text-right">작업</th>
@@ -7155,7 +7162,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                       </td>
                       <td className="px-3 py-3 text-gray-200">{material.storage_type || '-'}</td>
                       <td className="px-3 py-3 text-gray-200">
-                        {material.shelf_life_days ? `${material.shelf_life_days}일` : '-'}
+                        {material.shelf_life_days ? `${formatNumber(material.shelf_life_days)}개월` : '-'}
                       </td>
                       <td className="px-3 py-3 text-green-400">{formatNumber(material.current_stock_g)}g</td>
                       <td className="px-3 py-3 text-gray-200 whitespace-nowrap">{material.ingredient_type || '원재료'}</td>
@@ -8199,7 +8206,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
     return (
       <SectionCard
         title="생산일보"
-        description="생산완료된 작업만 조회/상세/수정/되돌리기/인쇄할 수 있습니다."
+        description="생산완료된 작업만 조회/수정/되돌리기/인쇄할 수 있습니다."
         actions={
           <>
             <Field label="기간 구분" className="min-w-[130px]">
@@ -8352,13 +8359,6 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            onClick={() => setSelectedRecord(record)}
-                            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
-                          >
-                            상세보기
-                          </button>
-                          <button
-                            type="button"
                             onClick={() => printWorkOrder(record)}
                             className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:border-green-500 hover:text-white"
                           >
@@ -8409,7 +8409,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="whitespace-nowrap text-xl font-bold text-white">생산일보</h2>
               <p className="text-sm text-gray-400">
-                생산완료된 작업만 조회/상세/수정/되돌리기/인쇄할 수 있습니다.
+                생산완료된 작업만 조회/수정/되돌리기/인쇄할 수 있습니다.
               </p>
             </div>
             <div className="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
@@ -8580,14 +8580,6 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedRecord(record)}
-                              title="상세보기"
-                              className="whitespace-nowrap rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-200 hover:border-green-500 hover:text-white"
-                            >
-                              상세
-                            </button>
                             <button
                               type="button"
                               onClick={() => printWorkOrder(record)}
@@ -9414,11 +9406,13 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
 
       <Modal
         open={showPlannedEditModal}
-        title="예정수량 수정"
+        title="작업지시서 수정"
         description={plannedEditRecord?.lot_number || ''}
         onClose={() => {
           setShowPlannedEditModal(false)
           setPlannedEditRecord(null)
+          setPlannedEditDate('')
+          setPlannedEditLot('')
           setPlannedEditKg('')
         }}
       >
@@ -9426,7 +9420,6 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
           <SectionCard title="작업지시서 정보">
             {plannedEditRecord ? (
               <div className="space-y-2 text-sm text-gray-200">
-                <p>LOT: {plannedEditRecord.lot_number || '-'}</p>
                 <p>제품명: {plannedEditRecord.product_name || '-'}</p>
                 <p>품목보고번호: {reportNumberText(findProductMeta(plannedEditRecord)?.report_number)}</p>
                 <p>현재 예정량: {formatKg(plannedEditRecord.planned_quantity_g)}kg</p>
@@ -9435,6 +9428,23 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
               <p className="text-sm text-gray-400">선택된 작업지시서가 없습니다.</p>
             )}
           </SectionCard>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="생산예정일">
+              <input
+                type="date"
+                value={plannedEditDate}
+                onChange={(event) => setPlannedEditDate(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+            <Field label="LOT">
+              <input
+                value={plannedEditLot}
+                onChange={(event) => setPlannedEditLot(event.target.value)}
+                className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
+              />
+            </Field>
+          </div>
           <Field label="수정 예정량(kg)">
             <input
               type="number"
@@ -9452,6 +9462,8 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             onClick={() => {
               setShowPlannedEditModal(false)
               setPlannedEditRecord(null)
+              setPlannedEditDate('')
+              setPlannedEditLot('')
               setPlannedEditKg('')
             }}
             className="rounded-xl border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
@@ -9460,11 +9472,11 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
           </button>
           <button
             type="button"
-            onClick={() => void savePlannedQuantity()}
+            onClick={() => void saveWorkOrderChanges()}
             disabled={productionActionBusy}
             className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400 disabled:opacity-60"
           >
-            예정수량 저장
+            수정 저장
           </button>
         </div>
       </Modal>
@@ -10820,139 +10832,6 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
             {productionSaving ? '저장 중...' : '저장'}
           </button>
         </div>
-      </Modal>
-
-      <Modal
-        open={!!selectedRecord}
-        title="제조기록서 상세"
-        description={selectedRecord?.lot_number || ''}
-        onClose={() => {
-          setSelectedRecord(null)
-          setWorkOrderExpansionPreview(null)
-          setWorkOrderExpansionError('')
-          setWorkOrderExpansionLoading(false)
-        }}
-      >
-        {selectedRecord ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            <SectionCard title="기본정보">
-              <div className="space-y-2 text-sm text-gray-200">
-                <p>제조번호: {selectedRecord.lot_number || '-'}</p>
-                <p>제조일자: {selectedRecord.work_date || '-'}</p>
-                <p>제품명: {selectedRecord.product_name || '-'}</p>
-                <p>품목보고번호: {reportNumberText(findProductMeta(selectedRecord)?.report_number)}</p>
-                <p>상태: {normalizeStatus(selectedRecord.status)}</p>
-              </div>
-            </SectionCard>
-            <SectionCard title="생산수량">
-              <div className="space-y-2 text-sm text-gray-200">
-                <p>계획수량: {formatNumber(selectedRecord.planned_quantity_g)}g</p>
-                <p>실제생산량: {formatNumber(selectedRecord.actual_quantity_g)}g</p>
-                <p>불량수량: {formatNumber(selectedRecord.defect_quantity_g)}g</p>
-              </div>
-            </SectionCard>
-            <SectionCard title="작업정보">
-              <div className="space-y-2 text-sm text-gray-200">
-                <p>작업자: {selectedRecord.worker_name || '-'}</p>
-                <p>시작시간: {selectedRecord.start_time || '-'}</p>
-                <p>종료시간: {selectedRecord.end_time || '-'}</p>
-              </div>
-            </SectionCard>
-            <SectionCard title="품질 / 위생">
-              <div className="space-y-2 text-sm text-gray-200">
-                <p>검사결과: {normalizeInspection(selectedRecord.inspection_result)}</p>
-                <p>위생점검 여부: {selectedRecord.sanitation_check ? '확인' : '미확인'}</p>
-                <p>비고: {selectedRecord.note || '-'}</p>
-              </div>
-            </SectionCard>
-            <SectionCard title="반제품 생산 지시" className="md:col-span-2">
-              {workOrderExpansionLoading ? (
-                <LoadingBlock lines={3} />
-              ) : workOrderExpansionError ? (
-                <p className="text-sm text-red-300">{workOrderExpansionError}</p>
-              ) : workOrderExpansionPreview?.semi_instructions?.length ? (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="text-gray-400">
-                      <tr className="border-b border-gray-700">
-                        <th className="px-3 py-2 font-medium">레시피 항목</th>
-                        <th className="px-3 py-2 font-medium">연결 반제품</th>
-                        <th className="px-3 py-2 font-medium">필요 생산량(g)</th>
-                        <th className="px-3 py-2 font-medium">패킹단위</th>
-                        <th className="px-3 py-2 font-medium">예정수량(ea)</th>
-                        <th className="px-3 py-2 font-medium">반제품 원재료</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {workOrderExpansionPreview.semi_instructions.map((item, index) => (
-                        <tr key={`${item.recipe_item_name}-${index}`} className="border-b border-gray-800/80">
-                          <td className="px-3 py-3 text-gray-200">{item.recipe_item_name}</td>
-                          <td className="px-3 py-3 text-white">{item.linked_product_name || '미연결'}</td>
-                          <td className="px-3 py-3 text-gray-200">{formatNumber(item.required_production_g)}g</td>
-                          <td className="px-3 py-3 text-gray-200">{formatPackingUnitGText(item.packing_unit_g)}</td>
-                          <td className="px-3 py-3 text-gray-200">
-                            {item.planned_quantity_ea !== null ? `${formatNumber(item.planned_quantity_ea)}ea` : '계산불가'}
-                          </td>
-                          <td className="px-3 py-3 text-gray-200">
-                            {item.materials.length > 0
-                              ? item.materials.map((material) => `${material.material_name} (${formatNumber(material.required_g)}g)`).join(', ')
-                              : item.unresolved_reason || '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400">반제품 전개 대상이 없습니다.</p>
-              )}
-            </SectionCard>
-            <SectionCard title="최종 합산 원재료 필요량" className="md:col-span-2">
-              {workOrderExpansionLoading ? (
-                <LoadingBlock lines={3} />
-              ) : workOrderExpansionError ? (
-                <p className="text-sm text-red-300">{workOrderExpansionError}</p>
-              ) : workOrderExpansionPreview?.final_requirements?.length ? (
-                <div className="space-y-2">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-left text-sm">
-                      <thead className="text-gray-400">
-                        <tr className="border-b border-gray-700">
-                          <th className="px-3 py-2 font-medium">원재료</th>
-                          <th className="px-3 py-2 font-medium">합산 비율(%)</th>
-                          <th className="px-3 py-2 font-medium">필요량(g)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {workOrderExpansionPreview.final_requirements.map((item, index) => (
-                          <tr key={`${item.material_name}-${index}`} className="border-b border-gray-800/80">
-                            <td className="px-3 py-3 text-white">{item.material_name}</td>
-                            <td className="px-3 py-3 text-gray-200">{formatNumber(item.ratio_percent)}</td>
-                            <td className="px-3 py-3 text-green-300">{formatNumber(item.required_g)}g</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {workOrderExpansionPreview.unresolved_items?.length ? (
-                    <p className="text-xs text-amber-300">미연결/미전개: {workOrderExpansionPreview.unresolved_items.join(' / ')}</p>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400">합산 원재료 정보가 없습니다.</p>
-              )}
-            </SectionCard>
-            <div className="md:col-span-2 flex justify-end">
-              <button
-                type="button"
-                onClick={() => openWindow(`/api/moni/production-records/${selectedRecord.id}/pdf`)}
-                className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-400"
-              >
-                PDF 출력
-              </button>
-            </div>
-          </div>
-        ) : null}
       </Modal>
 
       <Modal
