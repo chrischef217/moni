@@ -17,6 +17,7 @@ type MaterialMasterRow = {
   unit_price_per_kg?: string | number | null
   unit_price?: string | number | null
   packing_weight_g?: string | number | null
+  current_stock_g?: string | number | null
   spec?: string | null
 }
 
@@ -27,6 +28,7 @@ type MaterialDisplayMeta = {
   displayName: string
   unitPricePerPack: number
   packingWeightG: number
+  currentStockG: number
 }
 
 type ProductionRecordDisplayMeta = {
@@ -48,6 +50,7 @@ type NormalizedLedgerRow = {
   quantityRawG: number
   unitPricePerPack: number
   packingWeightG: number
+  currentStockG: number
   counterparty: string
   note: string
   auditNote: string
@@ -127,6 +130,7 @@ function buildMaterialDisplayMap(rows: MaterialMasterRow[]): Map<string, Materia
           0,
           numberValue(material.packing_weight_g) || numberValue(text(material.spec).replaceAll(',', '')),
         ),
+        currentStockG: Math.max(0, Math.round(numberValue(material.current_stock_g))),
       }
     })
     .filter((material) => material.id && material.name)
@@ -159,6 +163,7 @@ function buildMaterialDisplayMap(rows: MaterialMasterRow[]): Map<string, Materia
       displayName: duplicateDisplayName ? `${material.displayName} [${material.id}]` : material.displayName,
       unitPricePerPack: material.unitPricePerPack,
       packingWeightG: material.packingWeightG,
+      currentStockG: material.currentStockG,
     }
     result.set(material.id, meta)
     if (material.itemCode) result.set(material.itemCode, meta)
@@ -259,7 +264,6 @@ export async function GET(request: NextRequest) {
         .order('id', { ascending: true })
         .range(offset, offset + TRANSACTION_PAGE_SIZE - 1)
 
-      if (from) pageQuery = pageQuery.gte('txn_date', from)
       if (to) pageQuery = pageQuery.lte('txn_date', to)
 
       const { data, error } = await pageQuery
@@ -277,7 +281,7 @@ export async function GET(request: NextRequest) {
 
     const materialResult = await supabase
       .from('raw_materials')
-      .select('id, item_code, item_name, country_of_origin, unit_price_per_kg, packing_weight_g, spec')
+      .select('id, item_code, item_name, country_of_origin, unit_price_per_kg, packing_weight_g, current_stock_g, spec')
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 마스터 조회에 실패했습니다.')
 
     const materialByRef = buildMaterialDisplayMap((materialResult.data ?? []) as MaterialMasterRow[])
@@ -320,6 +324,7 @@ export async function GET(request: NextRequest) {
       const unitPricePerPack = materialMeta?.unitPricePerPack || latestTransactionPriceByMaterial.get(transactionMaterialRef) || 0
       const packingWeightG =
         materialMeta?.packingWeightG || latestTransactionPackingWeightByMaterial.get(transactionMaterialRef) || 0
+      const currentStockG = materialMeta?.currentStockG || 0
       const txTypeCode = normalizeTypeCode(text(row.txn_type) || text(row.transaction_type))
       const txType = normalizeTypeLabel(txTypeCode)
       const rawNote = text(row.note)
@@ -353,6 +358,7 @@ export async function GET(request: NextRequest) {
         quantityRawG,
         unitPricePerPack,
         packingWeightG,
+        currentStockG,
         counterparty,
         note,
         auditNote: rawNote,
@@ -385,6 +391,7 @@ export async function GET(request: NextRequest) {
         balance_g: nextBalance,
         unit_price: row.unitPricePerPack,
         packing_weight_g: row.packingWeightG,
+        current_stock_g: row.currentStockG,
         note: row.note,
         audit_note: row.auditNote,
         search_text: row.searchText,
@@ -393,6 +400,8 @@ export async function GET(request: NextRequest) {
 
     const rows = allRows
       .filter((row) => {
+        if (from && row.tx_date < from) return false
+        if (to && row.tx_date > to) return false
         if (materialId && row.material_id !== materialId && row.item_code !== materialId) return false
         if (normalizedKeyword && !row.search_text.includes(normalizedKeyword)) return false
         return true
@@ -404,7 +413,7 @@ export async function GET(request: NextRequest) {
         ok: true,
         material_id: materialId || null,
         material_name: materialName || null,
-        balance_mode: 'item_code_full_dataset_cumulative_balanced_integer_display',
+        balance_mode: '전체 수불 누적',
         rounding_mode: 'largest_remainder_per_material_and_direction',
         pagination_mode: 'all_rows_range_pagination',
         source_row_count: transactionRows.length,
