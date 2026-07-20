@@ -14,6 +14,10 @@ type MaterialMasterRow = {
   item_code?: string | number | null
   item_name?: string | null
   country_of_origin?: string | null
+  unit_price_per_kg?: string | number | null
+  unit_price?: string | number | null
+  packing_weight_g?: string | number | null
+  spec?: string | null
 }
 
 type MaterialDisplayMeta = {
@@ -21,6 +25,8 @@ type MaterialDisplayMeta = {
   itemCode: string
   name: string
   displayName: string
+  unitPricePerPack: number
+  packingWeightG: number
 }
 
 type ProductionRecordDisplayMeta = {
@@ -40,6 +46,8 @@ type NormalizedLedgerRow = {
   txTypeCode: 'INBOUND' | 'OUTBOUND'
   txType: '입고' | '소모'
   quantityRawG: number
+  unitPricePerPack: number
+  packingWeightG: number
   counterparty: string
   note: string
   auditNote: string
@@ -114,6 +122,11 @@ function buildMaterialDisplayMap(rows: MaterialMasterRow[]): Map<string, Materia
         itemCode,
         name,
         origin: text(material.country_of_origin),
+        unitPricePerPack: Math.max(0, numberValue(material.unit_price_per_kg ?? material.unit_price)),
+        packingWeightG: Math.max(
+          0,
+          numberValue(material.packing_weight_g) || numberValue(text(material.spec).replaceAll(',', '')),
+        ),
       }
     })
     .filter((material) => material.id && material.name)
@@ -144,6 +157,8 @@ function buildMaterialDisplayMap(rows: MaterialMasterRow[]): Map<string, Materia
       itemCode: material.itemCode,
       name: material.name,
       displayName: duplicateDisplayName ? `${material.displayName} [${material.id}]` : material.displayName,
+      unitPricePerPack: material.unitPricePerPack,
+      packingWeightG: material.packingWeightG,
     }
     result.set(material.id, meta)
     if (material.itemCode) result.set(material.itemCode, meta)
@@ -262,10 +277,20 @@ export async function GET(request: NextRequest) {
 
     const materialResult = await supabase
       .from('raw_materials')
-      .select('id, item_code, item_name, country_of_origin')
+      .select('id, item_code, item_name, country_of_origin, unit_price_per_kg, packing_weight_g, spec')
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 마스터 조회에 실패했습니다.')
 
     const materialByRef = buildMaterialDisplayMap((materialResult.data ?? []) as MaterialMasterRow[])
+
+    const latestTransactionPriceByMaterial = new Map<string, number>()
+    const latestTransactionPackingWeightByMaterial = new Map<string, number>()
+    for (const row of transactionRows) {
+      const materialRef = resolveTransactionMaterialRef(row)
+      const unitPrice = Math.max(0, numberValue(row.unit_price_per_kg ?? row.unit_price_won ?? row.unit_price))
+      const packingWeightG = Math.max(0, numberValue(row.packing_weight_g))
+      if (materialRef && unitPrice > 0) latestTransactionPriceByMaterial.set(materialRef, unitPrice)
+      if (materialRef && packingWeightG > 0) latestTransactionPackingWeightByMaterial.set(materialRef, packingWeightG)
+    }
 
     const productionResult = await supabase.from('production_records').select('id, product_name, lot_number')
     if (productionResult.error) {
@@ -292,6 +317,9 @@ export async function GET(request: NextRequest) {
       const materialLabel = materialMeta?.displayName || transactionLabel || '원재료명 확인 필요'
       const materialKey = canonicalMaterialId || `name:${normalizeLookup(materialLabel)}`
       const quantityRawG = resolveQuantityG(row)
+      const unitPricePerPack = materialMeta?.unitPricePerPack || latestTransactionPriceByMaterial.get(transactionMaterialRef) || 0
+      const packingWeightG =
+        materialMeta?.packingWeightG || latestTransactionPackingWeightByMaterial.get(transactionMaterialRef) || 0
       const txTypeCode = normalizeTypeCode(text(row.txn_type) || text(row.transaction_type))
       const txType = normalizeTypeLabel(txTypeCode)
       const rawNote = text(row.note)
@@ -323,6 +351,8 @@ export async function GET(request: NextRequest) {
         txTypeCode,
         txType,
         quantityRawG,
+        unitPricePerPack,
+        packingWeightG,
         counterparty,
         note,
         auditNote: rawNote,
@@ -353,6 +383,8 @@ export async function GET(request: NextRequest) {
         inbound_g: inboundG,
         outbound_g: outboundG,
         balance_g: nextBalance,
+        unit_price: row.unitPricePerPack,
+        packing_weight_g: row.packingWeightG,
         note: row.note,
         audit_note: row.auditNote,
         search_text: row.searchText,
