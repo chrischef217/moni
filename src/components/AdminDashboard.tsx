@@ -9481,6 +9481,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         open={showSububuDetailModal}
         title={`${sububuDetailTarget || '원재료'} 수불 상세`}
         description="기간별 입고/소모 내역"
+        widthClassName="max-w-[1320px]"
         onClose={() => {
           setShowSububuDetailModal(false)
           setSububuDetailRows([])
@@ -9582,6 +9583,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         open={showPackagingLedgerDetailModal}
         title={`${packagingLedgerDetailTarget || '부재료'} 수불 상세`}
         description="기간별 입고/출고 내역"
+        widthClassName="max-w-[1320px]"
         onClose={() => {
           setShowPackagingLedgerDetailModal(false)
           setPackagingLedgerDetailRows([])
