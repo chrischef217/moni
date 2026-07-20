@@ -23,6 +23,11 @@ type MaterialDisplayMeta = {
   displayName: string
 }
 
+type ProductionRecordDisplayMeta = {
+  productName: string
+  lotNumber: string
+}
+
 type NormalizedLedgerRow = {
   sourceIndex: number
   stableKey: string
@@ -261,6 +266,22 @@ export async function GET(request: NextRequest) {
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 마스터 조회에 실패했습니다.')
 
     const materialByRef = buildMaterialDisplayMap((materialResult.data ?? []) as MaterialMasterRow[])
+
+    const productionResult = await supabase.from('production_records').select('id, product_name, lot_number')
+    if (productionResult.error) {
+      throw new Error(productionResult.error.message || '생산기록 조회에 실패했습니다.')
+    }
+
+    const productionById = new Map<string, ProductionRecordDisplayMeta>()
+    for (const production of productionResult.data ?? []) {
+      const id = text(production.id)
+      if (!id) continue
+      productionById.set(id, {
+        productName: text(production.product_name),
+        lotNumber: text(production.lot_number),
+      })
+    }
+
     const normalizedKeyword = normalizeLookup(materialName)
 
     const normalizedRows = transactionRows.map((row, sourceIndex): NormalizedLedgerRow => {
@@ -275,8 +296,9 @@ export async function GET(request: NextRequest) {
       const txType = normalizeTypeLabel(txTypeCode)
       const rawNote = text(row.note)
       const ledgerMetadata = parseLedgerMetadata(rawNote)
-      const outboundProductName = ledgerMetadata.product_name || text(row.product_name)
-      const outboundLot = ledgerMetadata.lot_number || text(row.lot_number)
+      const productionMeta = productionById.get(text(row.production_record_id))
+      const outboundProductName = productionMeta?.productName || ledgerMetadata.product_name || text(row.product_name)
+      const outboundLot = productionMeta?.lotNumber || ledgerMetadata.lot_number || text(row.lot_number)
       const counterparty =
         txTypeCode === 'INBOUND'
           ? text(row.supplier) || '입고'
