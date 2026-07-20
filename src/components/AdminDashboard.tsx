@@ -5928,7 +5928,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
 
         <SectionCard
           title="작업지시서 생성"
-          description="생산예정일과 LOT를 입력하고 제품·생산단위·예정 생산량을 선택해 작업지시서를 생성합니다. LOT를 비우면 자동 생성됩니다."
+          description="LOT는 LOT+생산예정일+당일 생산순서(예: LOT20260707-1) 형식입니다. 비우면 자동 생성됩니다."
         >
           {productionUnitMessage ? (
             <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${messageToneClasses(productionUnitMessage.tone)}`}>
@@ -5950,7 +5950,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
               <input
                 value={workOrderForm.lot_number}
                 onChange={(event) => setWorkOrderForm((prev) => ({ ...prev, lot_number: event.target.value }))}
-                placeholder="비우면 자동 생성"
+                placeholder="예: LOT20260707-1 (비우면 자동 생성)"
                 className="w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-green-500"
               />
             </Field>

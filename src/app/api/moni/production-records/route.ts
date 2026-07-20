@@ -161,10 +161,18 @@ function compactDate(dateString: string) {
   return dateString.replaceAll('-', '')
 }
 
+function lotPrefix(workDate: string) {
+  return `LOT${compactDate(workDate)}`
+}
+
 function isValidIsoDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const parsed = new Date(`${value}T00:00:00Z`)
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
+function isValidLotNumberForDate(lotNumber: string, workDate: string) {
+  return new RegExp(`^${lotPrefix(workDate)}-[1-9][0-9]*$`).test(lotNumber)
 }
 
 function makeProductId() {
@@ -266,7 +274,7 @@ async function fetchProducts() {
 
 async function generateLotNumber(workDate: string) {
   const supabase = createMoniServiceRoleClient()
-  const prefix = compactDate(workDate)
+  const prefix = lotPrefix(workDate)
   const { data, error } = await supabase
     .from('production_records')
     .select('lot_number')
@@ -848,7 +856,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = createMoniServiceRoleClient()
     const workDate = toText(body.work_date) || todayKst()
-    const requestedLotNumber = toText(body.lot_number)
+    const requestedLotNumber = toText(body.lot_number).toUpperCase()
     let productId = toText(body.product_id) || null
     const planned = parseNumber(body.planned_quantity_g)
     const actual = parseNumber(body.actual_quantity_g)
@@ -904,6 +912,12 @@ export async function POST(request: NextRequest) {
     }
 
     const lotNumber = requestedLotNumber || (await generateLotNumber(workDate))
+    if (!isValidLotNumberForDate(lotNumber, workDate)) {
+      return NextResponse.json(
+        { ok: false, error: `LOT는 ${lotPrefix(workDate)}-1 형식으로 입력해 주세요. 순번에는 앞자리 0을 붙이지 않습니다.` },
+        { status: 400 },
+      )
+    }
     await ensureLotNumberAvailable(lotNumber)
     const status = normalizeStatus(body.status, actual && actual > 0 ? 'completed' : 'planned')
     const plannedQuantityEa =
@@ -991,12 +1005,18 @@ export async function PATCH(request: NextRequest) {
       }
 
       const workDate = toText(body.work_date) || toText(record.work_date)
-      const lotNumber = toText(body.lot_number) || toText(record.lot_number)
+      const lotNumber = (toText(body.lot_number) || toText(record.lot_number)).toUpperCase()
       if (!isValidIsoDate(workDate)) {
         return NextResponse.json({ ok: false, error: '생산예정일은 YYYY-MM-DD 형식의 올바른 날짜여야 합니다.' }, { status: 400 })
       }
       if (!lotNumber) {
         return NextResponse.json({ ok: false, error: 'LOT를 입력해 주세요.' }, { status: 400 })
+      }
+      if (!isValidLotNumberForDate(lotNumber, workDate)) {
+        return NextResponse.json(
+          { ok: false, error: `LOT는 ${lotPrefix(workDate)}-1 형식으로 입력해 주세요. 순번에는 앞자리 0을 붙이지 않습니다.` },
+          { status: 400 },
+        )
       }
       await ensureLotNumberAvailable(lotNumber, recordId)
 
