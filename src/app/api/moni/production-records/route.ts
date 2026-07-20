@@ -316,6 +316,19 @@ async function fetchRecordById(id: string) {
 async function ensureNoExistingOutboundConfirm(recordId: string, lotNumber: string) {
   const supabase = createMoniServiceRoleClient()
 
+  const byLinkedRecord = await supabase
+    .from('raw_material_transactions')
+    .select('id')
+    .eq('txn_type', 'OUTBOUND')
+    .eq('production_record_id', recordId)
+    .limit(1)
+  if (byLinkedRecord.error) {
+    throw new ApiError(500, byLinkedRecord.error.message || '생산소모 중복 확인에 실패했습니다.', 'validation.duplicate.record')
+  }
+  if ((byLinkedRecord.data ?? []).length > 0) {
+    throw new ApiError(409, '이미 원재료 차감이 완료된 생산기록입니다.', 'validation.duplicate.record')
+  }
+
   const byRecord = await supabase
     .from('raw_material_transactions')
     .select('id')
@@ -345,6 +358,17 @@ async function ensureNoExistingOutboundConfirm(recordId: string, lotNumber: stri
 
 async function hasExistingOutboundConfirm(recordId: string, lotNumber: string) {
   const supabase = createMoniServiceRoleClient()
+
+  const byLinkedRecord = await supabase
+    .from('raw_material_transactions')
+    .select('id')
+    .eq('txn_type', 'OUTBOUND')
+    .eq('production_record_id', recordId)
+    .limit(1)
+  if (byLinkedRecord.error) {
+    throw new ApiError(500, byLinkedRecord.error.message || '생산소모 연결 확인에 실패했습니다.', 'validation.cancel.record')
+  }
+  if ((byLinkedRecord.data ?? []).length > 0) return true
 
   const byRecord = await supabase
     .from('raw_material_transactions')
