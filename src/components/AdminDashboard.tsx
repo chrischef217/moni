@@ -386,7 +386,8 @@ type SububuRow = {
   material_name: string
   inbound_g: number
   outbound_g: number
-  balance_g: number
+  period_total_g: number
+  current_stock_g: number
   unit_price: number
   packing_weight_g: number
   tx_count: number
@@ -492,6 +493,7 @@ type RawMaterialTransactionRow = {
   inbound_g: number
   outbound_g: number
   balance_g: number
+  current_stock_g?: number | null
   unit_price?: number
   packing_weight_g?: number
   note: string
@@ -1075,14 +1077,16 @@ function summarizeRawLedger(rows: RawMaterialTransactionRow[]) {
       material_name: key,
       inbound_g: 0,
       outbound_g: 0,
-      balance_g: 0,
+      period_total_g: 0,
+      current_stock_g: 0,
       unit_price: 0,
       packing_weight_g: 0,
       tx_count: 0,
     }
     current.inbound_g += Number(row.inbound_g ?? 0)
     current.outbound_g += Number(row.outbound_g ?? 0)
-    current.balance_g = Number(row.balance_g ?? current.balance_g)
+    current.period_total_g = current.inbound_g - current.outbound_g
+    current.current_stock_g = Number(row.current_stock_g ?? current.current_stock_g)
     current.unit_price = Math.max(current.unit_price, Number(row.unit_price ?? 0))
     current.packing_weight_g = Math.max(current.packing_weight_g, Number(row.packing_weight_g ?? 0))
     current.tx_count += 1
@@ -7926,10 +7930,11 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
         }
         summary.inbound += (Number(material.inbound_g ?? 0) / packingWeightG) * unitPrice
         summary.outbound += (Number(material.outbound_g ?? 0) / packingWeightG) * unitPrice
-        summary.balance += (Number(material.balance_g ?? 0) / packingWeightG) * unitPrice
+        summary.periodTotal += (Number(material.period_total_g ?? 0) / packingWeightG) * unitPrice
+        summary.currentStock += (Number(material.current_stock_g ?? 0) / packingWeightG) * unitPrice
         return summary
       },
-      { inbound: 0, outbound: 0, balance: 0, unpricedItems: 0 },
+      { inbound: 0, outbound: 0, periodTotal: 0, currentStock: 0, unpricedItems: 0 },
     )
     const packagingValueSummary = packagingSummaryRows.reduce(
       (summary, material) => {
@@ -8039,8 +8044,12 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                       <span className="mt-1 block text-base font-semibold text-amber-300">{formatWon(rawValueSummary.outbound)}</span>
                     </th>
                     <th className="px-3 py-3 font-medium">
-                      <span className="block text-xs text-gray-500">잔량금액</span>
-                      <span className="mt-1 block text-base font-semibold text-gray-100">{formatWon(rawValueSummary.balance)}</span>
+                      <span className="block text-xs text-gray-500">기간합계금액</span>
+                      <span className="mt-1 block text-base font-semibold text-gray-100">{formatWon(rawValueSummary.periodTotal)}</span>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <span className="block text-xs text-gray-500">{todayValue()} 잔량금액</span>
+                      <span className="mt-1 block text-base font-semibold text-gray-100">{formatWon(rawValueSummary.currentStock)}</span>
                     </th>
                     <th className="px-3 py-3 font-medium">
                       <span className="block text-xs text-gray-500">단가 반영 상태</span>
@@ -8055,7 +8064,8 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <th className="px-3 py-2 font-medium">원재료명</th>
                     <th className="px-3 py-2 font-medium">입고(g)</th>
                     <th className="px-3 py-2 font-medium">소모(g)</th>
-                    <th className="px-3 py-2 font-medium">잔량(g)</th>
+                    <th className="px-3 py-2 font-medium">기간합계(g)</th>
+                    <th className="px-3 py-2 font-medium">{todayValue()} 잔량(g)</th>
                     <th className="px-3 py-2 font-medium">거래건수</th>
                   </tr>
                 </thead>
@@ -8073,7 +8083,8 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                       </td>
                       <td className="px-3 py-3 text-green-400">{formatNumber(material.inbound_g)}g</td>
                       <td className="px-3 py-3 text-amber-300">{formatNumber(material.outbound_g)}g</td>
-                      <td className="px-3 py-3 text-gray-200">{formatNumber(material.balance_g)}g</td>
+                      <td className="px-3 py-3 text-gray-200">{formatNumber(material.period_total_g)}g</td>
+                      <td className="px-3 py-3 text-gray-200">{formatNumber(material.current_stock_g)}g</td>
                       <td className="px-3 py-3 text-gray-200">{formatNumber(material.tx_count)}</td>
                     </tr>
                   ))}
@@ -9636,7 +9647,7 @@ function selectProductRecipeMaterial(localId: string, material: RawMaterialRow) 
                     <th className="px-3 py-2 font-medium">거래처/사용처</th>
                     <th className="px-3 py-2 font-medium">입고(g)</th>
                     <th className="px-3 py-2 font-medium">소모(g)</th>
-                    <th className="px-3 py-2 font-medium">잔량(g)</th>
+                    <th className="px-3 py-2 font-medium">누적잔량(g)</th>
                     <th className="px-3 py-2 font-medium">비고</th>
                     <th className="px-3 py-2 font-medium">작업</th>
                   </tr>
