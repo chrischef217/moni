@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
@@ -15,7 +15,7 @@ function text(value: unknown): string | null {
 function numberValue(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string') {
-    const parsed = Number(value.trim())
+    const parsed = Number(value.trim().replaceAll(',', ''))
     if (Number.isFinite(parsed)) return parsed
   }
   return null
@@ -37,9 +37,9 @@ function normalizeName(value: unknown): string {
 }
 
 function isMissingColumnError(message: string, columnName: string): boolean {
-  const text = message.toLowerCase()
+  const messageText = message.toLowerCase()
   const column = columnName.toLowerCase()
-  return text.includes(column) && (text.includes('does not exist') || text.includes('schema cache') || text.includes('column'))
+  return messageText.includes(column) && (messageText.includes('does not exist') || messageText.includes('schema cache') || messageText.includes('column'))
 }
 
 async function validateLinkedSemifinishedProductId(
@@ -87,6 +87,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (ingredientType === '__INVALID__') {
       return NextResponse.json({ ok: false, error: '재료유형은 원재료/반제품/제품/반제품/기타만 허용됩니다.' }, { status: 400 })
     }
+
+    const hasPackingWeightField = Object.prototype.hasOwnProperty.call(body, 'packing_weight_g')
+    const packingWeightInput = hasPackingWeightField ? numberValue(body.packing_weight_g) : null
+    if (
+      hasPackingWeightField &&
+      (packingWeightInput === null || packingWeightInput <= 0 || !Number.isInteger(packingWeightInput))
+    ) {
+      return NextResponse.json({ ok: false, error: '단위(g)는 1g 이상의 정수로 입력해 주세요.' }, { status: 400 })
+    }
+
     const hasLinkedProductField = Object.prototype.hasOwnProperty.call(body, 'linked_product_id')
     const linkedProductIdInput = hasLinkedProductField ? text(body.linked_product_id) : undefined
     const payload: Record<string, unknown> = {
@@ -101,6 +111,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       supplier_contact: text(body.supplier_contact),
       supplier_address: text(body.supplier_address),
       supplier_biz_number: text(body.supplier_biz_number),
+      ...(hasPackingWeightField ? { packing_weight_g: packingWeightInput } : {}),
       ...(isActive === null ? {} : { is_active: isActive }),
     }
 
@@ -119,9 +130,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         .maybeSingle()
     }
     const { data: beforeRow, error: beforeError } = beforeRowResult
-    if (beforeError) throw new Error(beforeError.message || '?먯옱猷?議고쉶 ?ㅽ뙣')
+    if (beforeError) throw new Error(beforeError.message || '원재료 조회에 실패했습니다.')
     if (!beforeRow) {
-      return NextResponse.json({ ok: false, error: '?먯옱猷뚮? 李얠쓣 ???놁뒿?덈떎.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: '원재료를 찾을 수 없습니다.' }, { status: 404 })
     }
 
     const effectiveIngredientType = ingredientType ?? text(beforeRow.ingredient_type) ?? '원재료'
@@ -152,9 +163,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       updateResult = await supabase.from('raw_materials').update(fallbackPayload).eq('id', id).select('*').maybeSingle()
     }
     const { data, error } = updateResult
-    if (error) throw new Error(error.message || '?먯옱猷??섏젙 ?ㅽ뙣')
+    if (error) throw new Error(error.message || '원재료 수정에 실패했습니다.')
     if (!data) {
-      return NextResponse.json({ ok: false, error: '?먯옱猷뚮? 李얠쓣 ???놁뒿?덈떎.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: '원재료를 찾을 수 없습니다.' }, { status: 404 })
     }
 
     const newName = text(data.item_name) ?? ''
@@ -168,7 +179,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         .update({ raw_material_name: newName })
         .eq('raw_material_ref_id', id)
       if (refMappingError && !isMissingColumnError(refMappingError.message, 'raw_material_ref_id')) {
-        throw new Error(refMappingError.message || '?癒?삺???怨뚭퍙筌?揶쏄퉮????쎈솭')
+        throw new Error(refMappingError.message || '원재료 연결명 동기화에 실패했습니다.')
       }
 
       const candidates: MappingRow[] = []
@@ -183,15 +194,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
             .select('id, raw_material_name, business_id')
             .is('business_id', null),
         ])
-        if (sameBusinessResult.error) throw new Error(sameBusinessResult.error.message || '?먯옱猷??곌껐 議고쉶 ?ㅽ뙣')
-        if (nullBusinessResult.error) throw new Error(nullBusinessResult.error.message || '?먯옱猷??곌껐 議고쉶 ?ㅽ뙣')
+        if (sameBusinessResult.error) throw new Error(sameBusinessResult.error.message || '원재료 연결 조회에 실패했습니다.')
+        if (nullBusinessResult.error) throw new Error(nullBusinessResult.error.message || '원재료 연결 조회에 실패했습니다.')
         candidates.push(...((sameBusinessResult.data ?? []) as MappingRow[]), ...((nullBusinessResult.data ?? []) as MappingRow[]))
       } else {
         const { data: nullBusinessRows, error: nullBusinessError } = await supabase
           .from('raw_material_mapping')
           .select('id, raw_material_name, business_id')
           .is('business_id', null)
-        if (nullBusinessError) throw new Error(nullBusinessError.message || '?먯옱猷??곌껐 議고쉶 ?ㅽ뙣')
+        if (nullBusinessError) throw new Error(nullBusinessError.message || '원재료 연결 조회에 실패했습니다.')
         candidates.push(...((nullBusinessRows ?? []) as MappingRow[]))
       }
 
@@ -209,14 +220,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           .from('raw_material_mapping')
           .update({ raw_material_name: newName })
           .in('id', mappingIds)
-        if (mappingError) throw new Error(mappingError.message || '?먯옱猷??곌껐紐?媛깆떊 ?ㅽ뙣')
+        if (mappingError) throw new Error(mappingError.message || '원재료 연결명 갱신에 실패했습니다.')
       }
     }
 
     return NextResponse.json({ ok: true, material: data }, { status: 200 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : '?먯옱猷??섏젙 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
+    const message = error instanceof Error ? error.message : '원재료 수정 중 오류가 발생했습니다.'
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }
-
