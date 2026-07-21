@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import RawMaterialLedgerPrintController from '@/components/RawMaterialLedgerPrintController'
 import MonthlyProductionPlanNavController from '@/components/MonthlyProductionPlanNavController'
+import MonthlyProductionRequirementPrintController from '@/components/MonthlyProductionRequirementPrintController'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default function RootLayout({
       <body className="antialiased">
         <RawMaterialLedgerPrintController />
         <MonthlyProductionPlanNavController />
+        <MonthlyProductionRequirementPrintController />
         {children}
       </body>
     </html>
