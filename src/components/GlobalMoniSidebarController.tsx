@@ -4,8 +4,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
 type CategoryKey = 'ai' | 'production' | 'accounting' | 'sales' | 'admin' | 'audit'
-type MenuItem = { label: string; target?: string; href?: string }
+type MenuItem = { label: string; target?: string; href?: string; parentTarget?: string }
 type Category = { key: CategoryKey; label: string; icon: string; items: MenuItem[] }
+
+const SIDEBAR_WIDTH = 264
+const PIN_STORAGE_KEY = 'moni-sidebar-pinned'
 
 const categories: Category[] = [
   {
@@ -22,7 +25,6 @@ const categories: Category[] = [
       { label: '생산일보', target: '생산일보' },
       { label: '원료 수불부', target: '원료수불부' },
       { label: '제품 관리', target: '제품관리' },
-      { label: '레시피 원재료 연결', target: '레시피 원재료 연결' },
       { label: '원재료 관리', target: '원재료 관리' },
       { label: '부재료 관리', target: '부재료 관리' },
       { label: '위생점검', target: '위생점검' },
@@ -48,6 +50,7 @@ const categories: Category[] = [
       { label: '관리자 설정', target: '관리자' },
       { label: '회사정보', target: '회사정보' },
       { label: '사용자 관리', target: '사용자 관리' },
+      { label: '레시피 원재료 연결', target: '레시피 원재료 연결', parentTarget: '생산관리' },
     ],
   },
   {
@@ -85,9 +88,35 @@ export default function GlobalMoniSidebarController() {
   const [activeCategory, setActiveCategory] = useState<CategoryKey>(pathname === '/monthly-production-plan' ? 'production' : pathname === '/audit' ? 'audit' : 'ai')
   const [hoveredCategory, setHoveredCategory] = useState<CategoryKey | null>(null)
   const [activeItem, setActiveItem] = useState(pathname === '/monthly-production-plan' ? '월간 생산계획' : pathname === '/audit' ? '감사 기록' : 'AI 채팅')
+  const [isPinned, setIsPinned] = useState(true)
+  const [desktopPeekOpen, setDesktopPeekOpen] = useState(false)
   const expandedCategory = hoveredCategory ?? (mobileOpen ? mobileExpandedCategory : null)
+  const desktopSidebarOpen = isPinned || desktopPeekOpen
 
   const currentCategory = useMemo(() => categories.find((category) => category.key === activeCategory), [activeCategory])
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(PIN_STORAGE_KEY)
+    if (stored === 'false') setIsPinned(false)
+  }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem(PIN_STORAGE_KEY, String(isPinned))
+    if (isPinned) setDesktopPeekOpen(false)
+  }, [isPinned])
+
+  useEffect(() => {
+    const shouldOffset = visible && desktopSidebarOpen
+    document.body.classList.toggle('moni-global-sidebar-active', visible)
+    document.body.classList.toggle('moni-sidebar-offset-active', shouldOffset)
+    document.body.style.setProperty('--moni-sidebar-width', `${SIDEBAR_WIDTH}px`)
+
+    return () => {
+      document.body.classList.remove('moni-global-sidebar-active')
+      document.body.classList.remove('moni-sidebar-offset-active')
+      document.body.style.removeProperty('--moni-sidebar-width')
+    }
+  }, [visible, desktopSidebarOpen])
 
   useEffect(() => {
     if (pathname === '/monthly-production-plan') {
@@ -116,7 +145,6 @@ export default function GlobalMoniSidebarController() {
       const isAudit = pathname === '/audit'
       const isAuthenticatedSurface = Boolean(logoutButton) || isMonthly || isAudit
       setVisible(isAuthenticatedSurface)
-      document.body.classList.toggle('moni-global-sidebar-active', isAuthenticatedSurface)
 
       if (isMonthly) {
         const ownAside = document.querySelector<HTMLElement>('main > div > aside')
@@ -142,9 +170,10 @@ export default function GlobalMoniSidebarController() {
 
       const pending = window.sessionStorage.getItem('moni-pending-nav')
       if (pending && pathname === '/' && logoutButton) {
-        const payload = JSON.parse(pending) as { category: CategoryKey; target: string; label: string }
+        const payload = JSON.parse(pending) as { category: CategoryKey; target: string; label: string; parentTarget?: string }
         const category = categories.find((item) => item.key === payload.category)
-        if (category) clickDashboardTarget(category.label === 'AI 챗팅' ? 'AI 채팅' : category.label)
+        const parentTarget = payload.parentTarget || (category?.label === 'AI 챗팅' ? 'AI 채팅' : category?.label)
+        if (parentTarget) clickDashboardTarget(parentTarget)
         window.setTimeout(() => {
           if (clickDashboardTarget(payload.target)) {
             setActiveCategory(payload.category)
@@ -165,7 +194,6 @@ export default function GlobalMoniSidebarController() {
     return () => {
       observer.disconnect()
       window.clearInterval(timer)
-      document.body.classList.remove('moni-global-sidebar-active')
     }
   }, [pathname])
 
@@ -195,14 +223,23 @@ export default function GlobalMoniSidebarController() {
       return
     }
     if (!item.target) return
+    const parentTarget = item.parentTarget || (category.label === 'AI 챗팅' ? 'AI 채팅' : category.label)
     if (pathname !== '/') {
-      window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({ category: category.key, target: item.target, label: item.label }))
+      window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({
+        category: category.key,
+        target: item.target,
+        label: item.label,
+        parentTarget,
+      }))
       router.push('/')
       return
     }
-    const categoryTarget = category.label === 'AI 챗팅' ? 'AI 채팅' : category.label
-    clickDashboardTarget(categoryTarget)
+    clickDashboardTarget(parentTarget)
     window.setTimeout(() => clickDashboardTarget(item.target || ''), 80)
+  }
+
+  function togglePinned() {
+    setIsPinned((current) => !current)
   }
 
   if (!visible) return null
@@ -216,27 +253,97 @@ export default function GlobalMoniSidebarController() {
         onClick={() => setMobileOpen(true)}
         className="fixed left-3 top-3 z-[1001] flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-[#07172c] text-xl text-white shadow-xl lg:hidden"
       >☰</button>
-      {mobileOpen && <button data-moni-global-nav aria-label="메뉴 닫기" onClick={() => { setMobileOpen(false); setMobileExpandedCategory(null) }} className="fixed inset-0 z-[1000] bg-black/65 lg:hidden" />}
+
+      {!isPinned && (
+        <div
+          data-moni-global-nav
+          aria-hidden="true"
+          onMouseEnter={() => setDesktopPeekOpen(true)}
+          className="fixed inset-y-0 left-0 z-[1001] hidden w-5 cursor-e-resize lg:block"
+        >
+          <div className="absolute inset-y-0 left-0 w-1 bg-emerald-400/20 transition hover:bg-emerald-400/70" />
+        </div>
+      )}
+
+      {mobileOpen && (
+        <button
+          data-moni-global-nav
+          aria-label="메뉴 닫기"
+          onClick={() => {
+            setMobileOpen(false)
+            setMobileExpandedCategory(null)
+          }}
+          className="fixed inset-0 z-[1000] bg-black/65 lg:hidden"
+        />
+      )}
+
       <aside
         data-moni-global-sidebar
-        className={`fixed inset-y-0 left-0 z-[1002] flex w-[264px] flex-col border-r border-slate-700/80 bg-[#06172d] text-slate-100 shadow-2xl transition-transform duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        onMouseEnter={() => {
+          if (!isPinned) setDesktopPeekOpen(true)
+        }}
+        onMouseLeave={() => {
+          setHoveredCategory(null)
+          if (!isPinned) setDesktopPeekOpen(false)
+        }}
+        className={`fixed inset-y-0 left-0 z-[1002] flex w-[264px] flex-col border-r border-slate-700/80 bg-[#06172d] text-slate-100 shadow-2xl transition-transform duration-300 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${desktopSidebarOpen ? 'lg:translate-x-0' : 'lg:-translate-x-full'}`}
       >
-        <button data-moni-global-nav onClick={() => router.push('/')} className="flex items-center gap-3 border-b border-slate-700/70 px-5 py-5 text-left">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/15 text-2xl">🏭</span>
-          <span><b className="block text-2xl tracking-tight">MONI</b><span className="text-xs text-slate-400">통합 경영관리</span></span>
-        </button>
+        <div className="flex items-center gap-2 border-b border-slate-700/70 px-4 py-4">
+          <button
+            data-moni-global-nav
+            type="button"
+            onClick={() => router.push('/')}
+            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-2xl">🏭</span>
+            <span className="min-w-0">
+              <b className="block text-2xl tracking-tight">MONI</b>
+              <span className="block truncate text-xs text-slate-400">통합 경영관리</span>
+            </span>
+          </button>
+
+          <button
+            data-moni-global-nav
+            type="button"
+            aria-pressed={isPinned}
+            aria-label={isPinned ? '사이드바 고정 해제' : '사이드바 고정'}
+            title={isPinned ? '고정 ON — 클릭하면 비고정' : '고정 OFF — 클릭하면 고정'}
+            onClick={togglePinned}
+            className={`hidden shrink-0 flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-bold transition lg:flex ${
+              isPinned
+                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
+                : 'border-slate-600 bg-slate-800 text-slate-300'
+            }`}
+          >
+            <span>{isPinned ? '고정' : '비고정'}</span>
+            <span className={`relative h-4 w-8 rounded-full transition ${isPinned ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+              <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${isPinned ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </span>
+          </button>
+        </div>
 
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           {categories.map((category) => {
             const expanded = expandedCategory === category.key
             const active = activeCategory === category.key
             return (
-              <div key={category.key} onMouseEnter={() => setHoveredCategory(category.key)} onMouseLeave={() => setHoveredCategory(null)} className="mb-1">
+              <div
+                key={category.key}
+                onMouseEnter={() => {
+                  if (window.innerWidth >= 1024) setHoveredCategory(category.key)
+                }}
+                onMouseLeave={() => setHoveredCategory(null)}
+                className="mb-1"
+              >
                 <button
                   data-moni-global-nav
                   type="button"
                   onClick={() => openCategory(category)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${
+                    active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'
+                  }`}
                 >
                   <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}`}>{category.icon}</span>
                   <span className="flex-1">{category.label}</span>
@@ -251,7 +358,9 @@ export default function GlobalMoniSidebarController() {
                           key={item.label}
                           type="button"
                           onClick={() => openItem(category, item)}
-                          className={`mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${activeItem === item.label ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}
+                          className={`mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${
+                            activeItem === item.label ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                          }`}
                         >{item.label}</button>
                       ))}
                     </div>
@@ -263,16 +372,42 @@ export default function GlobalMoniSidebarController() {
         </nav>
 
         <div className="border-t border-slate-700/70 p-4 text-xs text-slate-500">
-          <div className="rounded-xl bg-slate-900/60 px-3 py-2">현재 영역: <b className="text-slate-300">{currentCategory?.label}</b></div>
+          <div className="rounded-xl bg-slate-900/60 px-3 py-2">
+            현재 영역: <b className="text-slate-300">{currentCategory?.label}</b>
+          </div>
         </div>
       </aside>
 
       <style jsx global>{`
-        @media (min-width: 1024px) {
-          body.moni-global-sidebar-active { padding-left: 264px; }
+        body.moni-global-sidebar-active {
+          transition: padding-left 300ms ease;
         }
-        body.moni-global-sidebar-active [data-moni-global-sidebar] { font-family: inherit; }
-        body.moni-global-sidebar-active main.min-h-screen > div.mx-auto { max-width: none; }
+
+        @media (min-width: 1024px) {
+          body.moni-sidebar-offset-active {
+            padding-left: var(--moni-sidebar-width);
+          }
+
+          body.moni-global-sidebar-active [class~='fixed'][class~='inset-0']:not([data-moni-global-nav]):not([data-moni-global-sidebar]) {
+            transition: left 300ms ease;
+          }
+
+          body.moni-sidebar-offset-active [class~='fixed'][class~='inset-0']:not([data-moni-global-nav]):not([data-moni-global-sidebar]) {
+            left: var(--moni-sidebar-width) !important;
+          }
+
+          body.moni-sidebar-offset-active [class~='w-screen'] {
+            width: calc(100vw - var(--moni-sidebar-width)) !important;
+          }
+        }
+
+        body.moni-global-sidebar-active [data-moni-global-sidebar] {
+          font-family: inherit;
+        }
+
+        body.moni-global-sidebar-active main.min-h-screen > div.mx-auto {
+          max-width: none;
+        }
       `}</style>
     </>
   )
