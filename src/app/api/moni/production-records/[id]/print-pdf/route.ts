@@ -22,6 +22,16 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     '$1<table class="material-table">',
   )
 
+  // 모든 작업지시서의 담당자를 회사 고정값으로 표시합니다.
+  html = html.replace(
+    /(<tr>\s*<th>작성자<\/th>\s*<td>)[\s\S]*?(<\/td>\s*<\/tr>)/,
+    '$1윤대열$2',
+  )
+  html = html.replace(
+    /(<tr>\s*<th>확인자<\/th>\s*<td>)[\s\S]*?(<\/td>\s*<\/tr>)/,
+    '$1배순애$2',
+  )
+
   const columnCount = countMaterialColumns(html)
   const fontSize = columnCount >= 10 ? 10 : columnCount >= 8 ? 10.5 : 11.5
   const horizontalPadding = columnCount >= 10 ? 1.5 : columnCount >= 8 ? 2 : 2.5
