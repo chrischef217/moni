@@ -23,7 +23,7 @@ function escapeHtml(value: unknown): string {
 function parseNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string') {
-    const parsed = Number(value.trim())
+    const parsed = Number(value.trim().replaceAll(',', ''))
     if (Number.isFinite(parsed)) return parsed
   }
   return null
@@ -70,9 +70,16 @@ function formatEaRemainder(ea: number, remainderG: number): string {
 }
 
 function resolvePackingUnitG(value: unknown): number | null {
-  const parsed = parseNumber(value)
-  if (parsed === null || parsed <= 0) return null
-  return parsed
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? value : null
+  }
+  const raw = text(value).toLowerCase().replaceAll(',', '')
+  if (!raw) return null
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(kg|g)?$/)
+  if (!match) return null
+  const parsed = Number(match[1])
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return match[2] === 'kg' ? parsed * 1000 : parsed
 }
 
 function calcEaByPackingUnit(quantityG: number, packingUnitG: number | null): number | null {
@@ -164,6 +171,7 @@ type MaterialRow = {
   item_name?: string | null
   linked_product_id?: string | null
   packing_weight_g?: number | string | null
+  spec?: string | null
   is_active?: boolean | null
   is_stock_managed?: boolean | null
   business_id?: string | null
@@ -180,6 +188,7 @@ type UnifiedWorkOrderRow = {
   material_id: string | null
   material_name: string
   packing_unit_g: number | null
+  is_stock_managed: boolean
   production_product_g: number
   semi_product_g: Record<string, number>
   final_input_g: number
@@ -310,7 +319,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       fetchAll<MaterialRow>(
         () => supabase
           .from('raw_materials')
-          .select('id, item_name, linked_product_id, packing_weight_g, is_active, is_stock_managed, business_id')
+          .select('id, item_name, linked_product_id, packing_weight_g, spec, is_active, is_stock_managed, business_id')
           .or(businessScope)
           .order('item_name', { ascending: true }),
         '원재료 조회 실패',
@@ -407,7 +416,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         materialId: unresolved ? null : text(materialRow?.id) || null,
         materialName: unresolved ? foodTypeName || '원재료명 확인 필요' : materialName,
         linkedProductId: unresolved ? null : text(materialRow?.linked_product_id) || null,
-        packingUnitG: unresolved ? null : resolvePackingUnitG(materialRow?.packing_weight_g),
+        packingUnitG: unresolved
+          ? null
+          : resolvePackingUnitG(materialRow?.packing_weight_g) ?? resolvePackingUnitG(materialRow?.spec),
+        isStockManaged: unresolved ? true : materialRow?.is_stock_managed !== false,
         unresolved,
       }
     }
@@ -422,17 +434,20 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       materialName: string,
       materialId: string | null,
       packingUnitG: number | null,
+      isStockManaged: boolean,
     ): UnifiedWorkOrderRow => {
       const key = materialId ? `id:${materialId}` : `name:${normalizeKey(materialName) || materialName}`
       const found = rowAccumulator.get(key)
       if (found) {
         if (found.packing_unit_g === null && packingUnitG !== null) found.packing_unit_g = packingUnitG
+        found.is_stock_managed = found.is_stock_managed && isStockManaged
         return found
       }
       const created: UnifiedWorkOrderRow = {
         material_id: materialId,
         material_name: materialName,
         packing_unit_g: packingUnitG,
+        is_stock_managed: isStockManaged,
         production_product_g: 0,
         semi_product_g: {},
         final_input_g: 0,
@@ -484,7 +499,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           unresolvedItems.push(`${recipeItemName}: 원재료 연결 확인 필요`)
           continue
         }
-        const target = getOrCreateRow(resolved.materialName, resolved.materialId, resolved.packingUnitG)
+        const target = getOrCreateRow(
+          resolved.materialName,
+          resolved.materialId,
+          resolved.packingUnitG,
+          resolved.isStockManaged,
+        )
         target.production_product_g += requiredG
         target.final_input_g += requiredG
         continue
@@ -540,7 +560,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           unresolvedItems.push(`${linkedProductName} · ${childName}: 원재료 연결 확인 필요`)
           continue
         }
-        const target = getOrCreateRow(resolvedChild.materialName, resolvedChild.materialId, resolvedChild.packingUnitG)
+        const target = getOrCreateRow(
+          resolvedChild.materialName,
+          resolvedChild.materialId,
+          resolvedChild.packingUnitG,
+          resolvedChild.isStockManaged,
+        )
         target.semi_product_g[linkedProductId] = (target.semi_product_g[linkedProductId] ?? 0) + childRequiredG
         target.final_input_g += childRequiredG
       }
@@ -596,9 +621,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           const packageCount = calcEaByPackingUnit(row.final_input_g, row.packing_unit_g)
           const exactCount = row.packing_unit_g !== null && row.packing_unit_g > 0 ? row.final_input_g / row.packing_unit_g : null
           const roundedUp = exactCount !== null && Math.abs(exactCount - Math.round(exactCount)) > 0.000001
-          const packageText = packageCount === null
-            ? '규격 미등록'
-            : `${formatNumber(packageCount)}개 (${formatPackingWeight(row.packing_unit_g)}/개${roundedUp ? ' · 올림' : ''})`
+          const packageText = !row.is_stock_managed
+            ? '포장수량 해당 없음'
+            : packageCount === null
+              ? '규격 미등록'
+              : `${formatNumber(packageCount)}개 (${formatPackingWeight(row.packing_unit_g)}/개${roundedUp ? ' · 올림' : ''})`
           return `<tr>
             <td>${escapeHtml(row.material_name)}</td>
             <td class="package-count">${escapeHtml(packageText)}</td>
