@@ -92,10 +92,9 @@ function normalizeSampleEntries(value: unknown): SampleEntry[] {
     .filter((entry) => numberOrNull(entry.value) !== null || numberOrNull(entry.grams) !== null)
 }
 
-function isCompletionRecorded(record: Record<string, unknown>, metadata: Record<string, unknown>): boolean {
+function isCompletionRecorded(record: Record<string, unknown>): boolean {
   const status = text(record.status).toLowerCase()
   if (['completed', 'confirmed', '완료', '확정'].includes(status)) return true
-  if (text(metadata.writer_name) || text(metadata.reviewer_name)) return true
   return (numberOrNull(record.actual_quantity_g) ?? 0) > 0
 }
 
@@ -135,7 +134,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
 
     const record = recordResult.data as Record<string, unknown>
     const metadata = await fetchCompletionMetadata(request, context.params.id)
-    const completionRecorded = isCompletionRecorded(record, metadata)
+    const completionRecorded = isCompletionRecorded(record)
     const semiColumns = expansion.semi_product_columns ?? []
     const rows = expansion.rows ?? []
 
