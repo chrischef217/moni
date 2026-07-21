@@ -23,11 +23,40 @@ export async function GET(request: NextRequest, context: { params: { id: string 
   )
 
   const columnCount = countMaterialColumns(html)
-  const fontSize = columnCount >= 10 ? 7.2 : columnCount >= 8 ? 8 : columnCount >= 7 ? 8.5 : 9
-  const horizontalPadding = columnCount >= 10 ? 2 : columnCount >= 8 ? 2.8 : 3.5
-  const lineHeight = columnCount >= 9 ? 1.08 : 1.18
+  const fontSize = columnCount >= 10 ? 10 : columnCount >= 8 ? 10.5 : 11.5
+  const horizontalPadding = columnCount >= 10 ? 1.5 : columnCount >= 8 ? 2 : 2.5
+  const lineHeight = columnCount >= 9 ? 1.12 : 1.2
 
   const responsiveCss = `
+    /* 상단 LOT~생산단위 표: 라벨과 값 모두 가운데 정렬 */
+    .compact {
+      font-size: 12px !important;
+    }
+    .compact th,
+    .compact td,
+    .compact .number {
+      text-align: center !important;
+      vertical-align: middle !important;
+    }
+
+    /* 연결 반제품 표도 상단 제품 정보와 비슷한 크기로 유지 */
+    .stage-table {
+      font-size: 11.5px !important;
+      table-layout: fixed;
+    }
+    .stage-table th,
+    .stage-table td {
+      min-height: 29px;
+      height: 29px;
+      padding: 6px 5px !important;
+      line-height: 1.2;
+      vertical-align: middle;
+    }
+    .stage-table th {
+      white-space: normal !important;
+      text-align: center;
+    }
+
     .material-table {
       width: 100% !important;
       max-width: 100% !important;
@@ -37,8 +66,8 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     .material-table th,
     .material-table td {
       min-width: 0 !important;
-      min-height: 27px;
-      height: 27px;
+      min-height: 30px;
+      height: 30px;
       padding: 6px ${horizontalPadding}px !important;
       overflow-wrap: anywhere;
       word-break: keep-all;
@@ -69,6 +98,11 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       text-align: right;
     }
 
+    .note {
+      font-size: 10.5px !important;
+      line-height: 1.45 !important;
+    }
+
     .completion-grid {
       grid-template-columns: 2fr 1fr !important;
       gap: 7px !important;
@@ -77,8 +111,8 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     }
     .completion-table,
     .people-table {
-      font-size: 10px !important;
-      line-height: 1.15 !important;
+      font-size: 11.5px !important;
+      line-height: 1.18 !important;
     }
     .completion-table th,
     .completion-table td,
@@ -104,7 +138,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     .blank-area { min-height: 30px !important; }
     .people-table th { width: 38% !important; }
     .people-table td {
-      font-size: 11px !important;
+      font-size: 11.5px !important;
       font-weight: 700;
     }
 
@@ -113,7 +147,8 @@ export async function GET(request: NextRequest, context: { params: { id: string 
         width: 100% !important;
         max-width: 100% !important;
       }
-      .material-table tr {
+      .material-table tr,
+      .stage-table tr {
         break-inside: avoid;
         page-break-inside: avoid;
       }
