@@ -81,12 +81,31 @@ export default function GlobalMoniSidebarController() {
   const router = useRouter()
   const [visible, setVisible] = useState(pathname === '/monthly-production-plan' || pathname === '/audit')
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileExpandedCategory, setMobileExpandedCategory] = useState<CategoryKey | null>(null)
   const [activeCategory, setActiveCategory] = useState<CategoryKey>(pathname === '/monthly-production-plan' ? 'production' : pathname === '/audit' ? 'audit' : 'ai')
   const [hoveredCategory, setHoveredCategory] = useState<CategoryKey | null>(null)
   const [activeItem, setActiveItem] = useState(pathname === '/monthly-production-plan' ? '월간 생산계획' : pathname === '/audit' ? '감사 기록' : 'AI 채팅')
-  const expandedCategory = hoveredCategory ?? activeCategory
+  const expandedCategory = hoveredCategory ?? (mobileOpen ? mobileExpandedCategory : null)
 
   const currentCategory = useMemo(() => categories.find((category) => category.key === activeCategory), [activeCategory])
+
+  useEffect(() => {
+    if (pathname === '/monthly-production-plan') {
+      setActiveCategory('production')
+      setActiveItem('월간 생산계획')
+    } else if (pathname === '/audit') {
+      setActiveCategory('audit')
+      setActiveItem('감사 기록')
+    } else if (pathname === '/') {
+      const pending = window.sessionStorage.getItem('moni-pending-nav')
+      if (!pending) {
+        setActiveCategory('ai')
+        setActiveItem('AI 채팅')
+      }
+    }
+    setHoveredCategory(null)
+    setMobileExpandedCategory(null)
+  }, [pathname])
 
   useEffect(() => {
     let attempts = 0
@@ -151,8 +170,12 @@ export default function GlobalMoniSidebarController() {
   }, [pathname])
 
   function openCategory(category: Category) {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setMobileExpandedCategory((current) => current === category.key ? null : category.key)
+      return
+    }
+
     setActiveCategory(category.key)
-    setHoveredCategory(category.key)
     const target = category.label === 'AI 챗팅' ? 'AI 채팅' : category.label
     if (pathname !== '/') {
       window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({ category: category.key, target, label: category.label }))
@@ -166,6 +189,7 @@ export default function GlobalMoniSidebarController() {
     setActiveCategory(category.key)
     setActiveItem(item.label)
     setMobileOpen(false)
+    setMobileExpandedCategory(null)
     if (item.href) {
       router.push(item.href)
       return
@@ -192,7 +216,7 @@ export default function GlobalMoniSidebarController() {
         onClick={() => setMobileOpen(true)}
         className="fixed left-3 top-3 z-[1001] flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-[#07172c] text-xl text-white shadow-xl lg:hidden"
       >☰</button>
-      {mobileOpen && <button data-moni-global-nav aria-label="메뉴 닫기" onClick={() => setMobileOpen(false)} className="fixed inset-0 z-[1000] bg-black/65 lg:hidden" />}
+      {mobileOpen && <button data-moni-global-nav aria-label="메뉴 닫기" onClick={() => { setMobileOpen(false); setMobileExpandedCategory(null) }} className="fixed inset-0 z-[1000] bg-black/65 lg:hidden" />}
       <aside
         data-moni-global-sidebar
         className={`fixed inset-y-0 left-0 z-[1002] flex w-[264px] flex-col border-r border-slate-700/80 bg-[#06172d] text-slate-100 shadow-2xl transition-transform duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
