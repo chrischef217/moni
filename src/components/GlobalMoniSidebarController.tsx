@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
 type CategoryKey = 'ai' | 'production' | 'accounting' | 'sales' | 'admin' | 'audit'
-type MenuItem = { label: string; target?: string; href?: string; ready?: boolean }
+type MenuItem = { label: string; target?: string; href?: string }
 type Category = { key: CategoryKey; label: string; icon: string; items: MenuItem[] }
 
 const categories: Category[] = [
@@ -20,15 +20,14 @@ const categories: Category[] = [
       { label: '월간 생산계획', href: '/monthly-production-plan' },
       { label: '작업지시서', target: '작업 지시' },
       { label: '생산일보', target: '생산일보' },
-      { label: '제품 관리', target: '제품 관리' },
-      { label: '레시피 관리', target: '레시피 관리' },
+      { label: '제품 관리', target: '제품관리' },
       { label: '원재료 매핑', target: '레시피 원재료 연결' },
       { label: '원재료 관리', target: '원재료 관리' },
-      { label: '원료 수불부', target: '원료 수불부' },
+      { label: '원료 수불부', target: '원료수불부' },
       { label: '부재료 관리', target: '부재료 관리' },
       { label: '위생점검', target: '위생점검' },
-      { label: '품질관리', target: '품질관리' },
-      { label: '규정준수', target: '규정준수' },
+      { label: '품질관리', target: '품질 관리' },
+      { label: '규정준수', target: '규정준수 모니터' },
     ],
   },
   {
@@ -77,23 +76,14 @@ function clickDashboardTarget(label: string) {
   return true
 }
 
-function inferCategory(label: string): CategoryKey {
-  if (label.includes('생산') || label.includes('제품') || label.includes('원재료') || label.includes('수불') || label.includes('위생') || label.includes('품질') || label.includes('규정') || label.includes('레시피') || label.includes('부재료')) return 'production'
-  if (label.includes('회계') || label.includes('지급') || label.includes('정산')) return 'accounting'
-  if (label.includes('영업') || label.includes('거래처')) return 'sales'
-  if (label.includes('관리자') || label.includes('회사정보') || label.includes('사용자')) return 'admin'
-  if (label.includes('감사')) return 'audit'
-  return 'ai'
-}
-
 export default function GlobalMoniSidebarController() {
   const pathname = usePathname()
   const router = useRouter()
   const [visible, setVisible] = useState(pathname === '/monthly-production-plan' || pathname === '/audit')
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [activeCategory, setActiveCategory] = useState<CategoryKey>(pathname === '/monthly-production-plan' ? 'production' : pathname === '/audit' ? 'audit' : 'production')
+  const [activeCategory, setActiveCategory] = useState<CategoryKey>(pathname === '/monthly-production-plan' ? 'production' : pathname === '/audit' ? 'audit' : 'ai')
   const [hoveredCategory, setHoveredCategory] = useState<CategoryKey | null>(null)
-  const [activeItem, setActiveItem] = useState(pathname === '/monthly-production-plan' ? '월간 생산계획' : '')
+  const [activeItem, setActiveItem] = useState(pathname === '/monthly-production-plan' ? '월간 생산계획' : pathname === '/audit' ? '감사 기록' : 'AI 채팅')
   const expandedCategory = hoveredCategory ?? activeCategory
 
   const currentCategory = useMemo(() => categories.find((category) => category.key === activeCategory), [activeCategory])
@@ -124,7 +114,7 @@ export default function GlobalMoniSidebarController() {
           const button = findDashboardButton(label)
           if (button) button.style.display = 'none'
         }
-        const productionLabels = ['생산 개요', '작업 지시', '생산일보', '제품 관리', '레시피 관리', '레시피 원재료 연결', '원재료 관리', '원료 수불부', '부재료 관리', '위생점검', '품질관리', '규정준수']
+        const productionLabels = ['생산 개요', '작업 지시', '생산일보', '제품관리', '원재료 관리', '원료수불부', '부재료 관리', '레시피 원재료 연결', '위생점검', '품질 관리', '규정준수 모니터']
         for (const label of productionLabels) {
           const button = findDashboardButton(label)
           if (button) button.style.display = 'none'
