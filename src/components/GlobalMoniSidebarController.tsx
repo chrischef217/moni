@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
 type CategoryKey = 'ai' | 'production' | 'accounting' | 'sales' | 'admin' | 'audit'
@@ -9,6 +9,7 @@ type Category = { key: CategoryKey; label: string; icon: string; items: MenuItem
 
 const SIDEBAR_WIDTH = 264
 const PIN_STORAGE_KEY = 'moni-sidebar-pinned'
+const PEEK_CLOSE_DELAY_MS = 140
 
 const categories: Category[] = [
   {
@@ -82,6 +83,7 @@ function clickDashboardTarget(label: string) {
 export default function GlobalMoniSidebarController() {
   const pathname = usePathname()
   const router = useRouter()
+  const peekCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [visible, setVisible] = useState(pathname === '/monthly-production-plan' || pathname === '/audit')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileExpandedCategory, setMobileExpandedCategory] = useState<CategoryKey | null>(null)
@@ -94,7 +96,31 @@ export default function GlobalMoniSidebarController() {
   const expandedCategory = hoveredCategory ?? (mobileOpen ? mobileExpandedCategory : null)
   const desktopSidebarOpen = isPinned || desktopPeekOpen
 
-  const currentCategory = useMemo(() => categories.find((category) => category.key === activeCategory), [activeCategory])
+  const currentCategory = useMemo(
+    () => categories.find((category) => category.key === activeCategory),
+    [activeCategory],
+  )
+
+  function cancelPeekClose() {
+    if (!peekCloseTimerRef.current) return
+    clearTimeout(peekCloseTimerRef.current)
+    peekCloseTimerRef.current = null
+  }
+
+  function openDesktopPeek() {
+    cancelPeekClose()
+    if (!isPinned) setDesktopPeekOpen(true)
+  }
+
+  function scheduleDesktopPeekClose() {
+    setHoveredCategory(null)
+    if (isPinned) return
+    cancelPeekClose()
+    peekCloseTimerRef.current = setTimeout(() => {
+      setDesktopPeekOpen(false)
+      peekCloseTimerRef.current = null
+    }, PEEK_CLOSE_DELAY_MS)
+  }
 
   useEffect(() => {
     const stored = window.localStorage.getItem(PIN_STORAGE_KEY)
@@ -105,8 +131,13 @@ export default function GlobalMoniSidebarController() {
   useEffect(() => {
     if (!pinPreferenceReady) return
     window.localStorage.setItem(PIN_STORAGE_KEY, String(isPinned))
-    if (isPinned) setDesktopPeekOpen(false)
+    if (isPinned) {
+      cancelPeekClose()
+      setDesktopPeekOpen(false)
+    }
   }, [isPinned, pinPreferenceReady])
+
+  useEffect(() => () => cancelPeekClose(), [])
 
   useEffect(() => {
     const shouldOffset = visible && desktopSidebarOpen
@@ -155,7 +186,8 @@ export default function GlobalMoniSidebarController() {
       }
 
       if (logoutButton) {
-        const dashboardRoot = Array.from(document.querySelectorAll<HTMLElement>('div.flex.min-h-screen')).find((element) => element.className.includes('bg-gray-900'))
+        const dashboardRoot = Array.from(document.querySelectorAll<HTMLElement>('div.flex.min-h-screen'))
+          .find((element) => element.className.includes('bg-gray-900'))
         const legacySidebar = dashboardRoot?.firstElementChild as HTMLElement | null
         if (legacySidebar && legacySidebar !== dashboardRoot?.lastElementChild) legacySidebar.style.display = 'none'
 
@@ -261,10 +293,10 @@ export default function GlobalMoniSidebarController() {
         <div
           data-moni-global-nav
           aria-hidden="true"
-          onMouseEnter={() => setDesktopPeekOpen(true)}
-          className="fixed inset-y-0 left-0 z-[1001] hidden w-5 cursor-e-resize lg:block"
+          onMouseEnter={openDesktopPeek}
+          className="fixed inset-y-0 left-0 z-[1001] hidden w-6 cursor-e-resize lg:block"
         >
-          <div className="absolute inset-y-0 left-0 w-1 bg-emerald-400/20 transition hover:bg-emerald-400/70" />
+          <div className="absolute inset-y-0 left-0 w-1 bg-emerald-400/20 transition-colors duration-200 hover:bg-emerald-400/70" />
         </div>
       )}
 
@@ -282,14 +314,9 @@ export default function GlobalMoniSidebarController() {
 
       <aside
         data-moni-global-sidebar
-        onMouseEnter={() => {
-          if (!isPinned) setDesktopPeekOpen(true)
-        }}
-        onMouseLeave={() => {
-          setHoveredCategory(null)
-          if (!isPinned) setDesktopPeekOpen(false)
-        }}
-        className={`fixed inset-y-0 left-0 z-[1002] flex w-[264px] flex-col border-r border-slate-700/80 bg-[#06172d] text-slate-100 shadow-2xl transition-transform duration-300 ${
+        onMouseEnter={openDesktopPeek}
+        onMouseLeave={scheduleDesktopPeekClose}
+        className={`fixed inset-y-0 left-0 z-[1002] flex w-[264px] flex-col border-r border-slate-700/80 bg-[#06172d] text-slate-100 shadow-2xl will-change-transform transition-transform duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         } ${desktopSidebarOpen ? 'lg:translate-x-0' : 'lg:-translate-x-full'}`}
       >
@@ -303,7 +330,7 @@ export default function GlobalMoniSidebarController() {
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-2xl">🏭</span>
             <span className="min-w-0">
               <b className="block text-2xl tracking-tight">MONI</b>
-              <span className="block truncate text-xs text-slate-400">통합 경영관리</span>
+              <span className="block truncate text-xs text-slate-400">두배 공장 관리</span>
             </span>
           </button>
 
@@ -382,8 +409,18 @@ export default function GlobalMoniSidebarController() {
       </aside>
 
       <style jsx global>{`
+        html,
+        body {
+          min-height: 100%;
+          background-color: #071426 !important;
+        }
+
         body.moni-global-sidebar-active {
-          transition: padding-left 300ms ease;
+          box-sizing: border-box;
+          width: 100%;
+          overflow-x: hidden;
+          transition: padding-left 360ms cubic-bezier(0.22, 1, 0.36, 1);
+          will-change: padding-left;
         }
 
         @media (min-width: 1024px) {
@@ -392,7 +429,9 @@ export default function GlobalMoniSidebarController() {
           }
 
           body.moni-global-sidebar-active [class~='fixed'][class~='inset-0']:not([data-moni-global-nav]):not([data-moni-global-sidebar]) {
-            transition: left 300ms ease;
+            transition:
+              left 360ms cubic-bezier(0.22, 1, 0.36, 1),
+              width 360ms cubic-bezier(0.22, 1, 0.36, 1);
           }
 
           body.moni-sidebar-offset-active [class~='fixed'][class~='inset-0']:not([data-moni-global-nav]):not([data-moni-global-sidebar]) {
@@ -404,12 +443,17 @@ export default function GlobalMoniSidebarController() {
           }
         }
 
-        body.moni-global-sidebar-active [data-moni-global-sidebar] {
-          font-family: inherit;
+        body.moni-global-sidebar-active main,
+        body.moni-global-sidebar-active main.min-h-screen > div.mx-auto {
+          min-width: 0;
+          max-width: none;
+          background-color: #071426;
         }
 
-        body.moni-global-sidebar-active main.min-h-screen > div.mx-auto {
-          max-width: none;
+        body.moni-global-sidebar-active [data-moni-global-sidebar] {
+          font-family: inherit;
+          backface-visibility: hidden;
+          transform-style: preserve-3d;
         }
       `}</style>
     </>
