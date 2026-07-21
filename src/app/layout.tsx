@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import RawMaterialLedgerPrintController from '@/components/RawMaterialLedgerPrintController'
-import MonthlyProductionPlanNavController from '@/components/MonthlyProductionPlanNavController'
 import MonthlyProductionRequirementPrintController from '@/components/MonthlyProductionRequirementPrintController'
 import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
 import './globals.css'
@@ -20,7 +19,6 @@ export default function RootLayout({
     <html lang="ko">
       <body className="antialiased">
         <RawMaterialLedgerPrintController />
-        <MonthlyProductionPlanNavController />
         <MonthlyProductionRequirementPrintController />
         <GlobalMoniSidebarController />
         {children}
