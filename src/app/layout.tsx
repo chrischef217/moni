@@ -3,6 +3,7 @@ import RawMaterialLedgerPrintController from '@/components/RawMaterialLedgerPrin
 import MonthlyProductionRequirementPrintController from '@/components/MonthlyProductionRequirementPrintController'
 import MonthlyProductionRequirementSafetyGuard from '@/components/MonthlyProductionRequirementSafetyGuard'
 import MonthlyProductionPurchaseBudgetController from '@/components/MonthlyProductionPurchaseBudgetController'
+import RawMaterialUnitPriceController from '@/components/RawMaterialUnitPriceController'
 import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
 import './globals.css'
 
@@ -24,6 +25,7 @@ export default function RootLayout({
         <MonthlyProductionRequirementPrintController />
         <MonthlyProductionRequirementSafetyGuard />
         <MonthlyProductionPurchaseBudgetController />
+        <RawMaterialUnitPriceController />
         <GlobalMoniSidebarController />
         {children}
       </body>
