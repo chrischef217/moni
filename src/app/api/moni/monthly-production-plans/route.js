@@ -128,9 +128,9 @@ export async function GET(request) {
     const plans = (plansR.data || []).map((row) => ({ ...row, source: 'user' }))
     const forecasts = buildForecasts(recordsR.data || [], plans, month, level)
     const confirmed = buildRequirements(plans, recipesR.data || [], mappingsR.data || [], materialsR.data || [])
-    const withAi = buildRequirements([...plans, ...forecasts], recipesR.data || [], mappingsR.data || [], materialsR.data || [])
+    const aiOnly = buildRequirements(forecasts, recipesR.data || [], mappingsR.data || [], materialsR.data || [])
     const products = Array.from(new Map((recipesR.data || []).map((row) => [text(row.product_id), { id: text(row.product_id), name: text(row.product_name) }])).values()).filter((product) => product.id && product.name).sort((a, b) => a.name.localeCompare(b.name))
-    return NextResponse.json({ ok: true, month, level, plans, forecasts, products, confirmed, with_ai: withAi })
+    return NextResponse.json({ ok: true, month, level, plans, forecasts, products, confirmed, ai_only: aiOnly, with_ai: aiOnly })
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : '월간 생산계획 조회에 실패했습니다.' }, { status: 500 })
   }
