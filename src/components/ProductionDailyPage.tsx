@@ -271,35 +271,65 @@ export default function ProductionDailyPage() {
             <div className="p-10 text-center text-slate-400">조회 기간에 완료된 생산일보가 없습니다.</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[1250px] w-full text-left text-sm">
+              <table className="w-full min-w-[1120px] table-fixed text-left text-sm">
+                <colgroup>
+                  <col style={{ width: '3%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '23%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '15%' }} />
+                </colgroup>
                 <thead className="bg-slate-800/90 text-slate-300">
                   <tr>
-                    <th className="px-3 py-3"><input type="checkbox" checked={allSelected} onChange={(event) => toggleAll(event.target.checked)} /></th>
-                    <th className="px-3 py-3">생산일자</th><th className="px-3 py-3">LOT</th><th className="px-3 py-3">제품 / 연결 반제품</th>
-                    <th className="px-3 py-3 text-right">계획·필요량(g)</th><th className="px-3 py-3 text-right">완료(g)</th><th className="px-3 py-3 text-right">불량(g)</th><th className="px-3 py-3 text-right">샘플(g)</th><th className="px-3 py-3">상태</th><th className="px-3 py-3">작업</th>
+                    <th className="px-2 py-3 text-center"><input type="checkbox" checked={allSelected} onChange={(event) => toggleAll(event.target.checked)} /></th>
+                    <th className="whitespace-nowrap px-2 py-3">생산일자</th>
+                    <th className="whitespace-nowrap px-2 py-3">LOT</th>
+                    <th className="px-3 py-3">제품 / 연결 반제품</th>
+                    <th className="whitespace-nowrap px-2 py-3 text-right">계획·필요량(g)</th>
+                    <th className="whitespace-nowrap px-2 py-3 text-right">완료(g)</th>
+                    <th className="whitespace-nowrap px-2 py-3 text-right">불량(g)</th>
+                    <th className="whitespace-nowrap px-2 py-3 text-right">샘플(g)</th>
+                    <th className="whitespace-nowrap px-2 py-3">상태</th>
+                    <th className="whitespace-nowrap px-2 py-3">작업</th>
                   </tr>
                 </thead>
                 <tbody>
                   {records.map((record) => (
                     <>
                       <tr key={record.id} className="border-t border-slate-800 bg-[#0d1b30]">
-                        <td className="px-3 py-3"><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={(event) => toggleOne(record.id, event.target.checked)} /></td>
-                        <td className="px-3 py-3 text-slate-300">{record.work_date}</td>
-                        <td className="px-3 py-3 font-mono text-slate-200">{record.lot_number}</td>
-                        <td className="px-3 py-3 font-semibold text-white">{record.product_name}</td>
-                        <td className="px-3 py-3 text-right text-blue-300">{formatNumber(record.planned_quantity_g)}</td>
-                        <td className="px-3 py-3 text-right text-emerald-300">{formatNumber(record.actual_quantity_g)}</td>
-                        <td className="px-3 py-3 text-right text-amber-300">{formatNumber(record.defect_quantity_g)}</td>
-                        <td className="px-3 py-3 text-right text-cyan-300">{formatNumber(record.sample_quantity_g)}</td>
-                        <td className="px-3 py-3"><span className="rounded-lg border border-emerald-700/60 bg-emerald-950/40 px-2 py-1 text-xs text-emerald-200">{normalizeStatus(record.status)}</span></td>
-                        <td className="px-3 py-3"><div className="flex gap-2"><button type="button" onClick={() => openWorkOrder(record)} className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs hover:border-emerald-500">작업지시서</button><button type="button" disabled={busyId === record.id} onClick={() => void revertCompletion(record)} className="rounded-lg border border-red-800 px-3 py-1.5 text-xs text-red-200 hover:border-red-600 disabled:opacity-50">되돌리기</button></div></td>
+                        <td className="px-2 py-3 text-center"><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={(event) => toggleOne(record.id, event.target.checked)} /></td>
+                        <td className="whitespace-nowrap px-2 py-3 text-slate-300">{record.work_date}</td>
+                        <td className="whitespace-nowrap px-2 py-3 font-mono text-slate-200">{record.lot_number}</td>
+                        <td className="break-words px-3 py-3 font-semibold text-white">{record.product_name}</td>
+                        <td className="whitespace-nowrap px-2 py-3 text-right text-blue-300">{formatNumber(record.planned_quantity_g)}</td>
+                        <td className="whitespace-nowrap px-2 py-3 text-right text-emerald-300">{formatNumber(record.actual_quantity_g)}</td>
+                        <td className="whitespace-nowrap px-2 py-3 text-right text-amber-300">{formatNumber(record.defect_quantity_g)}</td>
+                        <td className="whitespace-nowrap px-2 py-3 text-right text-cyan-300">{formatNumber(record.sample_quantity_g)}</td>
+                        <td className="whitespace-nowrap px-2 py-3"><span className="rounded-lg border border-emerald-700/60 bg-emerald-950/40 px-2 py-1 text-xs text-emerald-200">{normalizeStatus(record.status)}</span></td>
+                        <td className="px-2 py-3">
+                          <div className="flex flex-nowrap items-center gap-1.5">
+                            <button type="button" onClick={() => openWorkOrder(record)} className="whitespace-nowrap rounded-lg border border-slate-600 px-2 py-1.5 text-[11px] font-medium hover:border-emerald-500">작업지시서</button>
+                            <button type="button" disabled={busyId === record.id} onClick={() => void revertCompletion(record)} className="whitespace-nowrap rounded-lg border border-red-800 px-2 py-1.5 text-[11px] font-medium text-red-200 hover:border-red-600 disabled:opacity-50">되돌리기</button>
+                          </div>
+                        </td>
                       </tr>
                       {record.semi_products.map((stage) => (
                         <tr key={`${record.id}-${stage.key}`} className="border-t border-slate-800/70 bg-[#091626] text-slate-300">
-                          <td className="px-3 py-2"></td><td className="px-3 py-2 text-xs">↳ {stage.depth}단계</td><td className="px-3 py-2 font-mono text-xs">동일 LOT</td>
-                          <td className="px-3 py-2"><div className="font-semibold text-cyan-200">[연결 반제품] {stage.product_name}</div><div className="mt-1 text-xs text-slate-500">{stage.path.join(' → ')}</div></td>
-                          <td className="px-3 py-2 text-right font-semibold text-cyan-200">{formatNumber(stage.required_g)}</td><td className="px-3 py-2 text-right">-</td><td className="px-3 py-2 text-right">-</td><td className="px-3 py-2 text-right">-</td>
-                          <td className="px-3 py-2"><span className="rounded-lg border border-cyan-800/70 bg-cyan-950/30 px-2 py-1 text-xs text-cyan-200">동일 LOT 내 제조</span></td><td className="px-3 py-2 text-xs text-slate-500">상위: {stage.parent_product_name}</td>
+                          <td className="px-2 py-2"></td>
+                          <td className="whitespace-nowrap px-2 py-2 text-xs">↳ {stage.depth}단계</td>
+                          <td className="whitespace-nowrap px-2 py-2 font-mono text-xs">동일 LOT</td>
+                          <td className="break-words px-3 py-2"><div className="font-semibold text-cyan-200">[연결 반제품] {stage.product_name}</div><div className="mt-1 text-xs text-slate-500">{stage.path.join(' → ')}</div></td>
+                          <td className="whitespace-nowrap px-2 py-2 text-right font-semibold text-cyan-200">{formatNumber(stage.required_g)}</td>
+                          <td className="px-2 py-2 text-right">-</td>
+                          <td className="px-2 py-2 text-right">-</td>
+                          <td className="px-2 py-2 text-right">-</td>
+                          <td className="px-2 py-2"><span className="inline-block rounded-lg border border-cyan-800/70 bg-cyan-950/30 px-2 py-1 text-[11px] text-cyan-200">동일 LOT 내 제조</span></td>
+                          <td className="break-words px-2 py-2 text-[11px] leading-4 text-slate-500">상위: {stage.parent_product_name}</td>
                         </tr>
                       ))}
                       {record.semi_product_issues.length > 0 ? (
