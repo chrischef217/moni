@@ -6,7 +6,7 @@ export function middleware(request: NextRequest) {
   }
 
   const rewritten = request.nextUrl.clone()
-  rewritten.pathname = rewritten.pathname.replace(/\/pdf$/, '/completed-pdf')
+  rewritten.pathname = rewritten.pathname.replace(/\/pdf$/, '/print-pdf')
   return NextResponse.rewrite(rewritten)
 }
 
