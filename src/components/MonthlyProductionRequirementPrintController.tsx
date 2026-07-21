@@ -13,11 +13,17 @@ type Requirement = {
   status: '부족' | '주의' | '충분'
 }
 
+type RequirementGroup = {
+  requirements?: Requirement[]
+  validation?: { complete?: boolean; unresolved_count?: number }
+  issues?: Array<{ product_name?: string; recipe_item?: string | null; reason?: string }>
+}
+
 type Payload = {
   ok?: boolean
   error?: string
-  confirmed?: { requirements?: Requirement[] }
-  with_ai?: { requirements?: Requirement[] }
+  confirmed?: RequirementGroup
+  ai_only?: RequirementGroup
 }
 
 const BUTTON_ATTR = 'data-monthly-requirement-print'
@@ -60,32 +66,29 @@ function currentLevelFromPage(): 'stable' | 'standard' | 'expanded' {
   return 'standard'
 }
 
-function includeAiFromPage(): boolean {
+function aiOnlyFromPage(): boolean {
   const labels = Array.from(document.querySelectorAll('label'))
-  const target = labels.find((label) => normalizeText(label.textContent).includes('AI 예측 포함해서 보기'))
+  const target = labels.find((label) => normalizeText(label.textContent).includes('AI 예측만 보기'))
   return Boolean(target?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked)
 }
 
 function rowsHtml(rows: Requirement[]): string {
   if (!rows.length) return '<tr><td colspan="11" class="empty">해당 원료가 없습니다.</td></tr>'
-  return rows
-    .map(
-      (row, index) => `
-      <tr>
-        <td class="center">${index + 1}</td>
-        <td class="check">□</td>
-        <td class="name">${escapeHtml(row.material_name)}</td>
-        <td class="number">${escapeHtml(formatKg(row.current_stock_g))}</td>
-        <td class="number">${escapeHtml(formatKg(row.required_g))}</td>
-        <td class="number strong">${escapeHtml(formatKg(row.projected_balance_g))}</td>
-        <td class="number">${row.shortage_g > 0 ? escapeHtml(formatKg(row.shortage_g)) : '-'}</td>
-        <td class="center">${escapeHtml(row.first_shortage_date ?? '-')}</td>
-        <td class="blank"></td>
-        <td class="judgement">부족 □<br/>충분 □</td>
-        <td class="blank note"></td>
-      </tr>`,
-    )
-    .join('')
+  return rows.map((row, index) => `
+    <tr>
+      <td class="center">${index + 1}</td>
+      <td class="check">□</td>
+      <td class="name">${escapeHtml(row.material_name)}</td>
+      <td class="number">${escapeHtml(formatKg(row.current_stock_g))}</td>
+      <td class="number">${escapeHtml(formatKg(row.required_g))}</td>
+      <td class="number strong">${escapeHtml(formatKg(row.projected_balance_g))}</td>
+      <td class="number">${row.shortage_g > 0 ? escapeHtml(formatKg(row.shortage_g)) : '-'}</td>
+      <td class="center">${escapeHtml(row.first_shortage_date ?? '-')}</td>
+      <td class="blank"></td>
+      <td class="judgement">부족 □<br/>충분 □</td>
+      <td class="blank note"></td>
+    </tr>
+  `).join('')
 }
 
 function sectionHtml(title: string, description: string, rows: Requirement[], className: string): string {
@@ -106,7 +109,7 @@ function sectionHtml(title: string, description: string, rows: Requirement[], cl
     </section>`
 }
 
-function buildPrintHtml(month: string, levelLabel: string, includeAi: boolean, requirements: Requirement[]): string {
+function buildPrintHtml(month: string, levelLabel: string, aiOnly: boolean, requirements: Requirement[]): string {
   const shortage = requirements.filter((row) => row.status === '부족')
   const warning = requirements.filter((row) => row.status === '주의')
   const sufficient = requirements.filter((row) => row.status === '충분')
@@ -114,7 +117,7 @@ function buildPrintHtml(month: string, levelLabel: string, includeAi: boolean, r
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date())
   const monthLabel = `${month.slice(0, 4)}년 ${Number(month.slice(5, 7))}월`
-  const basis = includeAi ? `사용자 예상 계획 + AI 예측(${levelLabel})` : '사용자 예상 계획'
+  const basis = aiOnly ? `AI 예측(${levelLabel})만 — 사용자 예상 계획 제외` : '사용자 예상 계획만 — AI 예측 제외'
 
   return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"/><title>${escapeHtml(monthLabel)} 월간 원료 수요 체크리스트</title>
@@ -175,17 +178,25 @@ ${sectionHtml('3. 충분 원료', '시스템 계산상 생산계획을 충족', 
 async function printChecklist(): Promise<void> {
   const month = currentMonthFromPage()
   const level = currentLevelFromPage()
-  const includeAi = includeAiFromPage()
+  const aiOnly = aiOnlyFromPage()
   const levelLabel = level === 'stable' ? '안정형' : level === 'expanded' ? '확장형' : '표준형'
+
   try {
     const response = await fetch(`/api/moni/monthly-production-plans?month=${encodeURIComponent(month)}&level=${level}`, { cache: 'no-store' })
     const payload = (await response.json().catch(() => null)) as Payload | null
     if (!response.ok || !payload?.ok) throw new Error(payload?.error || '원료 필요량을 불러오지 못했습니다.')
-    const requirements = includeAi ? payload.with_ai?.requirements ?? [] : payload.confirmed?.requirements ?? []
-    if (!requirements.length) {
-      window.alert('출력할 원료 필요량이 없습니다. 먼저 예상 계획을 등록해 주세요.')
+    const group = aiOnly ? payload.ai_only : payload.confirmed
+    if (group?.validation?.complete !== true) {
+      const count = Number(group?.validation?.unresolved_count || group?.issues?.length || 0)
+      window.alert(`계산이 완전하지 않아 인쇄할 수 없습니다. 원재료 연결 또는 배합비 확인이 필요한 항목: ${count}개`)
       return
     }
+    const requirements = group?.requirements ?? []
+    if (!requirements.length) {
+      window.alert(aiOnly ? '출력할 AI 예측 원료 필요량이 없습니다.' : '출력할 사용자 예상 계획 원료 필요량이 없습니다.')
+      return
+    }
+
     const iframe = document.createElement('iframe')
     iframe.setAttribute('aria-hidden', 'true')
     iframe.style.position = 'fixed'
@@ -198,7 +209,7 @@ async function printChecklist(): Promise<void> {
     const printDocument = iframe.contentDocument ?? iframe.contentWindow?.document
     if (!printDocument || !iframe.contentWindow) throw new Error('인쇄창을 열지 못했습니다.')
     printDocument.open()
-    printDocument.write(buildPrintHtml(month, levelLabel, includeAi, requirements))
+    printDocument.write(buildPrintHtml(month, levelLabel, aiOnly, requirements))
     printDocument.close()
     const printWindow = iframe.contentWindow
     const cleanup = () => window.setTimeout(() => iframe.remove(), 500)
@@ -221,6 +232,7 @@ function installButton(): void {
   const button = document.createElement('button')
   button.type = 'button'
   button.setAttribute(BUTTON_ATTR, 'true')
+  button.dataset.monthlyRequirementSafe = 'false'
   button.className = 'rounded-xl border border-emerald-500 bg-emerald-500/10 px-4 py-2 font-bold text-emerald-200 hover:bg-emerald-500/20'
   button.textContent = '원료 체크리스트 인쇄 / PDF'
   button.addEventListener('click', () => void printChecklist())
