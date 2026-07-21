@@ -23,7 +23,7 @@ const categories: Category[] = [
       { label: '생산 대시보드', target: '생산 개요' },
       { label: '월간 생산계획', href: '/monthly-production-plan' },
       { label: '작업지시서', target: '작업 지시' },
-      { label: '생산일보', target: '생산일보' },
+      { label: '생산일보', href: '/production-daily' },
       { label: '원료 수불부', target: '원료수불부' },
       { label: '제품 관리', target: '제품관리' },
       { label: '원재료 관리', target: '원재료 관리' },
@@ -80,16 +80,25 @@ function clickDashboardTarget(label: string) {
   return true
 }
 
+function routeState(pathname: string): { category: CategoryKey; item: string } {
+  if (pathname === '/monthly-production-plan') return { category: 'production', item: '월간 생산계획' }
+  if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
+  if (pathname === '/audit') return { category: 'audit', item: '감사 기록' }
+  return { category: 'ai', item: 'AI 채팅' }
+}
+
 export default function GlobalMoniSidebarController() {
   const pathname = usePathname()
   const router = useRouter()
+  const initialRoute = routeState(pathname)
   const peekCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [visible, setVisible] = useState(pathname === '/monthly-production-plan' || pathname === '/audit')
+  const standaloneSurface = pathname === '/monthly-production-plan' || pathname === '/production-daily' || pathname === '/audit'
+  const [visible, setVisible] = useState(standaloneSurface)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileExpandedCategory, setMobileExpandedCategory] = useState<CategoryKey | null>(null)
-  const [activeCategory, setActiveCategory] = useState<CategoryKey>(pathname === '/monthly-production-plan' ? 'production' : pathname === '/audit' ? 'audit' : 'ai')
+  const [activeCategory, setActiveCategory] = useState<CategoryKey>(initialRoute.category)
   const [hoveredCategory, setHoveredCategory] = useState<CategoryKey | null>(null)
-  const [activeItem, setActiveItem] = useState(pathname === '/monthly-production-plan' ? '월간 생산계획' : pathname === '/audit' ? '감사 기록' : 'AI 채팅')
+  const [activeItem, setActiveItem] = useState(initialRoute.item)
   const [isPinned, setIsPinned] = useState(true)
   const [pinPreferenceReady, setPinPreferenceReady] = useState(false)
   const [desktopPeekOpen, setDesktopPeekOpen] = useState(false)
@@ -140,25 +149,10 @@ export default function GlobalMoniSidebarController() {
   useEffect(() => () => cancelPeekClose(), [])
 
   useEffect(() => {
-    const shouldOffset = visible && desktopSidebarOpen
-    document.body.classList.toggle('moni-global-sidebar-active', visible)
-    document.body.classList.toggle('moni-sidebar-offset-active', shouldOffset)
-    document.body.style.setProperty('--moni-sidebar-width', `${SIDEBAR_WIDTH}px`)
-
-    return () => {
-      document.body.classList.remove('moni-global-sidebar-active')
-      document.body.classList.remove('moni-sidebar-offset-active')
-      document.body.style.removeProperty('--moni-sidebar-width')
-    }
-  }, [visible, desktopSidebarOpen])
-
-  useEffect(() => {
-    if (pathname === '/monthly-production-plan') {
-      setActiveCategory('production')
-      setActiveItem('월간 생산계획')
-    } else if (pathname === '/audit') {
-      setActiveCategory('audit')
-      setActiveItem('감사 기록')
+    const next = routeState(pathname)
+    if (pathname === '/monthly-production-plan' || pathname === '/production-daily' || pathname === '/audit') {
+      setActiveCategory(next.category)
+      setActiveItem(next.item)
     } else if (pathname === '/') {
       const pending = window.sessionStorage.getItem('moni-pending-nav')
       if (!pending) {
@@ -176,9 +170,10 @@ export default function GlobalMoniSidebarController() {
       attempts += 1
       const logoutButton = findDashboardButton('로그아웃')
       const isMonthly = pathname === '/monthly-production-plan'
+      const isDaily = pathname === '/production-daily'
       const isAudit = pathname === '/audit'
-      const isAuthenticatedSurface = Boolean(logoutButton) || isMonthly || isAudit
-      setVisible(isAuthenticatedSurface)
+      const isStandalone = isMonthly || isDaily || isAudit
+      setVisible(Boolean(logoutButton) || isStandalone)
 
       if (isMonthly) {
         const ownAside = document.querySelector<HTMLElement>('main > div > aside')
