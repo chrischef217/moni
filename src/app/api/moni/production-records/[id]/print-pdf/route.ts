@@ -5,9 +5,48 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 function countMaterialColumns(html: string): number {
-  const match = html.match(/<table class="material-table">[\s\S]*?<thead><tr>([\s\S]*?)<\/tr><\/thead>/)
+  const match = html.match(/<table class="[^"]*\bmaterial-table\b[^"]*">[\s\S]*?<thead><tr>([\s\S]*?)<\/tr><\/thead>/)
   if (!match) return 0
   return (match[1].match(/<th\b/g) ?? []).length
+}
+
+function optimizeNoSemiProductMaterialTable(html: string): { html: string; noSemiProduct: boolean } {
+  const tableMatch = html.match(/<table class="material-table">([\s\S]*?)<\/table>/)
+  if (!tableMatch) return { html, noSemiProduct: false }
+
+  const headerMatch = tableMatch[1].match(/<thead><tr>([\s\S]*?)<\/tr><\/thead>/)
+  if (!headerMatch) return { html, noSemiProduct: false }
+
+  const headers = headerMatch[1].match(/<th\b[^>]*>[\s\S]*?<\/th>/g) ?? []
+  const noSemiProduct =
+    headers.length === 5 &&
+    headers.some((header) => header.includes('완제품 직접투입(g)')) &&
+    headers.some((header) => header.includes('최종 투입량(g)'))
+
+  if (!noSemiProduct) return { html, noSemiProduct: false }
+
+  let optimizedTable = tableMatch[0]
+    .replace('class="material-table"', 'class="material-table no-semi-material-table"')
+    .replace(/\s*<th>완제품 직접투입\(g\)<\/th>/, '')
+
+  optimizedTable = optimizedTable.replace(/<tbody>([\s\S]*?)<\/tbody>/, (_match, body: string) => {
+    const optimizedRows = body.replace(/<tr\b([^>]*)>([\s\S]*?)<\/tr>/g, (row, attributes: string, content: string) => {
+      const cells = content.match(/<td\b[^>]*>[\s\S]*?<\/td>/g)
+      if (!cells || cells.length !== 5) return row
+
+      cells.splice(3, 1)
+      return `<tr${attributes}>${cells.join('')}</tr>`
+    })
+    return `<tbody>${optimizedRows}</tbody>`
+  })
+
+  let optimizedHtml = html.replace(tableMatch[0], optimizedTable)
+  optimizedHtml = optimizedHtml.replace(
+    /<div class="note">※ 준비수량은 최종 투입량과 포장단위를 기준으로 현장에서 준비해야 할 정수 ea로 표시합니다\. 반제품 열은 해당 반제품을 현장에서 제조할 때 투입할 원재료 수량입니다\.<\/div>/,
+    '<div class="note">※ 준비수량은 최종 투입량과 포장단위를 기준으로 현장에서 준비해야 할 정수 ea로 표시합니다.</div>',
+  )
+
+  return { html: optimizedHtml, noSemiProduct: true }
 }
 
 export async function GET(request: NextRequest, context: { params: { id: string } }) {
@@ -21,6 +60,9 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     /(<div class="section-title">원재료 준비 체크리스트<\/div>\s*)<table>/,
     '$1<table class="material-table">',
   )
+
+  const optimizedMaterialTable = optimizeNoSemiProductMaterialTable(html)
+  html = optimizedMaterialTable.html
 
   // 모든 작업지시서의 담당자를 회사 고정값으로 표시합니다.
   html = html.replace(
@@ -107,6 +149,19 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       white-space: nowrap !important;
       text-align: right;
     }
+
+    /* 반제품이 없는 작업지시서는 불필요한 직접투입 열 없이 4열로 최적화 */
+    .no-semi-material-table {
+      font-size: 12px !important;
+    }
+    .no-semi-material-table th:first-child,
+    .no-semi-material-table td:first-child { width: 42% !important; }
+    .no-semi-material-table th:nth-child(2),
+    .no-semi-material-table td:nth-child(2) { width: 16% !important; }
+    .no-semi-material-table th:nth-child(3),
+    .no-semi-material-table td:nth-child(3) { width: 20% !important; }
+    .no-semi-material-table th:last-child,
+    .no-semi-material-table td:last-child { width: 22% !important; }
 
     .note {
       font-size: 10.5px !important;
