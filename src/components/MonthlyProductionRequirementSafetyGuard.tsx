@@ -80,7 +80,6 @@ function setPrintSafety(safe: boolean) {
 }
 
 function renderUnsafeBanner(group: RequirementGroup, aiOnly: boolean) {
-  removeBanner()
   const section = requirementSection()
   if (!section) return
   const header = section.firstElementChild
@@ -95,9 +94,14 @@ function renderUnsafeBanner(group: RequirementGroup, aiOnly: boolean) {
     const item = issue.recipe_item ? ` · ${issue.recipe_item}` : ''
     return `${issue.product_name || '제품'}${item}: ${issue.reason || '확인 필요'}`
   })
+  const signature = JSON.stringify({ aiOnly, unresolved, products, details })
+  const existing = document.querySelector<HTMLElement>(`[${BANNER_ATTR}]`)
+  if (existing?.dataset.signature === signature) return
+  removeBanner()
 
   const banner = document.createElement('div')
   banner.setAttribute(BANNER_ATTR, 'true')
+  banner.dataset.signature = signature
   banner.className = 'm-4 rounded-xl border-2 border-red-500 bg-red-950/70 p-4 text-red-100'
   banner.innerHTML = `
     <div class="text-base font-black">계산 불완전 — 발주·인쇄 사용 금지</div>
@@ -116,8 +120,7 @@ export default function MonthlyProductionRequirementSafetyGuard() {
     let requestSequence = 0
     let timer = 0
     const validate = async () => {
-      const section = requirementSection()
-      if (!section) return
+      if (!requirementSection()) return
       const sequence = ++requestSequence
       const month = currentMonthFromPage()
       const level = currentLevelFromPage()
@@ -130,8 +133,7 @@ export default function MonthlyProductionRequirementSafetyGuard() {
         if (sequence !== requestSequence) return
         if (!response.ok || !payload?.ok) throw new Error('검증 정보를 불러오지 못했습니다.')
         const group = aiOnly ? payload.ai_only : payload.confirmed
-        const complete = group?.validation?.complete === true
-        if (complete) {
+        if (group?.validation?.complete === true) {
           removeBanner()
           setPrintSafety(true)
         } else {
@@ -150,10 +152,10 @@ export default function MonthlyProductionRequirementSafetyGuard() {
 
     const schedule = () => {
       window.clearTimeout(timer)
-      timer = window.setTimeout(() => void validate(), 180)
+      timer = window.setTimeout(() => void validate(), 220)
     }
     const observer = new MutationObserver(schedule)
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['checked', 'class'] })
+    observer.observe(document.body, { childList: true, subtree: true })
     document.addEventListener('change', schedule, true)
     document.addEventListener('click', schedule, true)
     schedule()
