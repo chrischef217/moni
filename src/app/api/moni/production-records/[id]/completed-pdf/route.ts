@@ -177,18 +177,17 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       record.defect_quantity_g,
     )
     const samples = normalizeSampleEntries(metadata.sample_entries)
-    const sampleRows = samples.length
-      ? samples
-          .map((sample, index) => {
-            const value = numberOrNull(sample.value)
-            const unit = sample.unit === 'kg' ? 'kg' : 'g'
-            const grams = numberOrNull(sample.grams) ?? (value !== null ? (unit === 'kg' ? value * 1000 : value) : null)
-            const display = value !== null ? `${formatNumber(value, 3)}${unit}` : grams !== null ? formatGram(grams) : '-'
-            const converted = unit === 'kg' && grams !== null ? ` (${formatGram(grams)})` : ''
-            return `<div>${escapeHtml(text(sample.label) || `샘플 ${index + 1}`)}: <strong>${escapeHtml(display + converted)}</strong></div>`
-          })
-          .join('')
-      : `<div>샘플 합계: <strong>${escapeHtml(formatGram(record.sample_quantity_g))}</strong></div>`
+    const sampleDetailRows = samples
+      .map((sample, index) => {
+        const value = numberOrNull(sample.value)
+        const unit = sample.unit === 'kg' ? 'kg' : 'g'
+        const grams = numberOrNull(sample.grams) ?? (value !== null ? (unit === 'kg' ? value * 1000 : value) : null)
+        const display = value !== null ? `${formatNumber(value, 3)}${unit}` : grams !== null ? formatGram(grams) : '-'
+        const converted = unit === 'kg' && grams !== null ? ` (${formatGram(grams)})` : ''
+        return `<div>${escapeHtml(text(sample.label) || `샘플 ${index + 1}`)}: <strong>${escapeHtml(display + converted)}</strong></div>`
+      })
+      .join('')
+    const sampleContent = `${sampleDetailRows}<div>샘플 합계: <strong>${escapeHtml(formatGram(record.sample_quantity_g))}</strong></div>`
 
     const productResult = await supabase
       .from('products')
@@ -267,7 +266,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
         <tbody>
           <tr><th>완료수량</th><td>${escapeHtml(actualText)}</td></tr>
           <tr><th>불량수량</th><td>${escapeHtml(defectText)}</td></tr>
-          <tr><th>샘플수량</th><td><div class="sample-list">${sampleRows}<div>샘플 합계: <strong>${escapeHtml(formatGram(record.sample_quantity_g))}</strong></div></div></td></tr>
+          <tr><th>샘플수량</th><td><div class="sample-list">${sampleContent}</div></td></tr>
         </tbody>
       </table>
       <table class="people-table">
