@@ -5,6 +5,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const MAX_DEPTH = 8
+const PAGE_SIZE = 500
 
 function text(value: unknown): string {
   return String(value ?? '').trim()
@@ -30,6 +31,20 @@ function isSemiIngredient(value: unknown): boolean {
 function isCompletedStatus(value: unknown): boolean {
   const key = normalizeKey(value)
   return ['completed', 'confirmed', '완료', '확정'].includes(key)
+}
+
+async function fetchAll<T>(makeQuery: () => any, label: string): Promise<T[]> {
+  const rows: T[] = []
+  let from = 0
+  for (let page = 0; page < 50; page += 1) {
+    const result = await makeQuery().range(from, from + PAGE_SIZE - 1)
+    if (result.error) throw new Error(`${label}: ${result.error.message}`)
+    const pageRows = (result.data ?? []) as T[]
+    rows.push(...pageRows)
+    if (pageRows.length < PAGE_SIZE) return rows
+    from += PAGE_SIZE
+  }
+  throw new Error(`${label}: 조회 행 수가 안전 한도를 초과했습니다.`)
 }
 
 type RecipeRow = {
@@ -76,24 +91,28 @@ export async function GET(request: NextRequest) {
     if (to) recordQuery = recordQuery.lte('work_date', to)
     if (product) recordQuery = recordQuery.eq('product_id', product)
 
-    const [recordResult, recipeResult, productResult] = await Promise.all([
+    const [recordResult, recipes, products] = await Promise.all([
       recordQuery,
-      supabase
-        .from('recipes')
-        .select('id, product_id, product_name, ratio_percent, ingredient_type, semi_product_id, sort_order')
-        .eq('is_active', true)
-        .order('product_id', { ascending: true })
-        .order('sort_order', { ascending: true })
-        .limit(5000),
-      supabase.from('products').select('id, product_name').order('product_name', { ascending: true }).limit(1000),
+      fetchAll<RecipeRow>(
+        () => supabase
+          .from('recipes')
+          .select('id, product_id, product_name, ratio_percent, ingredient_type, semi_product_id, sort_order')
+          .eq('is_active', true)
+          .order('product_id', { ascending: true })
+          .order('sort_order', { ascending: true }),
+        '레시피 조회 실패',
+      ),
+      fetchAll<ProductRow>(
+        () => supabase
+          .from('products')
+          .select('id, product_name')
+          .order('product_name', { ascending: true }),
+        '제품 조회 실패',
+      ),
     ])
 
     if (recordResult.error) throw new Error(recordResult.error.message)
-    if (recipeResult.error) throw new Error(recipeResult.error.message)
-    if (productResult.error) throw new Error(productResult.error.message)
 
-    const recipes = (recipeResult.data ?? []) as RecipeRow[]
-    const products = (productResult.data ?? []) as ProductRow[]
     const recipesByProduct = new Map<string, RecipeRow[]>()
     for (const recipe of recipes) {
       const productId = text(recipe.product_id)
@@ -140,7 +159,7 @@ export async function GET(request: NextRequest) {
           const requiredG = (currentQuantityG * ratio) / 100
           const nextPathNames = [...pathNames, semiProductName]
           stages.push({
-            key: `${pathIds.join('>')}::${text(recipe.id)}`,
+            key: `${[...pathIds, semiProductId].join('>')}::${text(recipe.id)}`,
             product_id: semiProductId,
             product_name: semiProductName,
             parent_product_id: currentProductId,
