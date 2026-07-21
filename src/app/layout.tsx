@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import RawMaterialLedgerPrintController from '@/components/RawMaterialLedgerPrintController'
 import MonthlyProductionRequirementPrintController from '@/components/MonthlyProductionRequirementPrintController'
 import MonthlyProductionRequirementSafetyGuard from '@/components/MonthlyProductionRequirementSafetyGuard'
+import MonthlyProductionPurchaseBudgetController from '@/components/MonthlyProductionPurchaseBudgetController'
 import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
 import './globals.css'
 
@@ -22,6 +23,7 @@ export default function RootLayout({
         <RawMaterialLedgerPrintController />
         <MonthlyProductionRequirementPrintController />
         <MonthlyProductionRequirementSafetyGuard />
+        <MonthlyProductionPurchaseBudgetController />
         <GlobalMoniSidebarController />
         {children}
       </body>
