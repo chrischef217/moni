@@ -5,6 +5,7 @@ import MonthlyProductionRequirementSafetyGuard from '@/components/MonthlyProduct
 import MonthlyProductionPurchaseBudgetController from '@/components/MonthlyProductionPurchaseBudgetController'
 import RawMaterialUnitPriceController from '@/components/RawMaterialUnitPriceController'
 import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
+import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -27,6 +28,7 @@ export default function RootLayout({
         <MonthlyProductionPurchaseBudgetController />
         <RawMaterialUnitPriceController />
         <GlobalMoniSidebarController />
+        <ProductionCompletionMetadataController />
         {children}
       </body>
     </html>
