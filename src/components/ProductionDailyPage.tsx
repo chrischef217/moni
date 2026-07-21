@@ -63,15 +63,6 @@ function normalizeStatus(value: unknown): string {
   return String(value ?? '-')
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
-}
-
 export default function ProductionDailyPage() {
   const today = useMemo(() => todayKst(), [])
   const [from, setFrom] = useState(firstDayOfMonth(today))
@@ -160,50 +151,13 @@ export default function ProductionDailyPage() {
       return
     }
 
-    const popup = window.open('', '_blank', 'noopener,noreferrer')
-    if (!popup) {
-      setMessage({ tone: 'warning', text: '브라우저 팝업 차단을 해제한 뒤 다시 시도해 주세요.' })
+    if (selected.length > 100) {
+      setMessage({ tone: 'warning', text: '한 번에 최대 100건까지 인쇄할 수 있습니다.' })
       return
     }
 
-    const pages = selected.map((record, index) => {
-      const semiRows = record.semi_products.length
-        ? record.semi_products.map((stage) => `<tr>
-            <td>${stage.depth}단계</td>
-            <td><strong>${escapeHtml(stage.product_name)}</strong><div class="path">${escapeHtml(stage.path.join(' → '))}</div></td>
-            <td>${escapeHtml(stage.parent_product_name)}</td>
-            <td class="num">${formatNumber(stage.ratio_from_parent, 3)}%</td>
-            <td class="num">${formatGram(stage.required_g)}</td>
-            <td>동일 LOT 내 제조</td>
-          </tr>`).join('')
-        : '<tr><td colspan="6" class="center">연결 반제품 없음</td></tr>'
-      const issues = record.semi_product_issues.length
-        ? `<div class="issue"><strong>확인 필요:</strong> ${record.semi_product_issues.map(escapeHtml).join(', ')}</div>`
-        : ''
-      return `<section class="sheet">
-        <h1>생산일보</h1>
-        <table class="main"><tbody>
-          <tr><th>생산일자</th><td>${escapeHtml(record.work_date)}</td><th>LOT</th><td>${escapeHtml(record.lot_number)}</td></tr>
-          <tr><th>제품명</th><td colspan="3">${escapeHtml(record.product_name)}</td></tr>
-          <tr><th>계획량</th><td class="num">${formatGram(record.planned_quantity_g)}</td><th>완료량</th><td class="num">${formatGram(record.actual_quantity_g)}</td></tr>
-          <tr><th>불량량</th><td class="num">${formatGram(record.defect_quantity_g)}</td><th>샘플량</th><td class="num">${formatGram(record.sample_quantity_g)}</td></tr>
-          <tr><th>상태</th><td>${escapeHtml(normalizeStatus(record.status))}</td><th>원료차감</th><td>${normalizeStatus(record.status) === '확정' ? '반영' : '미반영'}</td></tr>
-        </tbody></table>
-        <h2>연결 반제품 제조내역</h2>
-        <table><thead><tr><th>단계</th><th>연결 반제품</th><th>상위 제품</th><th>배합비</th><th>필요량</th><th>처리</th></tr></thead><tbody>${semiRows}</tbody></table>
-        ${issues}
-      </section>${index < selected.length - 1 ? '<div class="page-break"></div>' : ''}`
-    }).join('')
-
-    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8" /><title>생산일보 인쇄</title>
-      <style>
-        @page{size:A4;margin:14mm}*{box-sizing:border-box}body{margin:20px;font-family:Arial,'Malgun Gothic',sans-serif;color:#111827}
-        .sheet{width:100%;max-width:960px;margin:0 auto}h1{margin:0 0 12px;text-align:center;font-size:24px}h2{margin:16px 0 7px;font-size:16px}
-        table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #111827;padding:7px 8px}th{background:#f3f4f6;text-align:left}
-        .main th{width:17%}.num{text-align:right}.center{text-align:center}.path{margin-top:3px;font-size:10px;color:#6b7280}.issue{margin-top:10px;border:1px solid #dc2626;background:#fef2f2;padding:9px;color:#991b1b}
-        .page-break{page-break-after:always;break-after:page;height:0}@media print{body{margin:0}.sheet{max-width:none}}
-      </style></head><body>${pages}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),180));</script></body></html>`)
-    popup.document.close()
+    const params = new URLSearchParams({ ids: selected.map((record) => record.id).join(',') })
+    window.location.assign(`/api/moni/production-daily/print?${params.toString()}`)
   }
 
   const messageClass = message?.tone === 'success'
