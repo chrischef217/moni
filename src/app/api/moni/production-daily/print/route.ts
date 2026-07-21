@@ -42,14 +42,14 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#39;')
 }
 
-function formatNumber(value: unknown, digits = 0): string {
+function numberValue(value: unknown): number {
   const parsed = Number(value ?? 0)
-  if (!Number.isFinite(parsed)) return '-'
-  return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: digits }).format(parsed)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
-function formatGram(value: unknown): string {
-  return `${formatNumber(Math.round(Number(value ?? 0)))}g`
+function formatNumber(value: unknown, digits = 0): string {
+  const parsed = numberValue(value)
+  return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: digits }).format(parsed)
 }
 
 function normalizeStatus(value: unknown): string {
@@ -98,78 +98,106 @@ export async function GET(request: NextRequest) {
     return htmlResponse('<!doctype html><html lang="ko"><meta charset="utf-8"><body><h1>출력할 완료 생산일보가 없습니다.</h1><p><a href="/production-daily">생산일보로 돌아가기</a></p></body></html>', 404)
   }
 
-  const pages = records.map((record, index) => {
-    const semiProducts = record.semi_products ?? []
-    const semiRows = semiProducts.length > 0
-      ? semiProducts.map((stage) => `<tr>
-          <td>${formatNumber(stage.depth)}단계</td>
-          <td><strong>${escapeHtml(stage.product_name)}</strong><div class="path">${escapeHtml((stage.path ?? []).join(' → '))}</div></td>
-          <td>${escapeHtml(stage.parent_product_name)}</td>
-          <td>${formatNumber(stage.ratio_from_parent, 3)}%</td>
-          <td><strong>${formatGram(stage.required_g)}</strong></td>
-          <td>동일 LOT 내 제조</td>
-        </tr>`).join('')
-      : '<tr><td colspan="6">연결 반제품 없음</td></tr>'
+  const totalPlanned = records.reduce((sum, record) => sum + numberValue(record.planned_quantity_g), 0)
+  const totalActual = records.reduce((sum, record) => sum + numberValue(record.actual_quantity_g), 0)
+  const totalDefect = records.reduce((sum, record) => sum + numberValue(record.defect_quantity_g), 0)
+  const totalSample = records.reduce((sum, record) => sum + numberValue(record.sample_quantity_g), 0)
+  const dates = records.map((record) => String(record.work_date ?? '')).filter(Boolean).sort()
+  const fromDate = dates[0] ?? '-'
+  const toDate = dates[dates.length - 1] ?? '-'
 
-    const issues = (record.semi_product_issues ?? []).length > 0
-      ? `<div class="issue"><strong>연결 확인 필요:</strong> ${(record.semi_product_issues ?? []).map(escapeHtml).join(', ')}</div>`
+  const rows = records.map((record, recordIndex) => {
+    const mainRow = `<tr class="main-row">
+      <td>${recordIndex + 1}</td>
+      <td>${escapeHtml(record.work_date)}</td>
+      <td class="lot">${escapeHtml(record.lot_number)}</td>
+      <td class="product">${escapeHtml(record.product_name)}</td>
+      <td class="amount planned">${formatNumber(record.planned_quantity_g)}</td>
+      <td class="amount actual">${formatNumber(record.actual_quantity_g)}</td>
+      <td class="amount defect">${formatNumber(record.defect_quantity_g)}</td>
+      <td class="amount sample">${formatNumber(record.sample_quantity_g)}</td>
+      <td>${escapeHtml(normalizeStatus(record.status))}</td>
+    </tr>`
+
+    const semiRows = (record.semi_products ?? []).map((stage) => `<tr class="semi-row">
+      <td></td>
+      <td>↳ ${formatNumber(stage.depth)}단계</td>
+      <td>동일 LOT</td>
+      <td class="product">
+        <strong>[연결 반제품] ${escapeHtml(stage.product_name)}</strong>
+        <div class="sub-info">상위: ${escapeHtml(stage.parent_product_name)} · 배합비 ${formatNumber(stage.ratio_from_parent, 3)}%</div>
+      </td>
+      <td class="amount semi-required">${formatNumber(stage.required_g)}</td>
+      <td>-</td>
+      <td>-</td>
+      <td>-</td>
+      <td>동일 LOT 내 제조</td>
+    </tr>`).join('')
+
+    const issueRows = (record.semi_product_issues ?? []).length > 0
+      ? `<tr class="issue-row"><td></td><td colspan="8"><strong>반제품 연결 확인 필요:</strong> ${(record.semi_product_issues ?? []).map(escapeHtml).join(', ')}</td></tr>`
       : ''
 
-    return `<section class="sheet">
-      <div class="page-meta">선택 생산일보 ${index + 1} / ${records.length}</div>
-      <h1>생산일보</h1>
-      <table class="main"><tbody>
-        <tr><th>생산일자</th><td>${escapeHtml(record.work_date)}</td><th>LOT</th><td>${escapeHtml(record.lot_number)}</td></tr>
-        <tr><th>제품명</th><td colspan="3" class="product-name">${escapeHtml(record.product_name)}</td></tr>
-        <tr><th>계획량</th><td>${formatGram(record.planned_quantity_g)}</td><th>완료량</th><td class="actual">${formatGram(record.actual_quantity_g)}</td></tr>
-        <tr><th>불량량</th><td>${formatGram(record.defect_quantity_g)}</td><th>샘플량</th><td>${formatGram(record.sample_quantity_g)}</td></tr>
-        <tr><th>상태</th><td>${escapeHtml(normalizeStatus(record.status))}</td><th>원료차감</th><td>${normalizeStatus(record.status) === '확정' ? '반영' : '미반영'}</td></tr>
-      </tbody></table>
-      <h2>연결 반제품 제조내역</h2>
-      <table class="semi"><thead><tr><th>단계</th><th>연결 반제품</th><th>상위 제품</th><th>배합비</th><th>필요량</th><th>처리</th></tr></thead><tbody>${semiRows}</tbody></table>
-      ${issues}
-    </section>${index < records.length - 1 ? '<div class="page-break"></div>' : ''}`
+    return `${mainRow}${semiRows}${issueRows}`
   }).join('')
 
-  const firstDate = escapeHtml(records[0]?.work_date || '')
-  const title = `선택 생산일보_${firstDate}_${records.length}건`
+  const title = `선택 생산일보_${fromDate}_${records.length}건`
 
   return htmlResponse(`<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>${title}</title>
+  <title>${escapeHtml(title)}</title>
   <style>
-    @page { size: A4; margin: 13mm; }
+    @page { size: A4 landscape; margin: 10mm; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Arial, 'Malgun Gothic', sans-serif; color: #111827; background: #e5e7eb; }
     .toolbar { position: sticky; top: 0; z-index: 10; display: flex; justify-content: center; gap: 10px; padding: 12px; background: #0f172a; }
     .toolbar a, .toolbar button { border: 1px solid #475569; border-radius: 8px; padding: 9px 14px; background: #fff; color: #0f172a; font-size: 14px; font-weight: 700; text-decoration: none; cursor: pointer; }
     .toolbar button { border-color: #059669; background: #059669; color: #fff; }
-    .sheet { width: 210mm; min-height: 297mm; margin: 10mm auto; padding: 13mm; background: #fff; page-break-inside: avoid; break-inside: avoid-page; }
-    .page-meta { text-align: right; color: #64748b; font-size: 10px; }
-    h1 { margin: 0 0 12px; text-align: center; font-size: 24px; }
-    h2 { margin: 17px 0 7px; font-size: 16px; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
-    th, td { border: 1px solid #111827; padding: 8px 7px; text-align: center; vertical-align: middle; }
+    .document { width: 297mm; min-height: 210mm; margin: 10mm auto; padding: 10mm; background: #fff; }
+    h1 { margin: 0 0 10px; text-align: center; font-size: 24px; }
+    .meta { margin-bottom: 9px; text-align: right; color: #475569; font-size: 11px; }
+    .summary { margin-bottom: 12px; }
+    .summary th, .summary td { padding: 7px 6px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+    th, td { border: 1px solid #111827; padding: 7px 5px; text-align: center; vertical-align: middle; }
     th { background: #e5e7eb; font-weight: 700; }
-    .main th { width: 17%; }
-    .main td { font-size: 13px; }
-    .product-name { font-weight: 700; }
-    .actual { font-size: 15px !important; font-weight: 800; }
-    .semi th:nth-child(1) { width: 8%; }
-    .semi th:nth-child(2) { width: 23%; }
-    .semi th:nth-child(3) { width: 25%; }
-    .semi th:nth-child(4) { width: 12%; }
-    .semi th:nth-child(5) { width: 15%; }
-    .semi th:nth-child(6) { width: 17%; }
-    .path { margin-top: 3px; color: #64748b; font-size: 10px; line-height: 1.35; }
-    .issue { margin-top: 10px; border: 1px solid #dc2626; background: #fef2f2; padding: 9px; color: #991b1b; font-size: 12px; }
-    .page-break { height: 0; page-break-after: always; break-after: page; }
+    .records col:nth-child(1) { width: 4%; }
+    .records col:nth-child(2) { width: 9%; }
+    .records col:nth-child(3) { width: 12%; }
+    .records col:nth-child(4) { width: 27%; }
+    .records col:nth-child(5) { width: 10%; }
+    .records col:nth-child(6) { width: 10%; }
+    .records col:nth-child(7) { width: 8%; }
+    .records col:nth-child(8) { width: 8%; }
+    .records col:nth-child(9) { width: 12%; }
+    .records thead { display: table-header-group; }
+    .records tfoot { display: table-footer-group; }
+    .main-row { break-inside: avoid; page-break-inside: avoid; }
+    .main-row td { min-height: 30px; font-size: 11.5px; }
+    .main-row .product { font-weight: 700; }
+    .lot { white-space: nowrap; font-family: Consolas, monospace; }
+    .product { overflow-wrap: anywhere; word-break: keep-all; }
+    .amount { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .actual { color: #047857; font-size: 13px !important; font-weight: 800; }
+    .planned { color: #1d4ed8; }
+    .defect { color: #b45309; }
+    .sample { color: #0369a1; }
+    .semi-row td { padding-top: 6px; padding-bottom: 6px; background: #f8fafc; color: #334155; }
+    .semi-row .product { text-align: left; }
+    .semi-row strong { color: #0e7490; }
+    .semi-required { color: #0e7490; font-weight: 800; }
+    .sub-info { margin-top: 3px; color: #64748b; font-size: 9.5px; line-height: 1.3; }
+    .issue-row td { background: #fef2f2; color: #991b1b; text-align: left; }
+    .totals td { background: #eef2ff; font-size: 12px; font-weight: 800; }
+    .totals .actual { font-size: 14px !important; }
+    .note { margin-top: 8px; color: #64748b; font-size: 10px; line-height: 1.45; }
     @media print {
       body { background: #fff; }
       .no-print { display: none !important; }
-      .sheet { width: auto; min-height: auto; margin: 0; padding: 0; }
+      .document { width: auto; min-height: auto; margin: 0; padding: 0; }
+      .records tr { break-inside: avoid; page-break-inside: avoid; }
     }
   </style>
 </head>
@@ -178,7 +206,38 @@ export async function GET(request: NextRequest) {
     <a href="/production-daily">생산일보로 돌아가기</a>
     <button type="button" onclick="window.print()">인쇄 / PDF 저장</button>
   </div>
-  ${pages}
+  <main class="document">
+    <h1>선택 생산일보</h1>
+    <div class="meta">조회기간 ${escapeHtml(fromDate)} ~ ${escapeHtml(toDate)} · 선택 ${records.length}건</div>
+
+    <table class="summary">
+      <tbody><tr>
+        <th>생산기록</th><td>${records.length}건</td>
+        <th>계획량 합계</th><td>${formatNumber(totalPlanned)}g</td>
+        <th>완료량 합계</th><td><strong>${formatNumber(totalActual)}g</strong></td>
+        <th>불량량 합계</th><td>${formatNumber(totalDefect)}g</td>
+        <th>샘플량 합계</th><td>${formatNumber(totalSample)}g</td>
+      </tr></tbody>
+    </table>
+
+    <table class="records">
+      <colgroup><col/><col/><col/><col/><col/><col/><col/><col/><col/></colgroup>
+      <thead><tr>
+        <th>순번</th><th>생산일자</th><th>LOT</th><th>제품 / 연결 반제품</th>
+        <th>계획·필요량(g)</th><th>완료(g)</th><th>불량(g)</th><th>샘플(g)</th><th>상태</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr class="totals">
+        <td colspan="4">선택 합계</td>
+        <td>${formatNumber(totalPlanned)}</td>
+        <td class="actual">${formatNumber(totalActual)}</td>
+        <td>${formatNumber(totalDefect)}</td>
+        <td>${formatNumber(totalSample)}</td>
+        <td>${records.length}건</td>
+      </tr></tfoot>
+    </table>
+    <div class="note">※ 연결 반제품이 있는 생산기록만 해당 완제품 바로 아래에 하위 행으로 표시됩니다. 연결 반제품이 없는 생산기록에는 빈 반제품 표를 만들지 않습니다.</div>
+  </main>
   <script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>
 </body>
 </html>`)
