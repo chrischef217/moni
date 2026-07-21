@@ -22,4 +22,4 @@ create index if not exists idx_production_completion_metadata_record
 comment on table public.production_completion_metadata is
   '생산 완료 입력 시 작업지시서에 출력할 작성자, 확인자, 원입력 단위 및 샘플별 내역';
 
-alter table public.production_completion_metadata disable row level security;
+alter table public.production_completion_metadata enable row level security;
