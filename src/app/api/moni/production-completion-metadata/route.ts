@@ -4,6 +4,9 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const FIXED_WRITER_NAME = '윤대열'
+const FIXED_REVIEWER_NAME = '배순애'
+
 type SampleEntry = {
   label: string
   value: number
@@ -73,13 +76,8 @@ export async function POST(request: NextRequest) {
     }
 
     const recordId = text(body.record_id)
-    const writerName = text(body.writer_name)
-    const reviewerName = text(body.reviewer_name)
     if (!recordId) {
       return NextResponse.json({ ok: false, error: '작업지시서 정보가 없습니다.' }, { status: 400 })
-    }
-    if (!writerName || !reviewerName) {
-      return NextResponse.json({ ok: false, error: '작성자와 확인자를 모두 입력해 주세요.' }, { status: 400 })
     }
 
     const actualUnitRaw = text(body.actual_input_unit).toLowerCase()
@@ -97,8 +95,8 @@ export async function POST(request: NextRequest) {
 
     const payload = {
       production_record_id: recordId,
-      writer_name: writerName,
-      reviewer_name: reviewerName,
+      writer_name: FIXED_WRITER_NAME,
+      reviewer_name: FIXED_REVIEWER_NAME,
       actual_input_unit: actualUnit,
       actual_input_value: numberOrNull(body.actual_input_value),
       defect_input_unit: defectUnit,
