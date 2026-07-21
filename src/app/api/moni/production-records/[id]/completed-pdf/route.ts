@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import { GET as getBaseWorkOrderPdf } from '../pdf/route'
+import { GET as getCompletionMetadata } from '../../../production-completion-metadata/route'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -118,23 +119,23 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     const expansion = expansionJson.expansion ?? {}
 
     const supabase = createMoniServiceRoleClient()
-    const [recordResult, metadataResult] = await Promise.all([
-      supabase.from('production_records').select('*').eq('id', context.params.id).maybeSingle(),
-      supabase
-        .from('production_completion_metadata')
-        .select('*')
-        .eq('production_record_id', context.params.id)
-        .maybeSingle(),
-    ])
-
+    const recordResult = await supabase.from('production_records').select('*').eq('id', context.params.id).maybeSingle()
     if (recordResult.error) throw new Error(recordResult.error.message)
     if (!recordResult.data) {
       return NextResponse.json({ ok: false, error: '작업지시서를 찾을 수 없습니다.' }, { status: 404 })
     }
-    if (metadataResult.error) throw new Error(metadataResult.error.message)
+
+    const metadataUrl = new URL(request.url)
+    metadataUrl.pathname = '/api/moni/production-completion-metadata'
+    metadataUrl.search = ''
+    metadataUrl.searchParams.set('record_id', context.params.id)
+    const metadataResponse = await getCompletionMetadata(new NextRequest(metadataUrl))
+    const metadataJson = metadataResponse.ok
+      ? ((await metadataResponse.json()) as { metadata?: Record<string, unknown> | null })
+      : { metadata: null }
 
     const record = recordResult.data as Record<string, unknown>
-    const metadata = (metadataResult.data ?? {}) as Record<string, unknown>
+    const metadata = (metadataJson.metadata ?? {}) as Record<string, unknown>
     const completionRecorded = isCompletionRecorded(record, metadata)
     const semiColumns = expansion.semi_product_columns ?? []
     const rows = expansion.rows ?? []
