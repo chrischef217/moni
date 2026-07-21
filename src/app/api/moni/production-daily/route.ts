@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 
 const MAX_DEPTH = 8
 const PAGE_SIZE = 500
+const MAX_SELECTED_RECORDS = 100
 
 function text(value: unknown): string {
   return String(value ?? '').trim()
@@ -80,6 +81,12 @@ export async function GET(request: NextRequest) {
     const from = text(request.nextUrl.searchParams.get('from'))
     const to = text(request.nextUrl.searchParams.get('to'))
     const product = text(request.nextUrl.searchParams.get('product'))
+    const selectedIds = Array.from(new Set(
+      text(request.nextUrl.searchParams.get('ids'))
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    )).slice(0, MAX_SELECTED_RECORDS)
 
     let recordQuery = supabase
       .from('production_records')
@@ -87,9 +94,14 @@ export async function GET(request: NextRequest) {
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(1000)
-    if (from) recordQuery = recordQuery.gte('work_date', from)
-    if (to) recordQuery = recordQuery.lte('work_date', to)
-    if (product) recordQuery = recordQuery.eq('product_id', product)
+
+    if (selectedIds.length > 0) {
+      recordQuery = recordQuery.in('id', selectedIds)
+    } else {
+      if (from) recordQuery = recordQuery.gte('work_date', from)
+      if (to) recordQuery = recordQuery.lte('work_date', to)
+      if (product) recordQuery = recordQuery.eq('product_id', product)
+    }
 
     const [recordResult, recipes, products] = await Promise.all([
       recordQuery,
@@ -214,6 +226,11 @@ export async function GET(request: NextRequest) {
           semi_product_issues: semi.issues,
         }
       })
+
+    if (selectedIds.length > 0) {
+      const selectedOrder = new Map(selectedIds.map((id, index) => [id, index]))
+      records.sort((a, b) => (selectedOrder.get(text(a.id)) ?? 9999) - (selectedOrder.get(text(b.id)) ?? 9999))
+    }
 
     return NextResponse.json({
       ok: true,
