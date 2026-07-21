@@ -80,15 +80,17 @@ export async function GET(request: NextRequest, context: { params: { id: string 
   const lineHeight = columnCount >= 9 ? 1.12 : 1.2
 
   const responsiveCss = `
-    /* 상단 LOT~생산단위 표: 라벨과 값 모두 가운데 정렬 */
-    .compact {
-      font-size: 12px !important;
-    }
-    .compact th,
-    .compact td,
-    .compact .number {
+    /* 작업지시서의 모든 표 내용은 현장 오독 방지를 위해 가운데 정렬 */
+    .page table th,
+    .page table td,
+    .page table .number {
       text-align: center !important;
       vertical-align: middle !important;
+    }
+
+    /* 상단 LOT~생산단위 표 */
+    .compact {
+      font-size: 12px !important;
     }
 
     /* 연결 반제품 표도 상단 제품 정보와 비슷한 크기로 유지 */
@@ -102,11 +104,9 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       height: 29px;
       padding: 6px 5px !important;
       line-height: 1.2;
-      vertical-align: middle;
     }
     .stage-table th {
       white-space: normal !important;
-      text-align: center;
     }
 
     .material-table {
@@ -124,44 +124,54 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       overflow-wrap: anywhere;
       word-break: keep-all;
       line-height: ${lineHeight};
-      vertical-align: middle;
     }
     .material-table th {
       white-space: normal !important;
-      text-align: center;
-      vertical-align: middle;
       font-weight: 700;
     }
+
+    /* 반제품 연결 표: 최종 투입량 열을 핵심 수치 열로 고정 확보 */
     .material-table th:first-child,
-    .material-table td:first-child { width: 21%; }
+    .material-table td:first-child { width: 20%; }
     .material-table th:nth-child(2),
     .material-table td:nth-child(2) { width: 9%; }
     .material-table th:nth-child(3),
     .material-table td:nth-child(3) { width: 11%; }
     .material-table th:last-child,
-    .material-table td:last-child { width: 12%; }
+    .material-table td:last-child { width: 24% !important; }
+
     .material-table .package-count,
     .material-table .package-unit {
       white-space: normal !important;
-      text-align: center;
     }
     .material-table .number {
       white-space: nowrap !important;
-      text-align: right;
     }
 
-    /* 반제품이 없는 작업지시서는 불필요한 직접투입 열 없이 4열로 최적화 */
+    /* 최종 투입량은 반제품 유무와 관계없이 가장 크고 명확하게 표시 */
+    .material-table th:last-child {
+      font-size: 12.5px !important;
+      font-weight: 800 !important;
+    }
+    .material-table td.final-input,
+    .material-table td:last-child {
+      font-size: 14px !important;
+      font-weight: 800 !important;
+      letter-spacing: 0.1px;
+    }
+
+    /* 반제품이 없는 작업지시서는 최종 투입량을 가장 넓은 열로 배분 */
     .no-semi-material-table {
       font-size: 12px !important;
     }
     .no-semi-material-table th:first-child,
-    .no-semi-material-table td:first-child { width: 42% !important; }
+    .no-semi-material-table td:first-child { width: 32% !important; }
     .no-semi-material-table th:nth-child(2),
-    .no-semi-material-table td:nth-child(2) { width: 16% !important; }
+    .no-semi-material-table td:nth-child(2) { width: 14% !important; }
     .no-semi-material-table th:nth-child(3),
-    .no-semi-material-table td:nth-child(3) { width: 20% !important; }
+    .no-semi-material-table td:nth-child(3) { width: 18% !important; }
     .no-semi-material-table th:last-child,
-    .no-semi-material-table td:last-child { width: 22% !important; }
+    .no-semi-material-table td:last-child { width: 36% !important; }
 
     .note {
       font-size: 10.5px !important;
@@ -186,7 +196,6 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       padding: 4px 6px !important;
       height: 29px !important;
       min-height: 29px !important;
-      vertical-align: middle;
     }
     .completion-table th { width: 25% !important; }
     .completion-table td { height: 29px !important; min-height: 29px !important; }
