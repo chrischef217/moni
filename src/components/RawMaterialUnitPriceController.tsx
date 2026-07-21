@@ -75,9 +75,6 @@ async function injectField() {
   const unitTitle = unitField.querySelector<HTMLElement>(':scope > span')
   if (unitTitle) unitTitle.textContent = '단위(g)'
   unitInput.setAttribute(PACKING_INPUT_ATTR, 'true')
-  unitInput.type = 'number'
-  unitInput.min = '1'
-  unitInput.step = '1'
   unitInput.inputMode = 'numeric'
   unitInput.placeholder = '예: 10000'
 
