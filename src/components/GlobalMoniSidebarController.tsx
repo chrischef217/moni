@@ -89,6 +89,7 @@ export default function GlobalMoniSidebarController() {
   const [hoveredCategory, setHoveredCategory] = useState<CategoryKey | null>(null)
   const [activeItem, setActiveItem] = useState(pathname === '/monthly-production-plan' ? '월간 생산계획' : pathname === '/audit' ? '감사 기록' : 'AI 채팅')
   const [isPinned, setIsPinned] = useState(true)
+  const [pinPreferenceReady, setPinPreferenceReady] = useState(false)
   const [desktopPeekOpen, setDesktopPeekOpen] = useState(false)
   const expandedCategory = hoveredCategory ?? (mobileOpen ? mobileExpandedCategory : null)
   const desktopSidebarOpen = isPinned || desktopPeekOpen
@@ -98,12 +99,14 @@ export default function GlobalMoniSidebarController() {
   useEffect(() => {
     const stored = window.localStorage.getItem(PIN_STORAGE_KEY)
     if (stored === 'false') setIsPinned(false)
+    setPinPreferenceReady(true)
   }, [])
 
   useEffect(() => {
+    if (!pinPreferenceReady) return
     window.localStorage.setItem(PIN_STORAGE_KEY, String(isPinned))
     if (isPinned) setDesktopPeekOpen(false)
-  }, [isPinned])
+  }, [isPinned, pinPreferenceReady])
 
   useEffect(() => {
     const shouldOffset = visible && desktopSidebarOpen
