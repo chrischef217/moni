@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import { GET as getBaseWorkOrderPdf } from '../pdf/route'
-import { GET as getCompletionMetadata } from '../../../production-completion-metadata/route'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -100,6 +99,15 @@ function isCompletionRecorded(record: Record<string, unknown>, metadata: Record<
   return (numberOrNull(record.actual_quantity_g) ?? 0) > 0
 }
 
+async function fetchCompletionMetadata(request: NextRequest, recordId: string): Promise<Record<string, unknown>> {
+  const metadataUrl = new URL('/api/moni/production-completion-metadata', request.url)
+  metadataUrl.searchParams.set('record_id', recordId)
+  const response = await fetch(metadataUrl.toString(), { cache: 'no-store' })
+  if (!response.ok) return {}
+  const payload = (await response.json().catch(() => null)) as { metadata?: Record<string, unknown> | null } | null
+  return (payload?.metadata ?? {}) as Record<string, unknown>
+}
+
 export async function GET(request: NextRequest, context: { params: { id: string } }) {
   try {
     const jsonUrl = new URL(request.url)
@@ -125,17 +133,8 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       return NextResponse.json({ ok: false, error: '작업지시서를 찾을 수 없습니다.' }, { status: 404 })
     }
 
-    const metadataUrl = new URL(request.url)
-    metadataUrl.pathname = '/api/moni/production-completion-metadata'
-    metadataUrl.search = ''
-    metadataUrl.searchParams.set('record_id', context.params.id)
-    const metadataResponse = await getCompletionMetadata(new NextRequest(metadataUrl))
-    const metadataJson = metadataResponse.ok
-      ? ((await metadataResponse.json()) as { metadata?: Record<string, unknown> | null })
-      : { metadata: null }
-
     const record = recordResult.data as Record<string, unknown>
-    const metadata = (metadataJson.metadata ?? {}) as Record<string, unknown>
+    const metadata = await fetchCompletionMetadata(request, context.params.id)
     const completionRecorded = isCompletionRecorded(record, metadata)
     const semiColumns = expansion.semi_product_columns ?? []
     const rows = expansion.rows ?? []
