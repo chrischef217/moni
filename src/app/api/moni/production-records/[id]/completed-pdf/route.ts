@@ -92,6 +92,13 @@ function normalizeSampleEntries(value: unknown): SampleEntry[] {
     .filter((entry) => numberOrNull(entry.value) !== null || numberOrNull(entry.grams) !== null)
 }
 
+function isCompletionRecorded(record: Record<string, unknown>, metadata: Record<string, unknown>): boolean {
+  const status = text(record.status).toLowerCase()
+  if (['completed', 'confirmed', '완료', '확정'].includes(status)) return true
+  if (text(metadata.writer_name) || text(metadata.reviewer_name)) return true
+  return (numberOrNull(record.actual_quantity_g) ?? 0) > 0
+}
+
 export async function GET(request: NextRequest, context: { params: { id: string } }) {
   try {
     const jsonUrl = new URL(request.url)
@@ -128,6 +135,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
 
     const record = recordResult.data as Record<string, unknown>
     const metadata = (metadataResult.data ?? {}) as Record<string, unknown>
+    const completionRecorded = isCompletionRecorded(record, metadata)
     const semiColumns = expansion.semi_product_columns ?? []
     const rows = expansion.rows ?? []
 
@@ -165,18 +173,13 @@ export async function GET(request: NextRequest, context: { params: { id: string 
           .join('')
       : `<tr><td colspan="${headerCells.length}">원재료 필요량을 계산할 수 없습니다.</td></tr>`
 
-    const actualText = formatInputValue(
-      metadata.actual_input_value,
-      metadata.actual_input_unit,
-      record.actual_quantity_g,
-      record.actual_quantity_ea,
-    )
-    const defectText = formatInputValue(
-      metadata.defect_input_value,
-      metadata.defect_input_unit,
-      record.defect_quantity_g,
-    )
-    const samples = normalizeSampleEntries(metadata.sample_entries)
+    const actualText = completionRecorded
+      ? formatInputValue(metadata.actual_input_value, metadata.actual_input_unit, record.actual_quantity_g, record.actual_quantity_ea)
+      : ''
+    const defectText = completionRecorded
+      ? formatInputValue(metadata.defect_input_value, metadata.defect_input_unit, record.defect_quantity_g)
+      : ''
+    const samples = completionRecorded ? normalizeSampleEntries(metadata.sample_entries) : []
     const sampleDetailRows = samples
       .map((sample, index) => {
         const value = numberOrNull(sample.value)
@@ -187,7 +190,12 @@ export async function GET(request: NextRequest, context: { params: { id: string 
         return `<div>${escapeHtml(text(sample.label) || `샘플 ${index + 1}`)}: <strong>${escapeHtml(display + converted)}</strong></div>`
       })
       .join('')
-    const sampleContent = `${sampleDetailRows}<div>샘플 합계: <strong>${escapeHtml(formatGram(record.sample_quantity_g))}</strong></div>`
+    const sampleContent = completionRecorded
+      ? `${sampleDetailRows}<div>샘플 합계: <strong>${escapeHtml(formatGram(record.sample_quantity_g))}</strong></div>`
+      : '<div class="blank-area"></div>'
+    const writerText = completionRecorded ? text(metadata.writer_name) || '-' : ''
+    const reviewerText = completionRecorded ? text(metadata.reviewer_name) || '-' : ''
+    const completionSectionTitle = completionRecorded ? '생산 완료 입력 내역' : '생산 완료 후 기입란'
 
     const productResult = await supabase
       .from('products')
@@ -224,8 +232,9 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     .completion-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-top: 8px; align-items: stretch; }
     .completion-table, .people-table { table-layout: fixed; margin-top: 0; height: 100%; }
     .completion-table th { width: 26%; }
-    .completion-table td { min-height: 42px; }
-    .sample-list { display: flex; flex-direction: column; gap: 5px; }
+    .completion-table td { min-height: 42px; height: 48px; }
+    .sample-list { display: flex; min-height: 70px; flex-direction: column; gap: 5px; }
+    .blank-area { min-height: 62px; }
     .people-table th { width: 38%; }
     .people-table td { font-weight: 700; font-size: 15px; }
     .note { margin-top: 7px; color: #374151; font-size: 11px; }
@@ -260,7 +269,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     </table>
     <div class="note">※ 준비수량은 최종 투입량과 포장단위를 기준으로 현장에서 준비해야 할 정수 ea로 표시합니다.</div>
 
-    <div class="section-title">생산 완료 입력 내역</div>
+    <div class="section-title">${escapeHtml(completionSectionTitle)}</div>
     <div class="completion-grid">
       <table class="completion-table">
         <tbody>
@@ -271,8 +280,8 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       </table>
       <table class="people-table">
         <tbody>
-          <tr><th>작성자</th><td>${escapeHtml(text(metadata.writer_name) || '-')}</td></tr>
-          <tr><th>확인자</th><td>${escapeHtml(text(metadata.reviewer_name) || '-')}</td></tr>
+          <tr><th>작성자</th><td>${escapeHtml(writerText)}</td></tr>
+          <tr><th>확인자</th><td>${escapeHtml(reviewerText)}</td></tr>
         </tbody>
       </table>
     </div>
