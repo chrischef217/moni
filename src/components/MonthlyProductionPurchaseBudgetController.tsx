@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 
 type Requirement = {
   material_id: string
@@ -24,6 +25,7 @@ type RawMaterial = {
   item_name?: string
   unit_price_per_kg?: number | null
   packing_weight_g?: number | null
+  spec?: string | null
 }
 
 type RawMaterialPayload = {
@@ -53,13 +55,28 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Math.round(value || 0))
+}
+
 function formatWon(value: number) {
-  return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Math.round(value || 0))}원`
+  return `${formatNumber(value)}원`
 }
 
 function formatKg(value: number) {
   const kg = numberValue(value) / 1000
-  return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: kg >= 100 ? 0 : 1 }).format(kg)}kg`
+  return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: kg >= 100 ? 1 : 3 }).format(kg)}kg`
+}
+
+function formatGram(value: number) {
+  return `${formatNumber(value)}g`
+}
+
+function packageWeightFromMaterial(material: RawMaterial | undefined) {
+  const direct = numberValue(material?.packing_weight_g)
+  if (direct > 0) return direct
+  const legacy = Number(String(material?.spec ?? '').replaceAll(',', '').trim())
+  return Number.isFinite(legacy) && legacy > 0 ? legacy : 0
 }
 
 function currentMonthFromPage() {
@@ -103,8 +120,7 @@ function removeInjected() {
 function baseTableFingerprint() {
   const table = requirementSection()?.querySelector('table')
   if (!table) return ''
-  const rows = Array.from(table.querySelectorAll('tbody tr'))
-  return rows
+  return Array.from(table.querySelectorAll('tbody tr'))
     .map((row) => Array.from(row.querySelectorAll('td')).slice(0, 7).map((cell) => normalizedText(cell.textContent)).join('|'))
     .join('||')
 }
@@ -118,19 +134,51 @@ function createCell(text: string, className: string, title?: string) {
   return cell
 }
 
+function applyRequirementTableLayout(table: HTMLTableElement) {
+  Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th')).forEach((header) => {
+    header.style.whiteSpace = 'nowrap'
+  })
+
+  Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr')).forEach((row) => {
+    const cells = row.querySelectorAll<HTMLTableCellElement>('td')
+    if (cells.length < 7) return
+
+    const statusCell = cells[0]
+    statusCell.style.whiteSpace = 'nowrap'
+    statusCell.style.minWidth = '72px'
+    const statusBadge = statusCell.querySelector<HTMLElement>('span')
+    if (statusBadge) {
+      statusBadge.style.whiteSpace = 'nowrap'
+      statusBadge.style.display = 'inline-flex'
+    }
+
+    const dateCell = cells[5]
+    const rawDate = normalizedText(dateCell.textContent)
+    const matched = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (matched) {
+      dateCell.title = rawDate
+      dateCell.textContent = `${matched[2]}-${matched[3]}`
+    }
+    dateCell.style.whiteSpace = 'nowrap'
+    dateCell.style.minWidth = '68px'
+  })
+}
+
 function renderBudget(group: RequirementGroup, materials: RawMaterial[], aiOnly: boolean) {
   removeInjected()
   const section = requirementSection()
-  const table = section?.querySelector('table')
+  const table = section?.querySelector('table') as HTMLTableElement | null
   const tableWrapper = table?.parentElement
   if (!section || !table || !tableWrapper) return
+
+  applyRequirementTableLayout(table)
 
   const materialById = new Map(materials.map((material) => [normalizedText(material.id), material]))
   const requirements = group.requirements ?? []
   const budgetRows: BudgetRow[] = requirements.map((requirement) => {
     const material = materialById.get(normalizedText(requirement.material_id))
     const packagePrice = numberValue(material?.unit_price_per_kg)
-    const packageWeightG = numberValue(material?.packing_weight_g)
+    const packageWeightG = packageWeightFromMaterial(material)
     const shortageG = Math.max(0, numberValue(requirement.shortage_g))
     const complete = shortageG === 0 || (packagePrice > 0 && packageWeightG > 0)
     const packageCount = shortageG > 0 && packageWeightG > 0 ? Math.ceil(shortageG / packageWeightG) : 0
@@ -161,38 +209,37 @@ function renderBudget(group: RequirementGroup, materials: RawMaterial[], aiOnly:
   const amountCard = document.createElement('div')
   amountCard.className = `rounded-xl border p-3 ${budgetComplete ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-red-500/50 bg-red-500/10'}`
   amountCard.innerHTML = budgetComplete
-    ? `<div class="text-xs text-emerald-200">총 예상 발주예산</div><div class="mt-1 text-xl font-black text-emerald-300">${formatWon(calculableAmount)}</div><div class="mt-1 text-xs text-emerald-200/70">부족량을 포장단위로 올림한 실제 구매 기준</div>`
+    ? `<div class="text-xs text-emerald-200">총 예상 발주예산</div><div class="mt-1 text-xl font-black text-emerald-300">${formatWon(calculableAmount)}</div><div class="mt-1 text-xs text-emerald-200/70">입력 포장중량으로 올림한 포장수량 × 입력 포장단가</div>`
     : `<div class="text-xs text-red-200">예상 발주예산 계산 불완전</div><div class="mt-1 text-xl font-black text-red-300">확정 불가</div><div class="mt-1 text-xs text-red-200/80">현재 계산 가능한 금액 ${formatWon(calculableAmount)} · 전체 예산으로 사용 금지</div>`
 
   const warningCard = document.createElement('div')
   warningCard.className = `rounded-xl border p-3 ${incompleteRows.length ? 'border-amber-500/50 bg-amber-500/10' : 'border-slate-700 bg-slate-900/70'}`
-  warningCard.innerHTML = `<div class="text-xs ${incompleteRows.length ? 'text-amber-200' : 'text-slate-400'}">단가/포장중량 확인 필요</div><div class="mt-1 text-xl font-black ${incompleteRows.length ? 'text-amber-300' : 'text-white'}">${incompleteRows.length}개</div><div class="mt-1 text-xs ${incompleteRows.length ? 'text-amber-200/70' : 'text-slate-500'}">원재료 관리에서 포장단가와 규격을 등록</div>`
+  warningCard.innerHTML = `<div class="text-xs ${incompleteRows.length ? 'text-amber-200' : 'text-slate-400'}">포장단가/포장중량 확인 필요</div><div class="mt-1 text-xl font-black ${incompleteRows.length ? 'text-amber-300' : 'text-white'}">${incompleteRows.length}개</div><div class="mt-1 text-xs ${incompleteRows.length ? 'text-amber-200/70' : 'text-slate-500'}">원재료 관리에 입력한 한 포장 전체값을 사용</div>`
 
   summary.append(basisCard, countCard, amountCard, warningCard)
   tableWrapper.insertAdjacentElement('beforebegin', summary)
 
   const headRow = table.querySelector('thead tr')
   if (headRow) {
-    ;['포장단가', '예상 발주수량', '예상 발주금액'].forEach((title) => {
+    ;['입력 포장단가', '예상 발주수량', '예상 발주금액'].forEach((title) => {
       const th = document.createElement('th')
       th.setAttribute(CELL_ATTR, 'true')
-      th.className = 'px-4 py-3 text-left'
+      th.className = 'px-4 py-3 text-left whitespace-nowrap'
       th.textContent = title
       headRow.appendChild(th)
     })
   }
 
-  const budgetByName = new Map(budgetRows.map((row) => [normalizedText(row.requirement.material_name), row]))
   const bodyRows = Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr'))
-  bodyRows.forEach((row) => {
+  bodyRows.forEach((row, index) => {
     const cells = row.querySelectorAll('td')
     if (cells.length < 2) {
       const emptyCell = row.querySelector<HTMLTableCellElement>('td[colspan]')
       if (emptyCell) emptyCell.colSpan = 10
       return
     }
-    const materialName = normalizedText(cells[1]?.textContent)
-    const budget = budgetByName.get(materialName)
+
+    const budget = budgetRows[index]
     if (!budget) {
       row.append(
         createCell('-', 'px-4 py-3 text-slate-500'),
@@ -212,35 +259,43 @@ function renderBudget(group: RequirementGroup, materials: RawMaterial[], aiOnly:
       return
     }
 
-    const packagePriceText = budget.packagePrice > 0 ? `${formatWon(budget.packagePrice)} / ${budget.packageWeightG > 0 ? formatKg(budget.packageWeightG) : '포장'}` : '단가 확인 필요'
+    const packagePriceText = budget.packagePrice > 0 && budget.packageWeightG > 0
+      ? `${formatWon(budget.packagePrice)} / ${formatGram(budget.packageWeightG)} 포장`
+      : '포장단가 확인 필요'
     const orderText = budget.packageWeightG > 0
-      ? `${formatKg(budget.packageWeightG)} × ${budget.packageCount}포 = ${formatKg(budget.orderQuantityG)}`
+      ? `${formatGram(budget.packageWeightG)} × ${formatNumber(budget.packageCount)}포 = ${formatKg(budget.orderQuantityG)}`
       : '포장중량 확인 필요'
     const amountText = budget.complete ? formatWon(budget.estimatedAmount) : '계산 불가'
     const missing = !budget.complete
+    const formulaTitle = `부족량 ${formatKg(shortageG)} ÷ 입력 포장중량 ${formatGram(budget.packageWeightG)} → ${formatNumber(budget.packageCount)}포 올림`
 
     row.append(
-      createCell(packagePriceText, `px-4 py-3 ${missing ? 'font-bold text-amber-300' : 'text-slate-200'}`),
-      createCell(orderText, `px-4 py-3 ${missing ? 'font-bold text-amber-300' : 'text-slate-200'}`, `부족량 ${formatKg(shortageG)}를 포장단위로 올림`),
-      createCell(amountText, `px-4 py-3 font-black ${missing ? 'text-red-300' : 'text-emerald-300'}`),
+      createCell(packagePriceText, `px-4 py-3 whitespace-nowrap ${missing ? 'font-bold text-amber-300' : 'text-slate-200'}`),
+      createCell(orderText, `px-4 py-3 whitespace-nowrap ${missing ? 'font-bold text-amber-300' : 'text-slate-200'}`, formulaTitle),
+      createCell(amountText, `px-4 py-3 whitespace-nowrap font-black ${missing ? 'text-red-300' : 'text-emerald-300'}`),
     )
   })
+
+  applyRequirementTableLayout(table)
 }
 
 export default function MonthlyProductionPurchaseBudgetController() {
+  const pathname = usePathname()
+
   useEffect(() => {
+    removeInjected()
+    if (pathname !== '/monthly-production-plan') return
+
     let timer = 0
     let requestSequence = 0
     let lastSignature = ''
 
     const refresh = async () => {
-      if (window.location.pathname !== '/monthly-production-plan') {
-        removeInjected()
-        lastSignature = ''
-        return
-      }
       const section = requirementSection()
-      if (!section) return
+      const table = section?.querySelector('table') as HTMLTableElement | null
+      if (!section || !table) return
+
+      applyRequirementTableLayout(table)
 
       const month = currentMonthFromPage()
       const level = currentLevelFromPage()
@@ -265,12 +320,13 @@ export default function MonthlyProductionPurchaseBudgetController() {
       } catch {
         if (sequence !== requestSequence) return
         removeInjected()
+        applyRequirementTableLayout(table)
       }
     }
 
     const schedule = () => {
       window.clearTimeout(timer)
-      timer = window.setTimeout(() => void refresh(), 220)
+      timer = window.setTimeout(() => void refresh(), 180)
     }
 
     const observer = new MutationObserver(schedule)
@@ -286,7 +342,7 @@ export default function MonthlyProductionPurchaseBudgetController() {
       document.removeEventListener('change', schedule, true)
       removeInjected()
     }
-  }, [])
+  }, [pathname])
 
   return null
 }
