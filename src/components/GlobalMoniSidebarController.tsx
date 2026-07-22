@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
-type CategoryKey = 'ai' | 'production' | 'accounting' | 'sales' | 'admin' | 'audit'
+type CategoryKey = 'ai' | 'production' | 'hr' | 'sales' | 'accounting' | 'admin' | 'audit'
 type MenuItem = { label: string; target?: string; href?: string; parentTarget?: string }
 type Category = { key: CategoryKey; label: string; icon: string; items: MenuItem[] }
 
-const SIDEBAR_WIDTH = 264
 const PIN_STORAGE_KEY = 'moni-sidebar-pinned'
 const PEEK_CLOSE_DELAY_MS = 140
 
@@ -34,16 +33,24 @@ const categories: Category[] = [
     ],
   },
   {
-    key: 'accounting', label: '회계관리', icon: '₩', items: [
-      { label: '회계 대시보드', target: '회계관리' },
-      { label: '지급·정산 관리', target: '지급 관리' },
+    key: 'hr', label: '인사관리', icon: '♙', items: [
+      { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
+      { label: '계약·정산조건', href: '/business-management?tab=hr&view=contracts' },
+      { label: '필수서류 관리', href: '/business-management?tab=hr&view=documents' },
     ],
   },
   {
     key: 'sales', label: '영업관리', icon: '↗', items: [
-      { label: '영업 대시보드', target: '영업관리' },
-      { label: '거래처 관리', target: '거래처 관리' },
-      { label: '영업 수당', target: '영업 수당' },
+      { label: '고객사 및 담당자', href: '/business-management?tab=sales&view=clients' },
+      { label: '영업기회 파이프라인', href: '/business-management?tab=sales&view=pipeline' },
+      { label: '영업활동·상담기록', href: '/business-management?tab=sales&view=activities' },
+    ],
+  },
+  {
+    key: 'accounting', label: '회계·세무관리', icon: '₩', items: [
+      { label: '월별 프리랜서 정산', href: '/business-management?tab=accounting&view=settlements' },
+      { label: '생산 근무보정', href: '/business-management?tab=accounting&view=work-logs' },
+      { label: '정산서 출력', href: '/business-management?tab=accounting&view=print' },
     ],
   },
   {
@@ -80,11 +87,41 @@ function clickDashboardTarget(label: string) {
   return true
 }
 
-function routeState(pathname: string): { category: CategoryKey; item: string } {
+function businessRouteState(search: string): { category: CategoryKey; item: string } {
+  const params = new URLSearchParams(search)
+  const tab = params.get('tab') || 'hr'
+  const view = params.get('view') || ''
+
+  if (tab === 'sales') {
+    if (view === 'pipeline') return { category: 'sales', item: '영업기회 파이프라인' }
+    if (view === 'activities') return { category: 'sales', item: '영업활동·상담기록' }
+    return { category: 'sales', item: '고객사 및 담당자' }
+  }
+
+  if (tab === 'accounting') {
+    if (view === 'work-logs') return { category: 'accounting', item: '생산 근무보정' }
+    if (view === 'print') return { category: 'accounting', item: '정산서 출력' }
+    return { category: 'accounting', item: '월별 프리랜서 정산' }
+  }
+
+  if (view === 'contracts') return { category: 'hr', item: '계약·정산조건' }
+  if (view === 'documents') return { category: 'hr', item: '필수서류 관리' }
+  return { category: 'hr', item: '프리랜서 인력관리' }
+}
+
+function routeState(pathname: string, search = ''): { category: CategoryKey; item: string } {
   if (pathname === '/monthly-production-plan') return { category: 'production', item: '월간 생산계획' }
   if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
+  if (pathname === '/business-management') return businessRouteState(search)
   if (pathname === '/audit') return { category: 'audit', item: '감사 기록' }
   return { category: 'ai', item: 'AI 채팅' }
+}
+
+function isStandalonePath(pathname: string) {
+  return pathname === '/monthly-production-plan'
+    || pathname === '/production-daily'
+    || pathname === '/business-management'
+    || pathname === '/audit'
 }
 
 export default function GlobalMoniSidebarController() {
@@ -92,7 +129,7 @@ export default function GlobalMoniSidebarController() {
   const router = useRouter()
   const initialRoute = routeState(pathname)
   const peekCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const standaloneSurface = pathname === '/monthly-production-plan' || pathname === '/production-daily' || pathname === '/audit'
+  const standaloneSurface = isStandalonePath(pathname)
   const [visible, setVisible] = useState(standaloneSurface)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileExpandedCategory, setMobileExpandedCategory] = useState<CategoryKey | null>(null)
@@ -102,7 +139,7 @@ export default function GlobalMoniSidebarController() {
   const [isPinned, setIsPinned] = useState(true)
   const [pinPreferenceReady, setPinPreferenceReady] = useState(false)
   const [desktopPeekOpen, setDesktopPeekOpen] = useState(false)
-  const expandedCategory = hoveredCategory ?? (mobileOpen ? mobileExpandedCategory : null)
+  const expandedCategory = hoveredCategory ?? (mobileOpen ? mobileExpandedCategory : null) ?? activeCategory
   const desktopSidebarOpen = isPinned || desktopPeekOpen
 
   const currentCategory = useMemo(
@@ -149,19 +186,25 @@ export default function GlobalMoniSidebarController() {
   useEffect(() => () => cancelPeekClose(), [])
 
   useEffect(() => {
-    const next = routeState(pathname)
-    if (pathname === '/monthly-production-plan' || pathname === '/production-daily' || pathname === '/audit') {
-      setActiveCategory(next.category)
-      setActiveItem(next.item)
-    } else if (pathname === '/') {
-      const pending = window.sessionStorage.getItem('moni-pending-nav')
-      if (!pending) {
-        setActiveCategory('ai')
-        setActiveItem('AI 채팅')
+    const syncRoute = () => {
+      const next = routeState(pathname, window.location.search)
+      if (isStandalonePath(pathname)) {
+        setActiveCategory(next.category)
+        setActiveItem(next.item)
+      } else if (pathname === '/') {
+        const pending = window.sessionStorage.getItem('moni-pending-nav')
+        if (!pending) {
+          setActiveCategory('ai')
+          setActiveItem('AI 채팅')
+        }
       }
     }
+
+    syncRoute()
+    window.addEventListener('popstate', syncRoute)
     setHoveredCategory(null)
     setMobileExpandedCategory(null)
+    return () => window.removeEventListener('popstate', syncRoute)
   }, [pathname])
 
   useEffect(() => {
@@ -169,14 +212,16 @@ export default function GlobalMoniSidebarController() {
     const applyLayout = () => {
       attempts += 1
       const logoutButton = findDashboardButton('로그아웃')
-      const isMonthly = pathname === '/monthly-production-plan'
-      const isDaily = pathname === '/production-daily'
-      const isAudit = pathname === '/audit'
-      const isStandalone = isMonthly || isDaily || isAudit
+      const isStandalone = isStandalonePath(pathname)
       setVisible(Boolean(logoutButton) || isStandalone)
 
-      if (isMonthly) {
+      if (pathname === '/monthly-production-plan') {
         const ownAside = document.querySelector<HTMLElement>('main > div > aside')
+        if (ownAside) ownAside.style.display = 'none'
+      }
+
+      if (pathname === '/business-management') {
+        const ownAside = document.querySelector<HTMLElement>('[data-business-management-shell] main > div > aside')
         if (ownAside) ownAside.style.display = 'none'
       }
 
@@ -191,6 +236,7 @@ export default function GlobalMoniSidebarController() {
           const button = findDashboardButton(label)
           if (button) button.style.display = 'none'
         }
+
         const productionLabels = ['생산 개요', '작업 지시', '생산일보', '제품관리', '원재료 관리', '원료수불부', '부재료 관리', '레시피 원재료 연결', '위생점검', '품질 관리', '규정준수 모니터']
         for (const label of productionLabels) {
           const button = findDashboardButton(label)
@@ -200,17 +246,21 @@ export default function GlobalMoniSidebarController() {
 
       const pending = window.sessionStorage.getItem('moni-pending-nav')
       if (pending && pathname === '/' && logoutButton) {
-        const payload = JSON.parse(pending) as { category: CategoryKey; target: string; label: string; parentTarget?: string }
-        const category = categories.find((item) => item.key === payload.category)
-        const parentTarget = payload.parentTarget || (category?.label === 'AI 챗팅' ? 'AI 채팅' : category?.label)
-        if (parentTarget) clickDashboardTarget(parentTarget)
-        window.setTimeout(() => {
-          if (clickDashboardTarget(payload.target)) {
-            setActiveCategory(payload.category)
-            setActiveItem(payload.label)
-            window.sessionStorage.removeItem('moni-pending-nav')
-          }
-        }, 120)
+        try {
+          const payload = JSON.parse(pending) as { category: CategoryKey; target: string; label: string; parentTarget?: string }
+          const category = categories.find((item) => item.key === payload.category)
+          const parentTarget = payload.parentTarget || (category?.label === 'AI 챗팅' ? 'AI 채팅' : category?.label)
+          if (parentTarget) clickDashboardTarget(parentTarget)
+          window.setTimeout(() => {
+            if (clickDashboardTarget(payload.target)) {
+              setActiveCategory(payload.category)
+              setActiveItem(payload.label)
+              window.sessionStorage.removeItem('moni-pending-nav')
+            }
+          }, 120)
+        } catch {
+          window.sessionStorage.removeItem('moni-pending-nav')
+        }
       }
     }
 
@@ -221,6 +271,7 @@ export default function GlobalMoniSidebarController() {
       applyLayout()
       if (attempts > 20) window.clearInterval(timer)
     }, 250)
+
     return () => {
       observer.disconnect()
       window.clearInterval(timer)
@@ -234,9 +285,20 @@ export default function GlobalMoniSidebarController() {
     }
 
     setActiveCategory(category.key)
+    const firstItem = category.items[0]
+    if (firstItem?.href) {
+      setActiveItem(firstItem.label)
+      router.push(firstItem.href)
+      return
+    }
+
     const target = category.label === 'AI 챗팅' ? 'AI 채팅' : category.label
     if (pathname !== '/') {
-      window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({ category: category.key, target, label: category.label }))
+      window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({
+        category: category.key,
+        target,
+        label: category.label,
+      }))
       router.push('/')
       return
     }
@@ -248,11 +310,13 @@ export default function GlobalMoniSidebarController() {
     setActiveItem(item.label)
     setMobileOpen(false)
     setMobileExpandedCategory(null)
+
     if (item.href) {
       router.push(item.href)
       return
     }
     if (!item.target) return
+
     const parentTarget = item.parentTarget || (category.label === 'AI 챗팅' ? 'AI 채팅' : category.label)
     if (pathname !== '/') {
       window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({
@@ -264,6 +328,7 @@ export default function GlobalMoniSidebarController() {
       router.push('/')
       return
     }
+
     clickDashboardTarget(parentTarget)
     window.setTimeout(() => clickDashboardTarget(item.target || ''), 80)
   }
@@ -374,6 +439,7 @@ export default function GlobalMoniSidebarController() {
                   <span className="flex-1">{category.label}</span>
                   <span className={`text-xs transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`}>⌄</span>
                 </button>
+
                 <div className={`grid transition-all duration-300 ease-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                   <div className="overflow-hidden">
                     <div className="ml-7 mt-1 border-l border-slate-700/80 pl-3">
