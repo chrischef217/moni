@@ -8,6 +8,7 @@ import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarControlle
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
 import BusinessManagementMenuController from '@/components/BusinessManagementMenuController'
+import SalesManagementMenuController from '@/components/SalesManagementMenuController'
 import WorkOrderGramController from '@/components/WorkOrderGramController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import './globals.css'
@@ -35,6 +36,7 @@ export default function RootLayout({
         <GlobalSidebarLayoutController />
         <ProductionCompletionMetadataController />
         <BusinessManagementMenuController />
+        <SalesManagementMenuController />
         <WorkOrderGramController />
         <SidebarPinToggleVisualFix />
         {children}
