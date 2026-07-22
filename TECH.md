@@ -44,3 +44,26 @@
 - 되돌리기: `POST /api/moni/raw-material-mapping` with `{ "action": "undo_last_mapping" }`
 - 되돌리기 시 실제 row 삭제 없이 `is_default`와 `is_undone`만 전환
 - 다단계 되돌리기: 최신 이력을 되돌린 뒤 다음 최신 이력을 계속 표시
+
+## 판매관리 V1
+
+판매관리는 영업관리 하위가 아니라 별도 대카테고리다.
+
+관련 경로:
+
+- 화면: `/sales-management`
+- API: `/api/moni/sales-management`
+- 기준 문서: `docs/SALES_MANAGEMENT_V1.md`
+
+관련 테이블:
+
+- 기존 공유: `sales_clients`, `business_people`, `products`
+- 신규: `sales_orders`, `sales_order_items`, `sales_order_history`
+
+운영 기준:
+
+- 거래처·프리랜서·제품 마스터를 중복 생성하지 않는다.
+- 판매 수정·취소 전 기존 주문과 품목을 `sales_order_history.snapshot`에 저장한다.
+- 판매 통계는 `sales_orders.status='confirmed'`만 포함한다.
+- 취소·작성중 판매는 통계에서 제외한다.
+- 세금계산서는 V1에서 메뉴와 준비 중 화면만 제공한다.
