@@ -35,6 +35,7 @@ const categories: Category[] = [
   {
     key: 'hr', label: '인사관리', icon: '♙', items: [
       { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
+      { label: '정규직 직원관리', href: '/business-management?tab=hr&view=employees' },
       { label: '계약·정산조건', href: '/business-management?tab=hr&view=contracts' },
       { label: '필수서류 관리', href: '/business-management?tab=hr&view=documents' },
     ],
@@ -104,6 +105,7 @@ function businessRouteState(search: string): { category: CategoryKey; item: stri
     return { category: 'accounting', item: '월별 프리랜서 정산' }
   }
 
+  if (view === 'employees') return { category: 'hr', item: '정규직 직원관리' }
   if (view === 'contracts') return { category: 'hr', item: '계약·정산조건' }
   if (view === 'documents') return { category: 'hr', item: '필수서류 관리' }
   return { category: 'hr', item: '프리랜서 인력관리' }
