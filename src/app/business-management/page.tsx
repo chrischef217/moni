@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation'
-import BusinessManagementModule from '@/components/BusinessManagementModule'
+import BusinessManagementIntegratedShell from '@/components/BusinessManagementIntegratedShell'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
 export const dynamic = 'force-dynamic'
 
 type PageProps = {
-  searchParams?: { tab?: string }
+  searchParams?: { tab?: string; view?: string }
 }
 
 export default async function BusinessManagementPage({ searchParams }: PageProps) {
@@ -15,6 +15,7 @@ export default async function BusinessManagementPage({ searchParams }: PageProps
 
   const rawTab = searchParams?.tab
   const initialTab = rawTab === 'sales' || rawTab === 'accounting' ? rawTab : 'hr'
+  const initialView = String(searchParams?.view ?? '')
 
-  return <BusinessManagementModule initialTab={initialTab} />
+  return <BusinessManagementIntegratedShell initialTab={initialTab} initialView={initialView} />
 }
