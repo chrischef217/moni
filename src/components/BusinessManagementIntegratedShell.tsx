@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import BusinessManagementModule from '@/components/BusinessManagementModule'
 import SalesManagementModule from '@/components/SalesManagementModule'
+import RegularEmployeeManagementModule from '@/components/RegularEmployeeManagementModule'
 
 type MainTab = 'hr' | 'sales' | 'accounting' | 'salesManagement'
 
@@ -17,6 +18,7 @@ function exactText(element: Element) {
 
 export default function BusinessManagementIntegratedShell({ initialTab, initialView }: Props) {
   const appliedRef = useRef(false)
+  const regularEmployeeView = initialTab === 'hr' && initialView === 'employees'
 
   useEffect(() => {
     appliedRef.current = false
@@ -30,7 +32,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
       const ownAside = shell.querySelector<HTMLElement>('main > div > aside')
       if (ownAside) ownAside.style.display = 'none'
 
-      if (initialTab === 'salesManagement') {
+      if (initialTab === 'salesManagement' || regularEmployeeView) {
         appliedRef.current = true
         return
       }
@@ -73,16 +75,19 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
     }, 120)
 
     return () => window.clearInterval(timer)
-  }, [initialTab, initialView])
+  }, [initialTab, initialView, regularEmployeeView])
 
   return (
     <div
       data-business-management-shell
       data-sales-management-shell={initialTab === 'salesManagement' ? 'true' : undefined}
+      data-regular-employee-shell={regularEmployeeView ? 'true' : undefined}
     >
       {initialTab === 'salesManagement'
         ? <SalesManagementModule key={`sales-management-${initialView}`} initialView={initialView} />
-        : <BusinessManagementModule key={`${initialTab}-${initialView}`} initialTab={initialTab} />}
+        : regularEmployeeView
+          ? <RegularEmployeeManagementModule key="regular-employees" />
+          : <BusinessManagementModule key={`${initialTab}-${initialView}`} initialTab={initialTab} />}
       <style jsx global>{`
         [data-business-management-shell] main > div > aside {
           display: none !important;
