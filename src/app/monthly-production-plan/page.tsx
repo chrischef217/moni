@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 type Plan = {
   id: string
@@ -13,6 +13,37 @@ type Plan = {
   confidence?: string
   history_count?: number
   median_gap_days?: number
+}
+
+type ActualProduction = {
+  id: string
+  source: 'actual'
+  actual_state: 'scheduled' | 'completed'
+  plan_date: string
+  product_id: string
+  product_name: string
+  planned_quantity_g: number
+  actual_quantity_g: number
+  display_quantity_g: number
+  lot_number: string
+  status: string
+}
+
+type CalendarEvent = Plan | ActualProduction
+
+type ProductionRecordsPayload = {
+  ok: boolean
+  error?: string
+  records?: Array<{
+    id: string
+    lot_number?: string | null
+    work_date?: string | null
+    product_id?: string | null
+    product_name?: string | null
+    planned_quantity_g?: number | string | null
+    actual_quantity_g?: number | string | null
+    status?: string | null
+  }>
 }
 
 type Product = { id: string; name: string }
@@ -75,6 +106,13 @@ function shiftMonth(month: string, amount: number) {
   return date.toISOString().slice(0, 7)
 }
 
+function monthEnd(month: string) {
+  const next = new Date(`${month}-01T00:00:00Z`)
+  next.setUTCMonth(next.getUTCMonth() + 1)
+  next.setUTCDate(0)
+  return next.toISOString().slice(0, 10)
+}
+
 function monthDays(month: string) {
   const first = new Date(`${month}-01T00:00:00Z`)
   const firstWeekday = first.getUTCDay()
@@ -103,12 +141,31 @@ function normalize(value: string) {
   return value.trim().toLocaleLowerCase('ko-KR')
 }
 
+function normalizeProductionStatus(value: unknown) {
+  return String(value ?? '').trim().toLocaleLowerCase('ko-KR')
+}
+
+function isCancelledProduction(status: string) {
+  return ['cancelled', 'canceled', '취소'].includes(status)
+}
+
+function isCompletedProduction(status: string) {
+  return ['completed', 'confirmed', 'complete', 'done', '완료', '확정', '생산완료'].includes(status)
+}
+
+function eventPriority(event: CalendarEvent) {
+  if (event.source === 'actual') return event.actual_state === 'completed' ? 0 : 1
+  if (event.source === 'user') return 2
+  return 3
+}
+
 export default function MonthlyProductionPlanPage() {
   const [month, setMonth] = useState(monthValue())
   const [level, setLevel] = useState<Level>('standard')
   const [showAi, setShowAi] = useState(true)
   const [aiOnlyView, setAiOnlyView] = useState(false)
   const [data, setData] = useState<Payload | null>(null)
+  const [actualProductions, setActualProductions] = useState<ActualProduction[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [formOpen, setFormOpen] = useState(false)
@@ -121,35 +178,78 @@ export default function MonthlyProductionPlanPage() {
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const response = await fetch(`/api/moni/monthly-production-plans?month=${month}&level=${level}`, { cache: 'no-store' })
+      const [response, productionResponse] = await Promise.all([
+        fetch(`/api/moni/monthly-production-plans?month=${month}&level=${level}`, { cache: 'no-store' }),
+        fetch(`/api/moni/production-records?from=${month}-01&to=${monthEnd(month)}&limit=1000&_=${Date.now()}`, { cache: 'no-store' }),
+      ])
       const payload = (await response.json()) as Payload
+      const productionPayload = (await productionResponse.json()) as ProductionRecordsPayload
       if (!response.ok || !payload.ok) throw new Error(payload.error || '조회에 실패했습니다.')
+      if (!productionResponse.ok || !productionPayload.ok) {
+        throw new Error(productionPayload.error || '실제 생산내역 조회에 실패했습니다.')
+      }
+
+      const actualItems = (productionPayload.records ?? []).flatMap<ActualProduction>((record) => {
+        const status = normalizeProductionStatus(record.status)
+        const workDate = String(record.work_date ?? '').trim()
+        const productName = String(record.product_name ?? '').trim()
+        if (!workDate || !productName || isCancelledProduction(status)) return []
+
+        const plannedQuantityG = Number(record.planned_quantity_g ?? 0)
+        const actualQuantityG = Number(record.actual_quantity_g ?? 0)
+        const completed = isCompletedProduction(status) || actualQuantityG > 0
+        return [{
+          id: `actual-${record.id}`,
+          source: 'actual',
+          actual_state: completed ? 'completed' : 'scheduled',
+          plan_date: workDate,
+          product_id: String(record.product_id ?? '').trim(),
+          product_name: productName,
+          planned_quantity_g: Number.isFinite(plannedQuantityG) ? plannedQuantityG : 0,
+          actual_quantity_g: Number.isFinite(actualQuantityG) ? actualQuantityG : 0,
+          display_quantity_g: completed && actualQuantityG > 0 ? actualQuantityG : plannedQuantityG,
+          lot_number: String(record.lot_number ?? '').trim(),
+          status,
+        }]
+      })
+
       setData(payload)
+      setActualProductions(actualItems)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '조회에 실패했습니다.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [month, level])
 
   useEffect(() => {
     void load()
-  }, [month, level])
+  }, [load])
+
+  useEffect(() => {
+    const refreshOnFocus = () => void load()
+    window.addEventListener('focus', refreshOnFocus)
+    return () => window.removeEventListener('focus', refreshOnFocus)
+  }, [load])
 
   const events = useMemo(() => {
-    const items = [...(data?.plans ?? [])]
+    const items: CalendarEvent[] = [...(data?.plans ?? [])]
     if (showAi) items.push(...(data?.forecasts ?? []))
+    items.push(...actualProductions)
     return items
-  }, [data, showAi])
+  }, [data, showAi, actualProductions])
 
   const eventsByDate = useMemo(() => {
-    const map = new Map<string, Plan[]>()
+    const map = new Map<string, CalendarEvent[]>()
     for (const event of events) {
       map.set(event.plan_date, [...(map.get(event.plan_date) ?? []), event])
+    }
+    for (const [date, rows] of map.entries()) {
+      map.set(date, [...rows].sort((a, b) => eventPriority(a) - eventPriority(b)))
     }
     return map
   }, [events])
@@ -168,6 +268,10 @@ export default function MonthlyProductionPlanPage() {
   const warningCount = requirements.filter((row) => row.status === '주의').length
   const userTotal = (data?.plans ?? []).reduce((sum, row) => sum + Number(row.planned_quantity_g), 0)
   const aiTotal = (data?.forecasts ?? []).reduce((sum, row) => sum + Number(row.planned_quantity_g), 0)
+  const scheduledActuals = actualProductions.filter((row) => row.actual_state === 'scheduled')
+  const completedActuals = actualProductions.filter((row) => row.actual_state === 'completed')
+  const scheduledActualTotal = scheduledActuals.reduce((sum, row) => sum + Number(row.display_quantity_g), 0)
+  const completedActualTotal = completedActuals.reduce((sum, row) => sum + Number(row.display_quantity_g), 0)
   const requirementBasis = aiOnlyView ? 'AI 예측 기준' : '예상 계획 기준'
   const requirementBasisColor = aiOnlyView ? 'text-green-300' : 'text-blue-300'
 
@@ -268,13 +372,16 @@ export default function MonthlyProductionPlanPage() {
           <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-black md:text-3xl">월간 생산계획</h1>
-              <p className="mt-1 text-sm text-slate-400">사용자 예상 계획과 AI 예측을 각각 분리해 원료 부족을 확인합니다.</p>
+              <p className="mt-1 text-sm text-slate-400">예상 계획·AI 예측과 실제 작업지시·생산완료 내역을 한 달력에서 비교합니다.</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2">
                 <span>AI 예측 표시</span>
                 <input type="checkbox" checked={showAi} onChange={(event) => setShowAi(event.target.checked)} className="h-5 w-5 accent-green-500" />
               </label>
+              <button onClick={() => void load()} disabled={loading} className="rounded-xl border border-amber-400/60 px-4 py-3 font-bold text-amber-200 disabled:opacity-50">
+                {loading ? '동기화 중...' : '실제 생산 동기화'}
+              </button>
               <button onClick={() => openCreate(`${month}-01`)} className="rounded-xl bg-blue-600 px-5 py-3 font-bold hover:bg-blue-500">+ 예상 계획 추가</button>
             </div>
           </header>
@@ -296,6 +403,14 @@ export default function MonthlyProductionPlanPage() {
               <div className="rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-2">
                 <span className="text-green-300">AI 예측</span>
                 <b className="ml-3">{data?.forecasts.length ?? 0}건 / {formatKg(aiTotal)}</b>
+              </div>
+              <div className="rounded-xl border border-dashed border-amber-400/70 bg-amber-400/10 px-4 py-2">
+                <span className="text-amber-300">작업지시 등록</span>
+                <b className="ml-3">{scheduledActuals.length}건 / {formatKg(scheduledActualTotal)}</b>
+              </div>
+              <div className="rounded-xl border border-amber-400/70 bg-amber-400/20 px-4 py-2">
+                <span className="text-amber-200">생산완료</span>
+                <b className="ml-3">{completedActuals.length}건 / {formatKg(completedActualTotal)}</b>
               </div>
               <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2 text-red-300">
                 <span className={requirementBasisColor}>{requirementBasis}</span> 부족 <b>{shortageCount}개</b>
@@ -344,29 +459,45 @@ export default function MonthlyProductionPlanPage() {
                   >
                     <span className="text-sm font-bold">{Number(cell.date.slice(-2))}</span>
                     <div className="mt-2 space-y-1" onClick={(event) => event.stopPropagation()}>
-                      {dayEvents.slice(0, 3).map((event) => (
-                        <div
-                          key={event.id}
-                          className={`rounded-lg border px-2 py-1 text-xs ${event.source === 'user' ? 'border-blue-500 bg-blue-500/10 text-blue-100' : 'border-dashed border-green-500 bg-green-500/10 text-green-100'}`}
-                        >
-                          <div className="flex justify-between gap-1">
-                            <b className="truncate">{event.product_name}</b>
-                            <span>{formatKg(event.planned_quantity_g)}</span>
+                      {dayEvents.slice(0, 4).map((event) => {
+                        const cardClass = event.source === 'user'
+                          ? 'border-blue-500 bg-blue-500/10 text-blue-100'
+                          : event.source === 'ai'
+                            ? 'border-dashed border-green-500 bg-green-500/10 text-green-100'
+                            : event.actual_state === 'completed'
+                              ? 'border-amber-400 bg-amber-400/20 text-amber-50'
+                              : 'border-dashed border-amber-400 bg-amber-400/10 text-amber-100'
+                        const displayQuantity = event.source === 'actual' ? event.display_quantity_g : event.planned_quantity_g
+
+                        return (
+                          <div key={event.id} className={`rounded-lg border px-2 py-1 text-xs ${cardClass}`}>
+                            <div className="flex justify-between gap-1">
+                              <b className="truncate">{event.product_name}</b>
+                              <span className="shrink-0">{formatKg(displayQuantity)}</span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                              {event.source === 'user' ? (
+                                <>
+                                  <span>예상 계획</span>
+                                  <button onClick={() => openEdit(event)} className="underline">수정</button>
+                                  <button onClick={() => void remove(event.id)} className="underline">삭제</button>
+                                </>
+                              ) : event.source === 'ai' ? (
+                                <>
+                                  <span>[AI예측]</span>
+                                  <button onClick={() => adoptAi(event)} className="underline">예상 계획으로 전환</button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="font-bold">{event.actual_state === 'completed' ? '생산완료' : '작업지시 등록'}</span>
+                                  {event.lot_number && <span className="truncate text-amber-200">{event.lot_number}</span>}
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
-                            <span>{event.source === 'user' ? '예상 계획' : '[AI예측]'}</span>
-                            {event.source === 'user' ? (
-                              <>
-                                <button onClick={() => openEdit(event)} className="underline">수정</button>
-                                <button onClick={() => void remove(event.id)} className="underline">삭제</button>
-                              </>
-                            ) : (
-                              <button onClick={() => adoptAi(event)} className="underline">예상 계획으로 전환</button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      {dayEvents.length > 3 && <div className="text-xs text-slate-400">외 {dayEvents.length - 3}건</div>}
+                        )
+                      })}
+                      {dayEvents.length > 4 && <div className="text-xs text-slate-400">외 {dayEvents.length - 4}건</div>}
                     </div>
                   </button>
                 )
@@ -379,7 +510,7 @@ export default function MonthlyProductionPlanPage() {
               <div>
                 <h2 className="text-xl font-bold">원료 필요량 현황</h2>
                 <p className={`text-sm ${aiOnlyView ? 'text-green-300' : 'text-blue-300'}`}>
-                  {aiOnlyView ? 'AI 예측만 기준 — 사용자 예상 계획은 포함하지 않음' : '사용자 예상 계획만 기준 — AI 예측은 포함하지 않음'}
+                  {aiOnlyView ? 'AI 예측만 기준 — 사용자 예상 계획은 포함하지 않음' : '사용자 예상 계획만 기준 — AI 예측과 실제 생산내역은 포함하지 않음'}
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -402,13 +533,13 @@ export default function MonthlyProductionPlanPage() {
                   {requirements.map((row) => (
                     <tr key={row.material_id} className="border-t border-slate-800">
                       <td className="px-4 py-3">
-                        <span className={`rounded-md px-2 py-1 font-bold ${row.status === '부족' ? 'bg-red-500/20 text-red-300' : row.status === '주의' ? 'bg-amber-500/20 text-amber-300' : 'bg-green-500/20 text-green-300'}`}>{row.status}</span>
+                        <span className={`whitespace-nowrap rounded-md px-2 py-1 font-bold ${row.status === '부족' ? 'bg-red-500/20 text-red-300' : row.status === '주의' ? 'bg-amber-500/20 text-amber-300' : 'bg-green-500/20 text-green-300'}`}>{row.status}</span>
                       </td>
                       <td className="px-4 py-3 font-bold">{row.material_name}</td>
                       <td className="px-4 py-3">{formatKg(row.current_stock_g)}</td>
                       <td className="px-4 py-3">{formatKg(row.required_g)}</td>
                       <td className={`px-4 py-3 font-bold ${row.projected_balance_g < 0 ? 'text-red-300' : 'text-green-300'}`}>{formatKg(row.projected_balance_g)}</td>
-                      <td className="px-4 py-3">{row.first_shortage_date ?? '-'}</td>
+                      <td className="whitespace-nowrap px-4 py-3">{row.first_shortage_date ? row.first_shortage_date.slice(5) : '-'}</td>
                       <td className="px-4 py-3 font-bold text-red-300">{row.shortage_g ? formatKg(row.shortage_g) : '-'}</td>
                     </tr>
                   ))}
