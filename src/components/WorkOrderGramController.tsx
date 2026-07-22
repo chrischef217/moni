@@ -28,6 +28,14 @@ const CREATE_LABELS = new Set([
   '생산 예정량(g)',
 ])
 const EDIT_LABELS = new Set(['수정 예정량(kg)', '수정 예정량(g)'])
+const RELEVANT_BUTTON_TEXTS = [
+  '작업 지시',
+  '작업지시서',
+  '작업지시서 생성',
+  '작업지시서 수정',
+  '수정',
+  '닫기',
+]
 const GRAM_HELP_TEXT = 'g 단위 정수로 입력하세요. 예: 434,069g은 434069로 입력'
 
 function normalizedText(element: Element | null) {
@@ -55,7 +63,7 @@ function sanitizeGramInput(value: string) {
   return String(Number(digits))
 }
 
-function createVisibleGramInput(source: HTMLInputElement, mode: 'create' | 'edit') {
+function createVisibleGramInput(source: HTMLInputElement, mode: 'create' | 'edit', requestRefresh: () => void) {
   const label = source.closest('label')
   if (!label) return
   const labelSpan = label.querySelector(':scope > span')
@@ -68,7 +76,13 @@ function createVisibleGramInput(source: HTMLInputElement, mode: 'create' | 'edit
   source.setAttribute('aria-hidden', 'true')
 
   const existing = label.querySelector<HTMLInputElement>(`input[data-moni-work-order-${mode}-g="true"]`)
-  if (existing) return
+  if (existing) {
+    if (document.activeElement !== existing) {
+      const nextValue = gramTextFromKgValue(source.value)
+      if (existing.value !== nextValue) existing.value = nextValue
+    }
+    return
+  }
 
   const visible = document.createElement('input')
   visible.type = 'text'
@@ -89,28 +103,27 @@ function createVisibleGramInput(source: HTMLInputElement, mode: 'create' | 'edit
     const gramsText = sanitizeGramInput(visible.value)
     if (visible.value !== gramsText) visible.value = gramsText
     const grams = Number(gramsText || 0)
-    const kgForLegacyState = grams > 0 ? String(grams / 1000) : ''
-    setNativeInputValue(source, kgForLegacyState)
+    setNativeInputValue(source, grams > 0 ? String(grams / 1000) : '')
+    requestRefresh()
   })
 
   source.insertAdjacentElement('afterend', visible)
   visible.insertAdjacentElement('afterend', helper)
 }
 
-function applyGramInputs() {
+function applyGramInputs(requestRefresh: () => void) {
   const labels = Array.from(document.querySelectorAll<HTMLLabelElement>('label'))
   for (const label of labels) {
-    const labelSpan = label.querySelector(':scope > span')
-    const labelText = normalizedText(labelSpan)
+    const labelText = normalizedText(label.querySelector(':scope > span'))
     const source = label.querySelector<HTMLInputElement>('input[type="number"]')
     if (!source) continue
 
     if (CREATE_LABELS.has(labelText)) {
-      createVisibleGramInput(source, 'create')
+      createVisibleGramInput(source, 'create', requestRefresh)
       continue
     }
     if (EDIT_LABELS.has(labelText)) {
-      createVisibleGramInput(source, 'edit')
+      createVisibleGramInput(source, 'edit', requestRefresh)
     }
   }
 }
@@ -126,21 +139,21 @@ function applyGramDisplays() {
     paragraph.textContent = `현재 예정량: ${Math.round(kg * 1000).toLocaleString('ko-KR')}g`
   }
 
-  const sections = Array.from(document.querySelectorAll<HTMLElement>('section, div'))
-  for (const section of sections) {
-    const heading = section.querySelector('h2, h3, h4')
-    if (normalizedText(heading) !== '등록된 작업지시서 목록') continue
-    const headers = Array.from(section.querySelectorAll<HTMLTableCellElement>('th'))
-    const plannedHeader = headers.find((header) => normalizedText(header) === '예정량')
+  const headings = Array.from(document.querySelectorAll<HTMLElement>('h2, h3, h4'))
+  const listHeading = headings.find((heading) => normalizedText(heading) === '등록된 작업지시서 목록')
+  const section = listHeading?.closest('section') ?? listHeading?.parentElement?.parentElement
+  if (section) {
+    const plannedHeader = Array.from(section.querySelectorAll<HTMLTableCellElement>('th'))
+      .find((header) => normalizedText(header) === '예정량')
     if (plannedHeader) plannedHeader.textContent = '예정량(g)'
-    break
   }
 
   const descriptions = Array.from(document.querySelectorAll<HTMLElement>('p, span'))
   for (const element of descriptions) {
     const text = normalizedText(element)
-    if (!text.includes('계획 생산량(kg)')) continue
-    element.textContent = text.replaceAll('계획 생산량(kg)', '계획 생산량(g)')
+    if (text.includes('계획 생산량(kg)')) {
+      element.textContent = text.replaceAll('계획 생산량(kg)', '계획 생산량(g)')
+    }
   }
 }
 
@@ -208,60 +221,79 @@ async function savePlannedGram(modal: Element, button: HTMLButtonElement) {
 
 export default function WorkOrderGramController() {
   useEffect(() => {
-    let applying = false
+    const pendingTimers = new Set<number>()
+
     const apply = () => {
-      if (applying) return
-      applying = true
-      try {
-        applyGramInputs()
-        applyGramDisplays()
-      } finally {
-        applying = false
-      }
+      applyGramInputs(scheduleRefresh)
+      applyGramDisplays()
+    }
+
+    const scheduleAt = (delay: number) => {
+      const timer = window.setTimeout(() => {
+        pendingTimers.delete(timer)
+        apply()
+      }, delay)
+      pendingTimers.add(timer)
+    }
+
+    function scheduleRefresh() {
+      scheduleAt(0)
+      scheduleAt(60)
+    }
+
+    const scheduleAfterNavigation = () => {
+      scheduleAt(0)
+      scheduleAt(80)
+      scheduleAt(220)
+      scheduleAt(500)
     }
 
     const onClickCapture = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button') : null
-      if (!target || normalizedText(target) !== '수정 저장') return
-      const modal = target.closest<HTMLElement>('div.fixed.inset-0')
-      if (!modal || !normalizedText(modal).includes('작업지시서 수정')) return
+      if (!target) return
+      const text = normalizedText(target)
 
-      event.preventDefault()
-      event.stopPropagation()
-      event.stopImmediatePropagation()
-      if (target.disabled) return
+      if (text === '수정 저장') {
+        const modal = target.closest<HTMLElement>('div.fixed.inset-0')
+        if (!modal || !normalizedText(modal).includes('작업지시서 수정')) return
 
-      const previousText = target.textContent || '수정 저장'
-      target.disabled = true
-      target.textContent = '저장 확인 중...'
-      void savePlannedGram(modal, target).catch((error) => {
-        target.disabled = false
-        target.textContent = previousText
-        window.alert(error instanceof Error ? error.message : '작업지시서 수정에 실패했습니다.')
-      })
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        if (target.disabled) return
+
+        const previousText = target.textContent || '수정 저장'
+        target.disabled = true
+        target.textContent = '저장 확인 중...'
+        void savePlannedGram(modal, target).catch((error) => {
+          target.disabled = false
+          target.textContent = previousText
+          window.alert(error instanceof Error ? error.message : '작업지시서 수정에 실패했습니다.')
+        })
+        return
+      }
+
+      if (RELEVANT_BUTTON_TEXTS.some((keyword) => text.includes(keyword))) {
+        scheduleAfterNavigation()
+      }
+    }
+
+    const onFocusIn = (event: FocusEvent) => {
+      const input = event.target instanceof HTMLInputElement ? event.target : null
+      if (!input || input.type !== 'number') return
+      const labelText = normalizedText(input.closest('label')?.querySelector(':scope > span') ?? null)
+      if (CREATE_LABELS.has(labelText) || EDIT_LABELS.has(labelText)) scheduleRefresh()
     }
 
     apply()
-    const observer = new MutationObserver(apply)
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
-    const interval = window.setInterval(() => {
-      apply()
-      const sources = Array.from(document.querySelectorAll<HTMLInputElement>('input[data-moni-work-order-gram-source]'))
-      for (const source of sources) {
-        const mode = source.dataset.moniWorkOrderGramSource === 'edit' ? 'edit' : 'create'
-        const label = source.closest('label')
-        const visible = label?.querySelector<HTMLInputElement>(`input[data-moni-work-order-${mode}-g="true"]`)
-        if (!visible || document.activeElement === visible) continue
-        const nextValue = gramTextFromKgValue(source.value)
-        if (visible.value !== nextValue) visible.value = nextValue
-      }
-    }, 250)
     document.addEventListener('click', onClickCapture, true)
+    document.addEventListener('focusin', onFocusIn, true)
 
     return () => {
-      observer.disconnect()
-      window.clearInterval(interval)
+      pendingTimers.forEach((timer) => window.clearTimeout(timer))
+      pendingTimers.clear()
       document.removeEventListener('click', onClickCapture, true)
+      document.removeEventListener('focusin', onFocusIn, true)
     }
   }, [])
 
