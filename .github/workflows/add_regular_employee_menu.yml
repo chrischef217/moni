@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/add_regular_employee_menu.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,34 +23,29 @@ jobs:
           path = Path('src/components/GlobalMoniSidebarController.tsx')
           text = path.read_text(encoding='utf-8')
 
-          old = """    key: 'hr', label: '인사관리', icon: '♙', items: [
-              { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
-              { label: '계약·정산조건', href: '/business-management?tab=hr&view=contracts' },
-          """
-          new = """    key: 'hr', label: '인사관리', icon: '♙', items: [
-              { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
-              { label: '정규직 직원관리', href: '/business-management?tab=hr&view=employees' },
-              { label: '계약·정산조건', href: '/business-management?tab=hr&view=contracts' },
-          """
-          if old not in text:
-              raise SystemExit('HR menu pattern not found')
-          text = text.replace(old, new, 1)
+          menu_line = "      { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },"
+          employee_line = "      { label: '정규직 직원관리', href: '/business-management?tab=hr&view=employees' },"
+          if employee_line not in text:
+              if menu_line not in text:
+                  raise SystemExit('HR menu line not found')
+              text = text.replace(menu_line, menu_line + '\n' + employee_line, 1)
 
-          old = """  if (view === 'contracts') return { category: 'hr', item: '계약·정산조건' }
-            if (view === 'documents') return { category: 'hr', item: '필수서류 관리' }
-          """
-          new = """  if (view === 'employees') return { category: 'hr', item: '정규직 직원관리' }
-            if (view === 'contracts') return { category: 'hr', item: '계약·정산조건' }
-            if (view === 'documents') return { category: 'hr', item: '필수서류 관리' }
-          """
-          if old not in text:
-              raise SystemExit('HR route pattern not found')
-          text = text.replace(old, new, 1)
+          route_line = "  if (view === 'contracts') return { category: 'hr', item: '계약·정산조건' }"
+          employee_route = "  if (view === 'employees') return { category: 'hr', item: '정규직 직원관리' }"
+          if employee_route not in text:
+              if route_line not in text:
+                  raise SystemExit('HR route line not found')
+              text = text.replace(route_line, employee_route + '\n' + route_line, 1)
+
           path.write_text(text, encoding='utf-8')
       - name: Commit menu change
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/components/GlobalMoniSidebarController.tsx
-          git commit -m "feat: 인사관리에 정규직 직원관리 메뉴 추가"
-          git push
+          if git diff --cached --quiet; then
+            echo "No menu changes needed"
+          else
+            git commit -m "feat: 인사관리에 정규직 직원관리 메뉴 추가"
+            git push
+          fi
