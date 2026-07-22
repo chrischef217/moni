@@ -15,8 +15,16 @@ function normalized(element: Element) {
   return (element.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
-function currentView() {
-  return new URLSearchParams(window.location.search).get('view') || 'clients'
+function currentParams() {
+  const params = new URLSearchParams(window.location.search)
+  return {
+    tab: params.get('tab') || '',
+    view: params.get('view') || 'clients',
+  }
+}
+
+function salesManagementHref(view: string) {
+  return `/business-management?tab=sales-management&view=${view}`
 }
 
 export default function SalesManagementMenuController() {
@@ -27,10 +35,21 @@ export default function SalesManagementMenuController() {
     let observer: MutationObserver | null = null
     let stopped = false
 
+    const isActiveRoute = () => {
+      const params = currentParams()
+      return pathname === '/business-management' && params.tab === 'sales-management'
+    }
+
     const markActive = (view: string) => {
-      const active = pathname === '/sales-management'
+      const active = isActiveRoute()
       const wrapper = document.querySelector<HTMLElement>('[data-sales-management-menu]')
       if (!wrapper) return
+
+      const categoryButton = wrapper.querySelector<HTMLButtonElement>('[data-sales-management-category]')
+      if (categoryButton) {
+        categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
+      }
+
       for (const button of Array.from(wrapper.querySelectorAll<HTMLButtonElement>('button[data-sales-view]'))) {
         const selected = active && button.dataset.salesView === view
         button.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${selected ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`
@@ -43,7 +62,7 @@ export default function SalesManagementMenuController() {
       if (!nav) return
 
       const existing = nav.querySelector<HTMLElement>('[data-sales-management-menu]')
-      if (existing) existing.remove()
+      if (existing) return
 
       const wrappers = Array.from(nav.children) as HTMLElement[]
       const accountingWrapper = wrappers.find((wrapper) => normalized(wrapper).includes('회계·세무관리'))
@@ -51,8 +70,8 @@ export default function SalesManagementMenuController() {
       const reference = accountingWrapper || salesWrapper?.nextElementSibling
       if (!reference) return
 
-      const active = pathname === '/sales-management'
-      const activeView = currentView()
+      const active = isActiveRoute()
+      const activeView = currentParams().view
       const wrapper = document.createElement('div')
       wrapper.dataset.salesManagementMenu = 'true'
       wrapper.className = 'mb-1'
@@ -60,12 +79,10 @@ export default function SalesManagementMenuController() {
       const categoryButton = document.createElement('button')
       categoryButton.type = 'button'
       categoryButton.dataset.moniGlobalNav = 'true'
+      categoryButton.dataset.salesManagementCategory = 'true'
       categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
       categoryButton.innerHTML = `<span class="flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}">▤</span><span class="flex-1">판매관리</span><span data-sales-arrow class="text-xs transition-transform duration-300">⌄</span>`
-      categoryButton.addEventListener('click', () => {
-        markActive('clients')
-        router.push('/sales-management?view=clients')
-      })
+      categoryButton.addEventListener('click', () => router.push(salesManagementHref('clients')))
 
       const submenu = document.createElement('div')
       submenu.className = 'grid grid-rows-[0fr] opacity-0 transition-all duration-300 ease-out'
@@ -82,7 +99,7 @@ export default function SalesManagementMenuController() {
         button.addEventListener('click', (event) => {
           event.stopPropagation()
           markActive(item.view)
-          router.push(`/sales-management?view=${item.view}`)
+          router.push(salesManagementHref(item.view))
         })
         itemHost?.appendChild(button)
       }
@@ -92,6 +109,7 @@ export default function SalesManagementMenuController() {
         const arrow = categoryButton.querySelector<HTMLElement>('[data-sales-arrow]')
         arrow?.classList.toggle('rotate-180', expanded)
       }
+
       wrapper.addEventListener('mouseenter', () => setExpanded(true))
       wrapper.addEventListener('mouseleave', () => setExpanded(false))
       wrapper.append(categoryButton, submenu)
@@ -105,7 +123,7 @@ export default function SalesManagementMenuController() {
       }
     }
 
-    const syncFromAddress = () => markActive(currentView())
+    const syncFromAddress = () => markActive(currentParams().view)
     window.addEventListener('popstate', syncFromAddress)
 
     inject()
@@ -113,6 +131,7 @@ export default function SalesManagementMenuController() {
     const timer = window.setInterval(() => {
       attempts += 1
       if (!document.querySelector('[data-sales-management-menu]')) inject()
+      markActive(currentParams().view)
       if (document.querySelector('[data-sales-management-menu]') || attempts >= 20) window.clearInterval(timer)
     }, 120)
 
