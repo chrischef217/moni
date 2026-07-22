@@ -139,7 +139,7 @@ export default function GlobalMoniSidebarController() {
   const [isPinned, setIsPinned] = useState(true)
   const [pinPreferenceReady, setPinPreferenceReady] = useState(false)
   const [desktopPeekOpen, setDesktopPeekOpen] = useState(false)
-  const expandedCategory = hoveredCategory ?? (mobileOpen ? mobileExpandedCategory : null) ?? activeCategory
+  const expandedCategory = mobileOpen ? mobileExpandedCategory : hoveredCategory
   const desktopSidebarOpen = isPinned || desktopPeekOpen
 
   const currentCategory = useMemo(
