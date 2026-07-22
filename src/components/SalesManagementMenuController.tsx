@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 
 const items = [
   { label: '거래처 관리', view: 'clients' },
@@ -15,15 +15,27 @@ function normalized(element: Element) {
   return (element.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
+function currentView() {
+  return new URLSearchParams(window.location.search).get('view') || 'clients'
+}
+
 export default function SalesManagementMenuController() {
   const pathname = usePathname()
-  const searchParams = useSearchParams()
   const router = useRouter()
 
   useEffect(() => {
-    const activeView = searchParams.get('view') || 'clients'
     let observer: MutationObserver | null = null
     let stopped = false
+
+    const markActive = (view: string) => {
+      const active = pathname === '/sales-management'
+      const wrapper = document.querySelector<HTMLElement>('[data-sales-management-menu]')
+      if (!wrapper) return
+      for (const button of Array.from(wrapper.querySelectorAll<HTMLButtonElement>('button[data-sales-view]'))) {
+        const selected = active && button.dataset.salesView === view
+        button.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${selected ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`
+      }
+    }
 
     const inject = () => {
       if (stopped) return
@@ -40,6 +52,7 @@ export default function SalesManagementMenuController() {
       if (!reference) return
 
       const active = pathname === '/sales-management'
+      const activeView = currentView()
       const wrapper = document.createElement('div')
       wrapper.dataset.salesManagementMenu = 'true'
       wrapper.className = 'mb-1'
@@ -49,7 +62,10 @@ export default function SalesManagementMenuController() {
       categoryButton.dataset.moniGlobalNav = 'true'
       categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
       categoryButton.innerHTML = `<span class="flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}">▤</span><span class="flex-1">판매관리</span><span data-sales-arrow class="text-xs transition-transform duration-300">⌄</span>`
-      categoryButton.addEventListener('click', () => router.push('/sales-management?view=clients'))
+      categoryButton.addEventListener('click', () => {
+        markActive('clients')
+        router.push('/sales-management?view=clients')
+      })
 
       const submenu = document.createElement('div')
       submenu.className = 'grid grid-rows-[0fr] opacity-0 transition-all duration-300 ease-out'
@@ -60,10 +76,12 @@ export default function SalesManagementMenuController() {
         const button = document.createElement('button')
         button.type = 'button'
         button.dataset.moniGlobalNav = 'true'
+        button.dataset.salesView = item.view
         button.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${active && activeView === item.view ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`
         button.textContent = item.label
         button.addEventListener('click', (event) => {
           event.stopPropagation()
+          markActive(item.view)
           router.push(`/sales-management?view=${item.view}`)
         })
         itemHost?.appendChild(button)
@@ -87,21 +105,25 @@ export default function SalesManagementMenuController() {
       }
     }
 
+    const syncFromAddress = () => markActive(currentView())
+    window.addEventListener('popstate', syncFromAddress)
+
     inject()
     let attempts = 0
     const timer = window.setInterval(() => {
       attempts += 1
-      inject()
+      if (!document.querySelector('[data-sales-management-menu]')) inject()
       if (document.querySelector('[data-sales-management-menu]') || attempts >= 20) window.clearInterval(timer)
     }, 120)
 
     return () => {
       stopped = true
       window.clearInterval(timer)
+      window.removeEventListener('popstate', syncFromAddress)
       observer?.disconnect()
       document.querySelector('[data-sales-management-menu]')?.remove()
     }
-  }, [pathname, router, searchParams])
+  }, [pathname, router])
 
   return null
 }
