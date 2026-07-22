@@ -66,17 +66,17 @@ async function injectField() {
   const modal = findMaterialModal()
   if (!modal) return
 
-  const unitField = findField(modal, ['단위(g)', '규격'])
+  const unitField = findField(modal, ['포장중량(g)', '단위(g)', '규격'])
   const nameField = findField(modal, ['원재료명'])
   const unitInput = unitField?.querySelector<HTMLInputElement>('input')
   const nameInput = nameField?.querySelector<HTMLInputElement>('input')
   if (!unitField || !unitInput || !nameInput) return
 
   const unitTitle = unitField.querySelector<HTMLElement>(':scope > span')
-  if (unitTitle) unitTitle.textContent = '단위(g)'
+  if (unitTitle) unitTitle.textContent = '포장중량(g)'
   unitInput.setAttribute(PACKING_INPUT_ATTR, 'true')
   unitInput.inputMode = 'numeric'
-  unitInput.placeholder = '예: 10000'
+  unitInput.placeholder = '예: 한 박스 전체가 10kg이면 10000'
 
   if (modal.querySelector(`[${FIELD_ATTR}]`)) return
 
@@ -86,7 +86,7 @@ async function injectField() {
 
   const title = document.createElement('span')
   title.className = unitField.querySelector(':scope > span')?.className || 'mb-1.5 block'
-  title.textContent = '포장단가(원)'
+  title.textContent = '입력 포장단가(원)'
 
   const input = document.createElement('input')
   input.setAttribute(INPUT_ATTR, 'true')
@@ -94,13 +94,13 @@ async function injectField() {
   input.min = '0'
   input.step = '1'
   input.inputMode = 'numeric'
-  input.placeholder = '예: 80000'
+  input.placeholder = '예: 위 10kg 한 박스 가격이 80000원이면 80000'
   input.className = unitInput.className
 
   const status = document.createElement('p')
   status.setAttribute(STATUS_ATTR, 'true')
   status.className = 'mt-1 text-xs text-gray-500'
-  status.textContent = '단위(g) 한 포장의 실제 매입가격을 입력합니다.'
+  status.textContent = '포장중량과 포장단가를 한 세트로 사용합니다. 박스 안 개수나 개별 포장 구성은 계산하지 않습니다.'
 
   wrapper.append(title, input, status)
   unitField.insertAdjacentElement('afterend', wrapper)
@@ -142,20 +142,20 @@ export default function RawMaterialUnitPriceController() {
       const packingInput = modal?.querySelector<HTMLInputElement>(`[${PACKING_INPUT_ATTR}]`) ?? null
 
       let nextInit = init
-      let unitPrice: number | null = null
+      let packagePrice: number | null = null
 
       if (method === 'PATCH' && match && modal) {
         if (packingInput) {
           const packingWeight = packingWeightFromInput(packingInput)
           if (typeof packingWeight === 'number' && !Number.isFinite(packingWeight)) {
-            setStatus(modal, '단위(g)는 1g 이상의 정수로 입력해 주세요.', 'error')
-            throw new Error('단위(g)는 1g 이상의 정수로 입력해 주세요.')
+            setStatus(modal, '포장중량(g)은 1g 이상의 정수로 입력해 주세요.', 'error')
+            throw new Error('포장중량(g)은 1g 이상의 정수로 입력해 주세요.')
           }
 
           if (typeof packingWeight === 'number') {
             if (typeof init?.body !== 'string') {
-              setStatus(modal, '단위(g) 저장 요청을 구성하지 못했습니다.', 'error')
-              throw new Error('단위(g) 저장 요청을 구성하지 못했습니다.')
+              setStatus(modal, '포장중량 저장 요청을 구성하지 못했습니다.', 'error')
+              throw new Error('포장중량 저장 요청을 구성하지 못했습니다.')
             }
             const originalBody = JSON.parse(init.body) as Record<string, unknown>
             nextInit = {
@@ -170,10 +170,10 @@ export default function RawMaterialUnitPriceController() {
         }
 
         if (priceInput) {
-          unitPrice = priceFromInput(priceInput)
-          if (typeof unitPrice === 'number' && (!Number.isFinite(unitPrice) || unitPrice < 0)) {
-            setStatus(modal, '포장단가는 0 이상의 숫자로 입력해 주세요.', 'error')
-            throw new Error('포장단가는 0 이상의 숫자로 입력해 주세요.')
+          packagePrice = priceFromInput(priceInput)
+          if (typeof packagePrice === 'number' && (!Number.isFinite(packagePrice) || packagePrice < 0)) {
+            setStatus(modal, '입력 포장단가는 0 이상의 숫자로 입력해 주세요.', 'error')
+            throw new Error('입력 포장단가는 0 이상의 숫자로 입력해 주세요.')
           }
         }
       }
@@ -187,12 +187,12 @@ export default function RawMaterialUnitPriceController() {
             method: 'PATCH',
             cache: 'no-store',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ unit_price_per_kg: unitPrice }),
+            body: JSON.stringify({ unit_price_per_kg: packagePrice }),
           },
         )
         const pricingPayload = (await pricingResponse.json().catch(() => null)) as { error?: string } | null
         if (!pricingResponse.ok) {
-          const message = pricingPayload?.error || '포장단가 저장에 실패했습니다.'
+          const message = pricingPayload?.error || '입력 포장단가 저장에 실패했습니다.'
           setStatus(modal, message, 'error')
           throw new Error(message)
         }
@@ -202,19 +202,32 @@ export default function RawMaterialUnitPriceController() {
     }
 
     window.fetch = patchedFetch
+    const timers = new Set<number>()
 
-    let frame = 0
     const schedule = () => {
-      window.cancelAnimationFrame(frame)
-      frame = window.requestAnimationFrame(() => void injectField())
+      ;[0, 80, 220, 500].forEach((delay) => {
+        const timer = window.setTimeout(() => {
+          timers.delete(timer)
+          void injectField()
+        }, delay)
+        timers.add(timer)
+      })
     }
-    const observer = new MutationObserver(schedule)
-    observer.observe(document.body, { childList: true, subtree: true })
+
+    const onClick = (event: MouseEvent) => {
+      const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button') : null
+      if (!button) return
+      const text = normalizedText(button.textContent)
+      if (['원재료', '수정', '편집', '상세', '닫기'].some((keyword) => text.includes(keyword))) schedule()
+    }
+
     schedule()
+    document.addEventListener('click', onClick, true)
 
     return () => {
-      observer.disconnect()
-      window.cancelAnimationFrame(frame)
+      timers.forEach((timer) => window.clearTimeout(timer))
+      timers.clear()
+      document.removeEventListener('click', onClick, true)
       if (window.fetch === patchedFetch) window.fetch = originalFetch
       document.querySelectorAll(`[${FIELD_ATTR}]`).forEach((node) => node.remove())
     }
