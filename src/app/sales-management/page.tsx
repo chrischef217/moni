@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation'
-import SalesManagementModule from '@/components/SalesManagementModule'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
 export const dynamic = 'force-dynamic'
@@ -15,6 +14,6 @@ export default async function SalesManagementPage({ searchParams }: PageProps) {
 
   const allowed = ['clients', 'sales', 'statements', 'statistics', 'tax-invoices']
   const requested = String(searchParams?.view ?? 'clients')
-  const initialView = allowed.includes(requested) ? requested : 'clients'
-  return <SalesManagementModule initialView={initialView} />
+  const view = allowed.includes(requested) ? requested : 'clients'
+  redirect(`/business-management?tab=sales-management&view=${view}`)
 }
