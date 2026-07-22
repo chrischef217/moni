@@ -9,6 +9,7 @@ import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutContr
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
 import BusinessManagementMenuController from '@/components/BusinessManagementMenuController'
 import WorkOrderGramController from '@/components/WorkOrderGramController'
+import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -35,6 +36,7 @@ export default function RootLayout({
         <ProductionCompletionMetadataController />
         <BusinessManagementMenuController />
         <WorkOrderGramController />
+        <SidebarPinToggleVisualFix />
         {children}
       </body>
     </html>
