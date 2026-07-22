@@ -20,8 +20,14 @@ type ProductionActionPayload = {
   record?: WorkOrderRecord | null
 }
 
-const CREATE_LABELS = new Set(['예정 생산량 (kg)', '예정 생산량(kg)', '생산 예정량(kg)'])
-const EDIT_LABEL = '수정 예정량(kg)'
+const CREATE_LABELS = new Set([
+  '예정 생산량 (kg)',
+  '예정 생산량(kg)',
+  '생산 예정량(kg)',
+  '예정 생산량(g)',
+  '생산 예정량(g)',
+])
+const EDIT_LABELS = new Set(['수정 예정량(kg)', '수정 예정량(g)'])
 const GRAM_HELP_TEXT = 'g 단위 정수로 입력하세요. 예: 434,069g은 434069로 입력'
 
 function normalizedText(element: Element | null) {
@@ -55,18 +61,14 @@ function createVisibleGramInput(source: HTMLInputElement, mode: 'create' | 'edit
   const labelSpan = label.querySelector(':scope > span')
   if (!labelSpan) return
 
-  const existing = label.querySelector<HTMLInputElement>(`input[data-moni-work-order-${mode}-g="true"]`)
-  if (existing) {
-    source.style.display = 'none'
-    source.tabIndex = -1
-    return
-  }
-
+  labelSpan.textContent = mode === 'edit' ? '수정 예정량(g)' : '예정 생산량(g)'
   source.dataset.moniWorkOrderGramSource = mode
   source.style.display = 'none'
   source.tabIndex = -1
   source.setAttribute('aria-hidden', 'true')
-  labelSpan.textContent = mode === 'edit' ? '수정 예정량(g)' : '예정 생산량(g)'
+
+  const existing = label.querySelector<HTMLInputElement>(`input[data-moni-work-order-${mode}-g="true"]`)
+  if (existing) return
 
   const visible = document.createElement('input')
   visible.type = 'text'
@@ -107,7 +109,7 @@ function applyGramInputs() {
       createVisibleGramInput(source, 'create')
       continue
     }
-    if (labelText === EDIT_LABEL) {
+    if (EDIT_LABELS.has(labelText)) {
       createVisibleGramInput(source, 'edit')
     }
   }
