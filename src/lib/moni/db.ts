@@ -22,6 +22,12 @@ const supabaseUrl = resolveSupabaseSetting('NEXT_PUBLIC_SUPABASE_URL', LEGACY_SU
 const supabaseAnonKey = resolveSupabaseSetting('NEXT_PUBLIC_SUPABASE_ANON_KEY', LEGACY_SUPABASE_PUBLISHABLE_KEY)
 const supabaseServiceKey = readEnv('SUPABASE_SERVICE_ROLE_KEY') || supabaseAnonKey
 
+const noStoreFetch: typeof fetch = (input, init) =>
+  fetch(input, {
+    ...init,
+    cache: 'no-store',
+  })
+
 export const moniDb = createClient(supabaseUrl, supabaseAnonKey, {
   db: { schema: 'public' },
 })
@@ -40,5 +46,6 @@ export function createMoniServiceRoleClient() {
   return createClient(supabaseUrl, serviceRoleKey, {
     db: { schema: 'public' },
     auth: { persistSession: false },
+    global: { fetch: noStoreFetch },
   })
 }
