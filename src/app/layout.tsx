@@ -5,6 +5,7 @@ import MonthlyProductionRequirementSafetyGuard from '@/components/MonthlyProduct
 import MonthlyProductionPurchaseBudgetController from '@/components/MonthlyProductionPurchaseBudgetController'
 import RawMaterialUnitPriceController from '@/components/RawMaterialUnitPriceController'
 import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
+import GlobalSidebarHoverCollapseController from '@/components/GlobalSidebarHoverCollapseController'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
 import BusinessManagementMenuController from '@/components/BusinessManagementMenuController'
@@ -31,6 +32,7 @@ export default function RootLayout({
         <MonthlyProductionPurchaseBudgetController />
         <RawMaterialUnitPriceController />
         <GlobalMoniSidebarController />
+        <GlobalSidebarHoverCollapseController />
         <GlobalSidebarLayoutController />
         <ProductionCompletionMetadataController />
         <BusinessManagementMenuController />
