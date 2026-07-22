@@ -11,6 +11,7 @@ const CREATE_LABELS = new Set([
 ])
 
 const EDIT_LABELS = new Set(['수정 예정량(kg)', '수정 예정량(g)'])
+const MONTHLY_PLAN_LABELS = new Set(['예상 생산량(kg)', '예상 생산량(g)'])
 
 const RELEVANT_BUTTON_TEXTS = [
   '작업 지시',
@@ -26,6 +27,10 @@ const GRAM_HELP_TEXT = 'g 단위 정수로 입력하세요. 예: 434,069g은 434
 
 function normalizedText(element: Element | null) {
   return (element?.textContent || '').replace(/\s+/g, ' ').trim()
+}
+
+function isMonthlyProductionPlanPath() {
+  return window.location.pathname.startsWith('/monthly-production-plan')
 }
 
 function setNativeInputValue(input: HTMLInputElement, value: string) {
@@ -51,7 +56,7 @@ function sanitizeGramInput(value: string) {
 
 function createVisibleGramInput(
   source: HTMLInputElement,
-  mode: 'create' | 'edit',
+  mode: 'create' | 'edit' | 'monthly',
   requestRefresh: () => void,
 ) {
   const label = source.closest('label')
@@ -59,7 +64,7 @@ function createVisibleGramInput(
   const labelSpan = label.querySelector(':scope > span')
   if (!labelSpan) return
 
-  labelSpan.textContent = mode === 'edit' ? '수정 예정량(g)' : '예정 생산량(g)'
+  labelSpan.textContent = mode === 'edit' ? '수정 예정량(g)' : mode === 'monthly' ? '예상 생산량(g)' : '예정 생산량(g)'
   source.dataset.moniWorkOrderGramSource = mode
   source.style.display = 'none'
   source.tabIndex = -1
@@ -83,7 +88,10 @@ function createVisibleGramInput(
   visible.className = source.className
   visible.value = gramTextFromKgValue(source.value)
   visible.setAttribute(visibleAttribute, 'true')
-  visible.setAttribute('aria-label', mode === 'edit' ? '수정 예정량(g)' : '예정 생산량(g)')
+  visible.setAttribute(
+    'aria-label',
+    mode === 'edit' ? '수정 예정량(g)' : mode === 'monthly' ? '예상 생산량(g)' : '예정 생산량(g)',
+  )
 
   const helper = document.createElement('p')
   helper.dataset.moniWorkOrderGramHelp = mode
@@ -96,7 +104,7 @@ function createVisibleGramInput(
     const grams = Number(gramsText || 0)
 
     // 기존 MONI 폼은 kg 값을 상태로 관리하므로 화면의 g 입력만 kg로 환산해 전달합니다.
-    // 저장은 AdminDashboard의 원래 저장 함수가 수행하며, 성공 후 팝업만 닫고 목록을 다시 조회합니다.
+    // 저장은 각 화면의 원래 저장 함수가 수행합니다.
     setNativeInputValue(source, grams > 0 ? String(grams / 1000) : '')
     requestRefresh()
   })
@@ -105,7 +113,7 @@ function createVisibleGramInput(
   visible.insertAdjacentElement('afterend', helper)
 }
 
-function applyGramInputs(requestRefresh: () => void) {
+function applyWorkOrderGramInputs(requestRefresh: () => void) {
   const labels = Array.from(document.querySelectorAll<HTMLLabelElement>('label'))
   for (const label of labels) {
     const labelText = normalizedText(label.querySelector(':scope > span'))
@@ -117,6 +125,17 @@ function applyGramInputs(requestRefresh: () => void) {
       continue
     }
     if (EDIT_LABELS.has(labelText)) createVisibleGramInput(source, 'edit', requestRefresh)
+  }
+}
+
+function applyMonthlyPlanGramInputs(requestRefresh: () => void) {
+  const labels = Array.from(document.querySelectorAll<HTMLLabelElement>('label'))
+  for (const label of labels) {
+    const labelText = normalizedText(label.querySelector(':scope > span'))
+    if (!MONTHLY_PLAN_LABELS.has(labelText)) continue
+    const source = label.querySelector<HTMLInputElement>('input[type="number"]')
+    if (!source) continue
+    createVisibleGramInput(source, 'monthly', requestRefresh)
   }
 }
 
@@ -155,7 +174,11 @@ export default function WorkOrderGramController() {
     const pendingTimers = new Set<number>()
 
     const apply = () => {
-      applyGramInputs(scheduleRefresh)
+      if (isMonthlyProductionPlanPath()) {
+        applyMonthlyPlanGramInputs(scheduleRefresh)
+        return
+      }
+      applyWorkOrderGramInputs(scheduleRefresh)
       applyGramDisplays()
     }
 
@@ -182,6 +205,12 @@ export default function WorkOrderGramController() {
     const onClickCapture = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button') : null
       if (!target) return
+
+      if (isMonthlyProductionPlanPath()) {
+        scheduleAfterUiChange()
+        return
+      }
+
       const buttonText = normalizedText(target)
       if (RELEVANT_BUTTON_TEXTS.some((keyword) => buttonText.includes(keyword))) scheduleAfterUiChange()
     }
@@ -190,7 +219,13 @@ export default function WorkOrderGramController() {
       const input = event.target instanceof HTMLInputElement ? event.target : null
       if (!input || input.type !== 'number') return
       const labelText = normalizedText(input.closest('label')?.querySelector(':scope > span') ?? null)
-      if (CREATE_LABELS.has(labelText) || EDIT_LABELS.has(labelText)) scheduleRefresh()
+      if (
+        CREATE_LABELS.has(labelText) ||
+        EDIT_LABELS.has(labelText) ||
+        (isMonthlyProductionPlanPath() && MONTHLY_PLAN_LABELS.has(labelText))
+      ) {
+        scheduleRefresh()
+      }
     }
 
     apply()
