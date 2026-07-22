@@ -8,6 +8,7 @@ import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarControlle
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
 import BusinessManagementMenuController from '@/components/BusinessManagementMenuController'
+import WorkOrderGramController from '@/components/WorkOrderGramController'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -33,6 +34,7 @@ export default function RootLayout({
         <GlobalSidebarLayoutController />
         <ProductionCompletionMetadataController />
         <BusinessManagementMenuController />
+        <WorkOrderGramController />
         {children}
       </body>
     </html>
