@@ -198,6 +198,17 @@ body {
   line-height: 1rem;
 }
 
+/* 사이드바 고정 스위치: ON은 오른쪽, OFF는 왼쪽으로 명확히 구분한다. */
+button[data-moni-global-nav][aria-pressed='true'] > span:last-child > span {
+  left: 0.125rem !important;
+  transform: translateX(1rem) !important;
+}
+
+button[data-moni-global-nav][aria-pressed='false'] > span:last-child > span {
+  left: 0.125rem !important;
+  transform: translateX(0) !important;
+}
+
 @media print {
   body {
     background: white !important;
