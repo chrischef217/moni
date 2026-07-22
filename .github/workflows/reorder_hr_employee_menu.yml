@@ -1,0 +1,39 @@
+name: Reorder HR employee menu
+
+on:
+  push:
+    paths:
+      - '.github/workflows/reorder_hr_employee_menu.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reorder HR submenu
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('src/components/GlobalMoniSidebarController.tsx')
+          text = path.read_text(encoding='utf-8')
+          old = """      { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
+                { label: '정규직 직원관리', href: '/business-management?tab=hr&view=employees' },
+          """
+          new = """      { label: '정규직 직원관리', href: '/business-management?tab=hr&view=employees' },
+                { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
+          """
+          if old not in text:
+              raise SystemExit('HR submenu order pattern not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+      - name: Commit change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/GlobalMoniSidebarController.tsx
+          git commit -m "fix: 정규직 직원관리를 인사관리 첫 메뉴로 이동"
+          git push
