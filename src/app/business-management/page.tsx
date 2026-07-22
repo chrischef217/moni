@@ -14,7 +14,11 @@ export default async function BusinessManagementPage({ searchParams }: PageProps
   if (session.role === 'freelancer') redirect('/freelancer')
 
   const rawTab = searchParams?.tab
-  const initialTab = rawTab === 'sales' || rawTab === 'accounting' ? rawTab : 'hr'
+  const initialTab = rawTab === 'sales-management'
+    ? 'salesManagement'
+    : rawTab === 'sales' || rawTab === 'accounting'
+      ? rawTab
+      : 'hr'
   const initialView = String(searchParams?.view ?? '')
 
   return <BusinessManagementIntegratedShell initialTab={initialTab} initialView={initialView} />
