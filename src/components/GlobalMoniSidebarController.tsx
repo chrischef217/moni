@@ -34,8 +34,8 @@ const categories: Category[] = [
   },
   {
     key: 'hr', label: '인사관리', icon: '♙', items: [
-      { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
       { label: '정규직 직원관리', href: '/business-management?tab=hr&view=employees' },
+      { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
       { label: '계약·정산조건', href: '/business-management?tab=hr&view=contracts' },
       { label: '필수서류 관리', href: '/business-management?tab=hr&view=documents' },
     ],
