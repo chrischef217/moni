@@ -460,14 +460,15 @@ export default function MonthlyProductionPlanPage() {
                     <span className="text-sm font-bold">{Number(cell.date.slice(-2))}</span>
                     <div className="mt-2 space-y-1" onClick={(event) => event.stopPropagation()}>
                       {dayEvents.slice(0, 4).map((event) => {
+                        const actualEvent = event.source === 'actual' ? event : null
                         const cardClass = event.source === 'user'
                           ? 'border-blue-500 bg-blue-500/10 text-blue-100'
                           : event.source === 'ai'
                             ? 'border-dashed border-green-500 bg-green-500/10 text-green-100'
-                            : event.actual_state === 'completed'
+                            : actualEvent?.actual_state === 'completed'
                               ? 'border-amber-400 bg-amber-400/20 text-amber-50'
                               : 'border-dashed border-amber-400 bg-amber-400/10 text-amber-100'
-                        const displayQuantity = event.source === 'actual' ? event.display_quantity_g : event.planned_quantity_g
+                        const displayQuantity = actualEvent ? actualEvent.display_quantity_g : event.planned_quantity_g
 
                         return (
                           <div key={event.id} className={`rounded-lg border px-2 py-1 text-xs ${cardClass}`}>
@@ -489,8 +490,8 @@ export default function MonthlyProductionPlanPage() {
                                 </>
                               ) : (
                                 <>
-                                  <span className="font-bold">{event.actual_state === 'completed' ? '생산완료' : '작업지시 등록'}</span>
-                                  {event.lot_number && <span className="truncate text-amber-200">{event.lot_number}</span>}
+                                  <span className="font-bold">{actualEvent?.actual_state === 'completed' ? '생산완료' : '작업지시 등록'}</span>
+                                  {actualEvent?.lot_number && <span className="truncate text-amber-200">{actualEvent.lot_number}</span>}
                                 </>
                               )}
                             </div>
