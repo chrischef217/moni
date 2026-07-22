@@ -2,8 +2,9 @@
 
 import { useEffect, useRef } from 'react'
 import BusinessManagementModule from '@/components/BusinessManagementModule'
+import SalesManagementModule from '@/components/SalesManagementModule'
 
-type MainTab = 'hr' | 'sales' | 'accounting'
+type MainTab = 'hr' | 'sales' | 'accounting' | 'salesManagement'
 
 type Props = {
   initialTab: MainTab
@@ -28,6 +29,11 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
 
       const ownAside = shell.querySelector<HTMLElement>('main > div > aside')
       if (ownAside) ownAside.style.display = 'none'
+
+      if (initialTab === 'salesManagement') {
+        appliedRef.current = true
+        return
+      }
 
       if (appliedRef.current) return
 
@@ -70,8 +76,13 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
   }, [initialTab, initialView])
 
   return (
-    <div data-business-management-shell>
-      <BusinessManagementModule key={`${initialTab}-${initialView}`} initialTab={initialTab} />
+    <div
+      data-business-management-shell
+      data-sales-management-shell={initialTab === 'salesManagement' ? 'true' : undefined}
+    >
+      {initialTab === 'salesManagement'
+        ? <SalesManagementModule key={`sales-management-${initialView}`} initialView={initialView} />
+        : <BusinessManagementModule key={`${initialTab}-${initialView}`} initialTab={initialTab} />}
       <style jsx global>{`
         [data-business-management-shell] main > div > aside {
           display: none !important;
@@ -84,6 +95,10 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
         [data-business-management-shell] main > div > section {
           width: 100%;
           min-width: 0;
+        }
+
+        [data-sales-management-shell='true'] main header > div.mt-5 {
+          display: none !important;
         }
       `}</style>
     </div>
