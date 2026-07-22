@@ -7,7 +7,6 @@ import RawMaterialUnitPriceController from '@/components/RawMaterialUnitPriceCon
 import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
-import BusinessManagementMenuController from '@/components/BusinessManagementMenuController'
 import SalesManagementMenuController from '@/components/SalesManagementMenuController'
 import WorkOrderGramController from '@/components/WorkOrderGramController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
@@ -35,7 +34,6 @@ export default function RootLayout({
         <GlobalMoniSidebarController />
         <GlobalSidebarLayoutController />
         <ProductionCompletionMetadataController />
-        <BusinessManagementMenuController />
         <SalesManagementMenuController />
         <WorkOrderGramController />
         <SidebarPinToggleVisualFix />
