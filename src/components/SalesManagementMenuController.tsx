@@ -32,7 +32,6 @@ export default function SalesManagementMenuController() {
   const router = useRouter()
 
   useEffect(() => {
-    let observer: MutationObserver | null = null
     let stopped = false
 
     const isActiveRoute = () => {
@@ -46,8 +45,12 @@ export default function SalesManagementMenuController() {
       if (!wrapper) return
 
       const categoryButton = wrapper.querySelector<HTMLButtonElement>('[data-sales-management-category]')
+      const categoryIcon = wrapper.querySelector<HTMLElement>('[data-sales-management-icon]')
       if (categoryButton) {
         categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
+      }
+      if (categoryIcon) {
+        categoryIcon.className = `flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}`
       }
 
       for (const button of Array.from(wrapper.querySelectorAll<HTMLButtonElement>('button[data-sales-view]'))) {
@@ -62,7 +65,10 @@ export default function SalesManagementMenuController() {
       if (!nav) return
 
       const existing = nav.querySelector<HTMLElement>('[data-sales-management-menu]')
-      if (existing) return
+      if (existing) {
+        markActive(currentParams().view)
+        return
+      }
 
       const wrappers = Array.from(nav.children) as HTMLElement[]
       const accountingWrapper = wrappers.find((wrapper) => normalized(wrapper).includes('회계·세무관리'))
@@ -81,7 +87,7 @@ export default function SalesManagementMenuController() {
       categoryButton.dataset.moniGlobalNav = 'true'
       categoryButton.dataset.salesManagementCategory = 'true'
       categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
-      categoryButton.innerHTML = `<span class="flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}">▤</span><span class="flex-1">판매관리</span><span data-sales-arrow class="text-xs transition-transform duration-300">⌄</span>`
+      categoryButton.innerHTML = `<span data-sales-management-icon class="flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}">▤</span><span class="flex-1">판매관리</span><span data-sales-arrow class="text-xs transition-transform duration-300">⌄</span>`
       categoryButton.addEventListener('click', () => router.push(salesManagementHref('clients')))
 
       const submenu = document.createElement('div')
@@ -114,32 +120,32 @@ export default function SalesManagementMenuController() {
       wrapper.addEventListener('mouseleave', () => setExpanded(false))
       wrapper.append(categoryButton, submenu)
       nav.insertBefore(wrapper, reference)
-
-      if (!observer) {
-        observer = new MutationObserver(() => {
-          if (!nav.querySelector('[data-sales-management-menu]')) inject()
-        })
-        observer.observe(nav, { childList: true })
-      }
+      markActive(activeView)
     }
 
-    const syncFromAddress = () => markActive(currentParams().view)
+    const syncFromAddress = () => {
+      inject()
+      markActive(currentParams().view)
+    }
+
     window.addEventListener('popstate', syncFromAddress)
 
+    // 글로벌 사이드바가 늦게 렌더링되거나 React 재렌더링으로 외부 삽입 노드가 제거돼도
+    // 판매관리 메뉴를 다시 복구한다. 기존 20회/2.4초 제한은 두지 않는다.
+    const observer = new MutationObserver(() => inject())
+    observer.observe(document.body, { childList: true, subtree: true })
+
     inject()
-    let attempts = 0
     const timer = window.setInterval(() => {
-      attempts += 1
-      if (!document.querySelector('[data-sales-management-menu]')) inject()
+      inject()
       markActive(currentParams().view)
-      if (document.querySelector('[data-sales-management-menu]') || attempts >= 20) window.clearInterval(timer)
-    }, 120)
+    }, 800)
 
     return () => {
       stopped = true
       window.clearInterval(timer)
       window.removeEventListener('popstate', syncFromAddress)
-      observer?.disconnect()
+      observer.disconnect()
       document.querySelector('[data-sales-management-menu]')?.remove()
     }
   }, [pathname, router])
