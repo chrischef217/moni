@@ -9,6 +9,7 @@ const items = [
   { label: '거래명세표', view: 'statements' },
   { label: '판매 통계', view: 'statistics' },
   { label: '세금계산서', view: 'tax-invoices' },
+  { label: '수출 관리', view: 'exports' },
 ]
 
 function normalized(element: Element) {
@@ -16,6 +17,10 @@ function normalized(element: Element) {
 }
 
 function currentParams() {
+  if (window.location.pathname === '/sales-management/export') {
+    return { tab: 'sales-management', view: 'exports' }
+  }
+
   const params = new URLSearchParams(window.location.search)
   return {
     tab: params.get('tab') || '',
@@ -24,6 +29,7 @@ function currentParams() {
 }
 
 function salesManagementHref(view: string) {
+  if (view === 'exports') return '/sales-management/export'
   return `/business-management?tab=sales-management&view=${view}`
 }
 
@@ -35,6 +41,7 @@ export default function SalesManagementMenuController() {
     let stopped = false
 
     const isActiveRoute = () => {
+      if (pathname === '/sales-management/export') return true
       const params = currentParams()
       return pathname === '/business-management' && params.tab === 'sales-management'
     }
@@ -130,8 +137,6 @@ export default function SalesManagementMenuController() {
 
     window.addEventListener('popstate', syncFromAddress)
 
-    // 글로벌 사이드바가 늦게 렌더링되거나 React 재렌더링으로 외부 삽입 노드가 제거돼도
-    // 판매관리 메뉴를 다시 복구한다. 기존 20회/2.4초 제한은 두지 않는다.
     const observer = new MutationObserver(() => inject())
     observer.observe(document.body, { childList: true, subtree: true })
 
