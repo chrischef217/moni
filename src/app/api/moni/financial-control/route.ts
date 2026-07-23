@@ -18,6 +18,12 @@ const num = (value: unknown) => {
 }
 const money = (value: unknown) => Math.round((num(value) + Number.EPSILON) * 100) / 100
 
+type FinanceAccountRow = Record<string, unknown> & {
+  latest_balance: number | null
+  balance_date: string | null
+  stale_days: number | null
+}
+
 function todayKst() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date())
 }
@@ -143,7 +149,7 @@ async function loadData(client: ReturnType<typeof createMoniServiceRoleClient>, 
     if (text(snapshot.balance_date) > today || latestSnapshotByAccount.has(accountId)) continue
     latestSnapshotByAccount.set(accountId, snapshot)
   }
-  const accountRows = accounts.map((account) => {
+  const accountRows: FinanceAccountRow[] = accounts.map((account) => {
     const snapshot = latestSnapshotByAccount.get(text(account.id))
     const date = text(snapshot?.balance_date)
     return {
@@ -153,7 +159,7 @@ async function loadData(client: ReturnType<typeof createMoniServiceRoleClient>, 
       stale_days: date ? Math.max(0, dateDiffDays(date, today)) : null,
     }
   })
-  const activeAccounts = accountRows.filter((row) => row.active !== false)
+  const activeAccounts = accountRows.filter((row) => row['active'] !== false)
   const registeredBalance = activeAccounts.reduce((sum, row) => sum + (row.latest_balance === null ? 0 : num(row.latest_balance)), 0)
   const accountsWithoutBalance = activeAccounts.filter((row) => row.latest_balance === null).length
   const staleBalanceAccounts = activeAccounts.filter((row) => row.stale_days !== null && num(row.stale_days) > 7).length
