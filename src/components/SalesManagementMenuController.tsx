@@ -4,9 +4,12 @@ import { useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
 const items = [
+  { label: '제품 판매설정', view: 'products' },
   { label: '거래처 관리', view: 'clients' },
+  { label: '거래처별 판매조건', view: 'terms' },
   { label: '판매 등록', view: 'sales' },
   { label: '거래명세표', view: 'statements' },
+  { label: '영업 정산서', view: 'settlements' },
   { label: '판매 통계', view: 'statistics' },
   { label: '세금계산서', view: 'tax-invoices' },
   { label: '수출 관리', view: 'exports' },
@@ -24,7 +27,7 @@ function currentParams() {
   const params = new URLSearchParams(window.location.search)
   return {
     tab: params.get('tab') || '',
-    view: params.get('view') || 'clients',
+    view: params.get('view') || 'products',
   }
 }
 
@@ -95,7 +98,7 @@ export default function SalesManagementMenuController() {
       categoryButton.dataset.salesManagementCategory = 'true'
       categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
       categoryButton.innerHTML = `<span data-sales-management-icon class="flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}">▤</span><span class="flex-1">판매관리</span><span data-sales-arrow class="text-xs transition-transform duration-300">⌄</span>`
-      categoryButton.addEventListener('click', () => router.push(salesManagementHref('clients')))
+      categoryButton.addEventListener('click', () => router.push(salesManagementHref('products')))
 
       const submenu = document.createElement('div')
       submenu.className = 'grid grid-rows-[0fr] opacity-0 transition-all duration-300 ease-out'
@@ -136,7 +139,6 @@ export default function SalesManagementMenuController() {
     }
 
     window.addEventListener('popstate', syncFromAddress)
-
     const observer = new MutationObserver(() => inject())
     observer.observe(document.body, { childList: true, subtree: true })
 
