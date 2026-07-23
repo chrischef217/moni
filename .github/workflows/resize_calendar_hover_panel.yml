@@ -1,0 +1,48 @@
+name: Resize calendar hover panel
+
+on:
+  push:
+    paths:
+      - '.github/workflows/resize_calendar_hover_panel.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resize hover panel
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/app/monthly-production-plan/page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          old_panel = "w-[300%] max-w-[720px]"
+          new_panel = "w-[200%] max-w-[520px]"
+          if old_panel not in text:
+              raise SystemExit('hover panel width classes not found')
+          text = text.replace(old_panel, new_panel, 1)
+
+          old_list = "max-h-[62vh] space-y-1.5 overflow-y-auto pr-1"
+          new_list = "max-h-[78vh] space-y-1.5 overflow-y-auto pr-1"
+          if old_list not in text:
+              raise SystemExit('hover panel list height classes not found')
+          text = text.replace(old_list, new_list, 1)
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Commit resized panel
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/resize_calendar_hover_panel.yml
+          git add src/app/monthly-production-plan/page.tsx
+          git commit -m "fix: 월간 달력 확대창 가로 2배 세로 확장"
+          git push
