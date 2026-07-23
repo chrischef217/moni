@@ -619,7 +619,7 @@ export default function MonthlyProductionPlanPage() {
                         onMouseLeave={scheduleExpansionClose}
                         onClick={(event) => event.stopPropagation()}
                         style={{ transformOrigin }}
-                        className={`absolute z-50 w-[300%] max-w-[720px] rounded-2xl border border-blue-400/70 bg-[#0a192d]/[0.98] p-3 shadow-2xl shadow-black/60 backdrop-blur-md transition-all duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${horizontalClass} ${verticalClass} ${isExpanded ? 'pointer-events-auto scale-100 opacity-100' : 'pointer-events-none scale-[0.82] opacity-0'}`}
+                        className={`absolute z-50 w-[200%] max-w-[520px] rounded-2xl border border-blue-400/70 bg-[#0a192d]/[0.98] p-3 shadow-2xl shadow-black/60 backdrop-blur-md transition-all duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${horizontalClass} ${verticalClass} ${isExpanded ? 'pointer-events-auto scale-100 opacity-100' : 'pointer-events-none scale-[0.82] opacity-0'}`}
                       >
                         <div className="mb-2 flex items-center justify-between gap-3 border-b border-slate-700/80 pb-2">
                           <div className="flex items-baseline gap-2">
@@ -634,7 +634,7 @@ export default function MonthlyProductionPlanPage() {
                             + 예상 계획 추가
                           </button>
                         </div>
-                        <div className="max-h-[62vh] space-y-1.5 overflow-y-auto pr-1">
+                        <div className="max-h-[78vh] space-y-1.5 overflow-y-auto pr-1">
                           {dayEvents.map((event) => renderCalendarCard(event, true))}
                         </div>
                       </div>
