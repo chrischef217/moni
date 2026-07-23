@@ -12,6 +12,7 @@ import WorkOrderGramController from '@/components/WorkOrderGramController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyProductionCalendarDayStyleController'
 import './globals.css'
+import './monthly-production-calendar.css'
 
 export const metadata: Metadata = {
   title: 'Moni — 경영 고민? 모니한테 물어봐',
