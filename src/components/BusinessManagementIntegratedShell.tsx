@@ -4,6 +4,8 @@ import { useEffect, useRef } from 'react'
 import BusinessManagementModule from '@/components/BusinessManagementModule'
 import SalesOperationsV2Module from '@/components/SalesOperationsV2Module'
 import SalesReceivablesModule from '@/components/SalesReceivablesModule'
+import SalesVariantPricingModule from '@/components/SalesVariantPricingModule'
+import SalesOrderV4Module from '@/components/SalesOrderV4Module'
 import RegularEmployeeManagementModule from '@/components/RegularEmployeeManagementModule'
 
 type MainTab = 'hr' | 'sales' | 'accounting' | 'salesManagement'
@@ -21,6 +23,8 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
   const appliedRef = useRef(false)
   const regularEmployeeView = initialTab === 'hr' && initialView === 'employees'
   const receivablesView = initialTab === 'salesManagement' && initialView === 'receivables'
+  const pricingView = initialTab === 'salesManagement' && initialView === 'pricing'
+  const salesV4View = initialTab === 'salesManagement' && (initialView === 'sales' || initialView === 'statements')
 
   useEffect(() => {
     appliedRef.current = false
@@ -79,6 +83,11 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
     return () => window.clearInterval(timer)
   }, [initialTab, initialView, regularEmployeeView])
 
+  let salesManagementContent = <SalesOperationsV2Module key={`sales-management-${initialView}`} initialView={initialView} />
+  if (pricingView) salesManagementContent = <SalesVariantPricingModule key="sales-pricing-v4" />
+  if (salesV4View) salesManagementContent = <SalesOrderV4Module key={`sales-orders-v4-${initialView}`} mode={initialView === 'statements' ? 'statements' : 'sales'} />
+  if (receivablesView) salesManagementContent = <SalesReceivablesModule key="sales-receivables" />
+
   return (
     <div
       data-business-management-shell
@@ -86,9 +95,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
       data-regular-employee-shell={regularEmployeeView ? 'true' : undefined}
     >
       {initialTab === 'salesManagement'
-        ? receivablesView
-          ? <SalesReceivablesModule key="sales-receivables" />
-          : <SalesOperationsV2Module key={`sales-management-${initialView}`} initialView={initialView} />
+        ? salesManagementContent
         : regularEmployeeView
           ? <RegularEmployeeManagementModule key="regular-employees" />
           : <BusinessManagementModule key={`${initialTab}-${initialView}`} initialTab={initialTab} />}

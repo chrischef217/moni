@@ -4,9 +4,8 @@ import { useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
 const items = [
-  { label: '제품 판매설정', view: 'products' },
+  { label: '판매규격·단가', view: 'pricing' },
   { label: '거래처 관리', view: 'clients' },
-  { label: '거래처별 판매조건', view: 'terms' },
   { label: '판매 등록', view: 'sales' },
   { label: '거래명세표', view: 'statements' },
   { label: '수금·미수금', view: 'receivables' },
@@ -28,7 +27,7 @@ function currentParams() {
   const params = new URLSearchParams(window.location.search)
   return {
     tab: params.get('tab') || '',
-    view: params.get('view') || 'products',
+    view: params.get('view') || 'pricing',
   }
 }
 
@@ -99,7 +98,7 @@ export default function SalesManagementMenuController() {
       categoryButton.dataset.salesManagementCategory = 'true'
       categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
       categoryButton.innerHTML = `<span data-sales-management-icon class="flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}">▤</span><span class="flex-1">판매관리</span><span data-sales-arrow class="text-xs transition-transform duration-300">⌄</span>`
-      categoryButton.addEventListener('click', () => router.push(salesManagementHref('products')))
+      categoryButton.addEventListener('click', () => router.push(salesManagementHref('pricing')))
 
       const submenu = document.createElement('div')
       submenu.className = 'grid grid-rows-[0fr] opacity-0 transition-all duration-300 ease-out'
