@@ -72,6 +72,40 @@
   96% { transform: scale(1); opacity: 1; }
 }
 
+@keyframes moni-loss-sweep {
+  0% { transform: translate3d(-170%, 0, 0); opacity: 0; }
+  12% { opacity: 0.85; }
+  46% { opacity: 0.85; }
+  58% { transform: translate3d(430%, 0, 0); opacity: 0; }
+  100% { transform: translate3d(430%, 0, 0); opacity: 0; }
+}
+
+@keyframes moni-loss-value-loop {
+  0%, 66%, 100% { transform: scale(1); filter: brightness(1); }
+  73% { transform: scale(1.08); filter: brightness(1.25); }
+  81% { transform: scale(1); filter: brightness(1); }
+}
+
+@keyframes moni-alert-rail {
+  0% { transform: translate3d(0, -180%, 0); opacity: 0; }
+  16% { opacity: 0.9; }
+  44% { opacity: 0.9; }
+  60% { transform: translate3d(0, 360%, 0); opacity: 0; }
+  100% { transform: translate3d(0, 360%, 0); opacity: 0; }
+}
+
+@keyframes moni-alert-icon-loop {
+  0%, 68%, 100% { transform: scale(1); }
+  75% { transform: scale(1.09); }
+  82% { transform: scale(1); }
+}
+
+@keyframes moni-alert-metric-loop {
+  0%, 70%, 100% { opacity: 1; transform: translateX(0); }
+  76% { opacity: 0.58; transform: translateX(-2px); }
+  82% { opacity: 1; transform: translateX(0); }
+}
+
 [data-production-dashboard-panel='true'] {
   position: relative;
 }
@@ -181,6 +215,84 @@
   will-change: transform, opacity;
   animation: moni-alert-loop 4.8s ease-in-out infinite;
 }
+
+/* 제품별 생산 로스 TOP 5: 가로바 안에 얇은 하이라이트가 계속 흐른다. */
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div .h-2.overflow-hidden.rounded-full > div {
+  position: relative;
+  overflow: hidden;
+  transform: none;
+}
+
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div .h-2.overflow-hidden.rounded-full > div::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 24%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.72), transparent);
+  will-change: transform, opacity;
+  animation: moni-loss-sweep 2.9s linear infinite;
+}
+
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div > div:first-child > span.text-sm.font-bold {
+  display: inline-block;
+  transform-origin: right center;
+  will-change: transform, filter;
+  animation: moni-loss-value-loop 4.2s ease-in-out infinite;
+}
+
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div:nth-child(2) .h-2.overflow-hidden.rounded-full > div::after,
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div:nth-child(2) > div:first-child > span.text-sm.font-bold { animation-delay: -0.7s; }
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div:nth-child(3) .h-2.overflow-hidden.rounded-full > div::after,
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div:nth-child(3) > div:first-child > span.text-sm.font-bold { animation-delay: -1.4s; }
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div:nth-child(4) .h-2.overflow-hidden.rounded-full > div::after,
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div:nth-child(4) > div:first-child > span.text-sm.font-bold { animation-delay: -2.1s; }
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div:nth-child(5) .h-2.overflow-hidden.rounded-full > div::after,
+[data-production-dashboard-panel='true'] .space-y-3.p-5 > div:nth-child(5) > div:first-child > span.text-sm.font-bold { animation-delay: -2.8s; }
+
+/* 예측 및 주의: 카드 자체는 고정하고 왼쪽 레일, 아이콘, 핵심 수치만 순차 반응한다. */
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center {
+  position: relative;
+  overflow: hidden;
+}
+
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  height: 34%;
+  border-radius: 999px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(248,113,113,0.95), rgba(251,191,36,0.9), transparent);
+  will-change: transform, opacity;
+  animation: moni-alert-rail 3.8s linear infinite;
+}
+
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center > span.flex.h-9.w-9 {
+  will-change: transform;
+  animation: moni-alert-icon-loop 4.4s ease-in-out infinite;
+}
+
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center > span.shrink-0.text-xs.font-bold {
+  display: inline-block;
+  will-change: transform, opacity;
+  animation: moni-alert-metric-loop 4.8s steps(2, end) infinite;
+}
+
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(2)::before,
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(2) > span.flex.h-9.w-9,
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(2) > span.shrink-0.text-xs.font-bold { animation-delay: -0.9s; }
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(3)::before,
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(3) > span.flex.h-9.w-9,
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(3) > span.shrink-0.text-xs.font-bold { animation-delay: -1.8s; }
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(4)::before,
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(4) > span.flex.h-9.w-9,
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(4) > span.shrink-0.text-xs.font-bold { animation-delay: -2.7s; }
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(5)::before,
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(5) > span.flex.h-9.w-9,
+[data-production-dashboard-panel='true'] .space-y-2.p-4 > div.flex.items-center:nth-child(5) > span.shrink-0.text-xs.font-bold { animation-delay: -3.6s; }
 
 [data-production-dashboard-panel='true'] button {
   transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
