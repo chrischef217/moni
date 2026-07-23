@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import BusinessManagementModule from '@/components/BusinessManagementModule'
 import SalesOperationsV2Module from '@/components/SalesOperationsV2Module'
+import SalesReceivablesModule from '@/components/SalesReceivablesModule'
 import RegularEmployeeManagementModule from '@/components/RegularEmployeeManagementModule'
 
 type MainTab = 'hr' | 'sales' | 'accounting' | 'salesManagement'
@@ -19,6 +20,7 @@ function exactText(element: Element) {
 export default function BusinessManagementIntegratedShell({ initialTab, initialView }: Props) {
   const appliedRef = useRef(false)
   const regularEmployeeView = initialTab === 'hr' && initialView === 'employees'
+  const receivablesView = initialTab === 'salesManagement' && initialView === 'receivables'
 
   useEffect(() => {
     appliedRef.current = false
@@ -84,7 +86,9 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
       data-regular-employee-shell={regularEmployeeView ? 'true' : undefined}
     >
       {initialTab === 'salesManagement'
-        ? <SalesOperationsV2Module key={`sales-management-${initialView}`} initialView={initialView} />
+        ? receivablesView
+          ? <SalesReceivablesModule key="sales-receivables" />
+          : <SalesOperationsV2Module key={`sales-management-${initialView}`} initialView={initialView} />
         : regularEmployeeView
           ? <RegularEmployeeManagementModule key="regular-employees" />
           : <BusinessManagementModule key={`${initialTab}-${initialView}`} initialTab={initialTab} />}

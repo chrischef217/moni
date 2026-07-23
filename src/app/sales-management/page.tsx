@@ -12,7 +12,7 @@ export default async function SalesManagementPage({ searchParams }: PageProps) {
   if (!session) redirect('/')
   if (session.role !== 'admin') redirect('/freelancer')
 
-  const allowed = ['products', 'clients', 'terms', 'sales', 'statements', 'settlements', 'statistics', 'tax-invoices']
+  const allowed = ['products', 'clients', 'terms', 'sales', 'statements', 'receivables', 'settlements', 'statistics', 'tax-invoices']
   const requested = String(searchParams?.view ?? 'products')
   const view = allowed.includes(requested) ? requested : 'products'
   redirect(`/business-management?tab=sales-management&view=${view}`)
