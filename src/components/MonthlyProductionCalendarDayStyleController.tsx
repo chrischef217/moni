@@ -130,6 +130,7 @@ export default function MonthlyProductionCalendarDayStyleController() {
         const date = calendarCell.date
         const weekday = new Date(`${date}T00:00:00Z`).getUTCDay()
         const holidayNames = holidays[date] ?? []
+        const holidayText = holidayNames.join(' · ')
         const isHoliday = holidayNames.length > 0
         const isSunday = weekday === 0
         const isSaturday = weekday === 6
@@ -157,12 +158,13 @@ export default function MonthlyProductionCalendarDayStyleController() {
             holidayLabel.dataset.moniHolidayLabel = 'true'
             cell.appendChild(holidayLabel)
           }
-          holidayLabel.textContent = holidayNames.join(' · ')
-          holidayLabel.title = holidayNames.join(' · ')
-          cell.title = `${date} · ${holidayNames.join(' · ')}`
+          if (holidayLabel.textContent !== holidayText) holidayLabel.textContent = holidayText
+          if (holidayLabel.title !== holidayText) holidayLabel.title = holidayText
+          const cellTitle = `${date} · ${holidayText}`
+          if (cell.title !== cellTitle) cell.title = cellTitle
         } else {
           holidayLabel?.remove()
-          cell.removeAttribute('title')
+          if (cell.hasAttribute('title')) cell.removeAttribute('title')
         }
       })
     }
