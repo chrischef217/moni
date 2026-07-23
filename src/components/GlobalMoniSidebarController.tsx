@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
-type CategoryKey = 'dashboard' | 'ai' | 'production' | 'hr' | 'sales' | 'accounting' | 'admin' | 'audit'
-type MenuItem = { label: string; target?: string; href?: string; parentTarget?: string }
+type CategoryKey = 'dashboard' | 'ai' | 'production' | 'hr' | 'sales' | 'salesManagement' | 'accounting' | 'admin' | 'audit'
+type MenuItem = { label: string; target?: string; href?: string; parentTarget?: string; view?: string }
 type Category = { key: CategoryKey; label: string; icon: string; items: MenuItem[] }
 
 const PIN_STORAGE_KEY = 'moni-sidebar-pinned'
@@ -14,6 +14,7 @@ const categories: Category[] = [
   {
     key: 'dashboard', label: '통합 대시보드', icon: '⌂', items: [
       { label: '경영 Control Tower', href: '/' },
+      { label: 'MONI Intelligence', href: '/intelligence' },
     ],
   },
   {
@@ -48,13 +49,28 @@ const categories: Category[] = [
   {
     key: 'sales', label: '영업관리', icon: '↗', items: [
       { label: '고객사 및 담당자', href: '/business-management?tab=sales&view=clients' },
+      { label: '영업 목표매출', href: '/business-management?tab=sales&view=targets' },
       { label: '영업기회 파이프라인', href: '/business-management?tab=sales&view=pipeline' },
       { label: '영업활동·상담기록', href: '/business-management?tab=sales&view=activities' },
     ],
   },
   {
+    key: 'salesManagement', label: '판매관리', icon: '▤', items: [
+      { label: '판매규격·단가', href: '/business-management?tab=sales-management&view=pricing', view: 'pricing' },
+      { label: '거래처 관리', href: '/business-management?tab=sales-management&view=clients', view: 'clients' },
+      { label: '판매 등록', href: '/business-management?tab=sales-management&view=sales', view: 'sales' },
+      { label: '거래명세표', href: '/business-management?tab=sales-management&view=statements', view: 'statements' },
+      { label: '수금·미수금', href: '/business-management?tab=sales-management&view=receivables', view: 'receivables' },
+      { label: '영업 정산서', href: '/business-management?tab=sales-management&view=settlements', view: 'settlements' },
+      { label: '판매 통계', href: '/business-management?tab=sales-management&view=statistics', view: 'statistics' },
+      { label: '세금계산서', href: '/business-management?tab=sales-management&view=tax-invoices', view: 'tax-invoices' },
+      { label: '수출 관리', href: '/sales-management/export', view: 'exports' },
+    ],
+  },
+  {
     key: 'accounting', label: '회계·세무관리', icon: '₩', items: [
       { label: '월별 프리랜서 정산', href: '/business-management?tab=accounting&view=settlements' },
+      { label: '현금흐름·세무', href: '/business-management?tab=accounting&view=financial-control' },
       { label: '생산 근무보정', href: '/business-management?tab=accounting&view=work-logs' },
       { label: '정산서 출력', href: '/business-management?tab=accounting&view=print' },
     ],
@@ -98,13 +114,26 @@ function businessRouteState(search: string): { category: CategoryKey; item: stri
   const tab = params.get('tab') || 'hr'
   const view = params.get('view') || ''
 
+  if (tab === 'sales-management') {
+    if (view === 'clients') return { category: 'salesManagement', item: '거래처 관리' }
+    if (view === 'sales') return { category: 'salesManagement', item: '판매 등록' }
+    if (view === 'statements') return { category: 'salesManagement', item: '거래명세표' }
+    if (view === 'receivables') return { category: 'salesManagement', item: '수금·미수금' }
+    if (view === 'settlements') return { category: 'salesManagement', item: '영업 정산서' }
+    if (view === 'statistics') return { category: 'salesManagement', item: '판매 통계' }
+    if (view === 'tax-invoices') return { category: 'salesManagement', item: '세금계산서' }
+    return { category: 'salesManagement', item: '판매규격·단가' }
+  }
+
   if (tab === 'sales') {
+    if (view === 'targets') return { category: 'sales', item: '영업 목표매출' }
     if (view === 'pipeline') return { category: 'sales', item: '영업기회 파이프라인' }
     if (view === 'activities') return { category: 'sales', item: '영업활동·상담기록' }
     return { category: 'sales', item: '고객사 및 담당자' }
   }
 
   if (tab === 'accounting') {
+    if (view === 'financial-control') return { category: 'accounting', item: '현금흐름·세무' }
     if (view === 'work-logs') return { category: 'accounting', item: '생산 근무보정' }
     if (view === 'print') return { category: 'accounting', item: '정산서 출력' }
     return { category: 'accounting', item: '월별 프리랜서 정산' }
@@ -122,18 +151,22 @@ function routeState(pathname: string, search = ''): { category: CategoryKey; ite
     if (params.get('legacy') !== '1') return { category: 'dashboard', item: '경영 Control Tower' }
     return { category: 'ai', item: 'AI 채팅' }
   }
+  if (pathname === '/intelligence') return { category: 'dashboard', item: 'MONI Intelligence' }
   if (pathname === '/monthly-production-plan') return { category: 'production', item: '월간 생산계획' }
   if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
   if (pathname === '/business-management') return businessRouteState(search)
+  if (pathname === '/sales-management/export') return { category: 'salesManagement', item: '수출 관리' }
   if (pathname === '/audit') return { category: 'audit', item: '감사 기록' }
   return { category: 'dashboard', item: '경영 Control Tower' }
 }
 
 function isStandalonePath(pathname: string) {
   return pathname === '/'
+    || pathname === '/intelligence'
     || pathname === '/monthly-production-plan'
     || pathname === '/production-daily'
     || pathname === '/business-management'
+    || pathname === '/sales-management/export'
     || pathname === '/audit'
 }
 
@@ -429,9 +462,11 @@ export default function GlobalMoniSidebarController() {
           {categories.map((category) => {
             const expanded = expandedCategory === category.key
             const active = activeCategory === category.key
+            const salesManagementCategory = category.key === 'salesManagement'
             return (
               <div
                 key={category.key}
+                data-sales-management-menu={salesManagementCategory ? 'true' : undefined}
                 onMouseEnter={() => {
                   if (window.innerWidth >= 1024) setHoveredCategory(category.key)
                 }}
@@ -440,13 +475,17 @@ export default function GlobalMoniSidebarController() {
               >
                 <button
                   data-moni-global-nav
+                  data-sales-management-category={salesManagementCategory ? 'true' : undefined}
                   type="button"
                   onClick={() => openCategory(category)}
                   className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${
                     active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'
                   }`}
                 >
-                  <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}`}>{category.icon}</span>
+                  <span
+                    data-sales-management-icon={salesManagementCategory ? 'true' : undefined}
+                    className={`flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}`}
+                  >{category.icon}</span>
                   <span className="flex-1">{category.label}</span>
                   <span className={`text-xs transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`}>⌄</span>
                 </button>
@@ -457,6 +496,10 @@ export default function GlobalMoniSidebarController() {
                       {category.items.map((item) => (
                         <button
                           data-moni-global-nav
+                          data-sales-view={salesManagementCategory ? item.view : undefined}
+                          data-sales-targets-nav={item.label === '영업 목표매출' ? 'true' : undefined}
+                          data-financial-control-nav={item.label === '현금흐름·세무' ? 'true' : undefined}
+                          data-intelligence-nav={item.label === 'MONI Intelligence' ? 'true' : undefined}
                           key={item.label}
                           type="button"
                           onClick={() => openItem(category, item)}
