@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
-type CategoryKey = 'ai' | 'production' | 'hr' | 'sales' | 'accounting' | 'admin' | 'audit'
+type CategoryKey = 'dashboard' | 'ai' | 'production' | 'hr' | 'sales' | 'accounting' | 'admin' | 'audit'
 type MenuItem = { label: string; target?: string; href?: string; parentTarget?: string }
 type Category = { key: CategoryKey; label: string; icon: string; items: MenuItem[] }
 
@@ -11,6 +11,11 @@ const PIN_STORAGE_KEY = 'moni-sidebar-pinned'
 const PEEK_CLOSE_DELAY_MS = 140
 
 const categories: Category[] = [
+  {
+    key: 'dashboard', label: '통합 대시보드', icon: '⌂', items: [
+      { label: '경영 Control Tower', href: '/' },
+    ],
+  },
   {
     key: 'ai', label: 'AI 챗팅', icon: '✦', items: [
       { label: 'AI 채팅', target: 'AI 채팅' },
@@ -112,18 +117,29 @@ function businessRouteState(search: string): { category: CategoryKey; item: stri
 }
 
 function routeState(pathname: string, search = ''): { category: CategoryKey; item: string } {
+  if (pathname === '/') {
+    const params = new URLSearchParams(search)
+    if (params.get('legacy') !== '1') return { category: 'dashboard', item: '경영 Control Tower' }
+    return { category: 'ai', item: 'AI 채팅' }
+  }
   if (pathname === '/monthly-production-plan') return { category: 'production', item: '월간 생산계획' }
   if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
   if (pathname === '/business-management') return businessRouteState(search)
   if (pathname === '/audit') return { category: 'audit', item: '감사 기록' }
-  return { category: 'ai', item: 'AI 채팅' }
+  return { category: 'dashboard', item: '경영 Control Tower' }
 }
 
 function isStandalonePath(pathname: string) {
-  return pathname === '/monthly-production-plan'
+  return pathname === '/'
+    || pathname === '/monthly-production-plan'
     || pathname === '/production-daily'
     || pathname === '/business-management'
     || pathname === '/audit'
+}
+
+function isLegacyHome() {
+  if (typeof window === 'undefined') return false
+  return window.location.pathname === '/' && new URLSearchParams(window.location.search).get('legacy') === '1'
 }
 
 export default function GlobalMoniSidebarController() {
@@ -189,23 +205,17 @@ export default function GlobalMoniSidebarController() {
 
   useEffect(() => {
     const syncRoute = () => {
+      const pending = window.sessionStorage.getItem('moni-pending-nav')
+      if (pathname === '/' && pending && isLegacyHome()) return
       const next = routeState(pathname, window.location.search)
-      if (isStandalonePath(pathname)) {
-        setActiveCategory(next.category)
-        setActiveItem(next.item)
-      } else if (pathname === '/') {
-        const pending = window.sessionStorage.getItem('moni-pending-nav')
-        if (!pending) {
-          setActiveCategory('ai')
-          setActiveItem('AI 채팅')
-        }
-      }
+      setActiveCategory(next.category)
+      setActiveItem(next.item)
+      setHoveredCategory(null)
+      setMobileExpandedCategory(null)
     }
 
     syncRoute()
     window.addEventListener('popstate', syncRoute)
-    setHoveredCategory(null)
-    setMobileExpandedCategory(null)
     return () => window.removeEventListener('popstate', syncRoute)
   }, [pathname])
 
@@ -247,7 +257,7 @@ export default function GlobalMoniSidebarController() {
       }
 
       const pending = window.sessionStorage.getItem('moni-pending-nav')
-      if (pending && pathname === '/' && logoutButton) {
+      if (pending && pathname === '/' && isLegacyHome() && logoutButton) {
         try {
           const payload = JSON.parse(pending) as { category: CategoryKey; target: string; label: string; parentTarget?: string }
           const category = categories.find((item) => item.key === payload.category)
@@ -280,6 +290,16 @@ export default function GlobalMoniSidebarController() {
     }
   }, [pathname])
 
+  function moveToLegacy(category: Category, target: string, label: string, parentTarget?: string) {
+    window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({
+      category: category.key,
+      target,
+      label,
+      parentTarget,
+    }))
+    router.push('/?legacy=1')
+  }
+
   function openCategory(category: Category) {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       setMobileExpandedCategory((current) => current === category.key ? null : category.key)
@@ -295,13 +315,8 @@ export default function GlobalMoniSidebarController() {
     }
 
     const target = category.label === 'AI 챗팅' ? 'AI 채팅' : category.label
-    if (pathname !== '/') {
-      window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({
-        category: category.key,
-        target,
-        label: category.label,
-      }))
-      router.push('/')
+    if (pathname !== '/' || !isLegacyHome()) {
+      moveToLegacy(category, target, category.label)
       return
     }
     clickDashboardTarget(target)
@@ -320,14 +335,8 @@ export default function GlobalMoniSidebarController() {
     if (!item.target) return
 
     const parentTarget = item.parentTarget || (category.label === 'AI 챗팅' ? 'AI 채팅' : category.label)
-    if (pathname !== '/') {
-      window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({
-        category: category.key,
-        target: item.target,
-        label: item.label,
-        parentTarget,
-      }))
-      router.push('/')
+    if (pathname !== '/' || !isLegacyHome()) {
+      moveToLegacy(category, item.target, item.label, parentTarget)
       return
     }
 
