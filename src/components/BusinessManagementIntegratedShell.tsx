@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import BusinessManagementModule from '@/components/BusinessManagementModule'
-import SalesManagementModule from '@/components/SalesManagementModule'
+import SalesOperationsV2Module from '@/components/SalesOperationsV2Module'
 import RegularEmployeeManagementModule from '@/components/RegularEmployeeManagementModule'
 
 type MainTab = 'hr' | 'sales' | 'accounting' | 'salesManagement'
@@ -84,7 +84,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
       data-regular-employee-shell={regularEmployeeView ? 'true' : undefined}
     >
       {initialTab === 'salesManagement'
-        ? <SalesManagementModule key={`sales-management-${initialView}`} initialView={initialView} />
+        ? <SalesOperationsV2Module key={`sales-management-${initialView}`} initialView={initialView} />
         : regularEmployeeView
           ? <RegularEmployeeManagementModule key="regular-employees" />
           : <BusinessManagementModule key={`${initialTab}-${initialView}`} initialTab={initialTab} />}
