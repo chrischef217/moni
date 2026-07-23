@@ -9,6 +9,7 @@ const items = [
   { label: '거래처별 판매조건', view: 'terms' },
   { label: '판매 등록', view: 'sales' },
   { label: '거래명세표', view: 'statements' },
+  { label: '수금·미수금', view: 'receivables' },
   { label: '영업 정산서', view: 'settlements' },
   { label: '판매 통계', view: 'statistics' },
   { label: '세금계산서', view: 'tax-invoices' },
