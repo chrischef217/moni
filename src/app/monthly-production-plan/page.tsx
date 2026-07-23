@@ -172,7 +172,7 @@ function calendarEventClasses(event: CalendarEvent) {
       marker: 'border-dashed border-green-500 bg-green-500/20',
     }
   }
-  if (event.actual_state === 'completed') {
+  if (event.source === 'actual' && event.actual_state === 'completed') {
     return {
       card: 'border-amber-400 bg-amber-400/20 text-amber-50',
       marker: 'border-amber-400 bg-amber-400/30',
