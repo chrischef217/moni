@@ -1,0 +1,80 @@
+@keyframes moni-calendar-today-border {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgb(52 211 153 / 0.5),
+      0 0 0 0 rgb(52 211 153 / 0);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 2px rgb(110 231 183 / 1),
+      0 0 16px 2px rgb(52 211 153 / 0.32);
+  }
+}
+
+.moni-calendar-saturday {
+  background-color: rgb(23 37 84 / 0.34) !important;
+}
+
+.moni-calendar-saturday:hover {
+  background-color: rgb(30 58 138 / 0.42) !important;
+}
+
+.moni-calendar-sunday {
+  background-color: rgb(76 5 25 / 0.3) !important;
+}
+
+.moni-calendar-sunday:hover {
+  background-color: rgb(136 19 55 / 0.38) !important;
+}
+
+.moni-calendar-holiday {
+  background:
+    linear-gradient(135deg, rgb(127 29 29 / 0.26), rgb(76 5 25 / 0.42)) !important;
+}
+
+.moni-calendar-holiday:hover {
+  background:
+    linear-gradient(135deg, rgb(153 27 27 / 0.36), rgb(136 19 55 / 0.46)) !important;
+}
+
+.moni-calendar-date-saturday {
+  color: rgb(147 197 253) !important;
+}
+
+.moni-calendar-date-sunday,
+.moni-calendar-date-holiday {
+  color: rgb(253 164 175) !important;
+}
+
+[data-moni-holiday-label='true'] {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  z-index: 2;
+  max-width: calc(100% - 2.7rem);
+  overflow: hidden;
+  border: 1px solid rgb(251 113 133 / 0.38);
+  border-radius: 0.4rem;
+  padding: 0.15rem 0.38rem;
+  background: rgb(244 63 94 / 0.11);
+  color: rgb(254 205 211);
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.moni-calendar-today {
+  z-index: 1;
+  animation: moni-calendar-today-border 1.45s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moni-calendar-today {
+    animation: none;
+    box-shadow: inset 0 0 0 2px rgb(110 231 183 / 0.95);
+  }
+}
