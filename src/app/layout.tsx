@@ -10,6 +10,7 @@ import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutContr
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
 import SalesManagementMenuController from '@/components/SalesManagementMenuController'
 import SalesTargetsMenuController from '@/components/SalesTargetsMenuController'
+import FinancialControlMenuController from '@/components/FinancialControlMenuController'
 import WorkOrderGramController from '@/components/WorkOrderGramController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyProductionCalendarDayStyleController'
@@ -44,6 +45,7 @@ export default function RootLayout({
         <ProductionCompletionMetadataController />
         <SalesManagementMenuController />
         <SalesTargetsMenuController />
+        <FinancialControlMenuController />
         <WorkOrderGramController />
         <SidebarPinToggleVisualFix />
         <MonthlyProductionCalendarDayStyleController />

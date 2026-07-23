@@ -7,6 +7,7 @@ import SalesReceivablesModule from '@/components/SalesReceivablesModule'
 import SalesVariantPricingModule from '@/components/SalesVariantPricingModule'
 import SalesOrderV4Module from '@/components/SalesOrderV4Module'
 import SalesTargetsModule from '@/components/SalesTargetsModule'
+import FinancialControlModule from '@/components/FinancialControlModule'
 import RegularEmployeeManagementModule from '@/components/RegularEmployeeManagementModule'
 
 type MainTab = 'hr' | 'sales' | 'accounting' | 'salesManagement'
@@ -24,6 +25,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
   const appliedRef = useRef(false)
   const regularEmployeeView = initialTab === 'hr' && initialView === 'employees'
   const salesTargetView = initialTab === 'sales' && initialView === 'targets'
+  const financialControlView = initialTab === 'accounting' && initialView === 'financial-control'
   const receivablesView = initialTab === 'salesManagement' && initialView === 'receivables'
   const pricingView = initialTab === 'salesManagement' && initialView === 'pricing'
   const salesV4View = initialTab === 'salesManagement' && (initialView === 'sales' || initialView === 'statements')
@@ -40,7 +42,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
       const ownAside = shell.querySelector<HTMLElement>('main > div > aside')
       if (ownAside) ownAside.style.display = 'none'
 
-      if (initialTab === 'salesManagement' || regularEmployeeView || salesTargetView) {
+      if (initialTab === 'salesManagement' || regularEmployeeView || salesTargetView || financialControlView) {
         appliedRef.current = true
         return
       }
@@ -83,7 +85,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
     }, 120)
 
     return () => window.clearInterval(timer)
-  }, [initialTab, initialView, regularEmployeeView, salesTargetView])
+  }, [initialTab, initialView, regularEmployeeView, salesTargetView, financialControlView])
 
   let salesManagementContent = <SalesOperationsV2Module key={`sales-management-${initialView}`} initialView={initialView} />
   if (pricingView) salesManagementContent = <SalesVariantPricingModule key="sales-pricing-v4" />
@@ -100,9 +102,11 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
         ? salesManagementContent
         : salesTargetView
           ? <SalesTargetsModule key="sales-targets" />
-          : regularEmployeeView
-            ? <RegularEmployeeManagementModule key="regular-employees" />
-            : <BusinessManagementModule key={`${initialTab}-${initialView}`} initialTab={initialTab} />}
+          : financialControlView
+            ? <FinancialControlModule key="financial-control" />
+            : regularEmployeeView
+              ? <RegularEmployeeManagementModule key="regular-employees" />
+              : <BusinessManagementModule key={`${initialTab}-${initialView}`} initialTab={initialTab} />}
       <style jsx global>{`
         [data-business-management-shell] main > div > aside {
           display: none !important;
