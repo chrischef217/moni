@@ -4,6 +4,7 @@ import MonthlyProductionRequirementPrintController from '@/components/MonthlyPro
 import MonthlyProductionRequirementSafetyGuard from '@/components/MonthlyProductionRequirementSafetyGuard'
 import MonthlyProductionPurchaseBudgetController from '@/components/MonthlyProductionPurchaseBudgetController'
 import RawMaterialUnitPriceController from '@/components/RawMaterialUnitPriceController'
+import RawMaterialTypeFilterController from '@/components/RawMaterialTypeFilterController'
 import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
@@ -33,6 +34,7 @@ export default function RootLayout({
         <MonthlyProductionRequirementSafetyGuard />
         <MonthlyProductionPurchaseBudgetController />
         <RawMaterialUnitPriceController />
+        <RawMaterialTypeFilterController />
         <GlobalMoniSidebarController />
         <GlobalSidebarLayoutController />
         <ProductionCompletionMetadataController />
