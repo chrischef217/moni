@@ -1,61 +1,82 @@
-/* MONI 생산 대시보드 경량 데이터 모션
-   배경/카드 자체를 움직이지 않고 숫자·그래프·상태바만 짧게 강조한다. */
+/* MONI 생산 대시보드 경량 연속 데이터 모션
+   배경/카드 자체는 정지시키고 숫자·그래프·상태바만 계속 살아있게 한다. */
 
-@keyframes moni-number-reveal {
+@keyframes moni-number-loop {
   0% {
-    opacity: 0;
+    opacity: 0.35;
     clip-path: inset(0 100% 0 0);
-    transform: translateY(2px);
+    transform: translateY(1px);
   }
-  100% {
+  8% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0);
+  }
+  82% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0);
+  }
+  88% {
+    opacity: 0.82;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0);
+  }
+  94%, 100% {
     opacity: 1;
     clip-path: inset(0 0 0 0);
     transform: translateY(0);
   }
 }
 
-@keyframes moni-number-caret {
-  0%, 18%, 36%, 54%, 72% { opacity: 1; }
-  9%, 27%, 45%, 63%, 81%, 100% { opacity: 0; }
+@keyframes moni-number-caret-loop {
+  0%, 2%, 4%, 6%, 8%, 10% { opacity: 1; }
+  1%, 3%, 5%, 7%, 9%, 11%, 100% { opacity: 0; }
 }
 
-@keyframes moni-progress-fill {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
+@keyframes moni-progress-sweep {
+  0% { transform: translate3d(-160%, 0, 0); opacity: 0; }
+  12% { opacity: 0.9; }
+  42% { opacity: 0.9; }
+  55% { transform: translate3d(420%, 0, 0); opacity: 0; }
+  100% { transform: translate3d(420%, 0, 0); opacity: 0; }
 }
 
-@keyframes moni-line-draw {
-  from { stroke-dashoffset: 1800; opacity: 0.35; }
-  to { stroke-dashoffset: 0; opacity: 1; }
+@keyframes moni-line-flow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -60; }
 }
 
-@keyframes moni-line-fade {
-  from { opacity: 0.25; }
-  to { opacity: 1; }
+@keyframes moni-plan-line-flow {
+  0%, 100% { stroke-dashoffset: 0; opacity: 0.72; }
+  50% { stroke-dashoffset: -26; opacity: 0.95; }
 }
 
-@keyframes moni-bar-rise {
-  from { transform: scaleY(0); opacity: 0.25; }
-  to { transform: scaleY(1); opacity: 1; }
+@keyframes moni-bar-wave {
+  0%, 72%, 100% { transform: scaleY(1); opacity: 0.82; }
+  8% { transform: scaleY(1.07); opacity: 1; }
+  16% { transform: scaleY(1); opacity: 0.9; }
 }
 
-@keyframes moni-data-dot {
-  0% { transform: scale(0.55); opacity: 0.45; }
-  65% { transform: scale(1.28); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
+@keyframes moni-data-dot-loop {
+  0%, 68%, 100% { transform: scale(1); opacity: 0.82; }
+  76% { transform: scale(1.45); opacity: 1; }
+  84% { transform: scale(1); opacity: 0.9; }
 }
 
-@keyframes moni-alert-once {
-  0%, 100% { transform: scale(1); }
-  35% { transform: scale(1.07); }
-  65% { transform: scale(0.98); }
+@keyframes moni-alert-loop {
+  0%, 72%, 100% { transform: scale(1); opacity: 1; }
+  78% { transform: scale(1.06); opacity: 1; }
+  84% { transform: scale(0.99); opacity: 0.9; }
+  90% { transform: scale(1.04); opacity: 1; }
+  96% { transform: scale(1); opacity: 1; }
 }
 
 [data-production-dashboard-panel='true'] {
   position: relative;
 }
 
-/* 배경 오로라, 움직이는 그리드, blur/backdrop-filter, 카드 3D/상시 glow는 사용하지 않는다. */
+/* 성능 저하 원인이었던 배경 오로라·그리드·blur·카드 3D/상시 glow는 계속 비활성화한다. */
 [data-production-dashboard-panel='true']::before,
 [data-production-dashboard-panel='true']::after,
 [data-production-dashboard-panel='true'] > section::before,
@@ -79,17 +100,17 @@
   transform: none !important;
 }
 
-/* 핵심 KPI 숫자: 주식 광고처럼 짧은 타이핑/터미널 느낌으로 한 번만 등장 */
-[data-production-dashboard-panel='true'] .text-4xl.font-black,
-[data-production-dashboard-panel='true'] .text-xl.font-bold {
+/* 핵심 KPI는 5.6초 주기로 짧게 다시 타이핑되는 느낌을 반복한다. */
+[data-production-dashboard-panel='true'] span.text-4xl.font-black,
+[data-production-dashboard-panel='true'] p.text-xl.font-bold {
   position: relative;
   display: inline-block;
   will-change: clip-path, opacity, transform;
-  animation: moni-number-reveal 620ms steps(10, end) 80ms both;
+  animation: moni-number-loop 5.6s steps(12, end) infinite;
 }
 
-[data-production-dashboard-panel='true'] .text-4xl.font-black::after,
-[data-production-dashboard-panel='true'] .text-xl.font-bold::after {
+[data-production-dashboard-panel='true'] span.text-4xl.font-black::after,
+[data-production-dashboard-panel='true'] p.text-xl.font-bold::after {
   content: '';
   display: inline-block;
   width: 2px;
@@ -98,54 +119,67 @@
   vertical-align: -0.06em;
   background: currentColor;
   opacity: 0;
-  animation: moni-number-caret 720ms steps(1, end) 80ms both;
+  animation: moni-number-caret-loop 5.6s steps(1, end) infinite;
 }
 
-/* 달성률 상태바: 실제 width 값은 유지하고 시각적으로만 왼쪽에서 채운다. */
+/* 달성률 값은 고정하고, 얇은 광선만 현재 바 안을 계속 통과시킨다. */
 [data-production-dashboard-panel='true'] .h-2\.5.overflow-hidden.rounded-full > div {
-  transform-origin: left center;
-  will-change: transform;
-  animation: moni-progress-fill 760ms cubic-bezier(0.22, 1, 0.36, 1) 100ms both;
+  position: relative;
+  overflow: hidden;
+  transform: none !important;
 }
 
-/* 실제 생산선은 한 번 빠르게 그려지고, 계획선은 가볍게 나타난다. */
+[data-production-dashboard-panel='true'] .h-2\.5.overflow-hidden.rounded-full > div::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 28%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.78), transparent);
+  will-change: transform, opacity;
+  animation: moni-progress-sweep 2.6s linear infinite;
+}
+
+/* 실제 생산선은 주식 티커처럼 계속 흐르고, 계획선은 느리게 이동한다. */
 [data-production-dashboard-panel='true'] svg polyline[stroke='#4ade80'] {
-  stroke-dasharray: 1800;
-  stroke-dashoffset: 1800;
-  will-change: stroke-dashoffset, opacity;
-  animation: moni-line-draw 1050ms cubic-bezier(0.22, 1, 0.36, 1) 100ms forwards;
+  stroke-dasharray: 22 8;
+  stroke-dashoffset: 0;
+  will-change: stroke-dashoffset;
+  animation: moni-line-flow 1.35s linear infinite;
 }
 
 [data-production-dashboard-panel='true'] svg polyline[stroke='#94a3b8'] {
-  animation: moni-line-fade 420ms ease-out 80ms both;
+  will-change: stroke-dashoffset, opacity;
+  animation: moni-plan-line-flow 3.6s linear infinite;
 }
 
-/* 비용 막대는 아래에서 순차적으로 올라오는 느낌만 사용한다. */
+/* 비용 막대는 전체가 뛰지 않고 작은 파동이 순차적으로 계속 돈다. */
 [data-production-dashboard-panel='true'] svg rect[rx='3'] {
   transform-box: fill-box;
   transform-origin: center bottom;
   will-change: transform, opacity;
-  animation: moni-bar-rise 540ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: moni-bar-wave 3.2s ease-in-out infinite;
 }
 
-[data-production-dashboard-panel='true'] svg rect[rx='3']:nth-of-type(4n + 1) { animation-delay: 70ms; }
-[data-production-dashboard-panel='true'] svg rect[rx='3']:nth-of-type(4n + 2) { animation-delay: 110ms; }
-[data-production-dashboard-panel='true'] svg rect[rx='3']:nth-of-type(4n + 3) { animation-delay: 150ms; }
-[data-production-dashboard-panel='true'] svg rect[rx='3']:nth-of-type(4n) { animation-delay: 190ms; }
+[data-production-dashboard-panel='true'] svg rect[rx='3']:nth-of-type(4n + 1) { animation-delay: 0s; }
+[data-production-dashboard-panel='true'] svg rect[rx='3']:nth-of-type(4n + 2) { animation-delay: -0.8s; }
+[data-production-dashboard-panel='true'] svg rect[rx='3']:nth-of-type(4n + 3) { animation-delay: -1.6s; }
+[data-production-dashboard-panel='true'] svg rect[rx='3']:nth-of-type(4n) { animation-delay: -2.4s; }
 
-/* 그래프 포인트는 상시 펄스하지 않고 처음 한 번만 강조한다. */
+/* 그래프 포인트도 일정 주기로 작게 살아 움직인다. */
 [data-production-dashboard-panel='true'] svg circle {
   transform-box: fill-box;
   transform-origin: center;
   will-change: transform, opacity;
-  animation: moni-data-dot 440ms ease-out 420ms both;
+  animation: moni-data-dot-loop 2.8s ease-in-out infinite;
 }
 
-/* 실제 위험 숫자/경고만 한 번 짧게 강조한다. */
+/* 실제 위험 숫자/경고는 일정 간격으로 두 번 짧게 강조한다. */
 [data-production-dashboard-panel='true'] .text-red-300.text-xl,
 [data-production-dashboard-panel='true'] .text-amber-300.text-xl,
 [data-production-dashboard-panel='true'] .border-red-800\/70 {
-  animation: moni-alert-once 420ms ease-out 720ms 2;
+  will-change: transform, opacity;
+  animation: moni-alert-loop 4.8s ease-in-out infinite;
 }
 
 [data-production-dashboard-panel='true'] button {
@@ -157,7 +191,7 @@
   box-shadow: none !important;
 }
 
-/* 저사양/접근성 환경에서는 모든 모션을 제거한다. */
+/* 저사양/접근성 환경에서는 연속 모션을 제거한다. */
 @media (prefers-reduced-motion: reduce) {
   [data-production-dashboard-panel='true'],
   [data-production-dashboard-panel='true'] *,
