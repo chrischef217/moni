@@ -12,6 +12,7 @@ import SalesManagementMenuController from '@/components/SalesManagementMenuContr
 import WorkOrderGramController from '@/components/WorkOrderGramController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyProductionCalendarDayStyleController'
+import MonthlyPlanToWorkOrderController from '@/components/MonthlyPlanToWorkOrderController'
 import './globals.css'
 import './monthly-production-calendar.css'
 
@@ -42,6 +43,7 @@ export default function RootLayout({
         <WorkOrderGramController />
         <SidebarPinToggleVisualFix />
         <MonthlyProductionCalendarDayStyleController />
+        <MonthlyPlanToWorkOrderController />
         {children}
       </body>
     </html>
