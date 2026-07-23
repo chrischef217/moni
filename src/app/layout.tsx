@@ -10,6 +10,7 @@ import ProductionCompletionMetadataController from '@/components/ProductionCompl
 import SalesManagementMenuController from '@/components/SalesManagementMenuController'
 import WorkOrderGramController from '@/components/WorkOrderGramController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
+import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyProductionCalendarDayStyleController'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ export default function RootLayout({
         <SalesManagementMenuController />
         <WorkOrderGramController />
         <SidebarPinToggleVisualFix />
+        <MonthlyProductionCalendarDayStyleController />
         {children}
       </body>
     </html>
