@@ -33,6 +33,11 @@ function normalizedText(value: unknown): string {
   return String(value ?? '').trim().replace(/\s+/g, ' ')
 }
 
+function formatKg(value: number): string {
+  const kg = Number(value || 0) / 1000
+  return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: kg >= 100 ? 0 : 1 }).format(kg)}kg`
+}
+
 function isMonthlyPlanPage(): boolean {
   return window.location.pathname === '/monthly-production-plan'
 }
@@ -73,8 +78,13 @@ function cardProductName(card: HTMLElement): string {
   return normalizedText(card.querySelector('b')?.textContent)
 }
 
-function planKey(planDate: string, productName: string): string {
-  return `${planDate}::${normalizedText(productName)}`
+function cardQuantityLabel(card: HTMLElement): string {
+  const headerRow = card.firstElementChild instanceof HTMLElement ? card.firstElementChild : null
+  return normalizedText(headerRow?.querySelector('span')?.textContent)
+}
+
+function planKey(planDate: string, productName: string, quantityLabel: string): string {
+  return `${planDate}::${normalizedText(productName)}::${normalizedText(quantityLabel)}`
 }
 
 function conversionButton(card: HTMLElement): HTMLButtonElement | null {
@@ -193,22 +203,19 @@ async function loadPlans(month: string): Promise<MonthlyPlan[]> {
 }
 
 function installButtons(month: string, plans: MonthlyPlan[]) {
-  const plansByKey = new Map<string, MonthlyPlan[]>()
+  const planByKey = new Map<string, MonthlyPlan>()
   for (const plan of plans) {
-    const key = planKey(plan.plan_date, plan.product_name)
-    plansByKey.set(key, [...(plansByKey.get(key) ?? []), plan])
+    const key = planKey(plan.plan_date, plan.product_name, formatKg(Number(plan.planned_quantity_g)))
+    if (!planByKey.has(key)) planByKey.set(key, plan)
   }
 
-  const usedByKey = new Map<string, number>()
   for (const card of expectedPlanCards()) {
     const date = cardDate(card, month)
     const productName = cardProductName(card)
-    if (!date || !productName) continue
+    const quantityLabel = cardQuantityLabel(card)
+    if (!date || !productName || !quantityLabel) continue
 
-    const key = planKey(date, productName)
-    const index = usedByKey.get(key) ?? 0
-    const plan = plansByKey.get(key)?.[index]
-    usedByKey.set(key, index + 1)
+    const plan = planByKey.get(planKey(date, productName, quantityLabel))
     if (!plan) continue
 
     card.setAttribute(PLAN_ID_ATTR, plan.id)
@@ -252,7 +259,10 @@ export default function MonthlyPlanToWorkOrderController() {
       const month = currentMonthFromPage()
       if (!month) return
 
-      if (month !== loadedMonth) {
+      const cards = expectedPlanCards()
+      const needsRefresh = month !== loadedMonth || cards.some((card) => !card.hasAttribute(PLAN_ID_ATTR))
+
+      if (needsRefresh) {
         const serial = ++requestSerial
         try {
           const plans = await loadPlans(month)
