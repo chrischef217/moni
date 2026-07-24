@@ -25,6 +25,7 @@ import './moni-weather-shell.css'
 import './moni-weather-shell-interaction.css'
 import './moni-glass-theme.css'
 import './moni-production-glass.css'
+import './moni-production-shell-fixes.css'
 import './monthly-production-calendar.css'
 import './production-dashboard-motion.css'
 
