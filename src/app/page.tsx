@@ -1,4 +1,4 @@
-﻿import { redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import AdminDashboard from '@/components/AdminDashboard'
 import AllowanceLogin from '@/components/AllowanceLogin'
 import MainControlTowerDashboard from '@/components/MainControlTowerDashboard'
