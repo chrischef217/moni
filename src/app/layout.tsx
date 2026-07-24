@@ -17,6 +17,8 @@ import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyPro
 import MonthlyPlanToWorkOrderController from '@/components/MonthlyPlanToWorkOrderController'
 import ProductionDashboardController from '@/components/ProductionDashboardController'
 import ProductionGlassThemeController from '@/components/ProductionGlassThemeController'
+import LegacyGlassThemeController from '@/components/LegacyGlassThemeController'
+import AppearanceSettingsMenuController from '@/components/AppearanceSettingsMenuController'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 import './globals.css'
@@ -27,6 +29,7 @@ import './moni-glass-theme.css'
 import './moni-production-glass.css'
 import './moni-production-shell-fixes.css'
 import './moni-business-glass.css'
+import './moni-final-glass-pass.css'
 import './monthly-production-calendar.css'
 import './production-dashboard-motion.css'
 
@@ -58,6 +61,8 @@ export default async function RootLayout({
             <GlobalMoniSidebarController />
             <GlobalSidebarLayoutController />
             <ProductionGlassThemeController />
+            <LegacyGlassThemeController />
+            <AppearanceSettingsMenuController />
             <ProductionCompletionMetadataController />
             <SalesManagementMenuController />
             <SalesTargetsMenuController />

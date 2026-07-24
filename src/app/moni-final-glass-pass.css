@@ -1,0 +1,183 @@
+/* Final Weather Glass pass: legacy AI/admin/audit surfaces and global weather-chip behavior. */
+
+/* Weather is context on the Control Tower, not a floating obstruction on work screens. */
+.moni-weather-badge {
+  display: none !important;
+}
+
+[data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-badge {
+  display: flex !important;
+}
+
+/* Legacy AdminDashboard surfaces except production views, which have their own more specific layer. */
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) {
+  color: rgb(var(--moni-glass-text));
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-gray-950'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-gray-900'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-gray-800'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-slate-950'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-slate-900'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-slate-800'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-[#071426]'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-[#0b1729]'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-[#0f172a]'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='bg-[#111827]'] {
+  background-color: rgb(255 255 255 / 0.78) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) > div,
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) main {
+  background: transparent !important;
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='border-gray-'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='border-slate-'] {
+  border-color: rgb(var(--moni-glass-border) / 0.58) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) .text-white,
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-gray-100'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-gray-200'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-slate-100'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-slate-200'] {
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-gray-300'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-gray-400'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-slate-300'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-slate-400'] {
+  color: rgb(var(--moni-glass-text-secondary)) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-gray-500'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='text-slate-500'] {
+  color: rgb(var(--moni-glass-text-muted)) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) input,
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) select,
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) textarea {
+  border-color: rgb(var(--moni-glass-border) / 0.68) !important;
+  background: rgb(255 255 255 / 0.90) !important;
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='rounded-2xl'][class*='border'],
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) [class*='rounded-xl'][class*='border'] {
+  box-shadow: 0 10px 28px rgb(49 96 130 / 0.06);
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) table thead,
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) table thead[class*='bg-'] {
+  background: rgb(239 247 253 / 0.96) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='legacy']:not([data-moni-production-view]) table tbody tr:hover {
+  background: rgb(235 246 254 / 0.70) !important;
+}
+
+/* Keep intentional action buttons legible. */
+[data-moni-app-content][data-moni-global-view='legacy'] button[class*='bg-blue-5'],
+[data-moni-app-content][data-moni-global-view='legacy'] button[class*='bg-blue-6'],
+[data-moni-app-content][data-moni-global-view='legacy'] button[class*='bg-green-5'],
+[data-moni-app-content][data-moni-global-view='legacy'] button[class*='bg-green-6'],
+[data-moni-app-content][data-moni-global-view='legacy'] button[class*='bg-emerald-5'],
+[data-moni-app-content][data-moni-global-view='legacy'] button[class*='bg-red-5'] {
+  color: white !important;
+}
+
+/* Audit page. */
+[data-moni-app-content][data-moni-global-view='audit'] {
+  color: rgb(var(--moni-glass-text));
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] > div,
+[data-moni-app-content][data-moni-global-view='audit'] main,
+[data-moni-app-content][data-moni-global-view='audit'] header {
+  background-color: transparent !important;
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] header {
+  border-color: rgb(var(--moni-glass-border) / 0.58) !important;
+  background: rgb(244 250 255 / 0.92) !important;
+  backdrop-filter: none !important;
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] [class*='bg-gray-950'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='bg-gray-900'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='bg-gray-800'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='bg-slate-950'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='bg-slate-900'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='bg-slate-800'] {
+  background-color: rgb(255 255 255 / 0.80) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] [class*='border-gray-'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='border-slate-'] {
+  border-color: rgb(var(--moni-glass-border) / 0.58) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] .text-white,
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-gray-100'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-gray-200'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-slate-100'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-slate-200'] {
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-gray-300'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-gray-400'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-slate-300'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-slate-400'] {
+  color: rgb(var(--moni-glass-text-secondary)) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-gray-500'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-slate-500'] {
+  color: rgb(var(--moni-glass-text-muted)) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] [class*='text-green-300'] {
+  color: #19784e !important;
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] [class*='rounded-2xl'][class*='border'],
+[data-moni-app-content][data-moni-global-view='audit'] [class*='rounded-xl'][class*='border'] {
+  box-shadow: 0 11px 28px rgb(49 96 130 / 0.06);
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] table thead,
+[data-moni-app-content][data-moni-global-view='audit'] table thead[class*='bg-'] {
+  background: rgb(239 247 253 / 0.96) !important;
+}
+
+[data-moni-app-content][data-moni-global-view='audit'] input,
+[data-moni-app-content][data-moni-global-view='audit'] textarea,
+[data-moni-app-content][data-moni-global-view='audit'] select {
+  background: rgb(255 255 255 / 0.9) !important;
+  border-color: rgb(var(--moni-glass-border) / 0.68) !important;
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+/* Appearance settings: allow the global sidebar to coexist with the page surface. */
+[data-moni-app-content][data-moni-global-view='appearance'] > main {
+  min-height: 100% !important;
+  background: transparent !important;
+}
+
+@media (max-width: 1279px) {
+  [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-badge {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  [data-moni-app-content][data-moni-global-view] [class*='rounded-2xl'][class*='border'] {
+    box-shadow: none !important;
+  }
+}
