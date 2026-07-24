@@ -17,6 +17,7 @@ import ProductionGlassThemeController from '@/components/ProductionGlassThemeCon
 import LegacyGlassThemeController from '@/components/LegacyGlassThemeController'
 import AppearanceSettingsMenuController from '@/components/AppearanceSettingsMenuController'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
+import GlobalMoniAgent from '@/components/GlobalMoniAgent'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 import './globals.css'
 import './moni-glass-tokens.css'
@@ -72,6 +73,7 @@ export default async function RootLayout({
             <MonthlyPlanToWorkOrderController />
             <ProductionDashboardController />
             {children}
+            <GlobalMoniAgent />
           </MoniWeatherShell>
         ) : children}
       </body>
