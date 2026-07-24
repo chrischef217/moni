@@ -1,0 +1,79 @@
+/* Monthly production calendar overlays must follow the light Weather Glass system.
+   This layer is intentionally scoped to the monthly-plan production view only. */
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0a192d]'] {
+  border-color: rgb(169 205 229 / 0.92) !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgb(115 196 242 / 0.12), transparent 34%),
+    rgb(248 252 255 / 0.985) !important;
+  box-shadow:
+    0 20px 48px rgb(44 85 113 / 0.18),
+    0 3px 10px rgb(44 85 113 / 0.08) !important;
+  backdrop-filter: blur(10px) saturate(108%) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(108%) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0a192d]'] > div:first-child {
+  border-color: rgb(190 216 233 / 0.86) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0a192d]'] b[class*='text-white'] {
+  color: #183648 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0a192d]'] span[class*='text-slate-400'] {
+  color: #6f8797 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0a192d]'] button[class*='border-blue-400'] {
+  border-color: rgb(97 167 216 / 0.62) !important;
+  background: rgb(232 246 255 / 0.92) !important;
+  color: #246f9e !important;
+  box-shadow: 0 2px 6px rgb(52 116 158 / 0.06);
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0a192d]'] button[class*='border-blue-400']:hover {
+  border-color: rgb(67 145 198 / 0.78) !important;
+  background: rgb(218 240 253 / 0.98) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0a192d]'] > div:last-child > [class*='rounded-lg'][class*='border'] {
+  box-shadow: 0 3px 9px rgb(47 92 124 / 0.055) !important;
+}
+
+/* Add/edit plan dialog: remove the remaining dark island without changing its behavior. */
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='fixed'][class*='bg-black/70'] {
+  background: rgb(27 58 80 / 0.30) !important;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#101d31]'] {
+  border-color: rgb(181 211 230 / 0.90) !important;
+  background: rgb(249 252 255 / 0.985) !important;
+  color: #183648 !important;
+  box-shadow: 0 24px 64px rgb(37 76 104 / 0.22) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#101d31]'] h2 {
+  color: #183648 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#101d31]'] label > span,
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#101d31]'] label[for] {
+  color: #5f7889 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0b1729]'][class*='absolute'] {
+  border-color: rgb(186 213 235 / 0.82) !important;
+  background: rgb(250 253 255 / 0.99) !important;
+  box-shadow: 0 14px 36px rgb(42 88 118 / 0.16) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0b1729]'][class*='absolute'] button:not([class*='bg-blue-600']) {
+  color: #294f67 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-[#0b1729]'][class*='absolute'] button:not([class*='bg-blue-600']):hover {
+  background: #edf6fb !important;
+}
