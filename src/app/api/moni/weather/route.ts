@@ -44,8 +44,6 @@ function kstParts(date: Date) {
     date: `${parts.year}${parts.month}${parts.day}`,
     hour: Number(parts.hour),
     minute: Number(parts.minute),
-    displayDate: `${parts.year}-${parts.month}-${parts.day}`,
-    displayTime: `${parts.hour}:${parts.minute}`,
   }
 }
 
@@ -77,12 +75,19 @@ function conditionLabel(condition: string) {
   return '기본 배경'
 }
 
+function finiteNumber(value: string | undefined) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function fallbackCondition(settings: UiSettings) {
   const condition = settings.weather_last_condition || (isDaytime() ? 'clear_day' : 'clear_night')
   return {
     condition,
     condition_label: conditionLabel(condition),
     temperature: settings.weather_last_temperature,
+    humidity: null,
+    wind_speed_mps: null,
     source: settings.weather_last_condition ? 'cached' : 'fallback',
     synced_at: settings.weather_last_synced_at,
   }
@@ -151,8 +156,9 @@ export async function GET(request: NextRequest) {
     const selected = items.filter((item) => `${item.fcstDate || ''}${item.fcstTime || ''}` === selectedKey)
     const values = new Map(selected.map((item) => [String(item.category || ''), String(item.fcstValue || '')]))
     const condition = classifyCondition(values.get('SKY'), values.get('PTY'), isDaytime())
-    const temperatureRaw = Number(values.get('T1H'))
-    const temperature = Number.isFinite(temperatureRaw) ? temperatureRaw : null
+    const temperature = finiteNumber(values.get('T1H'))
+    const humidity = finiteNumber(values.get('REH'))
+    const windSpeed = finiteNumber(values.get('WSD'))
     const syncedAt = new Date().toISOString()
 
     await db
@@ -170,6 +176,8 @@ export async function GET(request: NextRequest) {
         condition,
         condition_label: conditionLabel(condition),
         temperature,
+        humidity,
+        wind_speed_mps: windSpeed,
         source: 'kma',
         synced_at: syncedAt,
       },
