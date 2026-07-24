@@ -1,7 +1,8 @@
-﻿import { redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import AdminDashboard from '@/components/AdminDashboard'
 import AllowanceLogin from '@/components/AllowanceLogin'
 import MainControlTowerDashboard from '@/components/MainControlTowerDashboard'
+import ControlTowerAlertFeed from '@/components/ControlTowerAlertFeed'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
 export const dynamic = 'force-dynamic'
@@ -28,5 +29,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     return <AdminDashboard session={session} />
   }
 
-  return <MainControlTowerDashboard session={session} />
+  return (
+    <>
+      <MainControlTowerDashboard session={session} />
+      <ControlTowerAlertFeed />
+    </>
+  )
 }
