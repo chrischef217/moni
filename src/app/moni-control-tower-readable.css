@@ -1,182 +1,210 @@
 /* Readability pass for the reference-grade Control Tower.
-   Preserve compact proportions while raising the minimum readable type size. */
+   Preserve compact proportions while enforcing a practical minimum type size. */
 
 [data-moni-control-tower].ct-root {
-  font-size: 14px;
+  font-size: 15px;
+}
+
+/* The separate 목표 → 매출 → 수금 → 현금 → 생산 strip was explicitly removed.
+   Keep the hero compact after removing the strip. */
+.ct-flow-line {
+  display: none !important;
+}
+
+.ct-hero {
+  min-height: 132px;
+  padding-bottom: 20px;
 }
 
 .ct-kicker {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .ct-kicker em {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .ct-hero h1 {
-  font-size: clamp(26px, 2.15vw, 33px);
+  font-size: clamp(27px, 2.15vw, 34px);
 }
 
 .ct-hero p {
-  font-size: 13px;
-  line-height: 1.62;
+  font-size: 14px;
+  line-height: 1.58;
 }
 
 .ct-user-meta {
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .ct-tool-btn {
-  font-size: 11px;
-}
-
-.ct-flow-line {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .ct-error {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .ct-compact-stat span {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .ct-compact-stat strong {
-  font-size: 18px;
+  font-size: 19px;
 }
 
 .ct-panel-title span {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .ct-panel-title h2 {
-  font-size: 18px;
+  font-size: 19px;
 }
 
 .ct-text-link {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .ct-sales-number span {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .ct-sales-number strong {
-  font-size: 24px;
+  font-size: 25px;
 }
 
 .ct-sales-number small {
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .ct-progress-meta {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .ct-progress-meta b {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .ct-mini-grid span {
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .ct-mini-grid b {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .ct-health-list span {
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .ct-health-list b {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .ct-production-score strong {
-  font-size: 28px;
+  font-size: 29px;
 }
 
 .ct-production-score span {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .ct-alert-copy b {
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .ct-alert-copy small {
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .ct-alert-row > strong {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .ct-table {
-  font-size: 11px !important;
+  font-size: 12px !important;
 }
 
 .ct-table th {
-  font-size: 10px !important;
+  font-size: 11px !important;
+  line-height: 1.35;
 }
 
 .ct-table td {
-  font-size: 11px !important;
+  font-size: 12px !important;
+  line-height: 1.4;
 }
 
 .ct-status {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .ct-reference-grid span {
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .ct-reference-grid b {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .ct-disclaimer {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.55;
 }
 
-.ct-empty-card {
-  font-size: 11px;
+.ct-empty-card,
+.ct-empty {
+  font-size: 12px !important;
 }
 
 .ct-metric-label {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .ct-metric-value {
-  font-size: 20px;
+  font-size: 21px;
 }
 
 .ct-metric-note {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.45;
 }
 
 .ct-footer,
 .ct-footer button {
-  font-size: 10px;
+  font-size: 11px;
+}
+
+@media (max-width: 1250px) {
+  .ct-hero {
+    min-height: 142px;
+  }
 }
 
 @media (max-width: 900px) {
-  .ct-flow-line {
-    font-size: 10px;
+  .ct-hero p {
+    font-size: 13px;
   }
 }
 
 @media (max-width: 560px) {
   .ct-hero h1 {
-    font-size: 24px;
+    font-size: 25px;
   }
 
   .ct-compact-stat strong {
-    font-size: 16px;
+    font-size: 17px;
+  }
+
+  .ct-table th,
+  .ct-table td {
+    font-size: 11px !important;
   }
 }
