@@ -16,6 +16,7 @@ import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyProductionCalendarDayStyleController'
 import MonthlyPlanToWorkOrderController from '@/components/MonthlyPlanToWorkOrderController'
 import ProductionDashboardController from '@/components/ProductionDashboardController'
+import ProductionGlassThemeController from '@/components/ProductionGlassThemeController'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 import './globals.css'
@@ -23,6 +24,7 @@ import './moni-glass-tokens.css'
 import './moni-weather-shell.css'
 import './moni-weather-shell-interaction.css'
 import './moni-glass-theme.css'
+import './moni-production-glass.css'
 import './monthly-production-calendar.css'
 import './production-dashboard-motion.css'
 
@@ -53,6 +55,7 @@ export default async function RootLayout({
             <RawMaterialTypeFilterController />
             <GlobalMoniSidebarController />
             <GlobalSidebarLayoutController />
+            <ProductionGlassThemeController />
             <ProductionCompletionMetadataController />
             <SalesManagementMenuController />
             <SalesTargetsMenuController />
