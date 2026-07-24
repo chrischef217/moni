@@ -3,6 +3,7 @@ import { GET as getProductionDashboard } from '@/app/api/moni/production-dashboa
 import { GET as getReceivables } from '@/app/api/moni/receivables/route'
 import { GET as getSalesTargets } from '@/app/api/moni/sales-targets/route'
 import { GET as getFinancialControl } from '@/app/api/moni/financial-control/route'
+import { getSessionFromRequest } from '@/lib/allowance/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -51,6 +52,11 @@ function severityOrder(value: Severity) {
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await getSessionFromRequest(request)
+    if (session?.role !== 'admin') {
+      return NextResponse.json({ ok: false, error: '관리자 권한이 필요합니다.' }, { status: 403 })
+    }
+
     const [production, receivables, targets, finance] = await Promise.all([
       getProductionDashboard().then((response) => parseResponse(response, '생산')),
       getReceivables(request).then((response) => parseResponse(response, '수금')),
