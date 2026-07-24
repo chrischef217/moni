@@ -19,6 +19,7 @@ import ProductionDashboardController from '@/components/ProductionDashboardContr
 import MoniWeatherShell from '@/components/MoniWeatherShell'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 import './globals.css'
+import './moni-glass-tokens.css'
 import './moni-weather-shell.css'
 import './moni-glass-theme.css'
 import './monthly-production-calendar.css'
