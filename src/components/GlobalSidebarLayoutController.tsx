@@ -5,14 +5,16 @@ import { useLayoutEffect } from 'react'
 const SIDEBAR_WIDTH = 264
 
 function applySidebarLayout() {
-  const body = document.body
+  const appContent = document.querySelector<HTMLElement>('[data-moni-app-content]')
   const sidebar = document.querySelector<HTMLElement>('[data-moni-global-sidebar]')
   const isDesktop = window.matchMedia('(min-width: 1024px)').matches
   const isOpen = Boolean(sidebar && sidebar.classList.contains('lg:translate-x-0'))
 
-  body.style.setProperty('--moni-sidebar-width', `${SIDEBAR_WIDTH}px`)
-  body.classList.toggle('moni-global-sidebar-active', Boolean(sidebar))
-  body.classList.toggle('moni-sidebar-offset-active', Boolean(sidebar) && isDesktop && isOpen)
+  if (!appContent) return
+
+  appContent.style.setProperty('--moni-sidebar-width', `${SIDEBAR_WIDTH}px`)
+  appContent.classList.toggle('moni-global-sidebar-active', Boolean(sidebar))
+  appContent.classList.toggle('moni-sidebar-offset-active', Boolean(sidebar) && isDesktop && isOpen)
 }
 
 export default function GlobalSidebarLayoutController() {
@@ -40,8 +42,9 @@ export default function GlobalSidebarLayoutController() {
       window.cancelAnimationFrame(animationFrame)
       observer.disconnect()
       window.removeEventListener('resize', scheduleApply)
-      document.body.classList.remove('moni-global-sidebar-active', 'moni-sidebar-offset-active')
-      document.body.style.removeProperty('--moni-sidebar-width')
+      const appContent = document.querySelector<HTMLElement>('[data-moni-app-content]')
+      appContent?.classList.remove('moni-global-sidebar-active', 'moni-sidebar-offset-active')
+      appContent?.style.removeProperty('--moni-sidebar-width')
     }
   }, [])
 

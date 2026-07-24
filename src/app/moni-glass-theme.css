@@ -1,0 +1,138 @@
+[data-moni-app-content] main,
+[data-moni-app-content] [data-business-management-shell] {
+  min-height: 100% !important;
+  background: transparent !important;
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-moni-app-content] main[class*='bg-[#071426]'],
+[data-moni-app-content] main[class*='bg-gray-900'],
+[data-moni-app-content] main[class*='bg-slate-900'] {
+  background: transparent !important;
+}
+
+[data-moni-app-content] [class*='bg-[#0b1b30]'],
+[data-moni-app-content] [class*='bg-[#0a1b30]'],
+[data-moni-app-content] [class*='bg-[#08182b]'],
+[data-moni-app-content] [class*='bg-[#111827]'],
+[data-moni-app-content] [class*='bg-[#0f172a]'],
+[data-moni-app-content] [class*='bg-gray-900'],
+[data-moni-app-content] [class*='bg-slate-900'],
+[data-moni-app-content] [class*='bg-slate-950'] {
+  background-color: rgb(var(--moni-glass-panel) / 0.76) !important;
+}
+
+[data-moni-app-content] [class*='border-slate-7'],
+[data-moni-app-content] [class*='border-slate-8'],
+[data-moni-app-content] [class*='border-gray-7'],
+[data-moni-app-content] [class*='border-gray-8'] {
+  border-color: rgb(var(--moni-glass-border) / 0.50) !important;
+}
+
+[data-moni-app-content] .text-white,
+[data-moni-app-content] .text-slate-100,
+[data-moni-app-content] .text-slate-200,
+[data-moni-app-content] .text-gray-100,
+[data-moni-app-content] .text-gray-200 {
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-moni-app-content] .text-slate-300,
+[data-moni-app-content] .text-slate-400,
+[data-moni-app-content] .text-gray-300,
+[data-moni-app-content] .text-gray-400 {
+  color: rgb(var(--moni-glass-text-secondary)) !important;
+}
+
+[data-moni-app-content] .text-slate-500,
+[data-moni-app-content] .text-gray-500 {
+  color: rgb(var(--moni-glass-text-muted)) !important;
+}
+
+[data-moni-app-content] button[class*='bg-blue-'],
+[data-moni-app-content] button[class*='bg-emerald-'],
+[data-moni-app-content] button[class*='bg-red-'],
+[data-moni-app-content] button[class*='bg-violet-'],
+[data-moni-app-content] a[class*='bg-blue-'],
+[data-moni-app-content] a[class*='bg-emerald-'] {
+  color: white !important;
+}
+
+[data-moni-app-content] button[class*='bg-blue-'] *,
+[data-moni-app-content] button[class*='bg-emerald-'] *,
+[data-moni-app-content] button[class*='bg-red-'] *,
+[data-moni-app-content] button[class*='bg-violet-'] * {
+  color: inherit !important;
+}
+
+[data-moni-app-content] input,
+[data-moni-app-content] select,
+[data-moni-app-content] textarea {
+  border-color: rgb(var(--moni-glass-border) / 0.65) !important;
+  background: rgb(255 255 255 / 0.82) !important;
+  color: rgb(var(--moni-glass-text)) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.75);
+}
+
+[data-moni-app-content] input::placeholder,
+[data-moni-app-content] textarea::placeholder {
+  color: rgb(var(--moni-glass-text-muted)) !important;
+}
+
+[data-moni-app-content] input:focus,
+[data-moni-app-content] select:focus,
+[data-moni-app-content] textarea:focus {
+  border-color: rgb(var(--moni-glass-blue) / 0.72) !important;
+  box-shadow: 0 0 0 3px rgb(var(--moni-glass-blue) / 0.10) !important;
+}
+
+[data-moni-app-content] table {
+  border-collapse: separate;
+  border-spacing: 0;
+  color: rgb(var(--moni-glass-text));
+  font-variant-numeric: tabular-nums;
+}
+
+[data-moni-app-content] thead,
+[data-moni-app-content] thead[class*='bg-'] {
+  background: transparent !important;
+}
+
+[data-moni-app-content] th {
+  color: rgb(var(--moni-glass-text-secondary)) !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+}
+
+[data-moni-app-content] td {
+  color: rgb(var(--moni-glass-text)) !important;
+  font-size: 0.84rem;
+}
+
+[data-moni-app-content] tbody tr > * {
+  border-color: rgb(var(--moni-glass-border) / 0.34) !important;
+}
+
+[data-moni-app-content] tbody tr:hover {
+  background: rgb(255 255 255 / 0.42);
+}
+
+[data-moni-control-tower] {
+  background: transparent !important;
+}
+
+[data-moni-control-tower] > div > header,
+[data-moni-control-tower] [class*='rounded-3xl'][class*='border'] {
+  border-color: rgb(var(--moni-glass-border) / 0.48) !important;
+  background-color: rgb(255 255 255 / 0.70) !important;
+  box-shadow: 0 14px 36px rgb(var(--moni-glass-shadow) / 0.07) !important;
+}
+
+[data-moni-control-tower] [class*='bg-[#08182b]'] {
+  background: rgb(247 251 255 / 0.76) !important;
+}
+
+[data-moni-control-tower] [class*='uppercase'][class*='tracking'] {
+  letter-spacing: 0.10em !important;
+}

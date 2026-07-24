@@ -1,0 +1,18 @@
+:root {
+  color-scheme: light;
+  --moni-bg-primary: 241 246 252;
+  --moni-bg-secondary: 255 255 255;
+  --moni-bg-tertiary: 223 235 248;
+  --moni-surface: 255 255 255;
+  --moni-surface-soft: 247 251 255;
+  --moni-sidebar: 235 244 252;
+  --moni-sidebar-text: 24 54 72;
+  --moni-text-primary: 24 54 72;
+  --moni-text-secondary: 94 116 132;
+  --moni-text-muted: 128 148 163;
+  --moni-accent: 32 143 228;
+  --moni-accent-hover: 24 118 190;
+  --moni-success: 53 201 120;
+  --moni-warning: 243 201 78;
+  --moni-danger: 255 119 119;
+}

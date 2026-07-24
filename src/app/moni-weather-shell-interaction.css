@@ -1,0 +1,12 @@
+.moni-weather-badge {
+  pointer-events: auto;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.moni-weather-badge:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--moni-glass-blue) / 0.35);
+  background: rgb(255 255 255 / 0.86);
+}

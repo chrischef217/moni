@@ -16,8 +16,13 @@ import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyProductionCalendarDayStyleController'
 import MonthlyPlanToWorkOrderController from '@/components/MonthlyPlanToWorkOrderController'
 import ProductionDashboardController from '@/components/ProductionDashboardController'
+import MoniWeatherShell from '@/components/MoniWeatherShell'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 import './globals.css'
+import './moni-glass-tokens.css'
+import './moni-weather-shell.css'
+import './moni-weather-shell-interaction.css'
+import './moni-glass-theme.css'
 import './monthly-production-calendar.css'
 import './production-dashboard-motion.css'
 
@@ -39,7 +44,7 @@ export default async function RootLayout({
     <html lang="ko">
       <body className="antialiased">
         {showAdminChrome ? (
-          <>
+          <MoniWeatherShell>
             <RawMaterialLedgerPrintController />
             <MonthlyProductionRequirementPrintController />
             <MonthlyProductionRequirementSafetyGuard />
@@ -57,9 +62,9 @@ export default async function RootLayout({
             <MonthlyProductionCalendarDayStyleController />
             <MonthlyPlanToWorkOrderController />
             <ProductionDashboardController />
-          </>
-        ) : null}
-        {children}
+            {children}
+          </MoniWeatherShell>
+        ) : children}
       </body>
     </html>
   )
