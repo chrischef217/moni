@@ -1,0 +1,252 @@
+/* Production management visual layer.
+   Scope is intentionally limited to production screens so business logic stays untouched. */
+
+[data-production-dashboard-panel],
+[data-moni-app-content][data-moni-production-view] {
+  color: rgb(var(--moni-glass-text));
+}
+
+[data-production-dashboard-panel] [class*='bg-gray-900'],
+[data-production-dashboard-panel] [class*='bg-gray-800'],
+[data-production-dashboard-panel] [class*='bg-gray-700'],
+[data-production-dashboard-panel] [class*='bg-slate-950'],
+[data-production-dashboard-panel] [class*='bg-slate-900'],
+[data-production-dashboard-panel] [class*='bg-slate-800'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-[#071426]'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-[#0b1729]'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-[#07101f]'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-[#0c192c]'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-[#091426]'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-gray-900'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-gray-800'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-gray-700'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-slate-950'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-slate-900'],
+[data-moni-app-content][data-moni-production-view] [class*='bg-slate-800'] {
+  background-color: rgb(255 255 255 / 0.76) !important;
+}
+
+[data-moni-app-content][data-moni-production-view] main,
+[data-moni-app-content][data-moni-production-view] main > div,
+[data-moni-app-content][data-moni-production-view] main > div > section {
+  background-color: transparent !important;
+}
+
+[data-production-dashboard-panel] [class*='border-gray-'],
+[data-production-dashboard-panel] [class*='border-slate-'],
+[data-moni-app-content][data-moni-production-view] [class*='border-gray-'],
+[data-moni-app-content][data-moni-production-view] [class*='border-slate-'] {
+  border-color: rgb(var(--moni-glass-border) / 0.58) !important;
+}
+
+[data-production-dashboard-panel] [class*='text-white'],
+[data-production-dashboard-panel] [class*='text-gray-100'],
+[data-production-dashboard-panel] [class*='text-gray-200'],
+[data-production-dashboard-panel] [class*='text-slate-100'],
+[data-production-dashboard-panel] [class*='text-slate-200'],
+[data-moni-app-content][data-moni-production-view] [class*='text-white'],
+[data-moni-app-content][data-moni-production-view] [class*='text-gray-100'],
+[data-moni-app-content][data-moni-production-view] [class*='text-gray-200'],
+[data-moni-app-content][data-moni-production-view] [class*='text-slate-100'],
+[data-moni-app-content][data-moni-production-view] [class*='text-slate-200'] {
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-production-dashboard-panel] [class*='text-gray-300'],
+[data-production-dashboard-panel] [class*='text-gray-400'],
+[data-production-dashboard-panel] [class*='text-slate-300'],
+[data-production-dashboard-panel] [class*='text-slate-400'],
+[data-moni-app-content][data-moni-production-view] [class*='text-gray-300'],
+[data-moni-app-content][data-moni-production-view] [class*='text-gray-400'],
+[data-moni-app-content][data-moni-production-view] [class*='text-slate-300'],
+[data-moni-app-content][data-moni-production-view] [class*='text-slate-400'] {
+  color: rgb(var(--moni-glass-text-secondary)) !important;
+}
+
+[data-production-dashboard-panel] [class*='text-gray-500'],
+[data-production-dashboard-panel] [class*='text-slate-500'],
+[data-moni-app-content][data-moni-production-view] [class*='text-gray-500'],
+[data-moni-app-content][data-moni-production-view] [class*='text-slate-500'] {
+  color: rgb(var(--moni-glass-text-muted)) !important;
+}
+
+/* Preserve semantic colors, but darken their text for light surfaces. */
+[data-production-dashboard-panel] [class*='text-green-100'],
+[data-production-dashboard-panel] [class*='text-green-200'],
+[data-production-dashboard-panel] [class*='text-green-300'],
+[data-moni-app-content][data-moni-production-view] [class*='text-green-100'],
+[data-moni-app-content][data-moni-production-view] [class*='text-green-200'],
+[data-moni-app-content][data-moni-production-view] [class*='text-green-300'] { color: #19784e !important; }
+
+[data-production-dashboard-panel] [class*='text-blue-100'],
+[data-production-dashboard-panel] [class*='text-blue-200'],
+[data-production-dashboard-panel] [class*='text-blue-300'],
+[data-moni-app-content][data-moni-production-view] [class*='text-blue-100'],
+[data-moni-app-content][data-moni-production-view] [class*='text-blue-200'],
+[data-moni-app-content][data-moni-production-view] [class*='text-blue-300'] { color: #226f9f !important; }
+
+[data-production-dashboard-panel] [class*='text-amber-50'],
+[data-production-dashboard-panel] [class*='text-amber-100'],
+[data-production-dashboard-panel] [class*='text-amber-200'],
+[data-production-dashboard-panel] [class*='text-amber-300'],
+[data-moni-app-content][data-moni-production-view] [class*='text-amber-50'],
+[data-moni-app-content][data-moni-production-view] [class*='text-amber-100'],
+[data-moni-app-content][data-moni-production-view] [class*='text-amber-200'],
+[data-moni-app-content][data-moni-production-view] [class*='text-amber-300'] { color: #8a6510 !important; }
+
+[data-production-dashboard-panel] [class*='text-red-100'],
+[data-production-dashboard-panel] [class*='text-red-200'],
+[data-production-dashboard-panel] [class*='text-red-300'],
+[data-moni-app-content][data-moni-production-view] [class*='text-red-100'],
+[data-moni-app-content][data-moni-production-view] [class*='text-red-200'],
+[data-moni-app-content][data-moni-production-view] [class*='text-red-300'] { color: #b14b55 !important; }
+
+[data-moni-app-content][data-moni-production-view] [class*='text-cyan-300'] { color: #237f95 !important; }
+
+/* Keep text white on filled primary actions. */
+[data-production-dashboard-panel] button[class*='bg-green-5'],
+[data-production-dashboard-panel] button[class*='bg-blue-5'],
+[data-production-dashboard-panel] button[class*='bg-blue-6'],
+[data-production-dashboard-panel] button[class*='bg-emerald-5'],
+[data-moni-app-content][data-moni-production-view] button[class*='bg-green-5'],
+[data-moni-app-content][data-moni-production-view] button[class*='bg-green-6'],
+[data-moni-app-content][data-moni-production-view] button[class*='bg-blue-5'],
+[data-moni-app-content][data-moni-production-view] button[class*='bg-blue-6'],
+[data-moni-app-content][data-moni-production-view] button[class*='bg-emerald-5'],
+[data-moni-app-content][data-moni-production-view] button[class*='bg-red-5'] {
+  color: #fff !important;
+}
+
+[data-production-dashboard-panel] button[class*='bg-green-5'] *,
+[data-production-dashboard-panel] button[class*='bg-blue-5'] *,
+[data-production-dashboard-panel] button[class*='bg-blue-6'] *,
+[data-production-dashboard-panel] button[class*='bg-emerald-5'] *,
+[data-moni-app-content][data-moni-production-view] button[class*='bg-green-5'] *,
+[data-moni-app-content][data-moni-production-view] button[class*='bg-green-6'] *,
+[data-moni-app-content][data-moni-production-view] button[class*='bg-blue-5'] *,
+[data-moni-app-content][data-moni-production-view] button[class*='bg-blue-6'] *,
+[data-moni-app-content][data-moni-production-view] button[class*='bg-emerald-5'] *,
+[data-moni-app-content][data-moni-production-view] button[class*='bg-red-5'] * {
+  color: inherit !important;
+}
+
+/* Production dashboard: light cards with clear hierarchy. */
+[data-production-dashboard-panel] > div,
+[data-production-dashboard-panel] [class*='rounded-2xl'][class*='border'],
+[data-production-dashboard-panel] [class*='rounded-xl'][class*='border'] {
+  box-shadow: 0 12px 30px rgb(49 96 130 / 0.07) !important;
+}
+
+[data-production-dashboard-panel] [class*='rounded-2xl'][class*='border'][class*='bg-gray-800'],
+[data-production-dashboard-panel] [class*='rounded-2xl'][class*='border'][class*='bg-gray-900'] {
+  background: rgb(255 255 255 / 0.82) !important;
+}
+
+[data-production-dashboard-panel] svg rect[fill='rgba(51,65,85,0.22)'] {
+  fill: rgb(207 225 239 / 0.28) !important;
+}
+
+/* Monthly plan and production daily page surfaces. */
+[data-moni-app-content][data-moni-production-view='monthly-plan'] > main,
+[data-moni-app-content][data-moni-production-view='production-daily'] > main {
+  min-height: 100% !important;
+  background: transparent !important;
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] main > div,
+[data-moni-app-content][data-moni-production-view='production-daily'] main > div {
+  max-width: none !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] main > div > section,
+[data-moni-app-content][data-moni-production-view='production-daily'] section {
+  background-color: transparent !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='rounded-2xl'][class*='border'],
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='rounded-xl'][class*='border'],
+[data-moni-app-content][data-moni-production-view='production-daily'] [class*='rounded-2xl'][class*='border'],
+[data-moni-app-content][data-moni-production-view='production-daily'] [class*='rounded-xl'][class*='border'] {
+  box-shadow: 0 10px 26px rgb(49 96 130 / 0.055);
+}
+
+/* Monthly calendar shell. */
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='grid-cols-7'][class*='bg-slate-900'] {
+  background: rgb(248 252 255 / 0.94) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='min-h-28'][class*='border-b'] {
+  background: rgb(255 255 255 / 0.70);
+  border-color: rgb(var(--moni-glass-border) / 0.52) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='min-h-28'][class*='border-b']:hover {
+  background: rgb(237 247 255 / 0.92) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-blue-500/10'] {
+  background-color: rgb(78 163 226 / 0.11) !important;
+}
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-green-500/10'] {
+  background-color: rgb(53 201 120 / 0.11) !important;
+}
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-amber-400/10'],
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-amber-400/20'] {
+  background-color: rgb(243 201 78 / 0.14) !important;
+}
+[data-moni-app-content][data-moni-production-view='monthly-plan'] [class*='bg-red-500/10'] {
+  background-color: rgb(255 119 119 / 0.10) !important;
+}
+
+/* Production daily filters, KPI cards and table. */
+[data-moni-app-content][data-moni-production-view='production-daily'] [class*='bg-[#0c192c]'] {
+  background: rgb(255 255 255 / 0.80) !important;
+}
+[data-moni-app-content][data-moni-production-view='production-daily'] [class*='bg-slate-800/90'] {
+  background: rgb(239 247 253 / 0.94) !important;
+}
+[data-moni-app-content][data-moni-production-view='production-daily'] [class*='bg-emerald-950'],
+[data-moni-app-content][data-moni-production-view='production-daily'] [class*='bg-amber-950'],
+[data-moni-app-content][data-moni-production-view='production-daily'] [class*='bg-red-950'] {
+  background-color: rgb(255 255 255 / 0.70) !important;
+}
+
+/* Legacy production screens (work order, ledger, product/raw/packaging management).
+   The controller activates this only while the production category is selected. */
+[data-moni-app-content][data-moni-production-view='work-orders'] [class*='bg-gray-8'],
+[data-moni-app-content][data-moni-production-view='work-orders'] [class*='bg-slate-8'],
+[data-moni-app-content][data-moni-production-view='raw-ledger'] [class*='bg-gray-8'],
+[data-moni-app-content][data-moni-production-view='raw-ledger'] [class*='bg-slate-8'],
+[data-moni-app-content][data-moni-production-view='products'] [class*='bg-gray-8'],
+[data-moni-app-content][data-moni-production-view='products'] [class*='bg-slate-8'],
+[data-moni-app-content][data-moni-production-view='raw-materials'] [class*='bg-gray-8'],
+[data-moni-app-content][data-moni-production-view='raw-materials'] [class*='bg-slate-8'],
+[data-moni-app-content][data-moni-production-view='packaging-materials'] [class*='bg-gray-8'],
+[data-moni-app-content][data-moni-production-view='packaging-materials'] [class*='bg-slate-8'],
+[data-moni-app-content][data-moni-production-view='sanitation'] [class*='bg-gray-8'],
+[data-moni-app-content][data-moni-production-view='sanitation'] [class*='bg-slate-8'],
+[data-moni-app-content][data-moni-production-view='quality'] [class*='bg-gray-8'],
+[data-moni-app-content][data-moni-production-view='quality'] [class*='bg-slate-8'],
+[data-moni-app-content][data-moni-production-view='compliance'] [class*='bg-gray-8'],
+[data-moni-app-content][data-moni-production-view='compliance'] [class*='bg-slate-8'],
+[data-moni-app-content][data-moni-production-view='legacy'] [class*='bg-gray-8'],
+[data-moni-app-content][data-moni-production-view='legacy'] [class*='bg-slate-8'] {
+  background-color: rgb(255 255 255 / 0.78) !important;
+}
+
+[data-moni-app-content][data-moni-production-view] table thead,
+[data-moni-app-content][data-moni-production-view] table thead[class*='bg-'] {
+  background: rgb(239 247 253 / 0.94) !important;
+}
+
+[data-moni-app-content][data-moni-production-view] table tbody tr:hover {
+  background: rgb(235 246 254 / 0.72) !important;
+}
+
+@media (max-width: 1023px) {
+  [data-production-dashboard-panel] [class*='rounded-2xl'][class*='border'],
+  [data-moni-app-content][data-moni-production-view] [class*='rounded-2xl'][class*='border'] {
+    box-shadow: none !important;
+  }
+}
