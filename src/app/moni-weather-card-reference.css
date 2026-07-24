@@ -1,0 +1,144 @@
+/* Compact premium weather card based on the user's SolarPulse reference. */
+[data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card {
+  display: block !important;
+  top: 12px;
+  right: 14px;
+  width: 206px;
+  min-width: 206px;
+  padding: 10px 11px 9px;
+  border: 1px solid rgba(202, 222, 236, .86);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .79);
+  box-shadow: 0 10px 28px rgba(45, 91, 122, .10), inset 0 1px 0 rgba(255,255,255,.92);
+  backdrop-filter: blur(10px) saturate(108%);
+  -webkit-backdrop-filter: blur(10px) saturate(108%);
+  color: #1b3b50;
+}
+
+[data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(123, 178, 214, .76);
+  background: rgba(255, 255, 255, .91);
+}
+
+.moni-weather-card__date {
+  color: #698397;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -.01em;
+}
+
+.moni-weather-card__main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 5px;
+}
+
+.moni-weather-card__icon {
+  width: 39px;
+  height: 39px;
+  flex: 0 0 39px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, rgba(255,245,205,.98), rgba(255,249,230,.60) 68%, rgba(255,255,255,0) 70%);
+}
+
+.moni-weather-card__temperature {
+  display: grid;
+  gap: 0;
+}
+
+.moni-weather-card__temperature strong {
+  color: #213646;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 760;
+  letter-spacing: -.035em;
+}
+
+.moni-weather-card__temperature small {
+  margin-top: 3px;
+  color: #607b8e;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.moni-weather-card__location {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: #6b8395;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.moni-weather-card__location span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moni-weather-card__metrics {
+  display: grid;
+  gap: 4px;
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(191, 213, 228, .55);
+}
+
+.moni-weather-card__metrics > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 16px;
+}
+
+.moni-weather-card__metrics span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #71899a;
+  font-size: 8.8px;
+  font-weight: 600;
+}
+
+.moni-weather-card__metrics b {
+  color: #2b4659;
+  font-size: 9px;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Reserve the same top-right space inside the Control Tower hero so controls never collide with the card. */
+[data-moni-control-tower] .ct-hero-tools {
+  right: 232px;
+}
+
+@media (max-width: 1450px) and (min-width: 1280px) {
+  [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card {
+    width: 190px;
+    min-width: 190px;
+  }
+
+  [data-moni-control-tower] .ct-hero-tools {
+    right: 212px;
+  }
+}
+
+@media (max-width: 1279px) {
+  [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card {
+    display: none !important;
+  }
+
+  [data-moni-control-tower] .ct-hero-tools {
+    right: 18px;
+  }
+}
