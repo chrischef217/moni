@@ -1,0 +1,185 @@
+:root {
+  --moni-glass-bg: 241 246 252;
+  --moni-glass-panel: 255 255 255;
+  --moni-glass-sidebar: 235 244 252;
+  --moni-glass-border: 186 213 235;
+  --moni-glass-text: 24 54 72;
+  --moni-glass-text-secondary: 94 116 132;
+  --moni-glass-text-muted: 128 148 163;
+  --moni-glass-blue: 32 143 228;
+  --moni-glass-blue-dark: 24 118 190;
+  --moni-glass-shadow: 30 72 105;
+  --moni-app-radius: 32px;
+}
+
+.moni-weather-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  transition: background-image 480ms ease, background-color 480ms ease;
+}
+
+.moni-weather-stage__veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(12 66 105 / 0.06), rgb(9 39 67 / 0.16));
+  pointer-events: none;
+}
+
+.moni-app-shell {
+  position: relative;
+  width: min(92vw, 1780px);
+  height: min(90vh, 1100px);
+  min-height: 620px;
+  overflow: hidden;
+  border: 1px solid rgb(214 235 249 / 0.92);
+  border-radius: var(--moni-app-radius);
+  background: rgb(var(--moni-glass-bg) / 0.88);
+  box-shadow: 0 36px 90px rgb(var(--moni-glass-shadow) / 0.22), inset 0 1px 0 rgb(255 255 255 / 0.92);
+  backdrop-filter: blur(9px) saturate(112%);
+  -webkit-backdrop-filter: blur(9px) saturate(112%);
+}
+
+.moni-app-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: auto;
+  background: radial-gradient(circle at 84% 0%, rgb(134 207 255 / 0.16), transparent 28%), linear-gradient(145deg, rgb(246 251 255 / 0.90), rgb(231 242 252 / 0.86));
+  color: rgb(var(--moni-glass-text));
+  transition: padding-left 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.moni-app-content.moni-global-sidebar-active {
+  --moni-sidebar-width: 264px;
+}
+
+@media (min-width: 1024px) {
+  .moni-app-content.moni-sidebar-offset-active {
+    padding-left: var(--moni-sidebar-width, 264px);
+  }
+}
+
+[data-moni-app-shell] [data-moni-global-sidebar] {
+  position: absolute !important;
+  inset: 0 auto 0 0 !important;
+  height: 100% !important;
+  border-right: 1px solid rgb(var(--moni-glass-border) / 0.55) !important;
+  background: linear-gradient(180deg, rgb(239 248 255 / 0.94), rgb(228 241 252 / 0.92)) !important;
+  color: rgb(var(--moni-glass-text)) !important;
+  box-shadow: 12px 0 32px rgb(71 126 166 / 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+[data-moni-global-sidebar] > div:first-child,
+[data-moni-global-sidebar] > div:last-child {
+  border-color: rgb(var(--moni-glass-border) / 0.55) !important;
+}
+
+[data-moni-global-sidebar] button[data-moni-global-nav] {
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-moni-global-sidebar] button[data-moni-global-nav]:hover,
+[data-moni-global-sidebar] [class*='bg-slate-800'],
+[data-moni-global-sidebar] [class*='bg-slate-900'] {
+  background: rgb(255 255 255 / 0.62) !important;
+}
+
+[data-moni-global-sidebar] nav > div > button[class*='bg-emerald'],
+[data-moni-global-sidebar] nav button[class*='bg-blue-600'] {
+  background: rgb(var(--moni-glass-blue) / 0.12) !important;
+  color: rgb(var(--moni-glass-blue-dark)) !important;
+}
+
+[data-moni-global-sidebar] [class*='text-slate-'] {
+  color: rgb(var(--moni-glass-text-secondary)) !important;
+}
+
+[data-moni-global-sidebar] b,
+[data-moni-global-sidebar] .text-white {
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+.moni-weather-badge {
+  position: absolute;
+  z-index: 900;
+  top: 14px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 150px;
+  padding: 9px 12px;
+  border: 1px solid rgb(var(--moni-glass-border) / 0.52);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.70);
+  box-shadow: 0 8px 24px rgb(var(--moni-glass-shadow) / 0.08);
+  pointer-events: none;
+}
+
+.moni-weather-badge__dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgb(var(--moni-glass-blue));
+  box-shadow: 0 0 0 5px rgb(var(--moni-glass-blue) / 0.10);
+}
+
+.moni-weather-badge__dot[data-condition^='rain'] { background: #5c7f98; }
+.moni-weather-badge__dot[data-condition^='snow'] { background: #8ab8d5; }
+.moni-weather-badge__dot[data-condition^='cloudy'] { background: #91a9bb; }
+
+.moni-weather-badge__location {
+  max-width: 190px;
+  overflow: hidden;
+  color: rgb(var(--moni-glass-text-secondary));
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moni-weather-badge__status {
+  margin-top: 1px;
+  color: rgb(var(--moni-glass-text));
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (max-width: 1279px) {
+  .moni-weather-badge { display: none; }
+}
+
+@media (max-width: 1023px) {
+  .moni-weather-stage {
+    display: block;
+    background-image: none !important;
+    background-color: rgb(var(--moni-glass-bg)) !important;
+  }
+  .moni-weather-stage__veil { display: none; }
+  .moni-app-shell {
+    width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media print {
+  .moni-weather-stage { position: static !important; display: block !important; overflow: visible !important; background: white !important; }
+  .moni-weather-stage__veil, .moni-weather-badge { display: none !important; }
+  .moni-app-shell, .moni-app-content { width: 100% !important; height: auto !important; min-height: 0 !important; overflow: visible !important; border: 0 !important; border-radius: 0 !important; background: white !important; box-shadow: none !important; backdrop-filter: none !important; }
+}
