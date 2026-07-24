@@ -8,9 +8,6 @@ import RawMaterialTypeFilterController from '@/components/RawMaterialTypeFilterC
 import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
-import SalesManagementMenuController from '@/components/SalesManagementMenuController'
-import SalesTargetsMenuController from '@/components/SalesTargetsMenuController'
-import FinancialControlMenuController from '@/components/FinancialControlMenuController'
 import WorkOrderGramController from '@/components/WorkOrderGramController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyProductionCalendarDayStyleController'
@@ -69,9 +66,6 @@ export default async function RootLayout({
             <LegacyGlassThemeController />
             <AppearanceSettingsMenuController />
             <ProductionCompletionMetadataController />
-            <SalesManagementMenuController />
-            <SalesTargetsMenuController />
-            <FinancialControlMenuController />
             <WorkOrderGramController />
             <SidebarPinToggleVisualFix />
             <MonthlyProductionCalendarDayStyleController />
