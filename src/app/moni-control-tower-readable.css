@@ -1,0 +1,182 @@
+/* Readability pass for the reference-grade Control Tower.
+   Preserve compact proportions while raising the minimum readable type size. */
+
+[data-moni-control-tower].ct-root {
+  font-size: 14px;
+}
+
+.ct-kicker {
+  font-size: 11px;
+}
+
+.ct-kicker em {
+  font-size: 10px;
+}
+
+.ct-hero h1 {
+  font-size: clamp(26px, 2.15vw, 33px);
+}
+
+.ct-hero p {
+  font-size: 13px;
+  line-height: 1.62;
+}
+
+.ct-user-meta {
+  font-size: 11px;
+}
+
+.ct-tool-btn {
+  font-size: 11px;
+}
+
+.ct-flow-line {
+  font-size: 11px;
+}
+
+.ct-error {
+  font-size: 12px;
+}
+
+.ct-compact-stat span {
+  font-size: 11px;
+}
+
+.ct-compact-stat strong {
+  font-size: 18px;
+}
+
+.ct-panel-title span {
+  font-size: 10px;
+}
+
+.ct-panel-title h2 {
+  font-size: 18px;
+}
+
+.ct-text-link {
+  font-size: 10px;
+}
+
+.ct-sales-number span {
+  font-size: 11px;
+}
+
+.ct-sales-number strong {
+  font-size: 24px;
+}
+
+.ct-sales-number small {
+  font-size: 10px;
+}
+
+.ct-progress-meta {
+  font-size: 10px;
+}
+
+.ct-progress-meta b {
+  font-size: 11px;
+}
+
+.ct-mini-grid span {
+  font-size: 10px;
+}
+
+.ct-mini-grid b {
+  font-size: 12px;
+}
+
+.ct-health-list span {
+  font-size: 10px;
+}
+
+.ct-health-list b {
+  font-size: 12px;
+}
+
+.ct-production-score strong {
+  font-size: 28px;
+}
+
+.ct-production-score span {
+  font-size: 10px;
+}
+
+.ct-alert-copy b {
+  font-size: 11px;
+}
+
+.ct-alert-copy small {
+  font-size: 10px;
+}
+
+.ct-alert-row > strong {
+  font-size: 11px;
+}
+
+.ct-table {
+  font-size: 11px !important;
+}
+
+.ct-table th {
+  font-size: 10px !important;
+}
+
+.ct-table td {
+  font-size: 11px !important;
+}
+
+.ct-status {
+  font-size: 9px;
+}
+
+.ct-reference-grid span {
+  font-size: 10px;
+}
+
+.ct-reference-grid b {
+  font-size: 11px;
+}
+
+.ct-disclaimer {
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.ct-empty-card {
+  font-size: 11px;
+}
+
+.ct-metric-label {
+  font-size: 10px;
+}
+
+.ct-metric-value {
+  font-size: 20px;
+}
+
+.ct-metric-note {
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.ct-footer,
+.ct-footer button {
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .ct-flow-line {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 560px) {
+  .ct-hero h1 {
+    font-size: 24px;
+  }
+
+  .ct-compact-stat strong {
+    font-size: 16px;
+  }
+}
