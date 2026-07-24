@@ -1,0 +1,183 @@
+/* Control Tower contrast correction.
+   Keeps the Weather Glass language, but restores clear layer separation and dark readable text. */
+
+[data-moni-app-content] [data-moni-control-tower] {
+  color: #183648 !important;
+}
+
+/* Level 1: the command header is a clearly tinted blue-white glass surface. */
+[data-moni-app-content] [data-moni-control-tower] > div > header {
+  border-color: rgba(147, 180, 202, 0.72) !important;
+  background:
+    linear-gradient(135deg, rgba(205, 227, 241, 0.94), rgba(223, 238, 247, 0.91)) !important;
+  box-shadow:
+    0 18px 42px rgba(42, 86, 116, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
+}
+
+/* Level 2: major dashboard panels sit one step lighter than the header. */
+[data-moni-app-content] [data-moni-control-tower] section.grid > div.rounded-3xl,
+[data-moni-app-content] [data-moni-control-tower] > div > section > div.rounded-3xl {
+  border-color: rgba(166, 194, 213, 0.68) !important;
+  background: rgba(226, 239, 247, 0.92) !important;
+  box-shadow:
+    0 12px 30px rgba(47, 91, 121, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55) !important;
+}
+
+/* The information strip under the hero uses a stronger cool tint, not white. */
+[data-moni-app-content] [data-moni-control-tower] > div > header > div:last-child {
+  background: rgba(151, 181, 201, 0.44) !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] > div > header > div:last-child > div {
+  background: rgba(211, 230, 242, 0.96) !important;
+}
+
+/* Level 3: KPI cards are light, but visibly distinct from their parent panel. */
+[data-moni-app-content] [data-moni-control-tower] button[class*='min-h-[148px]'] {
+  border-color: rgba(170, 196, 213, 0.76) !important;
+  background: rgba(241, 247, 251, 0.96) !important;
+  color: #183648 !important;
+  box-shadow:
+    0 8px 20px rgba(47, 91, 121, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.64) !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] button[class*='min-h-[148px]']:hover {
+  border-color: rgba(91, 142, 176, 0.72) !important;
+  background: rgba(247, 251, 253, 0.98) !important;
+}
+
+/* Semantic cards keep meaning through restrained tints rather than dark surfaces. */
+[data-moni-app-content] [data-moni-control-tower] button[class*='bg-emerald-500'] {
+  border-color: rgba(82, 157, 121, 0.42) !important;
+  background: rgba(222, 241, 231, 0.94) !important;
+  color: #205a40 !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] button[class*='bg-red-500'] {
+  border-color: rgba(197, 104, 114, 0.42) !important;
+  background: rgba(248, 228, 230, 0.94) !important;
+  color: #873b45 !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] button[class*='bg-amber-500'] {
+  border-color: rgba(190, 150, 62, 0.42) !important;
+  background: rgba(248, 239, 211, 0.94) !important;
+  color: #795b12 !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] button[class*='bg-blue-500'] {
+  border-color: rgba(82, 139, 181, 0.40) !important;
+  background: rgba(222, 237, 248, 0.94) !important;
+  color: #285f87 !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] button[class*='bg-violet-500'],
+[data-moni-app-content] [data-moni-control-tower] div[class*='bg-violet-500'] {
+  border-color: rgba(126, 105, 177, 0.38) !important;
+  background: rgba(235, 229, 247, 0.94) !important;
+  color: #65508f !important;
+}
+
+/* General buttons on the dashboard are light-outline controls, so never force white text. */
+[data-moni-app-content] [data-moni-control-tower] button {
+  color: #24485f !important;
+}
+
+/* Strong readable typography. This intentionally overrides old dark-theme text utilities. */
+[data-moni-app-content] [data-moni-control-tower] .text-white,
+[data-moni-app-content] [data-moni-control-tower] .text-slate-100,
+[data-moni-app-content] [data-moni-control-tower] .text-slate-200 {
+  color: #183648 !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] .text-slate-300,
+[data-moni-app-content] [data-moni-control-tower] .text-slate-400 {
+  color: #506b7e !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] .text-slate-500 {
+  color: #71899b !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] .text-emerald-200,
+[data-moni-app-content] [data-moni-control-tower] .text-emerald-300 {
+  color: #19704a !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] .text-red-100,
+[data-moni-app-content] [data-moni-control-tower] .text-red-200,
+[data-moni-app-content] [data-moni-control-tower] .text-red-300 {
+  color: #a13f4b !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] .text-amber-100,
+[data-moni-app-content] [data-moni-control-tower] .text-amber-200,
+[data-moni-app-content] [data-moni-control-tower] .text-amber-300 {
+  color: #8a6411 !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] .text-blue-100,
+[data-moni-app-content] [data-moni-control-tower] .text-blue-200,
+[data-moni-app-content] [data-moni-control-tower] .text-blue-300 {
+  color: #286b98 !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] .text-violet-100,
+[data-moni-app-content] [data-moni-control-tower] .text-violet-200,
+[data-moni-app-content] [data-moni-control-tower] .text-violet-300 {
+  color: #67528f !important;
+}
+
+/* Table gets its own layer so rows are distinguishable from the containing card. */
+[data-moni-app-content] [data-moni-control-tower] table thead,
+[data-moni-app-content] [data-moni-control-tower] table thead[class*='bg-'] {
+  background: rgba(210, 228, 240, 0.92) !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] table tbody tr > * {
+  border-color: rgba(171, 195, 211, 0.48) !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] table tbody tr:hover {
+  background: rgba(219, 236, 247, 0.68) !important;
+}
+
+/* Status pills remain readable on light surfaces. */
+[data-moni-app-content] [data-moni-control-tower] span[class*='bg-red-500'] {
+  background: rgba(245, 220, 224, 0.96) !important;
+  color: #9d3f4a !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] span[class*='bg-amber-500'] {
+  background: rgba(246, 235, 204, 0.96) !important;
+  color: #806017 !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] span[class*='bg-blue-500'] {
+  background: rgba(216, 234, 246, 0.96) !important;
+  color: #28678f !important;
+}
+
+[data-moni-app-content] [data-moni-control-tower] span[class*='bg-emerald-500'] {
+  background: rgba(216, 239, 228, 0.96) !important;
+  color: #1e704c !important;
+}
+
+/* Keep the glass identity without introducing expensive continuous visual effects. */
+@media (min-width: 1024px) {
+  [data-moni-app-content] [data-moni-control-tower] > div > header,
+  [data-moni-app-content] [data-moni-control-tower] section.grid > div.rounded-3xl {
+    backdrop-filter: blur(8px) saturate(108%);
+  }
+}
+
+@media (max-width: 767px) {
+  [data-moni-app-content] [data-moni-control-tower] > div > header,
+  [data-moni-app-content] [data-moni-control-tower] section.grid > div.rounded-3xl,
+  [data-moni-app-content] [data-moni-control-tower] button[class*='min-h-[148px]'] {
+    box-shadow: none !important;
+  }
+}
