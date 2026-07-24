@@ -1,0 +1,196 @@
+/* HR / Sales / Sales Management / Accounting shared visual layer. */
+[data-business-management-shell] {
+  min-height: 100%;
+  color: rgb(var(--moni-glass-text));
+}
+
+[data-business-management-shell] main,
+[data-business-management-shell] main > div,
+[data-business-management-shell] main > div > section {
+  background-color: transparent !important;
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-business-management-shell] [class*='bg-[#071426]'],
+[data-business-management-shell] [class*='bg-[#07101f]'],
+[data-business-management-shell] [class*='bg-[#0b1729]'],
+[data-business-management-shell] [class*='bg-[#0b1b30]'],
+[data-business-management-shell] [class*='bg-[#0c192c]'],
+[data-business-management-shell] [class*='bg-[#0f1b2d]'],
+[data-business-management-shell] [class*='bg-[#0f172a]'],
+[data-business-management-shell] [class*='bg-slate-950'],
+[data-business-management-shell] [class*='bg-slate-900'],
+[data-business-management-shell] [class*='bg-slate-800'],
+[data-business-management-shell] [class*='bg-gray-900'],
+[data-business-management-shell] [class*='bg-gray-800'] {
+  background-color: rgb(255 255 255 / 0.78) !important;
+}
+
+[data-business-management-shell] [class*='border-slate-'],
+[data-business-management-shell] [class*='border-gray-'] {
+  border-color: rgb(var(--moni-glass-border) / 0.58) !important;
+}
+
+[data-business-management-shell] .text-white,
+[data-business-management-shell] [class*='text-slate-100'],
+[data-business-management-shell] [class*='text-slate-200'],
+[data-business-management-shell] [class*='text-gray-100'],
+[data-business-management-shell] [class*='text-gray-200'] {
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-business-management-shell] [class*='text-slate-300'],
+[data-business-management-shell] [class*='text-slate-400'],
+[data-business-management-shell] [class*='text-gray-300'],
+[data-business-management-shell] [class*='text-gray-400'] {
+  color: rgb(var(--moni-glass-text-secondary)) !important;
+}
+
+[data-business-management-shell] [class*='text-slate-500'],
+[data-business-management-shell] [class*='text-gray-500'] {
+  color: rgb(var(--moni-glass-text-muted)) !important;
+}
+
+/* Semantic colors stay recognizable but are dark enough on white surfaces. */
+[data-business-management-shell] [class*='text-green-100'],
+[data-business-management-shell] [class*='text-green-200'],
+[data-business-management-shell] [class*='text-green-300'],
+[data-business-management-shell] [class*='text-emerald-100'],
+[data-business-management-shell] [class*='text-emerald-200'],
+[data-business-management-shell] [class*='text-emerald-300'] { color: #19784e !important; }
+
+[data-business-management-shell] [class*='text-blue-100'],
+[data-business-management-shell] [class*='text-blue-200'],
+[data-business-management-shell] [class*='text-blue-300'],
+[data-business-management-shell] [class*='text-cyan-200'],
+[data-business-management-shell] [class*='text-cyan-300'] { color: #226f9f !important; }
+
+[data-business-management-shell] [class*='text-amber-100'],
+[data-business-management-shell] [class*='text-amber-200'],
+[data-business-management-shell] [class*='text-amber-300'],
+[data-business-management-shell] [class*='text-yellow-200'],
+[data-business-management-shell] [class*='text-yellow-300'] { color: #8a6510 !important; }
+
+[data-business-management-shell] [class*='text-red-100'],
+[data-business-management-shell] [class*='text-red-200'],
+[data-business-management-shell] [class*='text-red-300'] { color: #b14b55 !important; }
+
+/* Form controls. */
+[data-business-management-shell] input,
+[data-business-management-shell] select,
+[data-business-management-shell] textarea {
+  border-color: rgb(var(--moni-glass-border) / 0.68) !important;
+  background: rgb(255 255 255 / 0.88) !important;
+  color: rgb(var(--moni-glass-text)) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9);
+}
+
+[data-business-management-shell] input:focus,
+[data-business-management-shell] select:focus,
+[data-business-management-shell] textarea:focus {
+  border-color: rgb(var(--moni-glass-blue) / 0.72) !important;
+  box-shadow: 0 0 0 3px rgb(var(--moni-glass-blue) / 0.1) !important;
+}
+
+/* Main cards and data sections. */
+[data-business-management-shell] section[class*='rounded-2xl'],
+[data-business-management-shell] div[class*='rounded-2xl'][class*='border'],
+[data-business-management-shell] div[class*='rounded-3xl'][class*='border'] {
+  box-shadow: 0 12px 30px rgb(49 96 130 / 0.065);
+}
+
+[data-business-management-shell] section[class*='bg-slate-900'],
+[data-business-management-shell] section[class*='bg-gray-900'],
+[data-business-management-shell] div[class*='bg-slate-900'][class*='rounded-2xl'],
+[data-business-management-shell] div[class*='bg-gray-900'][class*='rounded-2xl'] {
+  background: rgb(255 255 255 / 0.8) !important;
+}
+
+/* Tables follow the reference: quiet header, no heavy dark blocks. */
+[data-business-management-shell] table {
+  color: rgb(var(--moni-glass-text));
+  font-variant-numeric: tabular-nums;
+}
+
+[data-business-management-shell] thead,
+[data-business-management-shell] thead[class*='bg-slate-'],
+[data-business-management-shell] thead[class*='bg-gray-'] {
+  background: rgb(239 247 253 / 0.96) !important;
+}
+
+[data-business-management-shell] th {
+  color: rgb(var(--moni-glass-text-secondary)) !important;
+  font-size: 0.75rem !important;
+  font-weight: 650 !important;
+}
+
+[data-business-management-shell] td {
+  color: rgb(var(--moni-glass-text)) !important;
+}
+
+[data-business-management-shell] tbody tr,
+[data-business-management-shell] tbody tr[class*='border-'] {
+  border-color: rgb(var(--moni-glass-border) / 0.4) !important;
+}
+
+[data-business-management-shell] tbody tr:hover {
+  background: rgb(235 246 254 / 0.7) !important;
+}
+
+/* Summary/status cards become pastel, not dark neon. */
+[data-business-management-shell] [class*='bg-blue-500/10'],
+[data-business-management-shell] [class*='bg-blue-500/15'] { background-color: rgb(32 143 228 / 0.09) !important; }
+[data-business-management-shell] [class*='bg-green-500/10'],
+[data-business-management-shell] [class*='bg-emerald-500/10'],
+[data-business-management-shell] [class*='bg-emerald-500/15'] { background-color: rgb(53 201 120 / 0.09) !important; }
+[data-business-management-shell] [class*='bg-amber-500/10'],
+[data-business-management-shell] [class*='bg-yellow-500/10'] { background-color: rgb(243 201 78 / 0.12) !important; }
+[data-business-management-shell] [class*='bg-red-500/10'] { background-color: rgb(255 119 119 / 0.09) !important; }
+
+/* Filled action buttons retain white copy. */
+[data-business-management-shell] button[class*='bg-blue-5'],
+[data-business-management-shell] button[class*='bg-blue-6'],
+[data-business-management-shell] button[class*='bg-green-5'],
+[data-business-management-shell] button[class*='bg-green-6'],
+[data-business-management-shell] button[class*='bg-emerald-5'],
+[data-business-management-shell] button[class*='bg-red-5'],
+[data-business-management-shell] a[class*='bg-blue-5'],
+[data-business-management-shell] a[class*='bg-blue-6'] {
+  color: #fff !important;
+}
+
+[data-business-management-shell] button[class*='bg-blue-5'] *,
+[data-business-management-shell] button[class*='bg-blue-6'] *,
+[data-business-management-shell] button[class*='bg-green-5'] *,
+[data-business-management-shell] button[class*='bg-green-6'] *,
+[data-business-management-shell] button[class*='bg-emerald-5'] *,
+[data-business-management-shell] button[class*='bg-red-5'] * {
+  color: inherit !important;
+}
+
+/* Modal overlay stays dark for focus; modal itself is frosted white. */
+[data-business-management-shell] .fixed.inset-0[class*='bg-black'] {
+  background: rgb(19 48 68 / 0.34) !important;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+[data-business-management-shell] .fixed.inset-0 > div[class*='bg-[#0f1b2d]'],
+[data-business-management-shell] .fixed.inset-0 > div[class*='bg-slate-900'],
+[data-business-management-shell] .fixed.inset-0 > div[class*='bg-gray-900'] {
+  border-color: rgb(var(--moni-glass-border) / 0.8) !important;
+  background: rgb(248 252 255 / 0.97) !important;
+  box-shadow: 0 28px 80px rgb(29 67 94 / 0.22) !important;
+}
+
+/* The global weather chip must never cover business action controls. */
+[data-moni-app-shell]:has([data-business-management-shell]) .moni-weather-badge {
+  display: none !important;
+}
+
+@media (max-width: 1023px) {
+  [data-business-management-shell] section[class*='rounded-2xl'],
+  [data-business-management-shell] div[class*='rounded-2xl'][class*='border'] {
+    box-shadow: none;
+  }
+}
