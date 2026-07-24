@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 
 const PRODUCTION_CATEGORY_LABEL = '생산관리'
 
-function normalized(element: Element | null) {
+function normalized(element: Element | null | undefined) {
   return (element?.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
