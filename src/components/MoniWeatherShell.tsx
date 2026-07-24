@@ -35,8 +35,9 @@ function backgroundStyle(payload: WeatherResponse | null) {
   const condition = payload?.weather?.condition || 'clear_day'
   const gradient = FALLBACK_GRADIENTS[condition] || FALLBACK_GRADIENTS.clear_day
   if (payload?.background_url) {
+    const safeUrl = payload.background_url.replace(/["'()\\]/g, '')
     return {
-      backgroundImage: `linear-gradient(rgba(10, 40, 70, 0.10), rgba(10, 40, 70, 0.12)), url(${JSON.stringify(payload.background_url).slice(1, -1)})`,
+      backgroundImage: `linear-gradient(rgba(10, 40, 70, 0.10), rgba(10, 40, 70, 0.12)), url("${safeUrl}")`,
       backgroundColor: '#8fcff5',
     }
   }
@@ -52,7 +53,7 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
       const payload = await response.json() as WeatherResponse
       if (response.ok && payload.ok) setWeather(payload)
     } catch {
-      // Keep the last successful/fallback visual. The application itself must remain usable.
+      // The app must remain usable even if the external weather API is unavailable.
     }
   }, [])
 
@@ -76,7 +77,7 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
         <div data-moni-app-content className="moni-app-content">
           {children}
         </div>
-        <div className="moni-weather-badge" aria-live="polite">
+        <a className="moni-weather-badge" href="/settings/appearance" aria-label="날씨 및 배경 설정 열기">
           <div className="moni-weather-badge__dot" data-condition={weather?.weather?.condition || 'clear_day'} />
           <div>
             <div className="moni-weather-badge__location">{weather?.location_label || '대한민국'}</div>
@@ -85,7 +86,7 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
               {typeof temperature === 'number' ? ` · ${Math.round(temperature)}°C` : ''}
             </div>
           </div>
-        </div>
+        </a>
       </div>
     </div>
   )
