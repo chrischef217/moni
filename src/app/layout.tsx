@@ -16,6 +16,7 @@ import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyProductionCalendarDayStyleController'
 import MonthlyPlanToWorkOrderController from '@/components/MonthlyPlanToWorkOrderController'
 import ProductionDashboardController from '@/components/ProductionDashboardController'
+import { getSessionFromCookies } from '@/lib/allowance/session'
 import './globals.css'
 import './monthly-production-calendar.css'
 import './production-dashboard-motion.css'
@@ -26,31 +27,38 @@ export const metadata: Metadata = {
   icons: { icon: '/favicon.ico' },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const session = await getSessionFromCookies()
+  const showAdminChrome = session?.role === 'admin'
+
   return (
     <html lang="ko">
       <body className="antialiased">
-        <RawMaterialLedgerPrintController />
-        <MonthlyProductionRequirementPrintController />
-        <MonthlyProductionRequirementSafetyGuard />
-        <MonthlyProductionPurchaseBudgetController />
-        <RawMaterialUnitPriceController />
-        <RawMaterialTypeFilterController />
-        <GlobalMoniSidebarController />
-        <GlobalSidebarLayoutController />
-        <ProductionCompletionMetadataController />
-        <SalesManagementMenuController />
-        <SalesTargetsMenuController />
-        <FinancialControlMenuController />
-        <WorkOrderGramController />
-        <SidebarPinToggleVisualFix />
-        <MonthlyProductionCalendarDayStyleController />
-        <MonthlyPlanToWorkOrderController />
-        <ProductionDashboardController />
+        {showAdminChrome ? (
+          <>
+            <RawMaterialLedgerPrintController />
+            <MonthlyProductionRequirementPrintController />
+            <MonthlyProductionRequirementSafetyGuard />
+            <MonthlyProductionPurchaseBudgetController />
+            <RawMaterialUnitPriceController />
+            <RawMaterialTypeFilterController />
+            <GlobalMoniSidebarController />
+            <GlobalSidebarLayoutController />
+            <ProductionCompletionMetadataController />
+            <SalesManagementMenuController />
+            <SalesTargetsMenuController />
+            <FinancialControlMenuController />
+            <WorkOrderGramController />
+            <SidebarPinToggleVisualFix />
+            <MonthlyProductionCalendarDayStyleController />
+            <MonthlyPlanToWorkOrderController />
+            <ProductionDashboardController />
+          </>
+        ) : null}
         {children}
       </body>
     </html>
