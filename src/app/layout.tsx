@@ -32,6 +32,7 @@ import './moni-business-glass.css'
 import './moni-final-glass-pass.css'
 import './moni-control-tower-hierarchy.css'
 import './moni-control-tower-reference.css'
+import './moni-control-tower-readable.css'
 import './monthly-production-calendar.css'
 import './production-dashboard-motion.css'
 
