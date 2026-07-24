@@ -1,1 +1,0 @@
-Native navigation integration is performed by merging the existing reviewed V8 navigation commit into this latest-main integration branch, then removing obsolete DOM-injection menu controllers after preview verification.
