@@ -19,6 +19,7 @@ import AppearanceSettingsMenuController from '@/components/AppearanceSettingsMen
 import MoniWeatherShell from '@/components/MoniWeatherShell'
 import GlobalMoniAgent from '@/components/GlobalMoniAgent'
 import GlobalAlertSyncController from '@/components/GlobalAlertSyncController'
+import PersistentMoniAlertBubble from '@/components/PersistentMoniAlertBubble'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 import './globals.css'
 import './moni-glass-tokens.css'
@@ -76,6 +77,7 @@ export default async function RootLayout({
             <GlobalAlertSyncController />
             {children}
             <GlobalMoniAgent />
+            <PersistentMoniAlertBubble />
           </MoniWeatherShell>
         ) : children}
       </body>
