@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import MoniIntelligenceModule from '@/components/MoniIntelligenceModule'
 import MoniAlertBoardPanel from '@/components/MoniAlertBoardPanel'
+import LineNotificationSettingsPanel from '@/components/LineNotificationSettingsPanel'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
 export const dynamic = 'force-dynamic'
@@ -13,6 +14,7 @@ export default async function IntelligencePage() {
     <>
       <MoniIntelligenceModule />
       <MoniAlertBoardPanel />
+      <LineNotificationSettingsPanel />
     </>
   )
 }
