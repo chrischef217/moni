@@ -3,6 +3,7 @@ import { Suspense } from 'react'
 import GlobalMoniSidebarRouteBoundary from '@/components/GlobalMoniSidebarRouteBoundary'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
+import SidebarSubmenuMotionController from '@/components/SidebarSubmenuMotionController'
 import ModalNavigationDismissGuard from '@/components/ModalNavigationDismissGuard'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
 import DeferredGlobalMoniAgent from '@/components/DeferredGlobalMoniAgent'
@@ -31,6 +32,7 @@ import './monthly-production-calendar.css'
 import './moni-monthly-calendar-glass-popover.css'
 import './moni-monthly-requirement-design.css'
 import './moni-legacy-ai-chat.css'
+import './moni-sidebar-motion.css'
 import './production-dashboard-motion.css'
 
 export const metadata: Metadata = {
@@ -57,6 +59,7 @@ export default async function RootLayout({
             </Suspense>
             <GlobalSidebarLayoutController />
             <SidebarPinToggleVisualFix />
+            <SidebarSubmenuMotionController />
             <ModalNavigationDismissGuard />
             <Suspense fallback={null}>
               <AdminRouteRuntime />
