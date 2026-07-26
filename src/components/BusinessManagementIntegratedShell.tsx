@@ -7,6 +7,7 @@ import SalesReceivablesModule from '@/components/SalesReceivablesModule'
 import SalesVariantPricingModule from '@/components/SalesVariantPricingModule'
 import SalesOrderV4Module from '@/components/SalesOrderV4Module'
 import SalesOrderV4ExportEnhancer from '@/components/SalesOrderV4ExportEnhancer'
+import SalesTaxTypeEnhancer from '@/components/SalesTaxTypeEnhancer'
 import SalesTargetsModule from '@/components/SalesTargetsModule'
 import FinancialControlModule from '@/components/FinancialControlModule'
 import RegularEmployeeManagementModule from '@/components/RegularEmployeeManagementModule'
@@ -99,6 +100,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
       data-sales-management-shell={initialTab === 'salesManagement' ? 'true' : undefined}
       data-regular-employee-shell={regularEmployeeView ? 'true' : undefined}
     >
+      {initialTab === 'salesManagement' ? <SalesTaxTypeEnhancer initialView={initialView} /> : null}
       {initialTab === 'salesManagement'
         ? salesManagementContent
         : salesTargetView

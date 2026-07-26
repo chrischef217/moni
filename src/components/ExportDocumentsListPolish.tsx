@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 function normalizedText(element: Element | null) {
   return (element?.textContent || '').replace(/\s+/g, ' ').trim()
@@ -17,7 +17,40 @@ type ExportDocument = {
   sales_order_id?: string | null
 }
 
+type DialogState = {
+  open: boolean
+  kind: 'confirm' | 'error'
+  title: string
+  message: string
+  details: string[]
+  confirmText: string
+}
+
+const CLOSED_DIALOG: DialogState = {
+  open: false,
+  kind: 'confirm',
+  title: '',
+  message: '',
+  details: [],
+  confirmText: '확인',
+}
+
 export default function ExportDocumentsListPolish() {
+  const [dialog, setDialog] = useState<DialogState>(CLOSED_DIALOG)
+  const pendingActionRef = useRef<null | (() => void)>(null)
+
+  const closeDialog = () => {
+    pendingActionRef.current = null
+    setDialog(CLOSED_DIALOG)
+  }
+
+  const runDialogAction = () => {
+    const action = pendingActionRef.current
+    pendingActionRef.current = null
+    setDialog(CLOSED_DIALOG)
+    action?.()
+  }
+
   useEffect(() => {
     const root = document.querySelector('main')
     if (!root) return
@@ -31,8 +64,19 @@ export default function ExportDocumentsListPolish() {
       event.stopImmediatePropagation()
     }
 
+    const showError = (message: string) => {
+      pendingActionRef.current = null
+      setDialog({
+        open: true,
+        kind: 'error',
+        title: '처리하지 못했습니다',
+        message,
+        details: [],
+        confirmText: '확인',
+      })
+    }
+
     const shipAndPrint = async (button: HTMLButtonElement, documentRow: ExportDocument) => {
-      if (!window.confirm('출고확정하면 완제품 재고에서 자동 차감되고 판매관리에 VAT 0% 판매건이 생성됩니다. 이어서 거래명세표를 인쇄하시겠습니까?')) return
       const printWindow = window.open('', '_blank')
       const originalText = button.textContent
       button.disabled = true
@@ -51,14 +95,29 @@ export default function ExportDocumentsListPolish() {
         window.setTimeout(() => window.location.reload(), 450)
       } catch (error) {
         printWindow?.close()
-        window.alert(error instanceof Error ? error.message : '출고확정 및 거래명세표 생성에 실패했습니다.')
+        showError(error instanceof Error ? error.message : '출고확정 및 거래명세표 생성에 실패했습니다.')
         button.disabled = false
         button.textContent = originalText
       }
     }
 
+    const requestShip = (button: HTMLButtonElement, documentRow: ExportDocument) => {
+      pendingActionRef.current = () => { void shipAndPrint(button, documentRow) }
+      setDialog({
+        open: true,
+        kind: 'confirm',
+        title: '출고확정 및 거래명세표 인쇄',
+        message: '출고를 확정하면 아래 작업이 한 번에 처리됩니다.',
+        details: [
+          '완제품 재고에서 출고 수량 자동 차감',
+          '판매관리에 면세(VAT 0%) 판매건 자동 등록',
+          '거래명세표 자동 생성 후 인쇄창 열기',
+        ],
+        confirmText: '출고확정 및 인쇄',
+      })
+    }
+
     const cancelShipment = async (button: HTMLButtonElement, documentRow: ExportDocument) => {
-      if (!window.confirm('출고를 취소하면 수출 재고 차감분이 복원되고 연결된 판매건도 취소됩니다. 진행하시겠습니까?')) return
       const originalText = button.textContent
       button.disabled = true
       button.textContent = '취소중...'
@@ -72,10 +131,26 @@ export default function ExportDocumentsListPolish() {
         if (!response.ok || !payload.ok) throw new Error(payload.error || '출고취소에 실패했습니다.')
         window.location.reload()
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : '출고취소에 실패했습니다.')
+        showError(error instanceof Error ? error.message : '출고취소에 실패했습니다.')
         button.disabled = false
         button.textContent = originalText
       }
+    }
+
+    const requestCancel = (button: HTMLButtonElement, documentRow: ExportDocument) => {
+      pendingActionRef.current = () => { void cancelShipment(button, documentRow) }
+      setDialog({
+        open: true,
+        kind: 'confirm',
+        title: '수출 출고취소',
+        message: '출고를 취소하면 연결된 재고와 판매기록도 함께 되돌립니다.',
+        details: [
+          '수출 출고 차감분 재고 복원',
+          '연결된 판매관리 판매건 취소',
+          '실제 입금이 등록된 판매건은 안전을 위해 취소가 차단됩니다.',
+        ],
+        confirmText: '출고취소',
+      })
     }
 
     const bindIntercept = (button: HTMLButtonElement, handler: (event: Event) => void) => {
@@ -94,7 +169,7 @@ export default function ExportDocumentsListPolish() {
       button.textContent = createFirst ? '거래명세표 생성/인쇄' : '거래명세표 인쇄'
       button.addEventListener('click', (event) => {
         stopReactClick(event)
-        if (createFirst) void shipAndPrint(button, documentRow)
+        if (createFirst) requestShip(button, documentRow)
         else window.open(`/sales-management/export/documents/${encodeURIComponent(documentRow.id)}/statement?auto=1`, '_blank')
       }, { capture: true })
       controls.appendChild(button)
@@ -131,11 +206,11 @@ export default function ExportDocumentsListPolish() {
           else if (label === 'PDF/인쇄') button.dataset.exportDocumentAction = 'pdf'
           else if (label === '출고확정/거래명세표 인쇄') {
             button.dataset.exportDocumentAction = 'shipment'
-            if (documentRow) bindIntercept(button, (event) => { stopReactClick(event); void shipAndPrint(button, documentRow) })
+            if (documentRow) bindIntercept(button, (event) => { stopReactClick(event); requestShip(button, documentRow) })
           } else if (label === '출고취소') {
             button.dataset.exportDocumentAction = 'edit'
             button.dataset.exportShipmentCancel = 'true'
-            if (documentRow) bindIntercept(button, (event) => { stopReactClick(event); void cancelShipment(button, documentRow) })
+            if (documentRow) bindIntercept(button, (event) => { stopReactClick(event); requestCancel(button, documentRow) })
           } else if (label === '수정') button.dataset.exportDocumentAction = 'edit'
           else if (label === '삭제') button.dataset.exportDocumentAction = 'delete'
         }
@@ -167,11 +242,56 @@ export default function ExportDocumentsListPolish() {
     return () => {
       disposed = true
       observer.disconnect()
+      pendingActionRef.current = null
     }
   }, [])
 
   return <>
     <span data-export-document-list-polish hidden />
+
+    {dialog.open ? <div
+      className="fixed inset-0 z-[1900] flex items-center justify-center p-4"
+      style={{ background: 'rgba(12,31,44,.34)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={dialog.title}
+    >
+      <div className="w-full max-w-[520px] overflow-hidden rounded-[26px] border border-[#cfe0e8] bg-white shadow-[0_28px_80px_rgba(28,63,82,.26)]">
+        <div className="border-b border-[#dfebf0] px-6 py-5">
+          <div className="flex items-start gap-3">
+            <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg font-black ${dialog.kind === 'error' ? 'bg-[#fff0f1] text-[#c2535c]' : 'bg-[#e9f8f2] text-[#16825d]'}`}>
+              {dialog.kind === 'error' ? '!' : '✓'}
+            </div>
+            <div>
+              <h3 className="text-[19px] font-black text-[#17384b]">{dialog.title}</h3>
+              <p className="mt-1.5 text-sm leading-6 text-[#6d8391]">{dialog.message}</p>
+            </div>
+          </div>
+        </div>
+        {dialog.details.length ? <div className="px-6 py-5">
+          <div className="space-y-2.5 rounded-2xl border border-[#dce9ef] bg-[#f7fbfd] p-4">
+            {dialog.details.map((detail) => <div key={detail} className="flex items-start gap-2.5 text-sm font-semibold leading-5 text-[#385568]">
+              <span className="mt-[2px] text-[#16a977]">●</span>
+              <span>{detail}</span>
+            </div>)}
+          </div>
+        </div> : null}
+        <div className="flex justify-end gap-2.5 border-t border-[#e4edf1] bg-[#fbfdfe] px-6 py-4">
+          {dialog.kind === 'confirm' ? <button
+            type="button"
+            onClick={closeDialog}
+            className="h-11 rounded-xl border border-[#cbdce5] bg-white px-5 text-sm font-black text-[#385568]"
+          >취소</button> : null}
+          <button
+            type="button"
+            onClick={dialog.kind === 'confirm' ? runDialogAction : closeDialog}
+            className={`h-11 rounded-xl px-5 text-sm font-black ${dialog.kind === 'error' ? 'bg-[#315d75]' : 'bg-[#16b981]'}`}
+            style={{ color: '#ffffff' }}
+          >{dialog.confirmText}</button>
+        </div>
+      </div>
+    </div> : null}
+
     <style jsx global>{`
       body:has([data-export-document-list-polish]) main table {
         width: 100% !important;
