@@ -1,6 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { usePathname } from 'next/navigation'
 
 type WeatherResponse = {
   ok: boolean
@@ -87,7 +89,9 @@ function WindIcon() {
 }
 
 export default function MoniWeatherShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
   const [weather, setWeather] = useState<WeatherResponse | null>(null)
+  const [weatherCardTarget, setWeatherCardTarget] = useState<HTMLElement | null>(null)
 
   const loadWeather = useCallback(async () => {
     if (document.visibilityState !== 'visible') return
@@ -111,33 +115,63 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
     return () => window.clearInterval(timer)
   }, [weather?.refresh_minutes, loadWeather])
 
+  useEffect(() => {
+    let cancelled = false
+    let retryTimer: number | undefined
+    let attempts = 0
+
+    const locateHero = () => {
+      if (cancelled) return
+      const target = document.querySelector<HTMLElement>('[data-moni-control-tower] .ct-hero')
+      setWeatherCardTarget(target)
+      if (!target && attempts < 12) {
+        attempts += 1
+        retryTimer = window.setTimeout(locateHero, 100)
+      }
+    }
+
+    locateHero()
+    return () => {
+      cancelled = true
+      if (retryTimer) window.clearTimeout(retryTimer)
+    }
+  }, [pathname])
+
   const stageStyle = useMemo(() => backgroundStyle(weather), [weather])
+  const shellStyle = useMemo(() => ({
+    '--moni-weather-background-image': stageStyle.backgroundImage,
+    '--moni-weather-background-color': stageStyle.backgroundColor,
+  } as CSSProperties), [stageStyle])
   const current = weather?.weather
   const temperature = current?.temperature
   const humidity = current?.humidity
   const windSpeed = current?.wind_speed_mps
   const condition = current?.condition || 'clear_day'
 
+  const weatherCard = (
+    <a className="moni-weather-badge moni-weather-card" href="/settings/appearance" aria-label="날씨 및 배경 설정 열기">
+      <div className="moni-weather-card__date">{weatherDateLabel()}</div>
+      <div className="moni-weather-card__main">
+        <span className="moni-weather-card__icon"><WeatherIcon condition={condition} /></span>
+        <span className="moni-weather-card__temperature">
+          <strong>{typeof temperature === 'number' ? `${Math.round(temperature)}°C` : '--°C'}</strong>
+          <small>{current?.condition_label || '날씨 연결 준비'}</small>
+        </span>
+      </div>
+      <div className="moni-weather-card__location"><LocationIcon /><span>{weather?.location_label || '대한민국'}</span></div>
+      <div className="moni-weather-card__metrics">
+        <div><span><HumidityIcon />습도</span><b>{typeof humidity === 'number' ? `${Math.round(humidity)}%` : '--'}</b></div>
+        <div><span><WindIcon />풍속</span><b>{typeof windSpeed === 'number' ? `${windSpeed.toFixed(1)} m/s` : '--'}</b></div>
+      </div>
+    </a>
+  )
+
   return (
     <div data-moni-weather-stage className="moni-weather-stage" style={stageStyle}>
       <div className="moni-weather-stage__veil" aria-hidden="true" />
-      <div data-moni-app-shell className="moni-app-shell">
+      <div data-moni-app-shell className="moni-app-shell" style={shellStyle}>
         <div data-moni-app-content className="moni-app-content">{children}</div>
-        <a className="moni-weather-badge moni-weather-card" href="/settings/appearance" aria-label="날씨 및 배경 설정 열기">
-          <div className="moni-weather-card__date">{weatherDateLabel()}</div>
-          <div className="moni-weather-card__main">
-            <span className="moni-weather-card__icon"><WeatherIcon condition={condition} /></span>
-            <span className="moni-weather-card__temperature">
-              <strong>{typeof temperature === 'number' ? `${Math.round(temperature)}°C` : '--°C'}</strong>
-              <small>{current?.condition_label || '날씨 연결 준비'}</small>
-            </span>
-          </div>
-          <div className="moni-weather-card__location"><LocationIcon /><span>{weather?.location_label || '대한민국'}</span></div>
-          <div className="moni-weather-card__metrics">
-            <div><span><HumidityIcon />습도</span><b>{typeof humidity === 'number' ? `${Math.round(humidity)}%` : '--'}</b></div>
-            <div><span><WindIcon />풍속</span><b>{typeof windSpeed === 'number' ? `${windSpeed.toFixed(1)} m/s` : '--'}</b></div>
-          </div>
-        </a>
+        {weatherCardTarget ? createPortal(weatherCard, weatherCardTarget) : null}
       </div>
     </div>
   )
