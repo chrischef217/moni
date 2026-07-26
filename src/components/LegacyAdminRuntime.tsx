@@ -1,5 +1,6 @@
 'use client'
 
+import LegacyShellDedupController from '@/components/LegacyShellDedupController'
 import RawMaterialLedgerPrintController from '@/components/RawMaterialLedgerPrintController'
 import RawMaterialUnitPriceController from '@/components/RawMaterialUnitPriceController'
 import RawMaterialTypeFilterController from '@/components/RawMaterialTypeFilterController'
@@ -12,6 +13,7 @@ import LegacyAiChatLayoutController from '@/components/LegacyAiChatLayoutControl
 export default function LegacyAdminRuntime() {
   return (
     <>
+      <LegacyShellDedupController />
       <LegacyAiChatLayoutController />
       <RawMaterialLedgerPrintController />
       <RawMaterialUnitPriceController />
