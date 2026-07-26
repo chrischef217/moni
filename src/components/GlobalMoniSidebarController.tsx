@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
-type CategoryKey = 'dashboard' | 'ai' | 'production' | 'inventory' | 'hr' | 'sales' | 'salesManagement' | 'accounting' | 'admin' | 'audit'
+type CategoryKey = 'dashboard' | 'ai' | 'production' | 'inventory' | 'hr' | 'sales' | 'salesManagement' | 'export' | 'accounting' | 'admin' | 'audit'
 type MenuItem = { label: string; target?: string; href?: string; parentTarget?: string; view?: string }
 type Category = { key: CategoryKey; label: string; icon: string; items: MenuItem[] }
 
@@ -55,6 +55,10 @@ const categories: Category[] = [
       { label: '영업 정산서', href: '/business-management?tab=sales-management&view=settlements', view: 'settlements' },
       { label: '판매 통계', href: '/business-management?tab=sales-management&view=statistics', view: 'statistics' },
       { label: '세금계산서', href: '/business-management?tab=sales-management&view=tax-invoices', view: 'tax-invoices' },
+    ],
+  },
+  {
+    key: 'export', label: '수출관리', icon: '⇄', items: [
       { label: '수출 관리', href: '/sales-management/export', view: 'exports' },
     ],
   },
@@ -147,7 +151,7 @@ function routeState(pathname: string, search = ''): { category: CategoryKey; ite
   if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
   if (pathname === '/finished-goods-inventory') return { category: 'inventory', item: '완제품 재고관리' }
   if (pathname === '/business-management') return businessRouteState(search)
-  if (pathname === '/sales-management/export') return { category: 'salesManagement', item: '수출 관리' }
+  if (pathname === '/sales-management/export') return { category: 'export', item: '수출 관리' }
   if (pathname === '/settings/appearance') return { category: 'admin', item: '화면·배경 설정' }
   if (pathname === '/audit') return { category: 'audit', item: '감사 기록' }
   return { category: 'dashboard', item: '경영 Control Tower' }
