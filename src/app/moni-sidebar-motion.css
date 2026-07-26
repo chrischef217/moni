@@ -1,0 +1,110 @@
+/*
+ * MONI sidebar submenu motion
+ *
+ * Performance strategy:
+ * - submenu layout state changes immediately (no per-frame height/grid interpolation)
+ * - surrounding category rows are animated with FLIP transforms by SidebarSubmenuMotionController
+ * - submenu contents use only compositor-friendly opacity/translate3d
+ * - no blur, filter, large shadow, or transition-all during hover expansion
+ */
+
+[data-moni-global-sidebar] nav > div {
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+/* Category button: immediate response, short color transition only. */
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav] {
+  transition-property: background-color, color, border-color !important;
+  transition-duration: 90ms !important;
+  transition-timing-function: ease-out !important;
+}
+
+/* Arrow should react faster than the submenu, so the interface feels immediate. */
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav] > span:last-child {
+  transition-property: transform !important;
+  transition-duration: 125ms !important;
+  transition-timing-function: cubic-bezier(0.2, 0.86, 0.25, 1) !important;
+  will-change: transform;
+}
+
+/*
+ * Tailwind's previous grid transition animated grid-template-rows over 300ms.
+ * That forces layout work every frame and is visibly choppy on slower PCs.
+ * Let the grid snap to its final layout before paint; FLIP handles the visible movement.
+ */
+[data-moni-global-sidebar] nav > div > div.grid {
+  transition: none !important;
+  opacity: 1 !important;
+  contain: paint;
+}
+
+[data-moni-global-sidebar] nav > div > div.grid > div {
+  overflow: hidden;
+}
+
+/* The actual submenu content does the visual reveal on the compositor. */
+[data-moni-global-sidebar] nav > div > div.grid > div > div {
+  opacity: 0;
+  transform: translate3d(0, -6px, 0) scale(0.992);
+  transform-origin: 50% 0%;
+  pointer-events: none;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+  transition:
+    opacity 70ms linear,
+    transform 95ms cubic-bezier(0.32, 0, 0.67, 0);
+}
+
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  pointer-events: auto;
+  transition:
+    opacity 105ms linear,
+    transform 145ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Sub-items enter with a very small stagger for depth without making the menu feel slow. */
+[data-moni-global-sidebar] nav > div > div.grid > div > div > button {
+  opacity: 0;
+  transform: translate3d(-4px, -1px, 0);
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+  transition-property: opacity, transform, background-color, color !important;
+  transition-duration: 75ms, 115ms, 80ms, 80ms !important;
+  transition-timing-function: linear, cubic-bezier(0.16, 1, 0.3, 1), ease-out, ease-out !important;
+  transition-delay: 0ms !important;
+}
+
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(1) { transition-delay: 0ms !important; }
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(2) { transition-delay: 7ms !important; }
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(3) { transition-delay: 12ms !important; }
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(4) { transition-delay: 17ms !important; }
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(5) { transition-delay: 22ms !important; }
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(6) { transition-delay: 27ms !important; }
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(7) { transition-delay: 31ms !important; }
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(8) { transition-delay: 35ms !important; }
+[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(n+9) { transition-delay: 38ms !important; }
+
+/* Keep hover feedback crisp; avoid transform scaling that would compete with FLIP. */
+[data-moni-global-sidebar] nav > div > div.grid > div > div > button:hover {
+  transform: translate3d(0, 0, 0) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-moni-global-sidebar] nav > div,
+  [data-moni-global-sidebar] nav > div > button,
+  [data-moni-global-sidebar] nav > div > button > span,
+  [data-moni-global-sidebar] nav > div > div.grid,
+  [data-moni-global-sidebar] nav > div > div.grid > div > div,
+  [data-moni-global-sidebar] nav > div > div.grid > div > div > button {
+    animation: none !important;
+    transition: none !important;
+  }
+}
