@@ -3,6 +3,7 @@ import { Suspense } from 'react'
 import GlobalMoniSidebarRouteBoundary from '@/components/GlobalMoniSidebarRouteBoundary'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
+import ModalNavigationDismissGuard from '@/components/ModalNavigationDismissGuard'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
 import DeferredGlobalMoniAgent from '@/components/DeferredGlobalMoniAgent'
 import GlobalAlertSyncController from '@/components/GlobalAlertSyncController'
@@ -56,6 +57,7 @@ export default async function RootLayout({
             </Suspense>
             <GlobalSidebarLayoutController />
             <SidebarPinToggleVisualFix />
+            <ModalNavigationDismissGuard />
             <Suspense fallback={null}>
               <AdminRouteRuntime />
             </Suspense>
