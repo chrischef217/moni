@@ -16,6 +16,7 @@ type ExportProduct = {
   id: string
   product_id: string
   english_name: string
+  hs_code: string
   default_unit_price: number | string
   currency: string
   units_per_carton: number
@@ -38,6 +39,7 @@ type DocumentItem = {
   product_id?: string
   product_name_ko?: string
   product_name_en?: string
+  hs_code?: string
   cartons: number | string
   units_per_carton?: number
   unit_price: number | string
@@ -77,6 +79,7 @@ type ExportDocument = {
     id: string
     product_name_ko: string
     product_name_en: string
+    hs_code: string
     units_per_carton: number
     currency: string
     net_weight_per_carton_kg: number | string
@@ -124,8 +127,9 @@ function emptyForm(): FormState {
 }
 
 function money(value: number, currency: string) {
-  const digits = currency === 'KRW' ? 0 : 2
-  return `${currency} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)}`
+  const normalized = currency || 'KRW'
+  const digits = normalized === 'KRW' ? 0 : 2
+  return `${normalized} ${new Intl.NumberFormat(normalized === 'KRW' ? 'ko-KR' : 'en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)}`
 }
 
 function statusLabel(status: ExportDocument['status']) {
@@ -205,6 +209,7 @@ export default function ExportDocumentsPage() {
         export_product_setting_id: item.export_product_setting_id,
         cartons: item.cartons,
         unit_price: item.unit_price,
+        hs_code: item.hs_code,
         price_overridden: Boolean(item.price_overridden),
         price_override_reason: item.price_override_reason || '',
       })),
@@ -220,7 +225,7 @@ export default function ExportDocumentsPage() {
     if (!query) return []
     return products.filter((product) => {
       if (addedIds.has(product.id)) return false
-      const haystack = `${product.english_name} ${product.products?.product_name || ''} ${product.products?.report_number || ''}`.toLocaleLowerCase('ko-KR')
+      const haystack = `${product.english_name} ${product.hs_code || ''} ${product.products?.product_name || ''} ${product.products?.report_number || ''}`.toLocaleLowerCase('ko-KR')
       return haystack.includes(query)
     }).slice(0, 8)
   }, [addedIds, productSearch, products])
@@ -230,6 +235,7 @@ export default function ExportDocumentsPage() {
       ...current,
       items: [...current.items, {
         export_product_setting_id: product.id,
+        hs_code: product.hs_code,
         cartons: 1,
         unit_price: product.default_unit_price,
         price_overridden: false,
@@ -320,7 +326,7 @@ export default function ExportDocumentsPage() {
     const cartons = document.export_document_items.reduce((sum, item) => sum + Number(item.cartons || 0), 0)
     const amounts = new Map<string, number>()
     for (const item of document.export_document_items) {
-      const currency = item.currency || 'USD'
+      const currency = item.currency || 'KRW'
       amounts.set(currency, (amounts.get(currency) || 0) + Number(item.cartons || 0) * Number(item.unit_price || 0))
     }
     return { cartons, amountText: [...amounts.entries()].map(([currency, amount]) => money(amount, currency)).join(' / ') }
@@ -332,7 +338,7 @@ export default function ExportDocumentsPage() {
     <div className="mx-auto max-w-[1500px] space-y-5">
       <header className="rounded-[26px] border border-[#cfe1eb] bg-white/95 p-6 shadow-[0_14px_36px_rgba(43,84,109,0.08)] lg:p-8">
         <div className="flex flex-wrap items-start justify-between gap-5">
-          <div><p className="text-xs font-black uppercase tracking-[0.17em] text-[#2b9b76]">EXPORT DOCUMENTS</p><h1 className="mt-2 text-3xl font-black tracking-[-0.035em]">수출서류 관리</h1><p className="mt-2 text-sm leading-6 text-[#6b8392]">Commercial Invoice와 Packing List를 한 번의 입력으로 동시에 생성하고 관리합니다. 출고확정 시에만 완제품 재고가 차감됩니다.</p></div>
+          <div><p className="text-xs font-black uppercase tracking-[0.17em] text-[#2b9b76]">EXPORT DOCUMENTS</p><h1 className="mt-2 text-3xl font-black tracking-[-0.035em]">수출서류 관리</h1><p className="mt-2 text-sm leading-6 text-[#6b8392]">Commercial Invoice와 Packing List를 한 번의 입력으로 동시에 생성합니다. 품목 HS CODE는 수출품목 설정값을 자동 적용합니다.</p></div>
           <button type="button" onClick={openCreate} className="h-11 rounded-xl bg-[#16b981] px-5 text-sm font-black text-white shadow-[0_6px_18px_rgba(22,185,129,0.18)]">+ 수출서류 작성</button>
         </div>
       </header>
@@ -357,7 +363,7 @@ export default function ExportDocumentsPage() {
           {error && <div className="mb-4 rounded-xl border border-[#efb9bf] bg-[#fff6f7] px-4 py-3 text-sm font-semibold text-[#a94752]">{error}</div>}
 
           <Section title="1. 기본정보">
-            <div className="grid gap-4 md:grid-cols-2"><ReadOnly label="Invoice No." value={form.invoice_no || '저장 시 자동 생성 · INV-YYYYMMDD-001'} /><ReadOnly label="Packing List No." value={form.packing_list_no || '저장 시 자동 생성 · PL-YYYYMMDD-001'} /><Field label="Date" type="date" value={form.document_date} onChange={(value) => setForm({ ...form, document_date: value })} /><label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Consignee (수출처)</span><select value={form.consignee_id} onChange={(event) => setForm({ ...form, consignee_id: event.target.value })} className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none"><option value="">수출처 선택</option>{destinations.map((destination) => <option key={destination.id} value={destination.id}>{destination.company_name} · {destination.country}</option>)}</select></label><TextArea label="Bill To" value={form.bill_to} onChange={(value) => setForm({ ...form, bill_to: value })} className="md:col-span-2" /></div>
+            <div className="grid gap-4 md:grid-cols-2"><ReadOnly label="Invoice No." value={form.invoice_no || '저장 시 자동 생성 · INV-YYYYMMDD-001'} /><ReadOnly label="Packing List No." value={form.packing_list_no || '저장 시 자동 생성 · PL-YYYYMMDD-001'} /><Field label="Date" type="date" value={form.document_date} onChange={(value) => setForm({ ...form, document_date: value })} /><label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Consignee (수출처)</span><select value={form.consignee_id} onChange={(event) => setForm({ ...form, consignee_id: event.target.value })} className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold text-[#17384d] outline-none"><option value="">수출처 선택</option>{destinations.map((destination) => <option key={destination.id} value={destination.id}>{destination.company_name} · {destination.country}</option>)}</select></label><TextArea label="Bill To" value={form.bill_to} onChange={(value) => setForm({ ...form, bill_to: value })} className="md:col-span-2" /></div>
           </Section>
 
           <Section title="2. 배송 정보">
@@ -365,17 +371,17 @@ export default function ExportDocumentsPage() {
           </Section>
 
           <Section title="3. L/C 정보 (선택사항)">
-            <label className="mb-4 flex items-center gap-2 text-sm font-black text-[#31546a]"><input type="checkbox" checked={form.lc_enabled} onChange={(event) => setForm({ ...form, lc_enabled: event.target.checked })} /> L/C 사용</label>
+            <label className="mb-4 flex items-center gap-2 text-sm font-black text-[#31546a]"><input className="h-4 w-4 accent-[#16b981]" type="checkbox" checked={form.lc_enabled} onChange={(event) => setForm({ ...form, lc_enabled: event.target.checked })} /> L/C 사용</label>
             {form.lc_enabled && <div className="grid gap-4 md:grid-cols-2"><Field label="L/C No." value={form.lc_no} onChange={(value) => setForm({ ...form, lc_no: value })} placeholder="예: LC123456" /><Field label="L/C Date" type="date" value={form.lc_date} onChange={(value) => setForm({ ...form, lc_date: value })} /><Field label="L/C Issuing Bank" value={form.lc_issuing_bank} onChange={(value) => setForm({ ...form, lc_issuing_bank: value })} className="md:col-span-2" placeholder="예: Korea Bank" /><Field label="Terms of Delivery and Payment" value={form.terms_delivery_payment} onChange={(value) => setForm({ ...form, terms_delivery_payment: value })} placeholder="예: T/T 30 days" /><Field label="Other Reference" value={form.other_reference} onChange={(value) => setForm({ ...form, other_reference: value })} /></div>}
           </Section>
 
           <Section title="4. Invoice 추가정보">
-            <div className="grid gap-4 md:grid-cols-2"><label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Incoterms® 2020</span><select value={form.incoterm} onChange={(event) => setForm({ ...form, incoterm: event.target.value })} className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none"><option value="">선택</option>{['EXW','FCA','CPT','CIP','DAP','DPU','DDP','FAS','FOB','CFR','CIF'].map((term) => <option key={term}>{term}</option>)}</select></label><Field label="Country of Origin" value={form.country_of_origin} onChange={(value) => setForm({ ...form, country_of_origin: value })} /><TextArea label="Reason for Export" value={form.reason_for_export} onChange={(value) => setForm({ ...form, reason_for_export: value })} className="md:col-span-2" /></div>
+            <div className="grid gap-4 md:grid-cols-2"><label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Incoterms® 2020</span><select value={form.incoterm} onChange={(event) => setForm({ ...form, incoterm: event.target.value })} className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold text-[#17384d] outline-none"><option value="">선택</option>{['EXW','FCA','CPT','CIP','DAP','DPU','DDP','FAS','FOB','CFR','CIF'].map((term) => <option key={term}>{term}</option>)}</select></label><Field label="Country of Origin" value={form.country_of_origin} onChange={(value) => setForm({ ...form, country_of_origin: value })} /><TextArea label="Reason for Export" value={form.reason_for_export} onChange={(value) => setForm({ ...form, reason_for_export: value })} className="md:col-span-2" /></div>
           </Section>
 
           <Section title="5. 제품 선택">
-            <div className="rounded-2xl border border-[#d5e5ed] bg-[#f7fbfd] p-4"><label className="text-sm font-black text-[#315469]">수출품목 검색</label><input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="한글명 · 영문명 · 품목제조번호 검색" className="mt-2 h-11 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 text-sm font-semibold outline-none" />{productSearch.trim() && <div className="mt-2 overflow-hidden rounded-xl border border-[#d6e5ed] bg-white">{productResults.map((product) => <button key={product.id} type="button" onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-4 border-b border-[#e7eff4] px-4 py-3 text-left last:border-b-0 hover:bg-[#f3f9fc]"><span><b className="block">{product.english_name}</b><small className="text-[#8296a3]">{product.products?.product_name} · {product.units_per_carton} EA/CTN · {money(Number(product.default_unit_price), product.currency)}</small></span><span className="text-xs font-black text-[#2d8c6c]">추가</span></button>)}{!productResults.length && <div className="px-4 py-4 text-sm text-[#8195a2]">추가할 수출품목이 없습니다.</div>}</div>}</div>
-            <div className="mt-4 space-y-3">{form.items.map((item, index) => { const product = productFor(item); if (!product) return null; const currentPrice = item.price_overridden ? Number(item.unit_price || 0) : Number(product.default_unit_price || 0); return <div key={`${item.export_product_setting_id}-${index}`} className="rounded-2xl border border-[#d8e6ed] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><b className="text-[#17384d]">{product.english_name}</b><div className="mt-1 text-xs text-[#7e929f]">{product.products?.product_name} · {product.units_per_carton} EA/CTN · Net {product.net_weight_kg}kg / Gross {product.gross_weight_kg}kg / CBM {product.cbm}</div></div><button type="button" onClick={() => removeItem(index)} className="text-xs font-black text-[#b34d56]">삭제</button></div><div className="mt-4 grid gap-3 md:grid-cols-[160px_1fr_1fr]"><Field label="수량 (CTN)" type="number" value={String(item.cartons)} onChange={(value) => updateItem(index, { cartons: value })} /><div><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Unit Price / CTN</span><div className="flex h-12 items-center rounded-xl border border-[#cfe0e9] bg-[#f8fbfd] px-4 font-black text-[#176f99]">{money(currentPrice, product.currency)}</div></div><label className="flex items-center gap-2 pt-7 text-sm font-bold"><input type="checkbox" checked={item.price_overridden} onChange={(event) => updateItem(index, { price_overridden: event.target.checked, unit_price: event.target.checked ? product.default_unit_price : product.default_unit_price, price_override_reason: '' })} /> 이번 건 단가 변경</label></div>{item.price_overridden && <div className="mt-3 grid gap-3 md:grid-cols-2"><Field label={`예외 Unit Price (${product.currency})`} type="number" value={String(item.unit_price)} onChange={(value) => updateItem(index, { unit_price: value })} /><Field label="변경 사유" value={item.price_override_reason} onChange={(value) => updateItem(index, { price_override_reason: value })} placeholder="예: Buyer Negotiation" /></div>}<div className="mt-3 rounded-xl bg-[#f5f9fb] px-4 py-3 text-xs font-semibold text-[#617b8b]">총 {Number(item.cartons || 0) * product.units_per_carton} EA · Net {(Number(item.cartons || 0) * Number(product.net_weight_kg || 0)).toLocaleString()} kg · Gross {(Number(item.cartons || 0) * Number(product.gross_weight_kg || 0)).toLocaleString()} kg · Amount {money(Number(item.cartons || 0) * currentPrice, product.currency)}</div></div> })}{!form.items.length && <div className="rounded-2xl border border-dashed border-[#ccdde6] py-8 text-center text-sm text-[#8296a3]">등록된 수출품목을 검색해서 추가해 주세요.</div>}</div>
+            <div className="rounded-2xl border border-[#d5e5ed] bg-[#f7fbfd] p-4"><label className="text-sm font-black text-[#315469]">수출품목 검색</label><input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="한글명 · 영문명 · HS CODE · 품목제조번호 검색" className="mt-2 h-11 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 text-sm font-semibold outline-none" />{productSearch.trim() && <div className="mt-2 overflow-hidden rounded-xl border border-[#d6e5ed] bg-white">{productResults.map((product) => <button key={product.id} type="button" onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-4 border-b border-[#e7eff4] px-4 py-3 text-left last:border-b-0 hover:bg-[#f3f9fc]"><span><b className="block">{product.english_name}</b><small className="text-[#8296a3]">{product.products?.product_name} · HS {product.hs_code} · {product.units_per_carton} EA/CTN · {money(Number(product.default_unit_price), product.currency)}</small></span><span className="text-xs font-black text-[#2d8c6c]">추가</span></button>)}{!productResults.length && <div className="px-4 py-4 text-sm text-[#8195a2]">추가할 수출품목이 없습니다.</div>}</div>}</div>
+            <div className="mt-4 space-y-3">{form.items.map((item, index) => { const product = productFor(item); if (!product) return null; const currentPrice = item.price_overridden ? Number(item.unit_price || 0) : Number(product.default_unit_price || 0); return <div key={`${item.export_product_setting_id}-${index}`} className="rounded-2xl border border-[#d8e6ed] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><b className="text-[#17384d]">{product.english_name}</b><div className="mt-1 text-xs font-bold text-[#536f80]">HS CODE {product.hs_code}</div><div className="mt-1 text-xs text-[#7e929f]">{product.products?.product_name} · {product.units_per_carton} EA/CTN · Net {product.net_weight_kg}kg / Gross {product.gross_weight_kg}kg / CBM {product.cbm}</div></div><button type="button" onClick={() => removeItem(index)} className="text-xs font-black text-[#b34d56]">삭제</button></div><div className="mt-4 grid gap-3 md:grid-cols-[160px_1fr_1fr]"><Field label="수량 (CTN)" type="number" value={String(item.cartons)} onChange={(value) => updateItem(index, { cartons: value })} /><div><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Unit Price / CTN</span><div className="flex h-12 items-center rounded-xl border border-[#cfe0e9] bg-[#f8fbfd] px-4 font-black text-[#176f99]">{money(currentPrice, product.currency)}</div></div><label className="flex items-center gap-2 pt-7 text-sm font-bold"><input className="h-4 w-4 accent-[#16b981]" type="checkbox" checked={item.price_overridden} onChange={(event) => updateItem(index, { price_overridden: event.target.checked, unit_price: product.default_unit_price, price_override_reason: '' })} /> 이번 건 단가 변경</label></div>{item.price_overridden && <div className="mt-3 grid gap-3 md:grid-cols-2"><Field label={`예외 Unit Price (${product.currency})`} type="number" value={String(item.unit_price)} onChange={(value) => updateItem(index, { unit_price: value })} /><Field label="변경 사유" value={item.price_override_reason} onChange={(value) => updateItem(index, { price_override_reason: value })} placeholder="예: Buyer Negotiation" /></div>}<div className="mt-3 rounded-xl bg-[#f5f9fb] px-4 py-3 text-xs font-semibold text-[#617b8b]">HS {product.hs_code} · 총 {Number(item.cartons || 0) * product.units_per_carton} EA · Net {(Number(item.cartons || 0) * Number(product.net_weight_kg || 0)).toLocaleString()} kg · Gross {(Number(item.cartons || 0) * Number(product.gross_weight_kg || 0)).toLocaleString()} kg · Amount {money(Number(item.cartons || 0) * currentPrice, product.currency)}</div></div> })}{!form.items.length && <div className="rounded-2xl border border-dashed border-[#ccdde6] py-8 text-center text-sm text-[#8296a3]">등록된 수출품목을 검색해서 추가해 주세요.</div>}</div>
           </Section>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[#dce9f0] bg-[#f8fbfd] px-6 py-4"><button type="button" onClick={() => setModalOpen(false)} disabled={saving} className="rounded-xl border border-[#d0e0e8] bg-white px-5 py-2.5 text-sm font-bold text-[#587283]">취소</button><button type="button" onClick={() => void save(false)} disabled={saving} className="rounded-xl border border-[#8db7ca] bg-white px-5 py-2.5 text-sm font-black text-[#315d75]">{saving ? '저장 중...' : '저장'}</button><button type="button" onClick={() => void save(true)} disabled={saving} className="rounded-xl bg-[#16b981] px-5 py-2.5 text-sm font-black text-white">저장 및 PDF/인쇄</button></div>
