@@ -77,6 +77,7 @@ const categories: Category[] = [
   },
   {
     key: 'admin', label: '관리자', icon: '⚙', items: [
+      { label: '화면·배경 설정', href: '/settings/appearance' },
       { label: '관리자 설정', target: '관리자' },
       { label: '회사정보', target: '회사정보' },
       { label: '사용자 관리', target: '사용자 관리' },
@@ -156,6 +157,7 @@ function routeState(pathname: string, search = ''): { category: CategoryKey; ite
   if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
   if (pathname === '/business-management') return businessRouteState(search)
   if (pathname === '/sales-management/export') return { category: 'salesManagement', item: '수출 관리' }
+  if (pathname === '/settings/appearance') return { category: 'admin', item: '화면·배경 설정' }
   if (pathname === '/audit') return { category: 'audit', item: '감사 기록' }
   return { category: 'dashboard', item: '경영 Control Tower' }
 }
@@ -167,6 +169,7 @@ function isStandalonePath(pathname: string) {
     || pathname === '/production-daily'
     || pathname === '/business-management'
     || pathname === '/sales-management/export'
+    || pathname === '/settings/appearance'
     || pathname === '/audit'
 }
 
@@ -253,44 +256,55 @@ export default function GlobalMoniSidebarController() {
   }, [pathname])
 
   useEffect(() => {
+    const legacyHome = pathname === '/' && isLegacyHome()
     let attempts = 0
-    const applyLayout = () => {
-      attempts += 1
-      const logoutButton = findDashboardButton('로그아웃')
-      const isStandalone = isStandalonePath(pathname)
-      setVisible(Boolean(logoutButton) || isStandalone)
+    let retryTimer: number | null = null
+    let frame: number | null = null
+    let observer: MutationObserver | null = null
+    let disposed = false
+
+    const applyStandaloneLayout = () => {
+      setVisible(isStandalonePath(pathname))
 
       if (pathname === '/monthly-production-plan') {
         const ownAside = document.querySelector<HTMLElement>('main > div > aside')
         if (ownAside) ownAside.style.display = 'none'
+        return Boolean(ownAside)
       }
 
       if (pathname === '/business-management') {
         const ownAside = document.querySelector<HTMLElement>('[data-business-management-shell] main > div > aside')
         if (ownAside) ownAside.style.display = 'none'
+        return Boolean(ownAside)
       }
 
-      if (logoutButton) {
-        const dashboardRoot = Array.from(document.querySelectorAll<HTMLElement>('div.flex.min-h-screen'))
-          .find((element) => element.className.includes('bg-gray-900'))
-        const legacySidebar = dashboardRoot?.firstElementChild as HTMLElement | null
-        if (legacySidebar && legacySidebar !== dashboardRoot?.lastElementChild) legacySidebar.style.display = 'none'
+      return true
+    }
 
-        const mainLabels = ['AI 채팅', '생산관리', '회계관리', '영업관리', '관리자', '재무감사']
-        for (const label of mainLabels) {
-          const button = findDashboardButton(label)
-          if (button) button.style.display = 'none'
-        }
+    const applyLegacyLayout = () => {
+      const logoutButton = findDashboardButton('로그아웃')
+      setVisible(Boolean(logoutButton) || isStandalonePath(pathname))
+      if (!logoutButton) return
 
-        const productionLabels = ['생산 개요', '작업 지시', '생산일보', '제품관리', '원재료 관리', '원료수불부', '부재료 관리', '레시피 원재료 연결', '위생점검', '품질 관리', '규정준수 모니터']
-        for (const label of productionLabels) {
-          const button = findDashboardButton(label)
-          if (button) button.style.display = 'none'
-        }
+      const dashboardRoot = Array.from(document.querySelectorAll<HTMLElement>('div.flex.min-h-screen'))
+        .find((element) => element.className.includes('bg-gray-900'))
+      const legacySidebar = dashboardRoot?.firstElementChild as HTMLElement | null
+      if (legacySidebar && legacySidebar !== dashboardRoot?.lastElementChild) legacySidebar.style.display = 'none'
+
+      const mainLabels = ['AI 채팅', '생산관리', '회계관리', '영업관리', '관리자', '재무감사']
+      for (const label of mainLabels) {
+        const button = findDashboardButton(label)
+        if (button) button.style.display = 'none'
+      }
+
+      const productionLabels = ['생산 개요', '작업 지시', '생산일보', '제품관리', '원재료 관리', '원료수불부', '부재료 관리', '레시피 원재료 연결', '위생점검', '품질 관리', '규정준수 모니터']
+      for (const label of productionLabels) {
+        const button = findDashboardButton(label)
+        if (button) button.style.display = 'none'
       }
 
       const pending = window.sessionStorage.getItem('moni-pending-nav')
-      if (pending && pathname === '/' && isLegacyHome() && logoutButton) {
+      if (pending) {
         try {
           const payload = JSON.parse(pending) as { category: CategoryKey; target: string; label: string; parentTarget?: string }
           const category = categories.find((item) => item.key === payload.category)
@@ -309,17 +323,43 @@ export default function GlobalMoniSidebarController() {
       }
     }
 
-    applyLayout()
-    const observer = new MutationObserver(applyLayout)
+    if (!legacyHome) {
+      const retryStandalone = () => {
+        if (disposed) return
+        attempts += 1
+        const done = applyStandaloneLayout()
+        if (!done && attempts < 20) retryTimer = window.setTimeout(retryStandalone, 100)
+      }
+      retryStandalone()
+      return () => {
+        disposed = true
+        if (retryTimer !== null) window.clearTimeout(retryTimer)
+      }
+    }
+
+    const scheduleLegacy = () => {
+      if (frame !== null) return
+      frame = window.requestAnimationFrame(() => {
+        frame = null
+        applyLegacyLayout()
+      })
+    }
+
+    applyLegacyLayout()
+    observer = new MutationObserver(scheduleLegacy)
     observer.observe(document.body, { childList: true, subtree: true })
     const timer = window.setInterval(() => {
-      applyLayout()
+      attempts += 1
+      applyLegacyLayout()
       if (attempts > 20) window.clearInterval(timer)
     }, 250)
 
     return () => {
-      observer.disconnect()
+      disposed = true
+      observer?.disconnect()
       window.clearInterval(timer)
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+      if (frame !== null) window.cancelAnimationFrame(frame)
     }
   }, [pathname])
 
