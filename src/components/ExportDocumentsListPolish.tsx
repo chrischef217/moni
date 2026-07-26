@@ -6,10 +6,95 @@ function normalizedText(element: Element | null) {
   return (element?.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
+type ExportDocument = {
+  id: string
+  invoice_no: string
+  status: string
+  sales_order_id?: string | null
+}
+
 export default function ExportDocumentsListPolish() {
   useEffect(() => {
     const root = document.querySelector('main')
     if (!root) return
+
+    let disposed = false
+    const documentsByInvoice = new Map<string, ExportDocument>()
+
+    const stopReactClick = (event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+    }
+
+    const shipAndPrint = async (button: HTMLButtonElement, documentRow: ExportDocument) => {
+      if (!window.confirm('출고확정하면 완제품 재고에서 자동 차감되고 판매관리에 VAT 0% 판매건이 생성됩니다. 이어서 거래명세표를 인쇄하시겠습니까?')) return
+      const printWindow = window.open('', '_blank')
+      const originalText = button.textContent
+      button.disabled = true
+      button.textContent = '처리중...'
+      try {
+        const response = await fetch('/api/moni/export-shipment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: documentRow.id, action: 'SHIP' }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload.ok) throw new Error(payload.error || '출고확정 및 거래명세표 생성에 실패했습니다.')
+        const url = `/sales-management/export/documents/${encodeURIComponent(documentRow.id)}/statement?auto=1`
+        if (printWindow) printWindow.location.href = url
+        else window.open(url, '_blank')
+        window.setTimeout(() => window.location.reload(), 450)
+      } catch (error) {
+        printWindow?.close()
+        window.alert(error instanceof Error ? error.message : '출고확정 및 거래명세표 생성에 실패했습니다.')
+        button.disabled = false
+        button.textContent = originalText
+      }
+    }
+
+    const cancelShipment = async (button: HTMLButtonElement, documentRow: ExportDocument) => {
+      if (!window.confirm('출고를 취소하면 수출 재고 차감분이 복원되고 연결된 판매건도 취소됩니다. 진행하시겠습니까?')) return
+      const originalText = button.textContent
+      button.disabled = true
+      button.textContent = '취소중...'
+      try {
+        const response = await fetch('/api/moni/export-shipment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: documentRow.id, action: 'CANCEL' }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload.ok) throw new Error(payload.error || '출고취소에 실패했습니다.')
+        window.location.reload()
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : '출고취소에 실패했습니다.')
+        button.disabled = false
+        button.textContent = originalText
+      }
+    }
+
+    const bindIntercept = (button: HTMLButtonElement, handler: (event: Event) => void) => {
+      if (button.dataset.exportSalesBound === 'true') return
+      button.dataset.exportSalesBound = 'true'
+      button.addEventListener('click', handler, { capture: true })
+    }
+
+    const addStatementButton = (controls: HTMLElement, documentRow: ExportDocument, createFirst: boolean) => {
+      if (controls.querySelector('[data-export-statement-button="true"]')) return
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.dataset.exportStatementButton = 'true'
+      button.dataset.exportDocumentAction = 'shipment'
+      button.className = 'rounded-lg bg-[#315d75] px-2.5 py-2 text-xs font-black text-white'
+      button.textContent = createFirst ? '거래명세표 생성/인쇄' : '거래명세표 인쇄'
+      button.addEventListener('click', (event) => {
+        stopReactClick(event)
+        if (createFirst) void shipAndPrint(button, documentRow)
+        else window.open(`/sales-management/export/documents/${encodeURIComponent(documentRow.id)}/statement?auto=1`, '_blank')
+      }, { capture: true })
+      controls.appendChild(button)
+    }
 
     const tagRows = () => {
       const rows = Array.from(root.querySelectorAll<HTMLTableRowElement>('tbody tr'))
@@ -21,6 +106,8 @@ export default function ExportDocumentsListPolish() {
         const status = statusCell.querySelector<HTMLElement>('span')
         if (status) status.dataset.exportDocumentStatus = 'true'
 
+        const invoiceNo = normalizedText(cells[1])
+        const documentRow = documentsByInvoice.get(invoiceNo)
         const managementCell = cells[8]
         const controls = managementCell.querySelector<HTMLElement>('div')
         if (!controls) continue
@@ -28,7 +115,7 @@ export default function ExportDocumentsListPolish() {
 
         for (const button of Array.from(controls.querySelectorAll<HTMLButtonElement>('button'))) {
           let label = normalizedText(button)
-          delete button.dataset.exportDocumentAction
+          if (button.dataset.exportStatementButton !== 'true') delete button.dataset.exportDocumentAction
 
           if (label === '출고확정') {
             button.textContent = '출고확정/거래명세표 인쇄'
@@ -38,17 +125,45 @@ export default function ExportDocumentsListPolish() {
           if (label === 'Invoice') button.dataset.exportDocumentAction = 'invoice'
           else if (label === 'Packing') button.dataset.exportDocumentAction = 'packing'
           else if (label === 'PDF/인쇄') button.dataset.exportDocumentAction = 'pdf'
-          else if (label === '출고확정/거래명세표 인쇄' || label === '출고취소') button.dataset.exportDocumentAction = 'shipment'
-          else if (label === '수정') button.dataset.exportDocumentAction = 'edit'
+          else if (label === '출고확정/거래명세표 인쇄') {
+            button.dataset.exportDocumentAction = 'shipment'
+            if (documentRow) bindIntercept(button, (event) => { stopReactClick(event); void shipAndPrint(button, documentRow) })
+          } else if (label === '출고취소') {
+            button.dataset.exportDocumentAction = 'edit'
+            button.dataset.exportShipmentCancel = 'true'
+            if (documentRow) bindIntercept(button, (event) => { stopReactClick(event); void cancelShipment(button, documentRow) })
+          } else if (label === '수정') button.dataset.exportDocumentAction = 'edit'
           else if (label === '삭제') button.dataset.exportDocumentAction = 'delete'
         }
+
+        if (documentRow?.status === 'SHIPPED') addStatementButton(controls, documentRow, !documentRow.sales_order_id)
+        if (documentRow?.status === 'CANCELLED' && documentRow.sales_order_id) addStatementButton(controls, documentRow, false)
+      }
+    }
+
+    const loadDocuments = async () => {
+      try {
+        const response = await fetch(`/api/moni/export-documents?_=${Date.now()}`, { cache: 'no-store' })
+        const payload = await response.json()
+        if (!response.ok || !payload.ok || !Array.isArray(payload.documents)) return
+        documentsByInvoice.clear()
+        for (const documentRow of payload.documents as ExportDocument[]) {
+          documentsByInvoice.set(normalizedText({ textContent: documentRow.invoice_no } as Element), documentRow)
+        }
+        if (!disposed) tagRows()
+      } catch {
+        // The underlying export page still works even when enhancement metadata cannot be loaded.
       }
     }
 
     tagRows()
+    void loadDocuments()
     const observer = new MutationObserver(tagRows)
     observer.observe(root, { childList: true, subtree: true })
-    return () => observer.disconnect()
+    return () => {
+      disposed = true
+      observer.disconnect()
+    }
   }, [])
 
   return <>
@@ -152,6 +267,7 @@ export default function ExportDocumentsListPolish() {
         width: 188px !important;
         font-size: 10px !important;
         letter-spacing: -0.035em !important;
+        color: #ffffff !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='edit'] {
@@ -160,6 +276,13 @@ export default function ExportDocumentsListPolish() {
         width: 51px !important;
         padding-left: 4px !important;
         padding-right: 4px !important;
+      }
+
+      body:has([data-export-document-list-polish]) [data-export-shipment-cancel='true'] {
+        border: 1px solid #efc0c4 !important;
+        background: #fff7f7 !important;
+        color: #b24c55 !important;
+        font-size: 10px !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='delete'] {
