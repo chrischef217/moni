@@ -43,11 +43,7 @@ function severityLabel(value: AlertEvent['severity']) {
 }
 
 function severityClass(value: AlertEvent['severity']) {
-  if (value === 'critical') return 'border-red-400/30 bg-red-500/[0.07] text-red-100'
-  if (value === 'high') return 'border-orange-400/25 bg-orange-500/[0.06] text-orange-100'
-  if (value === 'attention') return 'border-amber-400/25 bg-amber-500/[0.05] text-amber-100'
-  if (value === 'data') return 'border-blue-400/20 bg-blue-500/[0.04] text-blue-100'
-  return 'border-white/10 bg-white/[0.025] text-slate-200'
+  return `moni-alert-card moni-alert-card--${value}`
 }
 
 function statusLabel(value: AlertEvent['status']) {
@@ -104,42 +100,64 @@ export default function ControlTowerAlertFeed() {
   }
 
   return (
-    <section className="bg-[#071426] px-4 pb-8 text-slate-100 md:px-8">
-      <div className="mx-auto max-w-[1700px] rounded-3xl border border-white/10 bg-[#0b1b30]/95 p-5 shadow-[0_20px_55px_rgba(2,6,23,0.28)] lg:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-cyan-300">
-              MONI ALERTS
-              {(data?.summary.unread_count ?? 0) > 0 && <span className="rounded-full bg-blue-400 px-2 py-0.5 text-[10px] tracking-normal text-slate-950">미확인 {data?.summary.unread_count}</span>}
+    <section data-moni-alert-feed className="moni-alert-feed">
+      <div className="moni-alert-feed__panel">
+        <header className="moni-alert-feed__header">
+          <div className="moni-alert-feed__heading">
+            <div className="moni-alert-feed__kicker">
+              <span className="moni-alert-feed__live-dot" aria-hidden="true" />
+              <span>MONI ALERTS</span>
+              {(data?.summary.unread_count ?? 0) > 0 && (
+                <span className="moni-alert-feed__unread">미확인 {data?.summary.unread_count}</span>
+              )}
             </div>
-            <h2 className="mt-1 text-xl font-black text-white">지금 놓치면 안 되는 것</h2>
-            <p className="mt-1 text-sm text-slate-500">확인·처리·해결 상태가 Intelligence Board와 동일하게 유지됩니다.</p>
+            <h2>지금 놓치면 안 되는 것</h2>
+            <p>확인 · 처리 · 해결 상태가 Intelligence Board와 실시간으로 연결됩니다.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-slate-400">열린 알림 {data?.summary.open_count ?? 0}</span>
-            <button type="button" onClick={() => void openBoard()} className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.06] px-4 py-2 text-xs font-black text-cyan-100">전체 Board →</button>
+
+          <div className="moni-alert-feed__actions">
+            <span className="moni-alert-feed__open-count">열린 알림 <b>{data?.summary.open_count ?? 0}</b></span>
+            <button type="button" onClick={() => void openBoard()} className="moni-alert-feed__board-button">
+              전체 Board <span aria-hidden="true">→</span>
+            </button>
           </div>
-        </div>
+        </header>
 
-        {error && <div className="mt-4 rounded-xl border border-red-400/20 bg-red-400/[0.05] px-4 py-3 text-sm text-red-200">{error}</div>}
+        {error && <div className="moni-alert-feed__error">{error}</div>}
 
-        <div className="mt-4 grid gap-3 xl:grid-cols-5">
-          {loading && Array.from({ length: 5 }).map((_, index) => <div key={index} className="min-h-[132px] animate-pulse rounded-2xl border border-white/8 bg-white/[0.025]" />)}
+        <div className="moni-alert-feed__grid">
+          {loading && Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="moni-alert-card moni-alert-card--loading" />
+          ))}
+
           {!loading && openEvents.map((event) => (
-            <button key={event.id} type="button" onClick={() => void openBoard(event)} className={`min-h-[132px] rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-white/30 ${severityClass(event.severity)}`}>
-              <div className="flex items-center justify-between gap-2 text-[11px] font-black">
-                <span>{severityLabel(event.severity)} · {statusLabel(event.status)}</span>
-                {!event.read_at && <span className="h-2 w-2 rounded-full bg-blue-300" />}
+            <button
+              key={event.id}
+              type="button"
+              onClick={() => void openBoard(event)}
+              className={severityClass(event.severity)}
+            >
+              <div className="moni-alert-card__meta">
+                <span className="moni-alert-card__severity">{severityLabel(event.severity)} · {statusLabel(event.status)}</span>
+                {!event.read_at && <span className="moni-alert-card__unread-dot" aria-label="읽지 않은 알림" />}
               </div>
-              <div className="mt-2 line-clamp-2 text-sm font-black leading-5 text-white">{event.title}</div>
-              <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] opacity-60">
+
+              <strong className="moni-alert-card__title">{event.title}</strong>
+
+              <div className="moni-alert-card__footer">
                 {event.impact_amount > 0 && <span>{won(event.impact_amount)}</span>}
                 {event.due_date && <span>{event.due_date}</span>}
                 <span>{new Date(event.last_detected_at).toLocaleDateString('ko-KR')}</span>
               </div>
             </button>
           ))}
-          {!loading && openEvents.length === 0 && <div className="col-span-full rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.04] p-7 text-center"><b className="text-emerald-100">현재 열린 MONI 알림이 없습니다.</b><p className="mt-1 text-sm text-slate-500">관리자 화면 진입 시 Intelligence 조건이 자동 동기화됩니다.</p></div>}
+
+          {!loading && openEvents.length === 0 && (
+            <div className="moni-alert-feed__empty">
+              <b>현재 열린 MONI 알림이 없습니다.</b>
+              <p>관리자 화면 진입 시 Intelligence 조건이 자동 동기화됩니다.</p>
+            </div>
+          )}
         </div>
       </div>
     </section>
