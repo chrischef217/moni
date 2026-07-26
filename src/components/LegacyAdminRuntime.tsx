@@ -3,6 +3,7 @@
 import RawMaterialLedgerPrintController from '@/components/RawMaterialLedgerPrintController'
 import RawMaterialUnitPriceController from '@/components/RawMaterialUnitPriceController'
 import RawMaterialTypeFilterController from '@/components/RawMaterialTypeFilterController'
+import RawLedgerDesignController from '@/components/RawLedgerDesignController'
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
 import WorkOrderGramController from '@/components/WorkOrderGramController'
 import ProductionDashboardController from '@/components/ProductionDashboardController'
@@ -15,6 +16,7 @@ export default function LegacyAdminRuntime() {
       <RawMaterialLedgerPrintController />
       <RawMaterialUnitPriceController />
       <RawMaterialTypeFilterController />
+      <RawLedgerDesignController />
       <ProductionCompletionMetadataController />
       <WorkOrderGramController />
       <ProductionDashboardController />
