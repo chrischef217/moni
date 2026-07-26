@@ -1,0 +1,304 @@
+/* Monthly production plan — raw-material requirement panel refinement.
+   Keep all budgeting/safety logic intact; only normalize the visual hierarchy. */
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) {
+  overflow: hidden !important;
+  border: 1px solid #c9dde9 !important;
+  border-radius: 20px !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: 0 10px 30px rgba(47, 89, 116, 0.07) !important;
+}
+
+/* Header */
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) > div:first-child {
+  min-height: 92px;
+  padding: 20px 22px !important;
+  gap: 18px !important;
+  border-bottom: 1px solid #dce9f1 !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) h2 {
+  margin: 0 !important;
+  color: #173b52 !important;
+  font-size: 22px !important;
+  line-height: 1.2 !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.025em !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) h2 + p {
+  margin-top: 6px !important;
+  color: #4e7793 !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+  font-weight: 600 !important;
+}
+
+/* Right-side controls */
+[data-moni-production-view='monthly-plan'] [data-monthly-requirement-print] {
+  min-height: 42px !important;
+  padding: 0 16px !important;
+  border: 1px solid #9fcfbb !important;
+  border-radius: 12px !important;
+  background: #eff9f4 !important;
+  color: #267456 !important;
+  box-shadow: none !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  white-space: nowrap !important;
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-requirement-print]:not(:disabled):hover {
+  border-color: #79b99d !important;
+  background: #e7f6ef !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-requirement-print]:disabled {
+  cursor: not-allowed !important;
+  border-color: #d2e2da !important;
+  background: #f4f8f6 !important;
+  color: #8aa39a !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) label {
+  min-height: 42px;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  padding: 0 13px !important;
+  border: 1px solid #d6e4ed !important;
+  border-radius: 12px !important;
+  background: #f8fbfd !important;
+  color: #294b61 !important;
+  font-size: 13px !important;
+  font-weight: 720 !important;
+  white-space: nowrap !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) label input[type='checkbox'] {
+  width: 17px !important;
+  height: 17px !important;
+  margin: 0 !important;
+  accent-color: #279b70 !important;
+}
+
+/* Four budget summary cards */
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  padding: 16px 18px 18px !important;
+  border-bottom: 1px solid #dce9f1 !important;
+  background: #f6fafc !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div {
+  min-height: 118px !important;
+  padding: 16px 17px !important;
+  border: 1px solid #d6e5ee !important;
+  border-radius: 15px !important;
+  background: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(42, 79, 103, 0.035) !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(1) {
+  border-top: 3px solid #4e9ed0 !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(2) {
+  border-top: 3px solid #7fb2cc !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(3) {
+  border-color: #efc8cb !important;
+  border-top: 3px solid #d96870 !important;
+  background: #fff7f7 !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(4) {
+  border-color: #ead7b6 !important;
+  border-top: 3px solid #d69a31 !important;
+  background: #fffbf4 !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div > div:first-child {
+  color: #728998 !important;
+  font-size: 11px !important;
+  line-height: 1.25 !important;
+  font-weight: 750 !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div > div:nth-child(2) {
+  margin-top: 9px !important;
+  color: #173d55 !important;
+  font-size: 22px !important;
+  line-height: 1.1 !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.02em !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div > div:nth-child(3) {
+  margin-top: 8px !important;
+  color: #7f94a2 !important;
+  font-size: 11px !important;
+  line-height: 1.45 !important;
+  font-weight: 560 !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(3) > div:first-child,
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(3) > div:nth-child(2) {
+  color: #ba4e57 !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(3) > div:nth-child(3) {
+  color: #a9676d !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(4) > div:first-child,
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(4) > div:nth-child(2) {
+  color: #9a6b17 !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div:nth-child(4) > div:nth-child(3) {
+  color: #96784b !important;
+}
+
+/* Safety banner injected below the header */
+[data-moni-production-view='monthly-plan'] [data-monthly-requirement-safety-banner] {
+  margin: 14px 18px 0 !important;
+  padding: 13px 15px !important;
+  border: 1px solid #edc2c7 !important;
+  border-left: 4px solid #d75d68 !important;
+  border-radius: 12px !important;
+  background: #fff6f6 !important;
+  color: #88434a !important;
+  box-shadow: none !important;
+}
+
+[data-moni-production-view='monthly-plan'] [data-monthly-requirement-safety-banner] .text-red-200,
+[data-moni-production-view='monthly-plan'] [data-monthly-requirement-safety-banner] .text-red-100 {
+  color: #9c5960 !important;
+}
+
+/* Table */
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) .overflow-x-auto {
+  background: #ffffff !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  background: #ffffff !important;
+  color: #27485d !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) thead {
+  background: #eef5fa !important;
+  color: #5a7688 !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) thead th {
+  padding-top: 13px !important;
+  padding-bottom: 13px !important;
+  border-bottom: 1px solid #d6e5ee !important;
+  background: #eef5fa !important;
+  color: #5a7688 !important;
+  font-size: 11px !important;
+  line-height: 1.2 !important;
+  font-weight: 800 !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) tbody tr {
+  border: 0 !important;
+  background: #ffffff !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) tbody tr:nth-child(even) {
+  background: #fbfdfe !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) tbody td {
+  padding-top: 14px !important;
+  padding-bottom: 14px !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid #e7eff4 !important;
+  color: #315469 !important;
+  font-size: 12px !important;
+  vertical-align: middle !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) tbody td:nth-child(2) {
+  color: #193f57 !important;
+  font-weight: 800 !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) tbody .text-red-300 {
+  color: #bf4f59 !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) tbody .text-amber-300 {
+  color: #a5741e !important;
+}
+
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) tbody .text-emerald-300,
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) tbody .text-green-300 {
+  color: #2c805d !important;
+}
+
+/* Injected purchasing columns */
+[data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-cell] {
+  color: #365a70 !important;
+  font-size: 12px !important;
+}
+
+[data-moni-production-view='monthly-plan'] th[data-monthly-purchase-budget-cell] {
+  color: #5a7688 !important;
+  font-weight: 800 !important;
+}
+
+[data-moni-production-view='monthly-plan'] td[data-monthly-purchase-budget-cell].text-red-300 {
+  color: #bf4f59 !important;
+}
+
+[data-moni-production-view='monthly-plan'] td[data-monthly-purchase-budget-cell].text-amber-300 {
+  color: #a5741e !important;
+}
+
+[data-moni-production-view='monthly-plan'] td[data-monthly-purchase-budget-cell].text-emerald-300 {
+  color: #2c805d !important;
+}
+
+/* No visual motion in this operational table. */
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]),
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) *,
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) *::before,
+[data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) *::after {
+  animation: none !important;
+  transition-duration: 0s !important;
+}
+
+@media (max-width: 1180px) {
+  [data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  [data-moni-production-view='monthly-plan'] section:has(> [data-monthly-purchase-budget-summary]) > div:first-child {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+  }
+
+  [data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] {
+    grid-template-columns: 1fr !important;
+    padding: 12px !important;
+  }
+
+  [data-moni-production-view='monthly-plan'] [data-monthly-purchase-budget-summary] > div {
+    min-height: 0 !important;
+  }
+}
