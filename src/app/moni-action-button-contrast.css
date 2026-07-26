@@ -73,8 +73,9 @@
 
 /*
  * Export print route: globals.css hides every body descendant for statement printing.
- * Export invoice/packing pages must explicitly become the only printable children so
- * Chrome print preview receives the actual A4 documents instead of four blank pages.
+ * Export invoice/packing pages must explicitly become the only printable children.
+ * The print layout below reserves a 7 mm physical safety margin and compacts vertical
+ * spacing so one Commercial Invoice and one Packing List each fit on a single A4 page.
  */
 @media print {
   body:has(.invoice-paper),
@@ -115,19 +116,197 @@
   body:has(.packing-paper) .paper {
     position: relative !important;
     inset: auto !important;
-    display: block !important;
+    display: flex !important;
+    flex-direction: column !important;
     box-sizing: border-box !important;
-    width: 210mm !important;
-    min-height: 297mm !important;
+    width: 196mm !important;
+    min-height: 283mm !important;
     height: auto !important;
-    margin: 0 !important;
+    margin: 7mm auto !important;
+    padding: 7mm 8mm !important;
     overflow: visible !important;
+    background: #ffffff !important;
     box-shadow: none !important;
     transform: none !important;
+    font-size: 9.1px !important;
+    line-height: 1.22 !important;
     break-before: auto !important;
     page-break-before: auto !important;
     break-after: page !important;
     page-break-after: always !important;
+  }
+
+  body:has(.invoice-paper) .doc-header,
+  body:has(.packing-paper) .doc-header {
+    grid-template-columns: 1fr 61mm !important;
+    gap: 6mm !important;
+    padding-bottom: 3mm !important;
+  }
+
+  body:has(.invoice-paper) .doc-header h1,
+  body:has(.packing-paper) .doc-header h1 {
+    margin: 0 0 2.5mm !important;
+    font-size: 21px !important;
+    line-height: 1.05 !important;
+  }
+
+  body:has(.invoice-paper) .exporter,
+  body:has(.packing-paper) .exporter {
+    gap: 0.7mm !important;
+  }
+
+  body:has(.invoice-paper) .exporter strong,
+  body:has(.packing-paper) .exporter strong {
+    font-size: 11.5px !important;
+  }
+
+  body:has(.invoice-paper) .doc-meta,
+  body:has(.packing-paper) .doc-meta {
+    gap: 0.8mm !important;
+  }
+
+  body:has(.invoice-paper) .doc-meta > div,
+  body:has(.packing-paper) .doc-meta > div {
+    grid-template-columns: 27mm 1fr !important;
+    padding: 0.8mm 0 !important;
+  }
+
+  body:has(.invoice-paper) .party-grid,
+  body:has(.packing-paper) .party-grid {
+    gap: 4mm !important;
+    margin-top: 3mm !important;
+  }
+
+  body:has(.packing-paper) > .party {
+    margin-top: 3mm !important;
+  }
+
+  body:has(.invoice-paper) .party,
+  body:has(.packing-paper) .party {
+    min-height: 22mm !important;
+    gap: 0.7mm !important;
+    padding: 2mm !important;
+    line-height: 1.18 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  body:has(.invoice-paper) .party > b,
+  body:has(.packing-paper) .party > b {
+    font-size: 8px !important;
+  }
+
+  body:has(.invoice-paper) .party strong,
+  body:has(.packing-paper) .party strong {
+    font-size: 10.5px !important;
+  }
+
+  body:has(.invoice-paper) .info-grid,
+  body:has(.packing-paper) .info-grid {
+    margin-top: 3mm !important;
+  }
+
+  body:has(.invoice-paper) .info-grid > div,
+  body:has(.packing-paper) .info-grid > div {
+    grid-template-columns: 31mm 1fr !important;
+    min-height: 5.8mm !important;
+    padding: 1mm 1.5mm !important;
+  }
+
+  body:has(.invoice-paper) .info-grid b,
+  body:has(.packing-paper) .info-grid b {
+    font-size: 8.2px !important;
+  }
+
+  body:has(.invoice-paper) .lc,
+  body:has(.packing-paper) .lc {
+    margin-top: 2mm !important;
+  }
+
+  body:has(.invoice-paper) .doc-table,
+  body:has(.packing-paper) .doc-table {
+    margin-top: 3mm !important;
+    font-size: 8px !important;
+    line-height: 1.12 !important;
+  }
+
+  body:has(.invoice-paper) .doc-table th,
+  body:has(.invoice-paper) .doc-table td,
+  body:has(.packing-paper) .doc-table th,
+  body:has(.packing-paper) .doc-table td {
+    padding: 1.1mm 0.6mm !important;
+  }
+
+  body:has(.invoice-paper) .doc-table th,
+  body:has(.packing-paper) .doc-table th {
+    font-size: 7.6px !important;
+    line-height: 1.08 !important;
+  }
+
+  body:has(.invoice-paper) .doc-table .left small,
+  body:has(.packing-paper) .doc-table .left small {
+    margin-top: 0.5mm !important;
+  }
+
+  body:has(.invoice-paper) .doc-table tr,
+  body:has(.packing-paper) .doc-table tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  body:has(.invoice-paper) .totals,
+  body:has(.packing-paper) .totals {
+    margin-top: 2.5mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  body:has(.invoice-paper) .totals > div,
+  body:has(.packing-paper) .totals > div {
+    padding: 0.7mm 0 !important;
+  }
+
+  body:has(.invoice-paper) .footer-info,
+  body:has(.packing-paper) .footer-info {
+    gap: 1.5mm 6mm !important;
+    margin-top: 3mm !important;
+    padding-top: 2mm !important;
+    line-height: 1.15 !important;
+  }
+
+  body:has(.invoice-paper) .signature,
+  body:has(.packing-paper) .signature {
+    width: 54mm !important;
+    margin: auto 0 0 auto !important;
+    padding-top: 3mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  body:has(.invoice-paper) .signature-line,
+  body:has(.packing-paper) .signature-line {
+    padding-bottom: 0.8mm !important;
+    font-size: 8px !important;
+  }
+
+  body:has(.invoice-paper) .signature img,
+  body:has(.packing-paper) .signature img {
+    max-width: 43mm !important;
+    max-height: 13mm !important;
+    margin: 1.2mm auto 0 !important;
+  }
+
+  body:has(.invoice-paper) .signature-placeholder,
+  body:has(.packing-paper) .signature-placeholder {
+    height: 13mm !important;
+  }
+
+  body:has(.invoice-paper) .signature b,
+  body:has(.invoice-paper) .signature span,
+  body:has(.packing-paper) .signature b,
+  body:has(.packing-paper) .signature span {
+    margin-top: 0.5mm !important;
+    line-height: 1.1 !important;
   }
 
   body:has(.invoice-paper) .page-break,
