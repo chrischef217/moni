@@ -1,0 +1,31 @@
+/*
+ * MONI modal centering guard
+ *
+ * Legacy admin modals use `fixed inset-0 flex items-center justify-center`,
+ * which centers against the whole viewport. On desktop, when the global MONI
+ * sidebar is pinned, the real working viewport starts after the 264px sidebar.
+ * Keep every full-screen admin overlay centered inside that working viewport.
+ *
+ * The pin toggle already exposes `aria-pressed`, so this follows pin/unpin
+ * immediately without adding another JS state source. When the sidebar is
+ * unpinned (even while it temporarily peeks on hover), the modal is centered
+ * against the full viewport as requested.
+ */
+
+@media (min-width: 1024px) {
+  body:has([data-moni-global-sidebar] button[aria-pressed='true'])
+    [data-moni-app-content]
+    .fixed.inset-0 {
+    left: var(--moni-sidebar-width, 264px) !important;
+    right: 0 !important;
+    width: auto !important;
+  }
+
+  body:has([data-moni-global-sidebar] button[aria-pressed='false'])
+    [data-moni-app-content]
+    .fixed.inset-0 {
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+  }
+}
