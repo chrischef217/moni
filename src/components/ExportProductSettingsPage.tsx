@@ -52,7 +52,13 @@ function numberText(value: number | string, digits = 3) {
 
 function priceText(value: number | string, currency: string) {
   const parsed = Number(value || 0)
-  return `${currency} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(Number.isFinite(parsed) ? parsed : 0)}`
+  const amount = Number.isFinite(parsed) ? parsed : 0
+  const normalizedCurrency = String(currency || 'USD').toUpperCase()
+  const digits = normalizedCurrency === 'KRW' ? 0 : 2
+  return `${normalizedCurrency} ${new Intl.NumberFormat(normalizedCurrency === 'KRW' ? 'ko-KR' : 'en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: normalizedCurrency === 'KRW' ? 0 : 4,
+  }).format(amount)}`
 }
 
 export default function ExportProductSettingsPage() {
@@ -160,11 +166,22 @@ export default function ExportProductSettingsPage() {
     }))
   }
 
+  function changeCurrency(currency: string) {
+    setForm((current) => ({
+      ...current,
+      currency,
+      default_unit_price: currency === 'KRW' && current.default_unit_price !== ''
+        ? String(Math.round(Number(current.default_unit_price) || 0))
+        : current.default_unit_price,
+    }))
+  }
+
   async function save() {
     setError('')
     if (!form.product_id) return setError('기존 완제품을 검색해서 선택해 주세요.')
     if (!form.english_name.trim()) return setError('완제품 영문이름을 입력해 주세요.')
     if (form.default_unit_price.trim() === '') return setError('기본 Unit Price / CTN을 입력해 주세요.')
+    if (form.currency === 'KRW' && !Number.isInteger(Number(form.default_unit_price))) return setError('KRW 단가는 소수점 없이 원 단위 정수로 입력해 주세요.')
     if (!Number.isInteger(Number(form.units_per_carton)) || Number(form.units_per_carton) < 1) return setError('실제 카톤 입수량을 1개 이상의 정수로 입력해 주세요.')
     if (form.net_weight_kg.trim() === '') return setError('Net Weight / CTN을 입력해 주세요.')
     if (form.gross_weight_kg.trim() === '') return setError('Gross Weight / CTN을 입력해 주세요.')
@@ -232,19 +249,30 @@ export default function ExportProductSettingsPage() {
           <span className="rounded-xl bg-[#eef7f3] px-3 py-2 text-xs font-black text-[#27785a]">{settings.length}개</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1280px] border-collapse text-sm">
-            <thead><tr className="bg-[#f1f7fb] text-left text-xs font-bold text-[#667f8f]"><th className="px-6 py-4">완제품</th><th className="px-4 py-4">영문이름</th><th className="px-4 py-4 text-center">입수량</th><th className="px-4 py-4">Unit Price / CTN</th><th className="px-4 py-4 text-right">Net Weight / CTN</th><th className="px-4 py-4 text-right">Gross Weight / CTN</th><th className="px-4 py-4 text-right">CBM / CTN</th><th className="px-4 py-4">상태</th><th className="px-6 py-4 text-center">관리</th></tr></thead>
+          <table className="w-full min-w-[1480px] border-collapse text-sm">
+            <colgroup>
+              <col className="w-[250px]" />
+              <col className="w-[230px]" />
+              <col className="w-[130px]" />
+              <col className="w-[180px]" />
+              <col className="w-[155px]" />
+              <col className="w-[165px]" />
+              <col className="w-[125px]" />
+              <col className="w-[90px]" />
+              <col className="w-[155px]" />
+            </colgroup>
+            <thead><tr className="bg-[#f1f7fb] text-left text-xs font-bold text-[#667f8f]"><th className="whitespace-nowrap px-6 py-4">완제품</th><th className="whitespace-nowrap px-4 py-4">영문이름</th><th className="whitespace-nowrap px-4 py-4 text-center">입수량</th><th className="whitespace-nowrap px-4 py-4">Unit Price / CTN</th><th className="whitespace-nowrap px-4 py-4 text-right">Net Weight / CTN</th><th className="whitespace-nowrap px-4 py-4 text-right">Gross Weight / CTN</th><th className="whitespace-nowrap px-4 py-4 text-right">CBM / CTN</th><th className="whitespace-nowrap px-4 py-4 text-center">상태</th><th className="whitespace-nowrap px-6 py-4 text-center">관리</th></tr></thead>
             <tbody>
               {settings.map((setting) => <tr key={setting.id} className="border-t border-[#e7eff4] bg-white hover:bg-[#f9fcfd]">
-                <td className="px-6 py-4"><div className="font-black text-[#17384d]">{setting.products?.product_name || '-'}</div><div className="mt-1 text-xs text-[#8296a3]">품목제조번호 {setting.products?.report_number || '미등록'} · {setting.products?.product_spec || '규격 미등록'}</div></td>
-                <td className="px-4 py-4 font-bold text-[#31546a]">{setting.english_name}</td>
-                <td className="px-4 py-4 text-center"><span className="rounded-lg bg-[#eef7f3] px-3 py-1.5 font-black text-[#227a59]">{setting.units_per_carton ? `${setting.units_per_carton} EA / CTN` : '-'}</span></td>
-                <td className="px-4 py-4 font-black text-[#176f99]">{priceText(setting.default_unit_price, setting.currency)}</td>
-                <td className="px-4 py-4 text-right font-semibold">{numberText(setting.net_weight_kg)} kg</td>
-                <td className="px-4 py-4 text-right font-semibold">{numberText(setting.gross_weight_kg)} kg</td>
-                <td className="px-4 py-4 text-right font-semibold">{numberText(setting.cbm, 6)}</td>
-                <td className="px-4 py-4"><span className={`rounded-lg px-2.5 py-1.5 text-xs font-black ${setting.is_active ? 'bg-[#eaf8f2] text-[#16825d]' : 'bg-[#f1f4f6] text-[#7c8c96]'}`}>{setting.is_active ? '사용' : '미사용'}</span></td>
-                <td className="px-6 py-4"><div className="flex justify-center gap-2"><button type="button" onClick={() => openEdit(setting)} className="rounded-lg border border-[#bfd5e1] bg-white px-3 py-2 text-xs font-black text-[#315d75]">수정</button><button type="button" onClick={() => void remove(setting)} className="rounded-lg border border-[#efb9bf] bg-[#fffafa] px-3 py-2 text-xs font-black text-[#b44f58]">삭제</button></div></td>
+                <td className="whitespace-nowrap px-6 py-4"><div className="font-black text-[#17384d]">{setting.products?.product_name || '-'}</div><div className="mt-1 whitespace-nowrap text-xs text-[#8296a3]">품목제조번호 {setting.products?.report_number || '미등록'} · {setting.products?.product_spec || '규격 미등록'}</div></td>
+                <td className="whitespace-nowrap px-4 py-4 font-bold text-[#31546a]">{setting.english_name}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-center"><span className="inline-flex min-w-[98px] items-center justify-center whitespace-nowrap rounded-lg bg-[#eef7f3] px-3 py-1.5 font-black text-[#227a59]">{setting.units_per_carton ? `${setting.units_per_carton} EA / CTN` : '-'}</span></td>
+                <td className="whitespace-nowrap px-4 py-4 font-black text-[#176f99]">{priceText(setting.default_unit_price, setting.currency)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold">{numberText(setting.net_weight_kg)} kg</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold">{numberText(setting.gross_weight_kg)} kg</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold">{numberText(setting.cbm, 6)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-center"><span className={`inline-flex min-w-[58px] items-center justify-center whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-black ${setting.is_active ? 'bg-[#eaf8f2] text-[#16825d]' : 'bg-[#f1f4f6] text-[#7c8c96]'}`}>{setting.is_active ? '사용' : '미사용'}</span></td>
+                <td className="whitespace-nowrap px-6 py-4"><div className="flex flex-nowrap justify-center gap-2"><button type="button" onClick={() => openEdit(setting)} className="min-w-[58px] whitespace-nowrap rounded-lg border border-[#bfd5e1] bg-white px-3 py-2 text-xs font-black text-[#315d75]">수정</button><button type="button" onClick={() => void remove(setting)} className="min-w-[58px] whitespace-nowrap rounded-lg border border-[#efb9bf] bg-[#fffafa] px-3 py-2 text-xs font-black text-[#b44f58]">삭제</button></div></td>
               </tr>)}
               {!settings.length && <tr><td colSpan={9} className="px-6 py-16 text-center"><div className="text-lg font-black text-[#31546a]">등록된 수출품목이 없습니다.</div><div className="mt-2 text-sm text-[#8296a3]">우측 상단의 ‘수출 품목 등록’을 눌러 필요한 완제품만 등록하세요.</div></td></tr>}
             </tbody>
@@ -275,7 +303,7 @@ export default function ExportProductSettingsPage() {
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <label className="md:col-span-2"><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">완제품 영문이름</span><input value={form.english_name} onChange={(event) => setForm((current) => ({ ...current, english_name: event.target.value }))} placeholder="English product name" className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none focus:border-[#7fb9d1]" /></label>
             <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">입수량 (EA / CTN)</span><input type="number" min="1" step="1" value={form.units_per_carton} onChange={(event) => changeUnits(event.target.value)} placeholder="실제 카톤 입수량" className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 text-lg font-black text-[#176f53] outline-none focus:border-[#7fb9d1]" /><small className="mt-1 block text-[#8598a3]">제품별 실제 1카톤 입수량을 입력</small></label>
-            <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">기본 Unit Price / CTN</span><div className="flex"><select value={form.currency} onChange={(event) => setForm((current) => ({ ...current, currency: event.target.value }))} className="h-12 rounded-l-xl border border-r-0 border-[#cfe0e9] bg-[#f5f9fb] px-3 text-sm font-black text-[#31546a]"><option>USD</option><option>THB</option><option>KRW</option><option>EUR</option></select><input type="number" min="0" step="0.0001" value={form.default_unit_price} onChange={(event) => setForm((current) => ({ ...current, default_unit_price: event.target.value }))} placeholder="0.00" className="h-12 min-w-0 flex-1 rounded-r-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none focus:border-[#7fb9d1]" /></div><small className="mt-1 block text-[#8598a3]">1카톤 기준 기본 수출단가</small></label>
+            <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">기본 Unit Price / CTN</span><div className="flex"><select value={form.currency} onChange={(event) => changeCurrency(event.target.value)} className="h-12 rounded-l-xl border border-r-0 border-[#cfe0e9] bg-[#f5f9fb] px-3 text-sm font-black text-[#31546a]"><option>USD</option><option>THB</option><option>KRW</option><option>EUR</option></select><input type="number" min="0" step={form.currency === 'KRW' ? '1' : '0.0001'} value={form.default_unit_price} onChange={(event) => setForm((current) => ({ ...current, default_unit_price: event.target.value }))} placeholder={form.currency === 'KRW' ? '0' : '0.00'} className="h-12 min-w-0 flex-1 rounded-r-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none focus:border-[#7fb9d1]" /></div><small className="mt-1 block text-[#8598a3]">1카톤 기준 기본 수출단가{form.currency === 'KRW' ? ' · KRW는 원 단위 정수' : ''}</small></label>
             {selectedProduct && <div className="md:col-span-2 rounded-2xl border border-[#b7e0d1] bg-[#f1fbf6] px-4 py-3 text-sm text-[#436d5d]"><b className="text-[#176f53]">재고 차감 공식</b> · 1 CTN = {form.units_per_carton || '?'}EA{stockDeductionKgPerCarton !== null ? ` → 완제품 재고 ${numberText(stockDeductionKgPerCarton)}kg 차감` : ' · 입수량과 단품중량이 확정되면 자동 계산'}</div>}
             <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Net Weight / CTN (kg)</span><input type="number" min="0" step="0.001" value={form.net_weight_kg} onChange={(event) => setForm((current) => ({ ...current, net_weight_kg: event.target.value }))} placeholder="카톤 순중량" className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none focus:border-[#7fb9d1]" /><small className="mt-1 block text-[#8598a3]">단품중량이 등록된 경우 입수량 입력 시 자동 계산</small></label>
             <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Gross Weight / CTN (kg)</span><input type="number" min="0" step="0.001" value={form.gross_weight_kg} onChange={(event) => setForm((current) => ({ ...current, gross_weight_kg: event.target.value }))} placeholder="카톤 총중량" className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none focus:border-[#7fb9d1]" /><small className="mt-1 block text-[#8598a3]">제품 + 카톤박스/포장재 포함 총중량</small></label>
