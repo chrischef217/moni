@@ -41,6 +41,7 @@
 [data-moni-app-content] button[class*='bg-[#16825d]'],
 [data-moni-app-content] button[class*='bg-[#22c55e]'],
 [data-moni-app-content] button[class*='bg-[#22c77c]'],
+[data-moni-app-content] button[class*='bg-[#315d75]'],
 [data-moni-app-content] a[class*='bg-emerald-500'],
 [data-moni-app-content] a[class*='bg-emerald-600'],
 [data-moni-app-content] a[class*='bg-green-500'],
@@ -65,6 +66,79 @@
 [data-moni-app-content] button[class*='bg-[#16b981]'] *,
 [data-moni-app-content] button[class*='bg-[#16825d]'] *,
 [data-moni-app-content] button[class*='bg-[#22c55e]'] *,
-[data-moni-app-content] button[class*='bg-[#22c77c]'] * {
+[data-moni-app-content] button[class*='bg-[#22c77c]'] *,
+[data-moni-app-content] button[class*='bg-[#315d75]'] * {
   color: inherit !important;
+}
+
+/*
+ * Export print route: globals.css hides every body descendant for statement printing.
+ * Export invoice/packing pages must explicitly become the only printable children so
+ * Chrome print preview receives the actual A4 documents instead of four blank pages.
+ */
+@media print {
+  body:has(.invoice-paper),
+  body:has(.packing-paper),
+  body:has(.invoice-paper) .moni-weather-stage,
+  body:has(.packing-paper) .moni-weather-stage,
+  body:has(.invoice-paper) [data-moni-app-shell],
+  body:has(.packing-paper) [data-moni-app-shell],
+  body:has(.invoice-paper) [data-moni-app-content],
+  body:has(.packing-paper) [data-moni-app-content] {
+    visibility: visible !important;
+  }
+
+  body:has(.invoice-paper) [data-moni-app-content],
+  body:has(.packing-paper) [data-moni-app-content] {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  body:has(.invoice-paper) [data-moni-app-content] > *:not(.paper),
+  body:has(.packing-paper) [data-moni-app-content] > *:not(.paper) {
+    display: none !important;
+  }
+
+  body:has(.invoice-paper) .paper,
+  body:has(.invoice-paper) .paper *,
+  body:has(.packing-paper) .paper,
+  body:has(.packing-paper) .paper * {
+    visibility: visible !important;
+  }
+
+  body:has(.invoice-paper) .paper,
+  body:has(.packing-paper) .paper {
+    position: relative !important;
+    inset: auto !important;
+    display: block !important;
+    box-sizing: border-box !important;
+    width: 210mm !important;
+    min-height: 297mm !important;
+    height: auto !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    transform: none !important;
+    break-before: auto !important;
+    page-break-before: auto !important;
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  body:has(.invoice-paper) .page-break,
+  body:has(.packing-paper) .page-break {
+    break-before: auto !important;
+    page-break-before: auto !important;
+  }
+
+  body:has(.invoice-paper) .paper:last-of-type,
+  body:has(.packing-paper) .paper:last-of-type {
+    break-after: auto !important;
+    page-break-after: auto !important;
+  }
 }
