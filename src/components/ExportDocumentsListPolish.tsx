@@ -54,10 +54,17 @@ export default function ExportDocumentsListPolish() {
   return <>
     <span data-export-document-list-polish hidden />
     <style jsx global>{`
+      body:has([data-export-document-list-polish]) main table {
+        width: 100% !important;
+        min-width: 0 !important;
+      }
+
       body:has([data-export-document-list-polish]) main table th:nth-child(8),
       body:has([data-export-document-list-polish]) main table td:nth-child(8) {
-        width: 104px !important;
-        min-width: 104px !important;
+        width: 96px !important;
+        min-width: 96px !important;
+        padding-left: 8px !important;
+        padding-right: 8px !important;
         text-align: center !important;
         white-space: nowrap !important;
       }
@@ -74,12 +81,13 @@ export default function ExportDocumentsListPolish() {
         line-height: 1 !important;
       }
 
-      /* Restore the management column to its original compact width. */
       body:has([data-export-document-list-polish]) main table th:nth-child(9),
       body:has([data-export-document-list-polish]) main table td:nth-child(9) {
         width: 310px !important;
         min-width: 310px !important;
         max-width: 310px !important;
+        padding-left: 3px !important;
+        padding-right: 3px !important;
         text-align: center !important;
       }
 
@@ -112,7 +120,6 @@ export default function ExportDocumentsListPolish() {
         box-sizing: border-box !important;
       }
 
-      /* First row: three equal buttons across the same total width. */
       body:has([data-export-document-list-polish]) [data-export-document-action='invoice'] {
         grid-column: 1 !important;
         grid-row: 1 !important;
@@ -139,7 +146,6 @@ export default function ExportDocumentsListPolish() {
         color: #ffffff !important;
       }
 
-      /* Second row: long shipment action + compact edit/delete controls. */
       body:has([data-export-document-list-polish]) [data-export-document-action='shipment'] {
         grid-column: 1 !important;
         grid-row: 2 !important;
