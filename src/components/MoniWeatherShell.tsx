@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 type WeatherResponse = {
@@ -129,6 +129,10 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
   }, [])
 
   const stageStyle = useMemo(() => backgroundStyle(weather), [weather])
+  const shellStyle = useMemo(() => ({
+    '--moni-current-background-image': stageStyle.backgroundImage,
+    '--moni-current-background-color': stageStyle.backgroundColor,
+  } as CSSProperties), [stageStyle])
   const current = weather?.weather
   const temperature = current?.temperature
   const humidity = current?.humidity
@@ -156,7 +160,7 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
   return (
     <div data-moni-weather-stage className="moni-weather-stage" style={stageStyle}>
       <div className="moni-weather-stage__veil" aria-hidden="true" />
-      <div data-moni-app-shell className="moni-app-shell">
+      <div data-moni-app-shell className="moni-app-shell" style={shellStyle}>
         <div data-moni-app-content className="moni-app-content">{children}</div>
         {weatherCardTarget ? createPortal(weatherCard, weatherCardTarget) : null}
       </div>
