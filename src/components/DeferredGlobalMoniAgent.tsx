@@ -9,7 +9,7 @@ const GlobalMoniAgent = dynamic(() => import('@/components/GlobalMoniAgent'), {
   loading: () => null,
 })
 
-const HIDDEN_AGENT_PATHS = new Set(['/production-daily'])
+const HIDDEN_AGENT_PATHS = new Set(['/production-daily', '/intelligence'])
 
 export default function DeferredGlobalMoniAgent() {
   const pathname = usePathname()
