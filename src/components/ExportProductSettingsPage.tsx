@@ -215,7 +215,10 @@ export default function ExportProductSettingsPage() {
       const payload = await response.json()
       if (!response.ok || !payload.ok) throw new Error(payload.error || '수출품목 저장에 실패했습니다.')
       setSettings(payload.settings || [])
-      closeModal()
+      setModalOpen(false)
+      setForm(emptyForm())
+      setProductSearch('')
+      setError('')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '수출품목 저장에 실패했습니다.')
     } finally {
@@ -310,9 +313,25 @@ export default function ExportProductSettingsPage() {
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">완제품 영문이름</span><input value={form.english_name} onChange={(event) => setForm((current) => ({ ...current, english_name: event.target.value }))} placeholder="English product name" className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none focus:border-[#7fb9d1]" /></label>
             <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">HS CODE</span><input value={form.hs_code} onChange={(event) => setForm((current) => ({ ...current, hs_code: event.target.value }))} placeholder={DEFAULT_HS_CODE} className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-black text-[#31546a] outline-none focus:border-[#7fb9d1]" /><small className="mt-1 block text-[#8598a3]">기본 {DEFAULT_HS_CODE} · 제품별 수정 가능</small></label>
-            <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">입수량 (EA / CTN)</span><input type="number" min="1" step="1" value={form.units_per_carton} onChange={(event) => changeUnits(event.target.value)} placeholder="실제 카톤 입수량" className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 text-lg font-black text-[#176f53] outline-none focus:border-[#7fb9d1]" /></label>
-            <div><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">기본 통화</span><div className="grid h-12 grid-cols-4 overflow-hidden rounded-xl border border-[#cfe0e9] bg-[#f5f9fb]">{CURRENCIES.map((currency) => <button key={currency} type="button" onClick={() => changeCurrency(currency)} className={`border-r border-[#d7e4eb] text-sm font-black last:border-r-0 ${form.currency === currency ? 'bg-[#176f53] text-white' : 'bg-[#f5f9fb] text-[#31546a] hover:bg-[#eaf4f0]'}`}>{currency}</button>)}</div><small className="mt-1 block text-[#8598a3]">기본 KRW · 다른 통화는 버튼으로 선택</small></div>
-            <label className="md:col-span-2"><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">기본 Unit Price / CTN</span><input type="number" min="0" step={form.currency === 'KRW' ? '1' : '0.0001'} value={form.default_unit_price} onChange={(event) => setForm((current) => ({ ...current, default_unit_price: event.target.value }))} placeholder={form.currency === 'KRW' ? '0' : '0.00'} className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 text-lg font-black text-[#176f99] outline-none focus:border-[#7fb9d1]" /><small className="mt-1 block text-[#8598a3]">1카톤 기준 기본 수출단가{form.currency === 'KRW' ? ' · KRW는 원 단위 정수' : ''}</small></label>
+            <label className="md:col-span-2"><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">입수량 (EA / CTN)</span><input type="number" min="1" step="1" value={form.units_per_carton} onChange={(event) => changeUnits(event.target.value)} placeholder="실제 카톤 입수량" className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 text-lg font-black text-[#176f53] outline-none focus:border-[#7fb9d1]" /></label>
+
+            <div className="md:col-span-2 rounded-2xl border border-[#d9e7ee] bg-[#f8fbfd] p-4">
+              <div className="grid gap-4 md:grid-cols-[1.08fr_1fr]">
+                <div>
+                  <span className="mb-1.5 block text-sm font-bold text-[#5f7888]">기본 통화</span>
+                  <div className="grid h-12 grid-cols-4 overflow-hidden rounded-xl border border-[#cfe0e9] bg-white">{CURRENCIES.map((currency) => <button key={currency} type="button" onClick={() => changeCurrency(currency)} className={`border-r border-[#d7e4eb] text-sm font-black transition last:border-r-0 ${form.currency === currency ? 'bg-[#176f53] text-white' : 'bg-white text-[#31546a] hover:bg-[#eef7f3]'}`}>{currency}</button>)}</div>
+                </div>
+                <label>
+                  <span className="mb-1.5 block text-sm font-bold text-[#5f7888]">기본 Unit Price / CTN</span>
+                  <div className="flex h-12 overflow-hidden rounded-xl border border-[#cfe0e9] bg-white focus-within:border-[#7fb9d1]">
+                    <span className="flex min-w-[72px] items-center justify-center border-r border-[#d7e4eb] bg-[#eef7f3] px-3 text-sm font-black text-[#176f53]">{form.currency}</span>
+                    <input type="number" min="0" step={form.currency === 'KRW' ? '1' : '0.0001'} value={form.default_unit_price} onChange={(event) => setForm((current) => ({ ...current, default_unit_price: event.target.value }))} placeholder={form.currency === 'KRW' ? '0' : '0.00'} className="min-w-0 flex-1 bg-white px-4 text-lg font-black text-[#176f99] outline-none" />
+                  </div>
+                </label>
+              </div>
+              <p className="mt-2 text-xs text-[#8598a3]">통화와 단가는 한 세트입니다. 기본 KRW · 1카톤 기준 수출단가{form.currency === 'KRW' ? ' · KRW는 원 단위 정수' : ''}</p>
+            </div>
+
             {selectedProduct && <div className="md:col-span-2 rounded-2xl border border-[#b7e0d1] bg-[#f1fbf6] px-4 py-3 text-sm text-[#436d5d]"><b className="text-[#176f53]">재고 차감 공식</b> · 1 CTN = {form.units_per_carton || '?'}EA{stockDeductionKgPerCarton !== null ? ` → 완제품 재고 ${numberText(stockDeductionKgPerCarton)}kg 차감` : ' · 입수량과 단품중량이 확정되면 자동 계산'}</div>}
             <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Net Weight / CTN (kg)</span><input type="number" min="0" step="0.001" value={form.net_weight_kg} onChange={(event) => setForm((current) => ({ ...current, net_weight_kg: event.target.value }))} placeholder="카톤 순중량" className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none focus:border-[#7fb9d1]" /></label>
             <label><span className="mb-1.5 block text-sm font-bold text-[#5f7888]">Gross Weight / CTN (kg)</span><input type="number" min="0" step="0.001" value={form.gross_weight_kg} onChange={(event) => setForm((current) => ({ ...current, gross_weight_kg: event.target.value }))} placeholder="카톤 총중량" className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 font-semibold outline-none focus:border-[#7fb9d1]" /></label>
