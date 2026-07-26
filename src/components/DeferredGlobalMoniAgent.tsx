@@ -20,6 +20,6 @@ export default function DeferredGlobalMoniAgent() {
     return () => window.clearTimeout(timer)
   }, [])
 
-  if (HIDDEN_AGENT_PATHS.has(pathname)) return null
+  if (HIDDEN_AGENT_PATHS.has(pathname) || pathname.startsWith('/sales-management/export/documents')) return null
   return ready ? <GlobalMoniAgent /> : null
 }
