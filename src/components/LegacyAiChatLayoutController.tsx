@@ -69,7 +69,7 @@ export default function LegacyAiChatLayoutController() {
 
         const activeLabel = Array.from(historySidebar.querySelectorAll<HTMLElement>('p'))
           .find((element) => textOf(element).toLowerCase() === 'active chat')
-        const activePreview = activeLabel?.parentElement?.parentElement as HTMLElement | null
+        const activePreview = activeLabel?.parentElement as HTMLElement | null
         if (activePreview) activePreview.dataset.moniAiActivePreview = 'true'
       }
 
@@ -88,14 +88,6 @@ export default function LegacyAiChatLayoutController() {
         if (!originalComposerParent) originalComposerParent = historySidebar
         composerDock.dataset.moniAiComposer = 'true'
         if (composerDock.parentElement !== surface) surface.appendChild(composerDock)
-      }
-
-      const globalSidebar = document.querySelector<HTMLElement>('[data-moni-global-sidebar]')
-      const currentArea = globalSidebar ? Array.from(globalSidebar.querySelectorAll<HTMLElement>('div')).find((element) => textOf(element).startsWith('현재 영역:')) : null
-      if (globalSidebar && currentArea && !textOf(currentArea).includes('AI 챗팅')) {
-        const aiButton = Array.from(globalSidebar.querySelectorAll<HTMLButtonElement>('button[data-moni-global-nav]'))
-          .find((button) => textOf(button).includes('AI 챗팅'))
-        aiButton?.click()
       }
     }
 
