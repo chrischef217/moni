@@ -1,8 +1,7 @@
 'use client'
 
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { usePathname } from 'next/navigation'
 
 type WeatherResponse = {
   ok: boolean
@@ -89,7 +88,6 @@ function WindIcon() {
 }
 
 export default function MoniWeatherShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname()
   const [weather, setWeather] = useState<WeatherResponse | null>(null)
   const [weatherCardTarget, setWeatherCardTarget] = useState<HTMLElement | null>(null)
 
@@ -116,32 +114,21 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
   }, [weather?.refresh_minutes, loadWeather])
 
   useEffect(() => {
-    let cancelled = false
-    let retryTimer: number | undefined
-    let attempts = 0
+    const root = document.querySelector<HTMLElement>('[data-moni-app-content]') || document.body
 
     const locateHero = () => {
-      if (cancelled) return
       const target = document.querySelector<HTMLElement>('[data-moni-control-tower] .ct-hero')
-      setWeatherCardTarget(target)
-      if (!target && attempts < 12) {
-        attempts += 1
-        retryTimer = window.setTimeout(locateHero, 100)
-      }
+      setWeatherCardTarget((current) => current === target ? current : target)
     }
 
     locateHero()
-    return () => {
-      cancelled = true
-      if (retryTimer) window.clearTimeout(retryTimer)
-    }
-  }, [pathname])
+    const observer = new MutationObserver(locateHero)
+    observer.observe(root, { childList: true, subtree: true })
+
+    return () => observer.disconnect()
+  }, [])
 
   const stageStyle = useMemo(() => backgroundStyle(weather), [weather])
-  const shellStyle = useMemo(() => ({
-    '--moni-weather-background-image': stageStyle.backgroundImage,
-    '--moni-weather-background-color': stageStyle.backgroundColor,
-  } as CSSProperties), [stageStyle])
   const current = weather?.weather
   const temperature = current?.temperature
   const humidity = current?.humidity
@@ -169,7 +156,7 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
   return (
     <div data-moni-weather-stage className="moni-weather-stage" style={stageStyle}>
       <div className="moni-weather-stage__veil" aria-hidden="true" />
-      <div data-moni-app-shell className="moni-app-shell" style={shellStyle}>
+      <div data-moni-app-shell className="moni-app-shell">
         <div data-moni-app-content className="moni-app-content">{children}</div>
         {weatherCardTarget ? createPortal(weatherCard, weatherCardTarget) : null}
       </div>
