@@ -1,8 +1,9 @@
 /* Compact premium weather card based on the user's SolarPulse reference. */
 [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card {
   display: block !important;
-  top: 12px;
-  right: 14px;
+  /* Keep the card visually pinned inside the centered Control Tower hero. */
+  top: 30px;
+  right: max(24px, calc((100% - 1460px) / 2 + 12px));
   width: 206px;
   min-width: 206px;
   padding: 10px 11px 9px;
@@ -13,12 +14,24 @@
   backdrop-filter: blur(10px) saturate(108%);
   -webkit-backdrop-filter: blur(10px) saturate(108%);
   color: #1b3b50;
+  transform: none !important;
 }
 
 [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card:hover {
-  transform: translateY(-1px);
+  transform: none !important;
   border-color: rgba(123, 178, 214, .76);
-  background: rgba(255, 255, 255, .91);
+  background: rgba(255, 255, 255, .88);
+}
+
+/* Let the weather background image show softly through the long Control Tower hero card. */
+[data-moni-control-tower] .ct-hero {
+  background:
+    radial-gradient(circle at 77% 15%, rgba(104, 193, 244, .16), transparent 31%),
+    linear-gradient(135deg, rgba(234, 246, 253, .72) 0%, rgba(220, 239, 250, .66) 52%, rgba(232, 245, 251, .70) 100%) !important;
+  border-color: rgba(178, 211, 232, .76) !important;
+  box-shadow: 0 8px 24px rgba(42, 88, 118, .06) !important;
+  backdrop-filter: blur(7px) saturate(106%);
+  -webkit-backdrop-filter: blur(7px) saturate(106%);
 }
 
 .moni-weather-card__date {
@@ -124,6 +137,7 @@
 
 @media (max-width: 1450px) and (min-width: 1280px) {
   [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card {
+    right: 24px;
     width: 190px;
     min-width: 190px;
   }
