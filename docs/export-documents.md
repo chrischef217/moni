@@ -14,3 +14,4 @@
 - Company information and authorized signature are snapshotted from the administrator company profile when the document is saved
 - Save creates a draft; Save + PDF/Print marks the document generated and opens the combined Commercial Invoice + Packing List print view
 - Finished-goods inventory is deducted only after `출고확정`; cancelling the shipment restores the calculated stock balance
+- Release validation: HS CODE master, KRW default currency, export-document snapshot, and print views are included in the production release.
