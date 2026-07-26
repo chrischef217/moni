@@ -1,18 +1,18 @@
 /* Compact premium weather card based on the user's SolarPulse reference. */
 [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card {
   display: block !important;
-  /* Keep the card visually pinned inside the centered Control Tower hero. */
-  top: 30px;
-  right: max(24px, calc((100% - 1460px) / 2 + 12px));
+  /* The weather card is now portaled into .ct-hero, so these coordinates are truly hero-relative. */
+  top: 14px;
+  right: 14px;
   width: 206px;
   min-width: 206px;
   padding: 10px 11px 9px;
   border: 1px solid rgba(202, 222, 236, .86);
   border-radius: 16px;
-  background: rgba(255, 255, 255, .79);
+  background: rgba(255, 255, 255, .72);
   box-shadow: 0 10px 28px rgba(45, 91, 122, .10), inset 0 1px 0 rgba(255,255,255,.92);
-  backdrop-filter: blur(10px) saturate(108%);
-  -webkit-backdrop-filter: blur(10px) saturate(108%);
+  backdrop-filter: blur(12px) saturate(110%);
+  -webkit-backdrop-filter: blur(12px) saturate(110%);
   color: #1b3b50;
   transform: none !important;
 }
@@ -20,18 +20,50 @@
 [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card:hover {
   transform: none !important;
   border-color: rgba(123, 178, 214, .76);
-  background: rgba(255, 255, 255, .88);
+  background: rgba(255, 255, 255, .82);
 }
 
-/* Let the weather background image show softly through the long Control Tower hero card. */
+/* True glass hero: reuse the live weather/background image inside the card itself. */
 [data-moni-control-tower] .ct-hero {
-  background:
-    radial-gradient(circle at 77% 15%, rgba(104, 193, 244, .16), transparent 31%),
-    linear-gradient(135deg, rgba(234, 246, 253, .72) 0%, rgba(220, 239, 250, .66) 52%, rgba(232, 245, 251, .70) 100%) !important;
-  border-color: rgba(178, 211, 232, .76) !important;
-  box-shadow: 0 8px 24px rgba(42, 88, 118, .06) !important;
-  backdrop-filter: blur(7px) saturate(106%);
-  -webkit-backdrop-filter: blur(7px) saturate(106%);
+  min-height: 176px !important;
+  isolation: isolate;
+  background: rgba(237, 248, 255, .56) !important;
+  border-color: rgba(178, 211, 232, .70) !important;
+  box-shadow: 0 10px 28px rgba(42, 88, 118, .07), inset 0 1px 0 rgba(255,255,255,.68) !important;
+  backdrop-filter: blur(8px) saturate(108%);
+  -webkit-backdrop-filter: blur(8px) saturate(108%);
+}
+
+[data-moni-control-tower] .ct-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background-color: var(--moni-weather-background-color, #8fcff5);
+  background-image: var(--moni-weather-background-image);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: .20;
+  pointer-events: none;
+}
+
+/* Remove the old decorative XXX/chevron motif behind the top-right controls. */
+[data-moni-control-tower] .ct-hero::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+}
+
+[data-moni-control-tower] .ct-hero-copy,
+[data-moni-control-tower] .ct-hero-tools {
+  position: relative;
+  z-index: 2;
+}
+
+[data-moni-control-tower] .ct-hero-tools {
+  position: absolute;
 }
 
 .moni-weather-card__date {
@@ -130,14 +162,14 @@
   white-space: nowrap;
 }
 
-/* Reserve the same top-right space inside the Control Tower hero so controls never collide with the card. */
+/* Reserve the top-right hero space so date/refresh/logout controls do not overlap the in-card weather panel. */
 [data-moni-control-tower] .ct-hero-tools {
-  right: 232px;
+  right: 234px;
 }
 
 @media (max-width: 1450px) and (min-width: 1280px) {
   [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card {
-    right: 24px;
+    right: 12px;
     width: 190px;
     min-width: 190px;
   }
