@@ -27,3 +27,4 @@
 - Generated transaction statements remain available from the export-document management row and from the Sales Management transaction-statement workflow.
 - Shipment cancellation also cancels the linked sales order unless posted receipts already exist.
 - Production release trigger: export customer sync, VAT-free sales registration, transaction-statement creation, reprint, and compact action layout.
+- Action spacing release: top row uses three non-overlapping equal slots; the shipment/statement button is shortened and the compact edit/delete buttons use the remaining second-row width without expanding the management column.
