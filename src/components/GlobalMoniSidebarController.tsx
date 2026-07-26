@@ -18,9 +18,11 @@ const categories: Category[] = [
     ],
   },
   {
-    key: 'ai', label: 'AI 챗팅', icon: '✦', items: [
-      { label: 'AI 채팅', target: 'AI 채팅' },
-      { label: '새 대화', target: '새 대화' },
+    key: 'accounting', label: '회계·세무관리', icon: '₩', items: [
+      { label: '월별 프리랜서 정산', href: '/business-management?tab=accounting&view=settlements' },
+      { label: '현금흐름·세무', href: '/business-management?tab=accounting&view=financial-control' },
+      { label: '생산 근무보정', href: '/business-management?tab=accounting&view=work-logs' },
+      { label: '정산서 출력', href: '/business-management?tab=accounting&view=print' },
     ],
   },
   {
@@ -44,22 +46,6 @@ const categories: Category[] = [
     ],
   },
   {
-    key: 'hr', label: '인사관리', icon: '♙', items: [
-      { label: '정규직 직원관리', href: '/business-management?tab=hr&view=employees' },
-      { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
-      { label: '계약·정산조건', href: '/business-management?tab=hr&view=contracts' },
-      { label: '필수서류 관리', href: '/business-management?tab=hr&view=documents' },
-    ],
-  },
-  {
-    key: 'sales', label: '영업관리', icon: '↗', items: [
-      { label: '고객사 및 담당자', href: '/business-management?tab=sales&view=clients' },
-      { label: '영업 목표매출', href: '/business-management?tab=sales&view=targets' },
-      { label: '영업기회 파이프라인', href: '/business-management?tab=sales&view=pipeline' },
-      { label: '영업활동·상담기록', href: '/business-management?tab=sales&view=activities' },
-    ],
-  },
-  {
     key: 'salesManagement', label: '판매관리', icon: '▤', items: [
       { label: '판매규격·단가', href: '/business-management?tab=sales-management&view=pricing', view: 'pricing' },
       { label: '거래처 관리', href: '/business-management?tab=sales-management&view=clients', view: 'clients' },
@@ -73,20 +59,19 @@ const categories: Category[] = [
     ],
   },
   {
-    key: 'accounting', label: '회계·세무관리', icon: '₩', items: [
-      { label: '월별 프리랜서 정산', href: '/business-management?tab=accounting&view=settlements' },
-      { label: '현금흐름·세무', href: '/business-management?tab=accounting&view=financial-control' },
-      { label: '생산 근무보정', href: '/business-management?tab=accounting&view=work-logs' },
-      { label: '정산서 출력', href: '/business-management?tab=accounting&view=print' },
+    key: 'sales', label: '영업관리', icon: '↗', items: [
+      { label: '고객사 및 담당자', href: '/business-management?tab=sales&view=clients' },
+      { label: '영업 목표매출', href: '/business-management?tab=sales&view=targets' },
+      { label: '영업기회 파이프라인', href: '/business-management?tab=sales&view=pipeline' },
+      { label: '영업활동·상담기록', href: '/business-management?tab=sales&view=activities' },
     ],
   },
   {
-    key: 'admin', label: '관리자', icon: '⚙', items: [
-      { label: '화면·배경 설정', href: '/settings/appearance' },
-      { label: '관리자 설정', target: '관리자' },
-      { label: '회사정보', target: '회사정보' },
-      { label: '사용자 관리', target: '사용자 관리' },
-      { label: '레시피 원재료 연결', target: '레시피 원재료 연결', parentTarget: '생산관리' },
+    key: 'hr', label: '인사관리', icon: '♙', items: [
+      { label: '정규직 직원관리', href: '/business-management?tab=hr&view=employees' },
+      { label: '프리랜서 인력관리', href: '/business-management?tab=hr&view=people' },
+      { label: '계약·정산조건', href: '/business-management?tab=hr&view=contracts' },
+      { label: '필수서류 관리', href: '/business-management?tab=hr&view=documents' },
     ],
   },
   {
@@ -155,7 +140,7 @@ function routeState(pathname: string, search = ''): { category: CategoryKey; ite
   if (pathname === '/') {
     const params = new URLSearchParams(search)
     if (params.get('legacy') !== '1') return { category: 'dashboard', item: '경영 Control Tower' }
-    return { category: 'ai', item: 'AI 채팅' }
+    return { category: 'dashboard', item: '경영 Control Tower' }
   }
   if (pathname === '/intelligence') return { category: 'dashboard', item: 'MONI Intelligence' }
   if (pathname === '/monthly-production-plan') return { category: 'production', item: '월간 생산계획' }
@@ -207,6 +192,11 @@ export default function GlobalMoniSidebarController() {
     () => categories.find((category) => category.key === activeCategory),
     [activeCategory],
   )
+  const currentAreaLabel = activeCategory === 'admin'
+    ? '관리자'
+    : activeCategory === 'ai'
+      ? 'AI 채팅'
+      : currentCategory?.label || '통합 대시보드'
 
   function cancelPeekClose() {
     if (!peekCloseTimerRef.current) return
@@ -315,7 +305,7 @@ export default function GlobalMoniSidebarController() {
         try {
           const payload = JSON.parse(pending) as { category: CategoryKey; target: string; label: string; parentTarget?: string }
           const category = categories.find((item) => item.key === payload.category)
-          const parentTarget = payload.parentTarget || (category?.label === 'AI 챗팅' ? 'AI 채팅' : category?.label)
+          const parentTarget = payload.parentTarget || category?.label
           if (parentTarget) clickDashboardTarget(parentTarget)
           window.setTimeout(() => {
             if (clickDashboardTarget(payload.target)) {
@@ -394,7 +384,7 @@ export default function GlobalMoniSidebarController() {
       return
     }
 
-    const target = category.label === 'AI 챗팅' ? 'AI 채팅' : category.label
+    const target = category.label
     if (pathname !== '/' || !isLegacyHome()) {
       moveToLegacy(category, target, category.label)
       return
@@ -414,7 +404,7 @@ export default function GlobalMoniSidebarController() {
     }
     if (!item.target) return
 
-    const parentTarget = item.parentTarget || (category.label === 'AI 챗팅' ? 'AI 채팅' : category.label)
+    const parentTarget = item.parentTarget || category.label
     if (pathname !== '/' || !isLegacyHome()) {
       moveToLegacy(category, item.target, item.label, parentTarget)
       return
@@ -422,6 +412,26 @@ export default function GlobalMoniSidebarController() {
 
     clickDashboardTarget(parentTarget)
     window.setTimeout(() => clickDashboardTarget(item.target || ''), 80)
+  }
+
+  function openAdmin() {
+    setMobileOpen(false)
+    setMobileExpandedCategory(null)
+    setActiveCategory('admin')
+    setActiveItem('관리자')
+
+    if (pathname === '/' && isLegacyHome()) {
+      clickDashboardTarget('관리자')
+      return
+    }
+
+    window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({
+      category: 'admin',
+      target: '관리자',
+      label: '관리자',
+      parentTarget: '관리자',
+    }))
+    router.push('/?legacy=1')
   }
 
   function togglePinned() {
@@ -490,17 +500,18 @@ export default function GlobalMoniSidebarController() {
             type="button"
             aria-pressed={isPinned}
             aria-label={isPinned ? '사이드바 고정 해제' : '사이드바 고정'}
-            title={isPinned ? '고정 ON — 클릭하면 비고정' : '고정 OFF — 클릭하면 고정'}
+            title={isPinned ? '사이드바 고정 ON — 클릭하면 비고정' : '사이드바 고정 OFF — 클릭하면 고정'}
             onClick={togglePinned}
-            className={`hidden shrink-0 flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] font-bold transition lg:flex ${
+            className={`hidden min-w-[72px] shrink-0 flex-col items-center gap-1 rounded-xl border px-2 py-2 shadow-sm transition lg:flex ${
               isPinned
-                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
-                : 'border-slate-600 bg-slate-800 text-slate-300'
+                ? 'border-[#78d5b5] bg-[#e8faf3]'
+                : 'border-[#c8d8e1] bg-[#f4f7f9]'
             }`}
           >
-            <span>{isPinned ? '고정' : '비고정'}</span>
-            <span className={`relative h-4 w-8 rounded-full transition ${isPinned ? 'bg-emerald-500' : 'bg-slate-600'}`}>
-              <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${isPinned ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            <span className="text-[9px] font-black leading-none tracking-[0.02em] text-[#577181]">사이드바</span>
+            <span className={`text-[11px] font-black leading-none ${isPinned ? 'text-[#156f53]' : 'text-[#425f70]'}`}>{isPinned ? '고정 ON' : '고정 OFF'}</span>
+            <span className={`relative mt-0.5 h-5 w-10 rounded-full shadow-inner transition-colors ${isPinned ? 'bg-[#16b981]' : 'bg-[#93a8b4]'}`}>
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.2)] transition-transform ${isPinned ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
             </span>
           </button>
         </div>
@@ -563,9 +574,26 @@ export default function GlobalMoniSidebarController() {
           })}
         </nav>
 
-        <div className="border-t border-slate-700/70 p-4 text-xs text-slate-500">
-          <div className="rounded-xl bg-slate-900/60 px-3 py-2">
-            현재 영역: <b className="text-slate-300">{currentCategory?.label}</b>
+        <div className="border-t border-slate-700/70 p-3 text-xs text-slate-500">
+          <div className="flex items-stretch gap-2">
+            <div className="min-w-0 flex-1 rounded-xl bg-slate-900/60 px-3 py-2.5">
+              <span className="block truncate">현재 영역: <b className="text-slate-300">{currentAreaLabel}</b></span>
+            </div>
+            <button
+              data-moni-global-nav
+              type="button"
+              onClick={openAdmin}
+              aria-label="관리자"
+              title="관리자"
+              className={`flex min-w-[76px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 font-black transition ${
+                activeCategory === 'admin'
+                  ? 'border-emerald-400/45 bg-emerald-500/20 text-emerald-200'
+                  : 'border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-600 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <span aria-hidden="true">⚙</span>
+              <span>관리자</span>
+            </button>
           </div>
         </div>
       </aside>
