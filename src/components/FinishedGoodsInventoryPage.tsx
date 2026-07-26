@@ -144,7 +144,7 @@ export default function FinishedGoodsInventoryPage() {
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#deebf2] p-5 lg:px-6">
           <div><p className="text-xs font-black uppercase tracking-[0.15em] text-[#5d91ad]">STOCK LIST</p><h2 className="mt-1 text-2xl font-black tracking-[-0.025em]">제품별 현재고</h2></div>
           <div className="flex flex-wrap items-center gap-2">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제품명 · 코드 · 규격 검색" className="h-11 w-[260px] rounded-xl border border-[#cfe0e9] bg-white px-4 text-sm outline-none focus:border-[#8fc0d6]" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제품명 · 품목제조번호 · 규격 검색" className="h-11 w-[260px] rounded-xl border border-[#cfe0e9] bg-white px-4 text-sm outline-none focus:border-[#8fc0d6]" />
             <button type="button" onClick={() => setShowAll((value) => !value)} className={`h-11 rounded-xl border px-4 text-sm font-bold ${showAll ? 'border-[#86cdb2] bg-[#eefaf4] text-[#247a59]' : 'border-[#cfdfe8] bg-white text-[#5f7888]'}`}>{showAll ? '전체 제품 표시 중' : '재고 있는 제품만'}</button>
           </div>
         </div>
@@ -154,7 +154,7 @@ export default function FinishedGoodsInventoryPage() {
             <thead><tr className="bg-[#f1f7fb] text-left text-xs font-bold text-[#667f8f]"><th className="px-6 py-4">제품</th><th className="px-4 py-4">규격</th><th className="px-4 py-4 text-right">생산 입고</th><th className="px-4 py-4 text-right">판매 출고</th><th className="px-4 py-4 text-right">현재고</th><th className="px-4 py-4">최근 입고</th><th className="px-4 py-4">최근 출고</th><th className="px-6 py-4 text-center">이력</th></tr></thead>
             <tbody>
               {rows.map((row) => <tr key={row.product_id} className={`border-t border-[#e7eff4] ${row.negative_stock ? 'bg-[#fff7f7]' : 'bg-white hover:bg-[#f8fbfd]'}`}>
-                <td className="px-6 py-4"><div className="font-black text-[#17384d]">{row.product_name}</div><div className="mt-0.5 text-xs text-[#8396a2]">{row.product_code || '제품코드 미등록'}</div></td>
+                <td className="px-6 py-4"><div className="font-black text-[#17384d]">{row.product_name}</div><div className="mt-0.5 text-xs text-[#8396a2]">{row.product_code || '품목제조번호 미등록'}</div></td>
                 <td className="px-4 py-4 text-[#5f7989]">{row.product_spec || '-'}</td>
                 <td className="px-4 py-4 text-right font-bold text-[#16825d]">+{kg(row.inbound_g)}</td>
                 <td className="px-4 py-4 text-right font-bold text-[#a36b15]">-{kg(row.outbound_g)}</td>
@@ -172,8 +172,8 @@ export default function FinishedGoodsInventoryPage() {
       <div className="rounded-2xl border border-[#d2e3eb] bg-[#f8fbfd] px-5 py-4 text-xs leading-5 text-[#708795]"><b className="text-[#365669]">자동처리 기준</b> · {data?.policy.inbound} · {data?.policy.outbound} · {data?.policy.cancellation}</div>
     </div>
 
-    {selectedRow && <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-[rgba(12,31,44,0.34)] p-4 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedProductId('') }}>
-      <div className="flex max-h-[86vh] w-full max-w-[1050px] flex-col overflow-hidden rounded-[26px] border border-[#cbdfe9] bg-white shadow-[0_28px_80px_rgba(24,54,80,0.24)]">
+    {selectedRow && <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-[rgba(12,31,44,0.34)] p-4 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.currentTarget === event.target) setSelectedProductId('') }}>
+      <div className="flex max-h-[86vh] w-full max-w-[1080px] flex-col overflow-hidden rounded-[26px] border border-[#cfe1eb] bg-white shadow-[0_28px_80px_rgba(22,52,72,0.24)]">
         <div className="flex items-start justify-between gap-4 border-b border-[#dce9f0] px-6 py-5">
           <div><p className="text-xs font-black uppercase tracking-[0.14em] text-[#2b9b76]">STOCK LEDGER</p><h2 className="mt-1 text-2xl font-black text-[#17384d]">{selectedRow.product_name} 재고 이력</h2><p className="mt-1 text-sm text-[#718896]">현재고 {kg(selectedRow.stock_g)} · 생산 {selectedRow.production_count}건 · 판매 {selectedRow.sales_count}건</p></div>
           <button type="button" onClick={() => setSelectedProductId('')} className="rounded-xl border border-[#d0e0e8] bg-white px-4 py-2.5 text-sm font-bold text-[#587283]">닫기</button>
