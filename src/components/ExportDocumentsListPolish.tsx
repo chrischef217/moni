@@ -6,6 +6,10 @@ function normalizedText(element: Element | null) {
   return (element?.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
+function normalizedValue(value: unknown) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim()
+}
+
 type ExportDocument = {
   id: string
   invoice_no: string
@@ -148,7 +152,7 @@ export default function ExportDocumentsListPolish() {
         if (!response.ok || !payload.ok || !Array.isArray(payload.documents)) return
         documentsByInvoice.clear()
         for (const documentRow of payload.documents as ExportDocument[]) {
-          documentsByInvoice.set(normalizedText({ textContent: documentRow.invoice_no } as Element), documentRow)
+          documentsByInvoice.set(normalizedValue(documentRow.invoice_no), documentRow)
         }
         if (!disposed) tagRows()
       } catch {
