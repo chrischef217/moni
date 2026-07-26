@@ -4,7 +4,7 @@ import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarControlle
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
-import GlobalMoniAgent from '@/components/GlobalMoniAgent'
+import DeferredGlobalMoniAgent from '@/components/DeferredGlobalMoniAgent'
 import GlobalAlertSyncController from '@/components/GlobalAlertSyncController'
 import AdminRouteRuntime from '@/components/AdminRouteRuntime'
 import { getSessionFromCookies } from '@/lib/allowance/session'
@@ -52,7 +52,7 @@ export default async function RootLayout({
             </Suspense>
             <GlobalAlertSyncController />
             {children}
-            <GlobalMoniAgent />
+            <DeferredGlobalMoniAgent />
           </MoniWeatherShell>
         ) : children}
       </body>
