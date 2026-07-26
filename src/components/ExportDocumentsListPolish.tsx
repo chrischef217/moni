@@ -27,12 +27,18 @@ export default function ExportDocumentsListPolish() {
         controls.dataset.exportDocumentActions = 'true'
 
         for (const button of Array.from(controls.querySelectorAll<HTMLButtonElement>('button'))) {
-          const label = normalizedText(button)
+          let label = normalizedText(button)
           delete button.dataset.exportDocumentAction
+
+          if (label === '출고확정') {
+            button.textContent = '출고확정/거래명세표 인쇄'
+            label = '출고확정/거래명세표 인쇄'
+          }
+
           if (label === 'Invoice') button.dataset.exportDocumentAction = 'invoice'
           else if (label === 'Packing') button.dataset.exportDocumentAction = 'packing'
           else if (label === 'PDF/인쇄') button.dataset.exportDocumentAction = 'pdf'
-          else if (label === '출고확정' || label === '출고취소') button.dataset.exportDocumentAction = 'shipment'
+          else if (label === '출고확정/거래명세표 인쇄' || label === '출고취소') button.dataset.exportDocumentAction = 'shipment'
           else if (label === '수정') button.dataset.exportDocumentAction = 'edit'
           else if (label === '삭제') button.dataset.exportDocumentAction = 'delete'
         }
@@ -70,25 +76,36 @@ export default function ExportDocumentsListPolish() {
 
       body:has([data-export-document-list-polish]) main table th:nth-child(9),
       body:has([data-export-document-list-polish]) main table td:nth-child(9) {
-        width: 310px !important;
-        min-width: 310px !important;
+        width: 410px !important;
+        min-width: 410px !important;
         text-align: center !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-actions='true'] {
         display: grid !important;
-        grid-template-columns: repeat(3, max-content) !important;
-        grid-template-rows: repeat(2, auto) !important;
-        align-items: center !important;
+        grid-template-columns: repeat(3, 126px) !important;
+        grid-template-rows: repeat(2, 34px) !important;
+        align-items: stretch !important;
         justify-content: center !important;
-        gap: 8px !important;
+        gap: 7px !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-actions='true'] button {
-        min-width: 0 !important;
+        width: 126px !important;
+        min-width: 126px !important;
+        max-width: 126px !important;
+        height: 34px !important;
+        min-height: 34px !important;
         margin: 0 !important;
+        padding: 0 7px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
         white-space: nowrap !important;
         word-break: keep-all !important;
+        overflow: hidden !important;
+        line-height: 1 !important;
+        box-sizing: border-box !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='invoice'] {
@@ -114,6 +131,8 @@ export default function ExportDocumentsListPolish() {
       body:has([data-export-document-list-polish]) [data-export-document-action='shipment'] {
         grid-column: 1 !important;
         grid-row: 2 !important;
+        font-size: 9.5px !important;
+        letter-spacing: -0.04em !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='edit'] {
