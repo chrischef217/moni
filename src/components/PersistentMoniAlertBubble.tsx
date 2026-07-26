@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 type AlertEvent = {
   id: string
@@ -18,7 +18,6 @@ type AlertPayload = {
 
 const SHOWN_AT_KEY = 'moni-persistent-bubble-shown-at-v12'
 const LAST_EVENT_KEY = 'moni-persistent-bubble-event-v12'
-const LEGACY_BUBBLE_KEY = 'moni-global-agent-bubble-v9'
 const DEFAULT_TEXT = 'MONI에게 무엇이든 물어보세요.'
 const THROTTLE_MS = 30 * 60 * 1000
 
@@ -56,12 +55,6 @@ export default function PersistentMoniAlertBubble() {
   const [message, setMessage] = useState(DEFAULT_TEXT)
   const [eventId, setEventId] = useState('')
   const hideTimer = useRef<number | null>(null)
-
-  useLayoutEffect(() => {
-    // V12 owns proactive alerts. Mark the hidden V9 raw-intelligence bubble as recently handled
-    // before passive effects run so GlobalMoniAgent does not issue a duplicate Intelligence request.
-    remember(LEGACY_BUBBLE_KEY, String(Date.now()))
-  }, [])
 
   useEffect(() => {
     let cancelled = false
