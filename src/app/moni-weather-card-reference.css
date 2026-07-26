@@ -1,7 +1,25 @@
 /* Compact premium weather card based on the user's SolarPulse reference. */
+
+/*
+ * Control Tower glass must reveal the EXISTING MONI stage background.
+ * Do not paint a second image into the hero. Instead, make the shell/content
+ * layers translucent only while the Control Tower is active.
+ */
+[data-moni-app-shell]:has([data-moni-control-tower]) {
+  background: rgb(var(--moni-glass-bg) / 0.32) !important;
+  backdrop-filter: blur(9px) saturate(108%);
+  -webkit-backdrop-filter: blur(9px) saturate(108%);
+}
+
+[data-moni-app-content]:has([data-moni-control-tower]) {
+  background:
+    radial-gradient(circle at 84% 0%, rgb(134 207 255 / 0.08), transparent 28%),
+    linear-gradient(145deg, rgb(246 251 255 / 0.12), rgb(231 242 252 / 0.10)) !important;
+}
+
 [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card {
   display: block !important;
-  /* The weather card is now portaled into .ct-hero, so these coordinates are truly hero-relative. */
+  /* The weather card is portaled into .ct-hero, so these coordinates are truly hero-relative. */
   top: 14px;
   right: 14px;
   width: 206px;
@@ -9,7 +27,7 @@
   padding: 10px 11px 9px;
   border: 1px solid rgba(202, 222, 236, .86);
   border-radius: 16px;
-  background: rgba(255, 255, 255, .72);
+  background: rgba(255, 255, 255, .76);
   box-shadow: 0 10px 28px rgba(45, 91, 122, .10), inset 0 1px 0 rgba(255,255,255,.92);
   backdrop-filter: blur(12px) saturate(110%);
   -webkit-backdrop-filter: blur(12px) saturate(110%);
@@ -20,33 +38,24 @@
 [data-moni-app-shell]:has([data-moni-control-tower]) .moni-weather-card:hover {
   transform: none !important;
   border-color: rgba(123, 178, 214, .76);
-  background: rgba(255, 255, 255, .82);
+  background: rgba(255, 255, 255, .84);
 }
 
-/* True glass hero: reuse the live weather/background image inside the card itself. */
+/* True glass hero: only translucent glass; the MONI stage background shows through naturally. */
 [data-moni-control-tower] .ct-hero {
   min-height: 176px !important;
-  isolation: isolate;
-  background: rgba(237, 248, 255, .56) !important;
+  background: rgba(241, 249, 255, .34) !important;
   border-color: rgba(178, 211, 232, .70) !important;
   box-shadow: 0 10px 28px rgba(42, 88, 118, .07), inset 0 1px 0 rgba(255,255,255,.68) !important;
-  backdrop-filter: blur(8px) saturate(108%);
-  -webkit-backdrop-filter: blur(8px) saturate(108%);
+  backdrop-filter: blur(10px) saturate(110%);
+  -webkit-backdrop-filter: blur(10px) saturate(110%);
 }
 
+/* Never draw a separate background image inside the hero. */
 [data-moni-control-tower] .ct-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: inherit;
-  background-color: var(--moni-weather-background-color, #8fcff5);
-  background-image: var(--moni-weather-background-image);
-  background-position: center;
-  background-size: cover;
-  background-repeat: no-repeat;
-  opacity: .20;
-  pointer-events: none;
+  content: none !important;
+  display: none !important;
+  background: none !important;
 }
 
 /* Remove the old decorative XXX/chevron motif behind the top-right controls. */
