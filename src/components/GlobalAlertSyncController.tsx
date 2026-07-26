@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 
 const STORAGE_KEY = 'moni-alert-sync-v10'
 const SYNC_INTERVAL_MS = 15 * 60 * 1000
+const INITIAL_SYNC_DELAY_MS = 8 * 1000
 
 function lastSyncedAt() {
   try {
@@ -26,6 +27,7 @@ export default function GlobalAlertSyncController() {
     let cancelled = false
 
     const sync = async (force = false) => {
+      if (document.visibilityState !== 'visible') return
       if (!force && Date.now() - lastSyncedAt() < SYNC_INTERVAL_MS) return
       try {
         const response = await fetch('/api/moni/alerts', {
@@ -41,12 +43,18 @@ export default function GlobalAlertSyncController() {
       }
     }
 
-    const first = window.setTimeout(() => void sync(), 1800)
+    const first = window.setTimeout(() => void sync(), INITIAL_SYNC_DELAY_MS)
     const timer = window.setInterval(() => void sync(true), SYNC_INTERVAL_MS)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void sync()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
     return () => {
       cancelled = true
       window.clearTimeout(first)
       window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])
 
