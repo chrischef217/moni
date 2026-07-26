@@ -78,7 +78,6 @@ function saleQuantityToGrams(quantityValue: unknown, unitValue: unknown, product
     return { grams: 0, supported: false }
   }
   if (!unit) {
-    // 기존 판매등록의 기본단위가 kg이므로 빈 단위는 kg으로 처리한다.
     return { grams: quantity * 1000, supported: true }
   }
   return { grams: 0, supported: false }
@@ -193,9 +192,9 @@ export async function GET(request: NextRequest) {
       const product = productById.get(productId) || productByName.get(productNameKey(row.product_name))
       if (!product) continue
 
-      const goodQuantity = Object.prototype.hasOwnProperty.call(row, 'quantity_ok_g') && row.quantity_ok_g !== null
-        ? num(row.quantity_ok_g)
-        : num(row.actual_quantity_g)
+      const recordedGoodQuantity = num(row.quantity_ok_g)
+      const actualQuantity = num(row.actual_quantity_g)
+      const goodQuantity = recordedGoodQuantity > 0 ? recordedGoodQuantity : actualQuantity
       if (!(goodQuantity > 0)) continue
 
       movements.push({
