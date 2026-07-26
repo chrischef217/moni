@@ -6,10 +6,12 @@ import RawMaterialTypeFilterController from '@/components/RawMaterialTypeFilterC
 import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
 import WorkOrderGramController from '@/components/WorkOrderGramController'
 import ProductionDashboardController from '@/components/ProductionDashboardController'
+import LegacyAiChatLayoutController from '@/components/LegacyAiChatLayoutController'
 
 export default function LegacyAdminRuntime() {
   return (
     <>
+      <LegacyAiChatLayoutController />
       <RawMaterialLedgerPrintController />
       <RawMaterialUnitPriceController />
       <RawMaterialTypeFilterController />
