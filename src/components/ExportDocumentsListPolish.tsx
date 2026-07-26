@@ -212,23 +212,25 @@ export default function ExportDocumentsListPolish() {
 
       body:has([data-export-document-list-polish]) [data-export-document-actions='true'] {
         display: grid !important;
-        grid-template-columns: 188px 51px 51px !important;
+        grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
         grid-template-rows: repeat(2, 34px) !important;
+        column-gap: 4px !important;
+        row-gap: 7px !important;
         align-items: stretch !important;
         justify-content: center !important;
-        gap: 7px !important;
         width: 304px !important;
         max-width: 304px !important;
         margin: 0 auto !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-actions='true'] button {
+        width: 100% !important;
         min-width: 0 !important;
         max-width: none !important;
         height: 34px !important;
         min-height: 34px !important;
         margin: 0 !important;
-        padding: 0 7px !important;
+        padding: 0 6px !important;
         display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
@@ -240,24 +242,18 @@ export default function ExportDocumentsListPolish() {
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='invoice'] {
-        grid-column: 1 !important;
+        grid-column: 1 / span 4 !important;
         grid-row: 1 !important;
-        width: 92px !important;
-        justify-self: start !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='packing'] {
-        grid-column: 1 !important;
+        grid-column: 5 / span 4 !important;
         grid-row: 1 !important;
-        width: 92px !important;
-        justify-self: center !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='pdf'] {
-        grid-column: 1 / 4 !important;
+        grid-column: 9 / span 4 !important;
         grid-row: 1 !important;
-        width: 92px !important;
-        justify-self: end !important;
         color: #ffffff !important;
       }
 
@@ -266,18 +262,18 @@ export default function ExportDocumentsListPolish() {
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='shipment'] {
-        grid-column: 1 !important;
+        grid-column: 1 / span 6 !important;
         grid-row: 2 !important;
-        width: 188px !important;
-        font-size: 10px !important;
-        letter-spacing: -0.035em !important;
+        padding-left: 5px !important;
+        padding-right: 5px !important;
+        font-size: 9.5px !important;
+        letter-spacing: -0.04em !important;
         color: #ffffff !important;
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='edit'] {
-        grid-column: 2 !important;
+        grid-column: 7 / span 3 !important;
         grid-row: 2 !important;
-        width: 51px !important;
         padding-left: 4px !important;
         padding-right: 4px !important;
       }
@@ -290,9 +286,8 @@ export default function ExportDocumentsListPolish() {
       }
 
       body:has([data-export-document-list-polish]) [data-export-document-action='delete'] {
-        grid-column: 3 !important;
+        grid-column: 10 / span 3 !important;
         grid-row: 2 !important;
-        width: 51px !important;
         padding-left: 4px !important;
         padding-right: 4px !important;
       }
