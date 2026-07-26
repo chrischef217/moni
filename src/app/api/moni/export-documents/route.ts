@@ -6,6 +6,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const PROFILE_ID = 'default'
+const DEFAULT_HS_CODE = '2103.90-9090'
 const CURRENCIES = new Set(['USD', 'THB', 'KRW', 'EUR'])
 const STATUSES = new Set(['DRAFT', 'GENERATED', 'SHIPPED', 'CANCELLED'])
 
@@ -73,7 +74,7 @@ async function loadMetadata() {
       .order('company_name', { ascending: true }),
     supabase
       .from('export_product_settings')
-      .select('id, product_id, english_name, default_unit_price, currency, units_per_carton, net_weight_kg, gross_weight_kg, cbm, is_active, products!inner(id, product_name, product_code, report_number, product_spec, weight_g, is_active)')
+      .select('id, product_id, english_name, hs_code, default_unit_price, currency, units_per_carton, net_weight_kg, gross_weight_kg, cbm, is_active, products!inner(id, product_name, product_code, report_number, product_spec, weight_g, is_active)')
       .eq('is_active', true)
       .order('english_name', { ascending: true }),
     supabase.from('company_profile').select('*').eq('id', PROFILE_ID).maybeSingle(),
@@ -128,7 +129,7 @@ async function buildDocumentPayload(body: Record<string, unknown>) {
     supabase.from('export_destinations').select('*').eq('id', consigneeId).maybeSingle(),
     supabase
       .from('export_product_settings')
-      .select('id, product_id, english_name, default_unit_price, currency, units_per_carton, net_weight_kg, gross_weight_kg, cbm, is_active, products!inner(id, product_name, product_code, report_number, product_spec, weight_g, is_active)')
+      .select('id, product_id, english_name, hs_code, default_unit_price, currency, units_per_carton, net_weight_kg, gross_weight_kg, cbm, is_active, products!inner(id, product_name, product_code, report_number, product_spec, weight_g, is_active)')
       .in('id', settingIds),
     supabase.from('company_profile').select('*').eq('id', PROFILE_ID).maybeSingle(),
   ])
@@ -167,6 +168,7 @@ async function buildDocumentPayload(body: Record<string, unknown>) {
       product_id: text(setting.product_id),
       product_name_ko: text(product?.product_name),
       product_name_en: text(setting.english_name),
+      hs_code: text(setting.hs_code) || DEFAULT_HS_CODE,
       cartons,
       units_per_carton: Number(setting.units_per_carton ?? 0),
       unit_price: requestedPrice,
