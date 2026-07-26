@@ -6,6 +6,7 @@ import SalesOperationsV2Module from '@/components/SalesOperationsV2Module'
 import SalesReceivablesModule from '@/components/SalesReceivablesModule'
 import SalesVariantPricingModule from '@/components/SalesVariantPricingModule'
 import SalesOrderV4Module from '@/components/SalesOrderV4Module'
+import SalesOrderV4ExportEnhancer from '@/components/SalesOrderV4ExportEnhancer'
 import SalesTargetsModule from '@/components/SalesTargetsModule'
 import FinancialControlModule from '@/components/FinancialControlModule'
 import RegularEmployeeManagementModule from '@/components/RegularEmployeeManagementModule'
@@ -89,7 +90,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
 
   let salesManagementContent = <SalesOperationsV2Module key={`sales-management-${initialView}`} initialView={initialView} />
   if (pricingView) salesManagementContent = <SalesVariantPricingModule key="sales-pricing-v4" />
-  if (salesV4View) salesManagementContent = <SalesOrderV4Module key={`sales-orders-v4-${initialView}`} mode={initialView === 'statements' ? 'statements' : 'sales'} />
+  if (salesV4View) salesManagementContent = <><SalesOrderV4ExportEnhancer /><SalesOrderV4Module key={`sales-orders-v4-${initialView}`} mode={initialView === 'statements' ? 'statements' : 'sales'} /></>
   if (receivablesView) salesManagementContent = <SalesReceivablesModule key="sales-receivables" />
 
   return (
