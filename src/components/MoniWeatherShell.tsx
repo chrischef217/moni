@@ -90,6 +90,7 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
   const [weather, setWeather] = useState<WeatherResponse | null>(null)
 
   const loadWeather = useCallback(async () => {
+    if (document.visibilityState !== 'visible') return
     try {
       const response = await fetch(`/api/moni/weather?_=${Date.now()}`, { cache: 'no-store' })
       const payload = await response.json() as WeatherResponse
@@ -99,7 +100,10 @@ export default function MoniWeatherShell({ children }: { children: React.ReactNo
     }
   }, [])
 
-  useEffect(() => { void loadWeather() }, [loadWeather])
+  useEffect(() => {
+    const initial = window.setTimeout(() => void loadWeather(), 1500)
+    return () => window.clearTimeout(initial)
+  }, [loadWeather])
 
   useEffect(() => {
     const minutes = Math.max(10, Math.min(180, Number(weather?.refresh_minutes || 30)))
