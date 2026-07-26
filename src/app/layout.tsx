@@ -1,24 +1,13 @@
 import type { Metadata } from 'next'
-import RawMaterialLedgerPrintController from '@/components/RawMaterialLedgerPrintController'
-import MonthlyProductionRequirementPrintController from '@/components/MonthlyProductionRequirementPrintController'
-import MonthlyProductionRequirementSafetyGuard from '@/components/MonthlyProductionRequirementSafetyGuard'
-import MonthlyProductionPurchaseBudgetController from '@/components/MonthlyProductionPurchaseBudgetController'
-import RawMaterialUnitPriceController from '@/components/RawMaterialUnitPriceController'
-import RawMaterialTypeFilterController from '@/components/RawMaterialTypeFilterController'
+import { Suspense } from 'react'
 import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
-import ProductionCompletionMetadataController from '@/components/ProductionCompletionMetadataController'
-import WorkOrderGramController from '@/components/WorkOrderGramController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
-import MonthlyProductionCalendarDayStyleController from '@/components/MonthlyProductionCalendarDayStyleController'
-import MonthlyPlanToWorkOrderController from '@/components/MonthlyPlanToWorkOrderController'
-import ProductionDashboardController from '@/components/ProductionDashboardController'
-import ProductionGlassThemeController from '@/components/ProductionGlassThemeController'
-import LegacyGlassThemeController from '@/components/LegacyGlassThemeController'
 import AppearanceSettingsMenuController from '@/components/AppearanceSettingsMenuController'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
 import GlobalMoniAgent from '@/components/GlobalMoniAgent'
 import GlobalAlertSyncController from '@/components/GlobalAlertSyncController'
+import AdminRouteRuntime from '@/components/AdminRouteRuntime'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 import './globals.css'
 import './moni-glass-tokens.css'
@@ -56,23 +45,13 @@ export default async function RootLayout({
       <body className="antialiased">
         {showAdminChrome ? (
           <MoniWeatherShell>
-            <RawMaterialLedgerPrintController />
-            <MonthlyProductionRequirementPrintController />
-            <MonthlyProductionRequirementSafetyGuard />
-            <MonthlyProductionPurchaseBudgetController />
-            <RawMaterialUnitPriceController />
-            <RawMaterialTypeFilterController />
             <GlobalMoniSidebarController />
             <GlobalSidebarLayoutController />
-            <ProductionGlassThemeController />
-            <LegacyGlassThemeController />
             <AppearanceSettingsMenuController />
-            <ProductionCompletionMetadataController />
-            <WorkOrderGramController />
             <SidebarPinToggleVisualFix />
-            <MonthlyProductionCalendarDayStyleController />
-            <MonthlyPlanToWorkOrderController />
-            <ProductionDashboardController />
+            <Suspense fallback={null}>
+              <AdminRouteRuntime />
+            </Suspense>
             <GlobalAlertSyncController />
             {children}
             <GlobalMoniAgent />
