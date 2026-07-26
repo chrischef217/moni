@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
-import GlobalMoniSidebarController from '@/components/GlobalMoniSidebarController'
+import GlobalMoniSidebarRouteBoundary from '@/components/GlobalMoniSidebarRouteBoundary'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
@@ -50,7 +50,9 @@ export default async function RootLayout({
       <body className="antialiased">
         {showAdminChrome ? (
           <MoniWeatherShell>
-            <GlobalMoniSidebarController />
+            <Suspense fallback={null}>
+              <GlobalMoniSidebarRouteBoundary />
+            </Suspense>
             <GlobalSidebarLayoutController />
             <SidebarPinToggleVisualFix />
             <Suspense fallback={null}>
