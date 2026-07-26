@@ -4,6 +4,7 @@ import GlobalMoniSidebarRouteBoundary from '@/components/GlobalMoniSidebarRouteB
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import SidebarSubmenuMotionController from '@/components/SidebarSubmenuMotionController'
+import SidebarExportDestinationLabelController from '@/components/SidebarExportDestinationLabelController'
 import ModalNavigationDismissGuard from '@/components/ModalNavigationDismissGuard'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
 import DeferredGlobalMoniAgent from '@/components/DeferredGlobalMoniAgent'
@@ -60,6 +61,7 @@ export default async function RootLayout({
             <GlobalSidebarLayoutController />
             <SidebarPinToggleVisualFix />
             <SidebarSubmenuMotionController />
+            <SidebarExportDestinationLabelController />
             <ModalNavigationDismissGuard />
             <Suspense fallback={null}>
               <AdminRouteRuntime />
