@@ -1,0 +1,70 @@
+/*
+ * MONI action-button contrast guard.
+ *
+ * The Weather Glass layer intentionally remaps legacy `.text-white` text to
+ * dark glass text after dark surfaces are converted to light panels. That
+ * rule must never override text explicitly intended to stay white on solid
+ * action/selected controls.
+ */
+
+/* Explicit white text on interactive controls always wins over Glass text remapping. */
+[data-moni-app-content] button.text-white,
+[data-moni-app-content] a.text-white,
+[data-moni-app-content] [role='button'].text-white,
+[data-moni-app-content][data-moni-global-view] button.text-white,
+[data-moni-app-content][data-moni-global-view] a.text-white,
+[data-moni-app-content][data-moni-global-view] [role='button'].text-white {
+  color: #ffffff !important;
+}
+
+[data-moni-app-content] button.text-white *,
+[data-moni-app-content] a.text-white *,
+[data-moni-app-content] [role='button'].text-white *,
+[data-moni-app-content][data-moni-global-view] button.text-white *,
+[data-moni-app-content][data-moni-global-view] a.text-white *,
+[data-moni-app-content][data-moni-global-view] [role='button'].text-white * {
+  color: inherit !important;
+}
+
+/* Solid semantic buttons/selectors: keep white labels even when a component omitted text-white. */
+[data-moni-app-content] button[class*='bg-emerald-500'],
+[data-moni-app-content] button[class*='bg-emerald-600'],
+[data-moni-app-content] button[class*='bg-emerald-700'],
+[data-moni-app-content] button[class*='bg-green-500'],
+[data-moni-app-content] button[class*='bg-green-600'],
+[data-moni-app-content] button[class*='bg-green-700'],
+[data-moni-app-content] button[class*='bg-teal-500'],
+[data-moni-app-content] button[class*='bg-teal-600'],
+[data-moni-app-content] button[class*='bg-teal-700'],
+[data-moni-app-content] button[class*='bg-[#176f53]'],
+[data-moni-app-content] button[class*='bg-[#16b981]'],
+[data-moni-app-content] button[class*='bg-[#16825d]'],
+[data-moni-app-content] button[class*='bg-[#22c55e]'],
+[data-moni-app-content] button[class*='bg-[#22c77c]'],
+[data-moni-app-content] a[class*='bg-emerald-500'],
+[data-moni-app-content] a[class*='bg-emerald-600'],
+[data-moni-app-content] a[class*='bg-green-500'],
+[data-moni-app-content] a[class*='bg-green-600'],
+[data-moni-app-content] a[class*='bg-[#176f53]'],
+[data-moni-app-content] a[class*='bg-[#16b981]'],
+[data-moni-app-content] a[class*='bg-[#22c55e]'],
+[data-moni-app-content] a[class*='bg-[#22c77c]'] {
+  color: #ffffff !important;
+}
+
+[data-moni-app-content] button[class*='bg-emerald-500'] *,
+[data-moni-app-content] button[class*='bg-emerald-600'] *,
+[data-moni-app-content] button[class*='bg-emerald-700'] *,
+[data-moni-app-content] button[class*='bg-green-500'] *,
+[data-moni-app-content] button[class*='bg-green-600'] *,
+[data-moni-app-content] button[class*='bg-green-700'] *,
+[data-moni-app-content] button[class*='bg-teal-500'] *,
+[data-moni-app-content] button[class*='bg-teal-600'] *,
+[data-moni-app-content] button[class*='bg-teal-700'] *,
+[data-moni-app-content] button[class*='bg-[#176f53]'] *,
+[data-moni-app-content] button[class*='bg-[#16b981]'] *,
+[data-moni-app-content] button[class*='bg-[#16825d]'] *,
+[data-moni-app-content] button[class*='bg-[#22c55e]'] *,
+[data-moni-app-content] button[class*='bg-[#22c77c]'] * {
+  color: inherit !important;
+}
