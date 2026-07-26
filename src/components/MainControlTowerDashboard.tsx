@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CONTROL_TOWER_WISDOM } from '@/lib/controlTowerWisdom'
 import type { AllowanceSessionUser } from '@/types/allowance'
 
 type SalesPayload = { ok:boolean; error?:string; summary:{order_count:number;total_amount:number} }
@@ -63,6 +64,7 @@ export default function MainControlTowerDashboard({session}:{session:AllowanceSe
   const [refreshing,setRefreshing]=useState(false)
   const [error,setError]=useState('')
   const [updatedAt,setUpdatedAt]=useState<Date|null>(null)
+  const [wisdomIndex,setWisdomIndex]=useState(0)
 
   const load=useCallback(async(manual=false)=>{
     if(manual)setRefreshing(true)
@@ -94,6 +96,20 @@ export default function MainControlTowerDashboard({session}:{session:AllowanceSe
 
   useEffect(()=>{void load();const timer=window.setInterval(()=>void load(),60_000);return()=>window.clearInterval(timer)},[load])
 
+  useEffect(()=>{
+    const count=CONTROL_TOWER_WISDOM.length
+    if(count<=1)return
+    const storageKey='moni-control-tower-last-wisdom'
+    const stored=Number(window.sessionStorage.getItem(storageKey)??'-1')
+    const randomValue=typeof window.crypto?.getRandomValues==='function'
+      ? window.crypto.getRandomValues(new Uint32Array(1))[0]
+      : Math.floor(Math.random()*0xffffffff)
+    let next=randomValue%count
+    if(next===stored)next=(next+1)%count
+    setWisdomIndex(next)
+    window.sessionStorage.setItem(storageKey,String(next))
+  },[])
+
   const sales=state.sales?.summary
   const production=state.production
   const ar=state.receivables?.summary
@@ -105,6 +121,7 @@ export default function MainControlTowerDashboard({session}:{session:AllowanceSe
   const goto=(href:string)=>{window.location.href=href}
   const openLegacy=(targetName:string,label:string)=>{window.sessionStorage.setItem('moni-pending-nav',JSON.stringify({category:'production',target:targetName,label,parentTarget:'생산관리'}));window.location.href='/?legacy=1'}
   const logout=async()=>{await fetch('/api/allowance/auth/logout',{method:'POST'}).catch(()=>null);window.location.href='/'}
+  const wisdom=CONTROL_TOWER_WISDOM[wisdomIndex]??CONTROL_TOWER_WISDOM[0]
 
   if(loading)return <main data-moni-control-tower className="ct-root"><div className="ct-loading">MONI 경영 데이터를 불러오는 중입니다.</div></main>
 
@@ -116,8 +133,9 @@ export default function MainControlTowerDashboard({session}:{session:AllowanceSe
       <header className="ct-hero">
         <div className="ct-hero-copy">
           <div className="ct-kicker"><span className="ct-live-dot"/>MONI CONTROL TOWER <em>60초 자동 갱신</em></div>
-          <h1>돈의 흐름을 보고, 다음 행동을 결정합니다.</h1>
-          <p>목표 · 판매 · 수금 · 현금 · 생산 데이터를 한 화면에서 연결합니다. 등록되지 않은 숫자는 추정하지 않습니다.</p>
+          <h1>{wisdom.line}</h1>
+          <div className="ct-wisdom-author">— {wisdom.author}</div>
+          <p className="ct-wisdom-application">{wisdom.application}</p>
         </div>
         <div className="ct-hero-tools">
           <div className="ct-user-meta"><b>{kstTodayLabel()}</b><span>{session.displayName} · {updatedAt?updatedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'-'}</span></div>
