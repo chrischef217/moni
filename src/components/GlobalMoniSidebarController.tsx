@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
-type CategoryKey = 'dashboard' | 'ai' | 'production' | 'hr' | 'sales' | 'salesManagement' | 'accounting' | 'admin' | 'audit'
+type CategoryKey = 'dashboard' | 'ai' | 'production' | 'inventory' | 'hr' | 'sales' | 'salesManagement' | 'accounting' | 'admin' | 'audit'
 type MenuItem = { label: string; target?: string; href?: string; parentTarget?: string; view?: string }
 type Category = { key: CategoryKey; label: string; icon: string; items: MenuItem[] }
 
@@ -29,7 +29,6 @@ const categories: Category[] = [
       { label: '월간 생산계획', href: '/monthly-production-plan' },
       { label: '작업지시서', target: '작업 지시' },
       { label: '생산일보', href: '/production-daily' },
-      { label: '완제품 재고', href: '/finished-goods-inventory' },
       { label: '원료 수불부', target: '원료수불부' },
       { label: '제품 관리', target: '제품관리' },
       { label: '원재료 관리', target: '원재료 관리' },
@@ -37,6 +36,11 @@ const categories: Category[] = [
       { label: '위생점검', target: '위생점검' },
       { label: '품질관리', target: '품질 관리' },
       { label: '규정준수', target: '규정준수 모니터' },
+    ],
+  },
+  {
+    key: 'inventory', label: '재고관리', icon: '▣', items: [
+      { label: '완제품 재고관리', href: '/finished-goods-inventory' },
     ],
   },
   {
@@ -156,7 +160,7 @@ function routeState(pathname: string, search = ''): { category: CategoryKey; ite
   if (pathname === '/intelligence') return { category: 'dashboard', item: 'MONI Intelligence' }
   if (pathname === '/monthly-production-plan') return { category: 'production', item: '월간 생산계획' }
   if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
-  if (pathname === '/finished-goods-inventory') return { category: 'production', item: '완제품 재고' }
+  if (pathname === '/finished-goods-inventory') return { category: 'inventory', item: '완제품 재고관리' }
   if (pathname === '/business-management') return businessRouteState(search)
   if (pathname === '/sales-management/export') return { category: 'salesManagement', item: '수출 관리' }
   if (pathname === '/settings/appearance') return { category: 'admin', item: '화면·배경 설정' }
