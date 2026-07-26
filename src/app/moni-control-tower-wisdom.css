@@ -1,0 +1,48 @@
+/* Rotating management wisdom in the Control Tower hero. */
+[data-moni-control-tower] .ct-wisdom-author {
+  margin-top: 5px;
+  color: #4f7187;
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+[data-moni-control-tower] .ct-wisdom-application {
+  max-width: 790px;
+  margin-top: 6px !important;
+  color: #607d90 !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  font-weight: 540 !important;
+  text-wrap: pretty;
+}
+
+@media (min-width: 1500px) {
+  [data-moni-control-tower] .ct-hero-copy {
+    max-width: 880px;
+  }
+
+  [data-moni-control-tower] .ct-wisdom-application {
+    max-width: 860px;
+  }
+}
+
+@media (max-width: 1250px) {
+  [data-moni-control-tower] .ct-wisdom-application {
+    max-width: 700px;
+    font-size: 12px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  [data-moni-control-tower] .ct-wisdom-author {
+    font-size: 10px;
+  }
+
+  [data-moni-control-tower] .ct-wisdom-application {
+    max-width: none;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+}
