@@ -12,6 +12,9 @@ export default function AppearanceSettingsMenuController() {
 
   useEffect(() => {
     let sentinel: HTMLButtonElement | null = null
+    let timer: number | null = null
+    let disposed = false
+    let attempts = 0
 
     if (pathname === '/settings/appearance') {
       sentinel = document.createElement('button')
@@ -26,14 +29,14 @@ export default function AppearanceSettingsMenuController() {
     const inject = () => {
       const sidebar = document.querySelector<HTMLElement>('[data-moni-global-sidebar]')
       const nav = sidebar?.querySelector<HTMLElement>('nav')
-      if (!sidebar || !nav) return
+      if (!sidebar || !nav) return false
 
       const wrappers = Array.from(nav.children).filter((element): element is HTMLElement => element instanceof HTMLElement)
       const adminWrapper = wrappers.find((wrapper) => normalized(wrapper).includes('관리자'))
-      if (!adminWrapper) return
+      if (!adminWrapper) return false
 
       const submenu = adminWrapper.querySelector<HTMLElement>('.ml-7')
-      if (!submenu) return
+      if (!submenu) return false
 
       let button = submenu.querySelector<HTMLButtonElement>('[data-moni-appearance-menu]')
       if (!button) {
@@ -54,20 +57,23 @@ export default function AppearanceSettingsMenuController() {
 
       if (active) {
         const categoryButton = adminWrapper.querySelector<HTMLButtonElement>(':scope > button[data-moni-global-nav]')
-        if (categoryButton) {
-          categoryButton.classList.add('bg-emerald-500/15', 'text-emerald-200')
-        }
+        if (categoryButton) categoryButton.classList.add('bg-emerald-500/15', 'text-emerald-200')
       }
+      return true
     }
 
-    inject()
-    const observer = new MutationObserver(inject)
-    observer.observe(document.body, { childList: true, subtree: true })
-    const timer = window.setInterval(inject, 800)
+    const tryInject = () => {
+      if (disposed) return
+      attempts += 1
+      if (inject() || attempts >= 30) return
+      timer = window.setTimeout(tryInject, 100)
+    }
+
+    tryInject()
 
     return () => {
-      observer.disconnect()
-      window.clearInterval(timer)
+      disposed = true
+      if (timer !== null) window.clearTimeout(timer)
       sentinel?.remove()
     }
   }, [pathname])
