@@ -60,6 +60,7 @@ const categories: Category[] = [
   {
     key: 'export', label: '수출관리', icon: '⇄', items: [
       { label: '수출 관리', href: '/sales-management/export', view: 'exports' },
+      { label: '수출품목 설정', href: '/sales-management/export/items', view: 'export-items' },
     ],
   },
   {
@@ -151,6 +152,7 @@ function routeState(pathname: string, search = ''): { category: CategoryKey; ite
   if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
   if (pathname === '/finished-goods-inventory') return { category: 'inventory', item: '완제품 재고관리' }
   if (pathname === '/business-management') return businessRouteState(search)
+  if (pathname === '/sales-management/export/items') return { category: 'export', item: '수출품목 설정' }
   if (pathname === '/sales-management/export') return { category: 'export', item: '수출 관리' }
   if (pathname === '/settings/appearance') return { category: 'admin', item: '화면·배경 설정' }
   if (pathname === '/audit') return { category: 'audit', item: '감사 기록' }
@@ -165,6 +167,7 @@ function isStandalonePath(pathname: string) {
     || pathname === '/finished-goods-inventory'
     || pathname === '/business-management'
     || pathname === '/sales-management/export'
+    || pathname === '/sales-management/export/items'
     || pathname === '/settings/appearance'
     || pathname === '/audit'
 }
