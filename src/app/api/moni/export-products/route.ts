@@ -4,6 +4,8 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const DEFAULT_HS_CODE = '2103.90-9090'
+
 function text(value: unknown) {
   if (typeof value !== 'string' && typeof value !== 'number') return ''
   return String(value).trim()
@@ -34,7 +36,7 @@ function createId() {
 }
 
 function normalizeCurrency(value: unknown) {
-  const currency = text(value).toUpperCase() || 'USD'
+  const currency = text(value).toUpperCase() || 'KRW'
   return ['USD', 'THB', 'KRW', 'EUR'].includes(currency) ? currency : null
 }
 
@@ -43,7 +45,7 @@ async function loadSettings() {
   const { data, error } = await supabase
     .from('export_product_settings')
     .select([
-      'id', 'product_id', 'english_name', 'default_unit_price', 'currency',
+      'id', 'product_id', 'english_name', 'hs_code', 'default_unit_price', 'currency',
       'units_per_carton', 'net_weight_kg', 'gross_weight_kg', 'cbm', 'is_active',
       'created_at', 'updated_at',
       'products!inner(id, product_name, product_code, report_number, product_spec, weight_g, product_type, is_active)',
@@ -57,6 +59,7 @@ async function loadSettings() {
 function validate(body: Record<string, unknown>) {
   const productId = text(body.product_id)
   const englishName = text(body.english_name)
+  const hsCode = text(body.hs_code) || DEFAULT_HS_CODE
   const unitPrice = numberValue(body.default_unit_price)
   const currency = normalizeCurrency(body.currency)
   const unitsPerCarton = integerValue(body.units_per_carton)
@@ -66,15 +69,17 @@ function validate(body: Record<string, unknown>) {
 
   if (!productId) return { error: '기존 완제품을 선택해 주세요.' }
   if (!englishName) return { error: '완제품 영문이름을 입력해 주세요.' }
+  if (!hsCode) return { error: 'HS CODE를 입력해 주세요.' }
   if (unitPrice === null || unitPrice < 0) return { error: '기본 Unit Price를 정확히 입력해 주세요.' }
   if (!currency) return { error: '지원하지 않는 통화입니다.' }
+  if (currency === 'KRW' && !Number.isInteger(unitPrice)) return { error: 'KRW 단가는 소수점 없이 원 단위 정수로 입력해 주세요.' }
   if (unitsPerCarton === null || unitsPerCarton < 1) return { error: '입수량은 1개 이상의 정수로 입력해 주세요.' }
   if (netWeight === null || netWeight < 0) return { error: '카톤 Net Weight를 정확히 입력해 주세요.' }
   if (grossWeight === null || grossWeight < 0) return { error: '카톤 Gross Weight를 정확히 입력해 주세요.' }
   if (grossWeight > 0 && netWeight > 0 && grossWeight < netWeight) return { error: 'Gross Weight는 Net Weight보다 작을 수 없습니다.' }
   if (cbm === null || cbm < 0) return { error: '카톤 CBM을 정확히 입력해 주세요.' }
 
-  return { productId, englishName, unitPrice, currency, unitsPerCarton, netWeight, grossWeight, cbm }
+  return { productId, englishName, hsCode, unitPrice, currency, unitsPerCarton, netWeight, grossWeight, cbm }
 }
 
 export async function GET() {
@@ -103,6 +108,7 @@ export async function POST(request: NextRequest) {
       id: createId(),
       product_id: checked.productId,
       english_name: checked.englishName,
+      hs_code: checked.hsCode,
       default_unit_price: checked.unitPrice,
       currency: checked.currency,
       units_per_carton: checked.unitsPerCarton,
@@ -135,6 +141,7 @@ export async function PATCH(request: NextRequest) {
     const supabase = createMoniServiceRoleClient()
     const { error } = await supabase.from('export_product_settings').update({
       english_name: checked.englishName,
+      hs_code: checked.hsCode,
       default_unit_price: checked.unitPrice,
       currency: checked.currency,
       units_per_carton: checked.unitsPerCarton,
