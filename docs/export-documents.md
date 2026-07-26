@@ -15,3 +15,6 @@
 - Save creates a draft; Save + PDF/Print marks the document generated and opens the combined Commercial Invoice + Packing List print view
 - Finished-goods inventory is deducted only after `출고확정`; cancelling the shipment restores the calculated stock balance
 - Release validation: HS CODE master, KRW default currency, export-document snapshot, and print views are included in the production release.
+- Latest export-document UI fix: status labels stay on one line; action buttons are locked to row 1 `Invoice / Packing / PDF·인쇄` and row 2 `출고확정(or 출고취소) / 수정 / 삭제`; PDF/print text stays white.
+- Latest print fix: Chrome print preview explicitly prints `.invoice-paper` and `.packing-paper` despite the legacy global statement-print visibility rule, and document-number-based titles are used for PDF filenames.
+- Deployment retrigger marker: 2026-07-26 latest main release.
