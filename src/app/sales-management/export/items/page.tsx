@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import ExportProductSettingsFitShell from '@/components/ExportProductSettingsFitShell'
 import ExportProductSettingsPage from '@/components/ExportProductSettingsPage'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
@@ -9,5 +10,9 @@ export default async function ExportItemsPage() {
   if (!session) redirect('/')
   if (session.role !== 'admin') redirect('/freelancer')
 
-  return <ExportProductSettingsPage />
+  return (
+    <ExportProductSettingsFitShell>
+      <ExportProductSettingsPage />
+    </ExportProductSettingsFitShell>
+  )
 }
