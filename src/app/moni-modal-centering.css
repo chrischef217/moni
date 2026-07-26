@@ -1,5 +1,5 @@
 /*
- * MONI modal centering guard
+ * MONI modal centering + shared backdrop guard
  *
  * Legacy admin modals use `fixed inset-0 flex items-center justify-center`,
  * which centers against the whole viewport. On desktop, when the global MONI
@@ -11,6 +11,22 @@
  * unpinned (even while it temporarily peeks on hover), the modal is centered
  * against the full viewport as requested.
  */
+
+/*
+ * Product / raw-material / packaging detail-edit modals were still using the
+ * legacy `bg-black/70` backdrop. The raw-ledger detail modal is the approved
+ * visual reference, so use exactly the same dim color, opacity and blur here:
+ * rgba(12, 31, 44, 0.34) + 3px backdrop blur.
+ *
+ * Limit this rule to the common AdminDashboard Modal signature so unrelated
+ * full-screen overlays are not accidentally restyled.
+ */
+[data-moni-app-content]
+  .fixed.inset-0.z-50.flex.items-center.justify-center[class*='bg-black/70'] {
+  background: rgba(12, 31, 44, 0.34) !important;
+  backdrop-filter: blur(3px) !important;
+  -webkit-backdrop-filter: blur(3px) !important;
+}
 
 @media (min-width: 1024px) {
   body:has([data-moni-global-sidebar] button[aria-pressed='true'])
