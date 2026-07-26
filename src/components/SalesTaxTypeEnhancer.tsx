@@ -141,7 +141,7 @@ export default function SalesTaxTypeEnhancer({ initialView }: { initialView: str
       const vatField = fieldByLabel(modal, '부가세율(%)')
       const clientSelect = clientField?.querySelector<HTMLSelectElement>('select')
       const vatInput = vatField?.querySelector<HTMLInputElement>('input')
-      if (!clientSelect || !vatInput) return
+      if (!clientSelect || !vatField || !vatInput) return
 
       const apply = () => {
         const row = clientsById.get(clientSelect.value)
