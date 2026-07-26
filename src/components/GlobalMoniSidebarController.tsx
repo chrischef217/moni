@@ -59,8 +59,9 @@ const categories: Category[] = [
   },
   {
     key: 'export', label: '수출관리', icon: '⇄', items: [
-      { label: '수출 관리', href: '/sales-management/export', view: 'exports' },
+      { label: '수출처 관리', href: '/sales-management/export', view: 'exports' },
       { label: '수출품목 설정', href: '/sales-management/export/items', view: 'export-items' },
+      { label: '수출서류 관리', href: '/sales-management/export/documents', view: 'export-documents' },
     ],
   },
   {
@@ -152,9 +153,10 @@ function routeState(pathname: string, search = ''): { category: CategoryKey; ite
   if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
   if (pathname === '/finished-goods-inventory') return { category: 'inventory', item: '완제품 재고관리' }
   if (pathname === '/business-management') return businessRouteState(search)
+  if (pathname === '/sales-management/export/documents') return { category: 'export', item: '수출서류 관리' }
   if (pathname === '/sales-management/export/items') return { category: 'export', item: '수출품목 설정' }
-  if (pathname === '/sales-management/export') return { category: 'export', item: '수출 관리' }
-  if (pathname === '/settings/appearance') return { category: 'admin', item: '화면·배경 설정' }
+  if (pathname === '/sales-management/export') return { category: 'export', item: '수출처 관리' }
+  if (pathname === '/settings/appearance') return { category: 'admin', item: '관리자' }
   if (pathname === '/audit') return { category: 'audit', item: '감사 기록' }
   return { category: 'dashboard', item: '경영 Control Tower' }
 }
@@ -168,6 +170,7 @@ function isStandalonePath(pathname: string) {
     || pathname === '/business-management'
     || pathname === '/sales-management/export'
     || pathname === '/sales-management/export/items'
+    || pathname === '/sales-management/export/documents'
     || pathname === '/settings/appearance'
     || pathname === '/audit'
 }
@@ -426,19 +429,7 @@ export default function GlobalMoniSidebarController() {
     setMobileExpandedCategory(null)
     setActiveCategory('admin')
     setActiveItem('관리자')
-
-    if (pathname === '/' && isLegacyHome()) {
-      clickDashboardTarget('관리자')
-      return
-    }
-
-    window.sessionStorage.setItem('moni-pending-nav', JSON.stringify({
-      category: 'admin',
-      target: '관리자',
-      label: '관리자',
-      parentTarget: '관리자',
-    }))
-    router.push('/?legacy=1')
+    router.push('/settings/appearance')
   }
 
   function togglePinned() {
