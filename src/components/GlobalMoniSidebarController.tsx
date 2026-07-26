@@ -29,6 +29,7 @@ const categories: Category[] = [
       { label: '월간 생산계획', href: '/monthly-production-plan' },
       { label: '작업지시서', target: '작업 지시' },
       { label: '생산일보', href: '/production-daily' },
+      { label: '완제품 재고', href: '/finished-goods-inventory' },
       { label: '원료 수불부', target: '원료수불부' },
       { label: '제품 관리', target: '제품관리' },
       { label: '원재료 관리', target: '원재료 관리' },
@@ -155,6 +156,7 @@ function routeState(pathname: string, search = ''): { category: CategoryKey; ite
   if (pathname === '/intelligence') return { category: 'dashboard', item: 'MONI Intelligence' }
   if (pathname === '/monthly-production-plan') return { category: 'production', item: '월간 생산계획' }
   if (pathname === '/production-daily') return { category: 'production', item: '생산일보' }
+  if (pathname === '/finished-goods-inventory') return { category: 'production', item: '완제품 재고' }
   if (pathname === '/business-management') return businessRouteState(search)
   if (pathname === '/sales-management/export') return { category: 'salesManagement', item: '수출 관리' }
   if (pathname === '/settings/appearance') return { category: 'admin', item: '화면·배경 설정' }
@@ -167,6 +169,7 @@ function isStandalonePath(pathname: string) {
     || pathname === '/intelligence'
     || pathname === '/monthly-production-plan'
     || pathname === '/production-daily'
+    || pathname === '/finished-goods-inventory'
     || pathname === '/business-management'
     || pathname === '/sales-management/export'
     || pathname === '/settings/appearance'
