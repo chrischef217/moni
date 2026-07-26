@@ -1,0 +1,93 @@
+/* Production Daily final light-surface corrections.
+   This file intentionally overrides only the standalone /production-daily screen. */
+
+[data-moni-app-content][data-moni-production-view='production-daily'] [class*='bg-[#0d1b30]'] {
+  background: rgba(255, 255, 255, 0.96) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] [class*='bg-[#091626]'] {
+  background: rgba(247, 251, 254, 0.96) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table tbody tr[class*='bg-[#0d1b30]'],
+[data-moni-app-content][data-moni-production-view='production-daily'] table tbody tr[class*='bg-[#091626]'] {
+  border-color: rgba(169, 199, 216, 0.48) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table tbody tr[class*='bg-[#0d1b30]']:hover,
+[data-moni-app-content][data-moni-production-view='production-daily'] table tbody tr[class*='bg-[#091626]']:hover {
+  background: rgba(237, 247, 252, 0.98) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table {
+  background: rgba(255, 255, 255, 0.96) !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table thead,
+[data-moni-app-content][data-moni-production-view='production-daily'] table thead[class*='bg-'] {
+  background: #eef6fb !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table th {
+  color: #607d8d !important;
+  font-weight: 700 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table td {
+  color: #294b60 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table td[class*='text-slate-500'] {
+  color: #78909f !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table td[class*='text-blue-300'] {
+  color: #1675a8 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table td[class*='text-emerald-300'] {
+  color: #15966a !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table td[class*='text-amber-300'] {
+  color: #a66f00 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table td[class*='text-cyan-300'],
+[data-moni-app-content][data-moni-production-view='production-daily'] table [class*='text-cyan-200'] {
+  color: #147a91 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table [class*='bg-emerald-950'] {
+  background: #e9f9f2 !important;
+  border-color: #92d8bb !important;
+  color: #147a57 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table [class*='bg-cyan-950'] {
+  background: #edf9fb !important;
+  border-color: #9ed5df !important;
+  color: #166f82 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table button[class*='border-slate-600'] {
+  border-color: #aec5d3 !important;
+  background: #ffffff !important;
+  color: #36586d !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] table button[class*='border-red-800'] {
+  border-color: #e4a4aa !important;
+  background: #fff8f8 !important;
+  color: #b54f59 !important;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] input[type='checkbox'] {
+  accent-color: #16b981;
+}
+
+[data-moni-app-content][data-moni-production-view='production-daily'] section[class*='overflow-hidden'][class*='rounded-2xl'] {
+  border-color: rgba(176, 204, 220, 0.72) !important;
+  background: rgba(255, 255, 255, 0.90) !important;
+  box-shadow: 0 12px 32px rgba(43, 88, 115, 0.065) !important;
+}
