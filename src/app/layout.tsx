@@ -26,6 +26,7 @@ import './moni-control-tower-alerts.css'
 import './monthly-production-calendar.css'
 import './moni-monthly-calendar-glass-popover.css'
 import './moni-monthly-requirement-design.css'
+import './moni-legacy-ai-chat.css'
 import './production-dashboard-motion.css'
 
 export const metadata: Metadata = {
