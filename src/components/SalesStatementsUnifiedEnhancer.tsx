@@ -38,9 +38,63 @@ function styleLightButton(button: HTMLButtonElement, tone: 'neutral' | 'blue' | 
   button.style.color = '#17384a'
 }
 
+function ensureUnpaidAnimationStyle() {
+  if (document.getElementById('moni-unpaid-payment-style')) return
+  const style = document.createElement('style')
+  style.id = 'moni-unpaid-payment-style'
+  style.textContent = `
+    @keyframes moni-unpaid-payment-pulse {
+      0%, 100% {
+        background-color: #fff1f0;
+        border-color: #e5484d;
+        color: #b42318;
+        box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.18);
+        transform: scale(1);
+      }
+      50% {
+        background-color: #ffd9d6;
+        border-color: #c81e1e;
+        color: #8a1111;
+        box-shadow: 0 0 0 5px rgba(229, 72, 77, 0.12);
+        transform: scale(1.035);
+      }
+    }
+    [data-moni-unpaid-payment='true'] {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      border: 1px solid #e5484d !important;
+      border-radius: 10px !important;
+      background: #fff1f0 !important;
+      color: #b42318 !important;
+      font-weight: 900 !important;
+      animation: moni-unpaid-payment-pulse 1.05s ease-in-out infinite !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      [data-moni-unpaid-payment='true'] {
+        animation: none !important;
+        box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.12) !important;
+      }
+    }
+  `
+  document.head.appendChild(style)
+}
+
+function stylePaymentStatus(button: HTMLButtonElement) {
+  const label = exactText(button)
+  if (label.startsWith('미입금')) {
+    button.dataset.moniUnpaidPayment = 'true'
+    return
+  }
+
+  delete button.dataset.moniUnpaidPayment
+  button.style.animation = ''
+}
+
 export default function SalesStatementsUnifiedEnhancer() {
   useEffect(() => {
     let stopped = false
+    ensureUnpaidAnimationStyle()
 
     const apply = () => {
       if (stopped) return
@@ -67,6 +121,7 @@ export default function SalesStatementsUnifiedEnhancer() {
       if (table) {
         const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'))
         const statusIndex = headers.findIndex((cell) => exactText(cell) === '상태')
+        const paymentIndex = headers.findIndex((cell) => exactText(cell) === '수금상태')
         if (statusIndex >= 0) headers[statusIndex].style.display = 'none'
 
         const rows = Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr'))
@@ -86,6 +141,12 @@ export default function SalesStatementsUnifiedEnhancer() {
 
           row.style.display = ''
           visibleDataRows += 1
+
+          if (paymentIndex >= 0 && cells[paymentIndex]) {
+            const paymentButton = cells[paymentIndex].querySelector<HTMLButtonElement>('button')
+            if (paymentButton) stylePaymentStatus(paymentButton)
+          }
+
           const managementCell = cells[cells.length - 1]
           for (const button of Array.from(managementCell.querySelectorAll<HTMLButtonElement>('button'))) {
             const label = exactText(button)
