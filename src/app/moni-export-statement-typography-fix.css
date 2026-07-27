@@ -105,3 +105,73 @@
     height: 17mm !important;
   }
 }
+
+/* Bottom “공급자 보관용” copy only: keep every layout/text/fill unchanged,
+   and change only blue line work to red so users can distinguish the copies. */
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .copy-title-line {
+  border-top-color: #d62828 !important;
+  border-bottom-color: #d62828 !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .buyer-table td {
+  border-bottom-color: #d62828 !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .supplier-table,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-lines,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-footer-table {
+  border-color: #d62828 !important;
+  box-shadow: inset 0 0 0 1.5px #d62828 !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .supplier-table th,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .supplier-table td,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-lines th,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-lines td,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-footer-table th,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-footer-table td {
+  border-color: #d62828 !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .total-banner {
+  border-color: #d62828 !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .total-banner-label {
+  border-right-color: #d62828 !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .total-banner-currency {
+  border-left-color: #d62828 !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .supplier-table tr > *:last-child,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-lines tr > *:last-child,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-footer-table tr > *:last-child {
+  border-right-color: #d62828 !important;
+  box-shadow: inset -1.5px 0 0 #d62828 !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .supplier-table tr:last-child > *,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-lines tbody tr:last-child > *,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-footer-table tr:last-child > * {
+  border-bottom-color: #d62828 !important;
+  box-shadow: inset 0 -1.5px 0 #d62828 !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .supplier-table tr:last-child > *:last-child,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-lines tbody tr:last-child > *:last-child,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-footer-table tr:last-child > *:last-child {
+  box-shadow: inset -1.5px 0 0 #d62828, inset 0 -1.5px 0 #d62828 !important;
+}
+
+@media print {
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .supplier-table,
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-lines,
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .statement-footer-table {
+    border-color: #d62828 !important;
+    box-shadow: inset 0 0 0 1.5px #d62828 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
