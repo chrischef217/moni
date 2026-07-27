@@ -98,3 +98,21 @@
 - 입력값은 선택한 일자의 마감재고 목표값이며, `adjustment_g = target_stock_g - balance_before_g`로 기록한다.
 - 조정 이력은 삭제하지 않고 재고 수불 이력에 `재고 조정`으로 표시한다.
 - 저장 직후 완제품 재고를 다시 계산해 현재고와 처리 후 잔량에 즉시 반영한다.
+
+## 판매규격 ↔ 부재료(포장재) 연결
+
+판매규격 편집 화면의 기존 자유입력 `판매규격명`은 `포장재` 선택으로 대체한다.
+
+관련 구조:
+
+- `sales_product_variants.packaging_material_id` → `packaging_materials.id` FK
+- 판매규격 API: `/api/moni/sales-pricing-v4`
+- UI: `src/components/SalesVariantPricingModule.tsx`
+
+운영 기준:
+
+- 판매규격의 포장재는 `부재료 관리`에 등록된 활성 `packaging_materials`에서만 선택한다.
+- 사용자는 부재료명/코드/규격/유형을 타이핑 검색할 수 있다.
+- 선택 시 `packaging_materials.spec`을 `포장재 규격`으로 즉시 표시한다.
+- 저장 시 서버가 선택한 부재료를 다시 검증하고 `variant_name`은 해당 `material_name`으로 동기화한다.
+- 기존 판매규격 데이터는 임의 매핑하지 않고 `packaging_material_id = null` 상태로 보존하며, 수정 시 실제 포장재를 사용자가 선택한다.
