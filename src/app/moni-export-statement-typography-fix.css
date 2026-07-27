@@ -1,0 +1,86 @@
+.statement-print-root .korean-statement-copy {
+  --statement-font: 12.2px !important;
+  line-height: 1.06 !important;
+}
+
+.statement-print-root .buyer-table th,
+.statement-print-root .buyer-table td,
+.statement-print-root .supplier-table th,
+.statement-print-root .supplier-table td,
+.statement-print-root .statement-lines th,
+.statement-print-root .statement-lines td,
+.statement-print-root .statement-footer-table th,
+.statement-print-root .statement-footer-table td,
+.statement-print-root .total-banner-label,
+.statement-print-root .total-banner-currency {
+  font-size: var(--statement-font) !important;
+}
+
+.statement-print-root .buyer-table th,
+.statement-print-root .buyer-table td {
+  padding: 0.2mm 0.8mm !important;
+  line-height: 1.04 !important;
+}
+
+.statement-print-root .buyer-table .address-cell {
+  line-height: 1.05 !important;
+}
+
+.statement-print-root .supplier-table th,
+.statement-print-root .supplier-table td {
+  padding: 0.2mm 0.45mm !important;
+  line-height: 1.02 !important;
+}
+
+.statement-print-root .statement-lines th,
+.statement-print-root .statement-lines td {
+  padding: 0.2mm 0.55mm !important;
+  line-height: 1.02 !important;
+}
+
+.statement-print-root .statement-lines .name-cell {
+  padding-left: 0.8mm !important;
+}
+
+.statement-print-root .statement-lines .num-cell {
+  padding-right: 0.8mm !important;
+}
+
+.statement-print-root .statement-footer-table th,
+.statement-print-root .statement-footer-table td {
+  padding: 0.25mm 0.65mm !important;
+  line-height: 1.02 !important;
+}
+
+/* border-collapse can visually drop the outside edge in Chrome print/preview.
+   Draw a second inside outline so the right and bottom edges always remain visible. */
+.statement-print-root .supplier-table,
+.statement-print-root .statement-lines,
+.statement-print-root .statement-footer-table {
+  border: 1.5px solid #2942ef !important;
+  outline: 1.5px solid #2942ef !important;
+  outline-offset: -1.5px !important;
+}
+
+.statement-print-root .supplier-table tr > *:last-child,
+.statement-print-root .statement-lines tr > *:last-child,
+.statement-print-root .statement-footer-table tr > *:last-child {
+  border-right: 1.5px solid #2942ef !important;
+}
+
+.statement-print-root .supplier-table tr:last-child > *,
+.statement-print-root .statement-lines tbody tr:last-child > *,
+.statement-print-root .statement-footer-table tr:last-child > * {
+  border-bottom: 1.5px solid #2942ef !important;
+}
+
+@media print {
+  .statement-print-root .supplier-table,
+  .statement-print-root .statement-lines,
+  .statement-print-root .statement-footer-table {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    outline: 1.5px solid #2942ef !important;
+    outline-offset: -1.5px !important;
+  }
+}
