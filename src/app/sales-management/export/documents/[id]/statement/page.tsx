@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import ExportSalesStatementPrintView from '@/components/ExportSalesStatementPrintView'
+import ExportStatementVatLabelEnhancer from '@/components/ExportStatementVatLabelEnhancer'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
 export const dynamic = 'force-dynamic'
@@ -15,5 +16,8 @@ export default async function ExportTransactionStatementPage({
   if (!session) redirect('/')
   if (session.role !== 'admin') redirect('/freelancer')
 
-  return <ExportSalesStatementPrintView id={params.id} autoPrint={searchParams?.auto === '1'} />
+  return <>
+    <ExportStatementVatLabelEnhancer />
+    <ExportSalesStatementPrintView id={params.id} autoPrint={searchParams?.auto === '1'} />
+  </>
 }
