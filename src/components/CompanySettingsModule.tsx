@@ -16,6 +16,9 @@ type CompanyProfile = {
   company_phone: string
   business_type: string
   business_items: string
+  bank_name: string
+  bank_account_holder: string
+  bank_account_number: string
   logo_data_url: string | null
   logo_file_name: string | null
   signature_data_url: string | null
@@ -38,6 +41,9 @@ const EMPTY_FORM: FormState = {
   company_phone: '',
   business_type: '',
   business_items: '',
+  bank_name: '국민은행',
+  bank_account_holder: '배순애(두배식품)',
+  bank_account_number: '678537-01-004949',
   logo_data_url: null,
   logo_file_name: null,
   signature_data_url: null,
@@ -58,6 +64,9 @@ function profileToForm(profile: CompanyProfile): FormState {
     company_phone: profile.company_phone || '',
     business_type: profile.business_type || '',
     business_items: profile.business_items || '',
+    bank_name: profile.bank_name || '국민은행',
+    bank_account_holder: profile.bank_account_holder || '배순애(두배식품)',
+    bank_account_number: profile.bank_account_number || '678537-01-004949',
     logo_data_url: profile.logo_data_url || null,
     logo_file_name: profile.logo_file_name || null,
     signature_data_url: profile.signature_data_url || null,
@@ -206,6 +215,9 @@ export default function CompanySettingsModule() {
           <TextArea label="Business Address (English)" value={form.address_en} onChange={(value) => updateField('address_en', value)} placeholder="수출서류용 영문 주소" className="lg:col-span-2" />
           <TextArea label="업태" value={form.business_type} onChange={(value) => updateField('business_type', value)} />
           <TextArea label="종목" value={form.business_items} onChange={(value) => updateField('business_items', value)} />
+          <Field label="입금 은행명" value={form.bank_name} onChange={(value) => updateField('bank_name', value)} />
+          <Field label="예금주" value={form.bank_account_holder} onChange={(value) => updateField('bank_account_holder', value)} />
+          <Field label="입금 계좌번호" value={form.bank_account_number} onChange={(value) => updateField('bank_account_number', value)} />
         </div>
       </section>
 
