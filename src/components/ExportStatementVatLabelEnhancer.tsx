@@ -49,7 +49,7 @@ export default function ExportStatementVatLabelEnhancer() {
         const supplyLabel = hasVat ? '공급가액(VAT 별도)' : '공급가액'
         const totalLabel = hasVat ? '최종 결제금액(VAT 포함)' : '최종 결제금액(VAT 없음)'
 
-        // Change text only. No styles, dimensions, classes or layout are modified.
+        // Change text only. Layout sizing is controlled by the print stylesheet.
         setTextIfChanged(copy.querySelector<HTMLElement>('.total-banner-label'), totalLabel)
 
         const lineHeaders = Array.from(copy.querySelectorAll<HTMLTableCellElement>('.statement-lines thead th'))
@@ -58,7 +58,7 @@ export default function ExportStatementVatLabelEnhancer() {
 
         setTextIfChanged(first[2], supplyLabel)
         setTextIfChanged(first[3], formatAmountWithCurrency(supply, currency))
-        setTextIfChanged(first[4], '부가세(VAT)')
+        setTextIfChanged(first[4], '부가세')
         setTextIfChanged(first[5], formatAmountWithCurrency(vat, currency))
         setTextIfChanged(second[0], totalLabel)
         setTextIfChanged(second[1], formatAmountWithCurrency(total, currency))
