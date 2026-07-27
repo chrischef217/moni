@@ -60,6 +60,9 @@ export async function PATCH(request: NextRequest) {
       company_phone: text(body.company_phone),
       business_type: text(body.business_type),
       business_items: text(body.business_items),
+      bank_name: text(body.bank_name),
+      bank_account_holder: text(body.bank_account_holder),
+      bank_account_number: text(body.bank_account_number),
       updated_at: new Date().toISOString(),
     }
 
