@@ -52,15 +52,22 @@
   line-height: 1.02 !important;
 }
 
-/* Chrome can clip the outer half of collapsed table borders at the fixed A4 edge.
-   Keep the normal border, and paint the vulnerable right/bottom edges INSIDE the
-   last cells so they remain visible on screen and in print preview. */
+/* Keep the two statement copies symmetric on an A4 sheet.
+   A4 content height is 289mm after 4mm top/bottom padding.
+   136mm + 17mm + 136mm = 289mm, so the cut line sits exactly at 148.5mm. */
+.statement-print-root .cut-line {
+  height: 17mm !important;
+}
+
+/* Force all four outside edges to render independently of table border collapse.
+   box-shadow is inset, so Chrome print/preview cannot clip the right/bottom edge. */
 .statement-print-root .supplier-table,
 .statement-print-root .statement-lines,
 .statement-print-root .statement-footer-table {
   border: 1.5px solid #2942ef !important;
-  outline: 1.5px solid #2942ef !important;
-  outline-offset: -1.5px !important;
+  outline: none !important;
+  box-shadow: inset 0 0 0 1.5px #2942ef !important;
+  box-sizing: border-box !important;
 }
 
 .statement-print-root .supplier-table tr > *:last-child,
@@ -77,6 +84,7 @@
   box-shadow: inset 0 -1.5px 0 #2942ef !important;
 }
 
+/* Bottom-right cell needs both independent inset edges at once. */
 .statement-print-root .supplier-table tr:last-child > *:last-child,
 .statement-print-root .statement-lines tbody tr:last-child > *:last-child,
 .statement-print-root .statement-footer-table tr:last-child > *:last-child {
@@ -89,25 +97,11 @@
   .statement-print-root .statement-footer-table {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
-    outline: 1.5px solid #2942ef !important;
-    outline-offset: -1.5px !important;
+    border: 1.5px solid #2942ef !important;
+    box-shadow: inset 0 0 0 1.5px #2942ef !important;
   }
 
-  .statement-print-root .supplier-table tr > *:last-child,
-  .statement-print-root .statement-lines tr > *:last-child,
-  .statement-print-root .statement-footer-table tr > *:last-child {
-    box-shadow: inset -1.5px 0 0 #2942ef !important;
-  }
-
-  .statement-print-root .supplier-table tr:last-child > *,
-  .statement-print-root .statement-lines tbody tr:last-child > *,
-  .statement-print-root .statement-footer-table tr:last-child > * {
-    box-shadow: inset 0 -1.5px 0 #2942ef !important;
-  }
-
-  .statement-print-root .supplier-table tr:last-child > *:last-child,
-  .statement-print-root .statement-lines tbody tr:last-child > *:last-child,
-  .statement-print-root .statement-footer-table tr:last-child > *:last-child {
-    box-shadow: inset -1.5px 0 0 #2942ef, inset 0 -1.5px 0 #2942ef !important;
+  .statement-print-root .cut-line {
+    height: 17mm !important;
   }
 }
