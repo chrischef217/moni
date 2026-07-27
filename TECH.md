@@ -67,3 +67,34 @@
 - 판매 통계는 `sales_orders.status='confirmed'`만 포함한다.
 - 취소·작성중 판매는 통계에서 제외한다.
 - 세금계산서는 V1에서 메뉴와 준비 중 화면만 제공한다.
+
+## 완제품 재고조정
+
+완제품 재고는 생산완료 입고와 확정 판매/수출 출고를 자동 계산하되, 실사 차이를 보정할 때만 별도 재고조정을 사용한다.
+
+관련 화면/API:
+
+- 화면: `/finished-goods-inventory` 재고 이력 팝업의 `재고조정`
+- API: `GET/POST /api/moni/finished-goods-inventory-adjustments`
+- UI 컨트롤러: `src/components/FinishedGoodsInventoryAdjustmentBridge.tsx`
+
+관련 테이블:
+
+- `finished_goods_inventory_adjustments`
+  - `product_id`
+  - `adjustment_date`
+  - `input_quantity`
+  - `input_unit` (`kg`/`g`)
+  - `balance_before_g`
+  - `target_stock_g`
+  - `adjustment_g`
+  - `reason`
+  - `created_at`
+
+운영 기준:
+
+- 재고조정은 생산입고나 판매출고를 허위로 생성하지 않고 별도 감사 이력으로 저장한다.
+- 사용자가 kg 또는 g으로 입력해도 DB 계산 기준은 g으로 변환한다.
+- 입력값은 선택한 일자의 마감재고 목표값이며, `adjustment_g = target_stock_g - balance_before_g`로 기록한다.
+- 조정 이력은 삭제하지 않고 재고 수불 이력에 `재고 조정`으로 표시한다.
+- 저장 직후 완제품 재고를 다시 계산해 현재고와 처리 후 잔량에 즉시 반영한다.
