@@ -11,6 +11,15 @@ function text(value: unknown) {
   return String(value).trim()
 }
 
+function validateImageDataUrl(value: string, label: string) {
+  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(value)) {
+    throw new Error(`${label} 이미지는 PNG, JPG 또는 WEBP 형식만 사용할 수 있습니다.`)
+  }
+  if (value.length > 2_800_000) {
+    throw new Error(`${label} 이미지가 너무 큽니다. 2MB 이하 이미지를 사용해 주세요.`)
+  }
+}
+
 async function loadProfile() {
   const supabase = createMoniServiceRoleClient()
   const { data, error } = await supabase
@@ -60,14 +69,16 @@ export async function PATCH(request: NextRequest) {
 
     if (Object.prototype.hasOwnProperty.call(body, 'signature_data_url')) {
       const signatureDataUrl = body.signature_data_url === null ? null : text(body.signature_data_url)
-      if (signatureDataUrl && !/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(signatureDataUrl)) {
-        return NextResponse.json({ ok: false, error: '서명 이미지는 PNG, JPG 또는 WEBP 형식만 사용할 수 있습니다.' }, { status: 400 })
-      }
-      if (signatureDataUrl && signatureDataUrl.length > 2_800_000) {
-        return NextResponse.json({ ok: false, error: '서명 이미지가 너무 큽니다. 2MB 이하 이미지를 사용해 주세요.' }, { status: 400 })
-      }
+      if (signatureDataUrl) validateImageDataUrl(signatureDataUrl, '서명')
       payload.signature_data_url = signatureDataUrl
       payload.signature_file_name = signatureDataUrl ? text(body.signature_file_name) || 'signature.png' : null
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'logo_data_url')) {
+      const logoDataUrl = body.logo_data_url === null ? null : text(body.logo_data_url)
+      if (logoDataUrl) validateImageDataUrl(logoDataUrl, '회사 로고')
+      payload.logo_data_url = logoDataUrl
+      payload.logo_file_name = logoDataUrl ? text(body.logo_file_name) || 'company-logo.png' : null
     }
 
     const supabase = createMoniServiceRoleClient()
