@@ -15,6 +15,11 @@ function formatAmountWithCurrency(value: number, currencyLabel: string) {
   return `${amount}${currencyLabel}`
 }
 
+function setTextIfChanged(element: HTMLElement | null | undefined, next: string) {
+  if (!element) return
+  if ((element.textContent || '').trim() !== next) element.textContent = next
+}
+
 export default function ExportStatementVatLabelEnhancer() {
   useEffect(() => {
     let stopped = false
@@ -44,22 +49,19 @@ export default function ExportStatementVatLabelEnhancer() {
         const supplyLabel = hasVat ? '공급가액(VAT 별도)' : '공급가액'
         const totalLabel = hasVat ? '최종 결제금액(VAT 포함)' : '최종 결제금액(VAT 없음)'
 
-        // Top total banner: change label only. Amount and layout stay exactly as-is.
-        const bannerLabel = copy.querySelector<HTMLElement>('.total-banner-label')
-        if (bannerLabel) bannerLabel.textContent = totalLabel
+        // Change text only. No styles, dimensions, classes or layout are modified.
+        setTextIfChanged(copy.querySelector<HTMLElement>('.total-banner-label'), totalLabel)
 
-        // Item table tax header.
         const lineHeaders = Array.from(copy.querySelectorAll<HTMLTableCellElement>('.statement-lines thead th'))
         const taxHeader = lineHeaders.find((cell) => ['세액', '부가세(VAT)'].includes((cell.textContent || '').trim()))
-        if (taxHeader) taxHeader.textContent = '부가세(VAT)'
+        setTextIfChanged(taxHeader, '부가세(VAT)')
 
-        // Footer labels and values. No styles, dimensions, classes or layout are modified.
-        first[2].textContent = supplyLabel
-        first[3].textContent = formatAmountWithCurrency(supply, currency)
-        first[4].textContent = '부가세(VAT)'
-        first[5].textContent = formatAmountWithCurrency(vat, currency)
-        second[0].textContent = totalLabel
-        second[1].textContent = formatAmountWithCurrency(total, currency)
+        setTextIfChanged(first[2], supplyLabel)
+        setTextIfChanged(first[3], formatAmountWithCurrency(supply, currency))
+        setTextIfChanged(first[4], '부가세(VAT)')
+        setTextIfChanged(first[5], formatAmountWithCurrency(vat, currency))
+        setTextIfChanged(second[0], totalLabel)
+        setTextIfChanged(second[1], formatAmountWithCurrency(total, currency))
       }
     }
 
