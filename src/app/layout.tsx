@@ -44,6 +44,60 @@ export const metadata: Metadata = {
   icons: { icon: '/favicon.ico' },
 }
 
+const staleAssetRecoveryScript = String.raw`
+(() => {
+  const STORAGE_KEY = 'moni-stale-asset-recovery-at'
+  const QUERY_KEY = '__moni_refresh'
+
+  const recover = () => {
+    try {
+      const now = Date.now()
+      const last = Number(window.sessionStorage.getItem(STORAGE_KEY) || 0)
+      if (last && now - last < 15000) return
+      window.sessionStorage.setItem(STORAGE_KEY, String(now))
+
+      const url = new URL(window.location.href)
+      url.searchParams.set(QUERY_KEY, String(now))
+      window.location.replace(url.toString())
+    } catch {
+      window.location.reload()
+    }
+  }
+
+  const isNextStaticAsset = (value) => typeof value === 'string' && value.includes('/_next/static/')
+
+  window.addEventListener('error', (event) => {
+    const target = event.target
+    if (!target || target === window) return
+    const assetUrl = target.src || target.href || ''
+    if (isNextStaticAsset(assetUrl)) recover()
+  }, true)
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason
+    const message = String(reason?.message || reason || '')
+    if (/ChunkLoadError|Loading chunk|Failed to fetch dynamically imported module|CSS_CHUNK_LOAD_FAILED/i.test(message)) {
+      recover()
+    }
+  })
+
+  window.addEventListener('load', () => {
+    window.setTimeout(() => {
+      try {
+        window.sessionStorage.removeItem(STORAGE_KEY)
+        const url = new URL(window.location.href)
+        if (url.searchParams.has(QUERY_KEY)) {
+          url.searchParams.delete(QUERY_KEY)
+          window.history.replaceState(window.history.state, '', url.toString())
+        }
+      } catch {
+        // Recovery bookkeeping must never block MONI rendering.
+      }
+    }, 5000)
+  }, { once: true })
+})()
+`
+
 export default async function RootLayout({
   children,
 }: {
@@ -54,6 +108,9 @@ export default async function RootLayout({
 
   return (
     <html lang="ko">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: staleAssetRecoveryScript }} />
+      </head>
       <body className="antialiased">
         {showAdminChrome ? (
           <MoniWeatherShell>
