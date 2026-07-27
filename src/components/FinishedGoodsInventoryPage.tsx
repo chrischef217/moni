@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
+type Unit = 'kg' | 'g'
+
 type InventoryRow = {
   product_id: string
   product_name: string
@@ -26,7 +28,7 @@ type Movement = {
   product_name: string
   date: string
   type: 'INBOUND' | 'OUTBOUND'
-  source_kind?: 'PRODUCTION' | 'SALE' | 'EXPORT'
+  source_kind?: 'PRODUCTION' | 'SALE' | 'EXPORT' | 'ADJUSTMENT'
   quantity_g: number
   reference: string
   counterparty: string
@@ -55,6 +57,7 @@ type Payload = {
     inbound: string
     outbound: string
     cancellation: string
+    adjustment?: string
   }
 }
 
@@ -74,6 +77,33 @@ type ExportDocument = {
   }>
 }
 
+type AdjustmentRow = {
+  id: string
+  product_id: string
+  adjustment_date: string
+  input_quantity: number | string
+  input_unit: Unit
+  balance_before_g: number | string
+  target_stock_g: number | string
+  adjustment_g: number | string
+  reason: string
+  created_at: string
+}
+
+type AdjustmentForm = {
+  productId: string
+  productName: string
+  date: string
+  quantity: string
+  unit: Unit
+  reason: string
+}
+
+function numberValue(value: unknown) {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function kg(value: number, digits = 1) {
   const amount = Number(value || 0) / 1000
   return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: digits }).format(amount)}kg`
@@ -83,12 +113,31 @@ function formatDate(value: string | null) {
   return value || '-'
 }
 
-function mergeExportShipments(base: Payload, documents: ExportDocument[]): Payload {
+function todayKst() {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date())
+}
+
+function movementDelta(movement: Movement) {
+  return movement.type === 'INBOUND' ? numberValue(movement.quantity_g) : -numberValue(movement.quantity_g)
+}
+
+function recalculateBalances(movements: Movement[]) {
+  const chronological = movements.slice().sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+  const balances = new Map<string, number>()
+  for (const movement of chronological) {
+    const next = (balances.get(movement.product_id) ?? 0) + movementDelta(movement)
+    balances.set(movement.product_id, next)
+    movement.balance_after_g = next
+  }
+  return { chronological, balances }
+}
+
+function mergeInventoryData(base: Payload, documents: ExportDocument[], adjustments: AdjustmentRow[]): Payload {
   const inventory = base.inventory.map((row) => ({ ...row, export_count: row.export_count ?? 0 }))
   const rowById = new Map(inventory.map((row) => [row.product_id, row]))
   const movements: Movement[] = base.movements.map((movement) => ({
     ...movement,
-    source_kind: movement.type === 'INBOUND' ? 'PRODUCTION' : 'SALE',
+    source_kind: movement.source_kind ?? (movement.type === 'INBOUND' ? 'PRODUCTION' : 'SALE'),
   }))
 
   for (const document of documents) {
@@ -96,18 +145,16 @@ function mergeExportShipments(base: Payload, documents: ExportDocument[]): Paylo
     for (const item of document.export_document_items ?? []) {
       const row = rowById.get(item.product_id)
       if (!row) continue
-      const cartons = Number(item.cartons || 0)
-      const unitsPerCarton = Number(item.units_per_carton || 0)
-      const netPerCartonG = Number(item.net_weight_per_carton_kg || 0) * 1000
+      const cartons = numberValue(item.cartons)
+      const unitsPerCarton = numberValue(item.units_per_carton)
+      const netPerCartonG = numberValue(item.net_weight_per_carton_kg) * 1000
       const quantityG = row.weight_g > 0 && unitsPerCarton > 0
         ? cartons * unitsPerCarton * row.weight_g
         : cartons * netPerCartonG
       if (!(quantityG > 0)) continue
 
       row.outbound_g += quantityG
-      row.stock_g -= quantityG
       row.export_count = (row.export_count ?? 0) + 1
-      row.negative_stock = row.stock_g < 0
       if (!row.last_outbound_date || document.document_date > row.last_outbound_date) row.last_outbound_date = document.document_date
 
       movements.push({
@@ -127,13 +174,31 @@ function mergeExportShipments(base: Payload, documents: ExportDocument[]): Paylo
     }
   }
 
-  const chronological = movements.slice().sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
-  const balances = new Map<string, number>()
-  for (const movement of chronological) {
-    const current = balances.get(movement.product_id) ?? 0
-    const next = current + (movement.type === 'INBOUND' ? movement.quantity_g : -movement.quantity_g)
-    balances.set(movement.product_id, next)
-    movement.balance_after_g = next
+  for (const adjustment of adjustments) {
+    const delta = numberValue(adjustment.adjustment_g)
+    const row = rowById.get(String(adjustment.product_id))
+    if (!row || Math.abs(delta) < 0.0001) continue
+
+    movements.push({
+      id: `adjustment:${adjustment.id}`,
+      product_id: String(adjustment.product_id),
+      product_name: row.product_name,
+      date: String(adjustment.adjustment_date),
+      type: delta >= 0 ? 'INBOUND' : 'OUTBOUND',
+      source_kind: 'ADJUSTMENT',
+      quantity_g: Math.abs(delta),
+      reference: '재고조정',
+      counterparty: adjustment.reason || '재고조정',
+      lot_number: adjustment.reason || '재고조정',
+      source_id: adjustment.id,
+      balance_after_g: 0,
+    })
+  }
+
+  const { chronological, balances } = recalculateBalances(movements)
+  for (const row of inventory) {
+    row.stock_g = balances.get(row.product_id) ?? 0
+    row.negative_stock = row.stock_g < 0
   }
 
   const totalInboundG = inventory.reduce((sum, row) => sum + row.inbound_g, 0)
@@ -156,7 +221,19 @@ function mergeExportShipments(base: Payload, documents: ExportDocument[]): Paylo
       inbound: '생산기록의 상태가 완료/확정인 완제품의 정상 생산량을 자동 입고로 계산',
       outbound: '판매관리의 확정 판매와 수출서류의 출고확정 품목을 자동 출고로 계산',
       cancellation: '생산·판매·수출 출고 원본이 수정 또는 취소되면 재고도 자동 재계산',
+      adjustment: '재고조정은 실제 입출고와 구분해 별도 이력으로 저장하고 즉시 현재고에 반영',
     },
+  }
+}
+
+function emptyAdjustmentForm(): AdjustmentForm {
+  return {
+    productId: '',
+    productName: '',
+    date: todayKst(),
+    quantity: '',
+    unit: 'kg',
+    reason: '실사 재고 조정',
   }
 }
 
@@ -167,21 +244,29 @@ export default function FinishedGoodsInventoryPage() {
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [showAll, setShowAll] = useState(false)
-  const [selectedProductId, setSelectedProductId] = useState<string>('')
+  const [selectedProductId, setSelectedProductId] = useState('')
+  const [adjustmentOpen, setAdjustmentOpen] = useState(false)
+  const [adjustmentForm, setAdjustmentForm] = useState<AdjustmentForm>(emptyAdjustmentForm())
+  const [adjustmentSaving, setAdjustmentSaving] = useState(false)
+  const [adjustmentMessage, setAdjustmentMessage] = useState('')
 
   async function load(manual = false) {
     if (manual) setRefreshing(true)
     setError('')
     try {
-      const [inventoryResponse, exportResponse] = await Promise.all([
-        fetch(`/api/moni/finished-goods-inventory?_=${Date.now()}`, { cache: 'no-store' }),
-        fetch(`/api/moni/export-documents?_=${Date.now()}`, { cache: 'no-store' }),
+      const stamp = Date.now()
+      const [inventoryResponse, exportResponse, adjustmentResponse] = await Promise.all([
+        fetch(`/api/moni/finished-goods-inventory?_=${stamp}`, { cache: 'no-store' }),
+        fetch(`/api/moni/export-documents?_=${stamp}`, { cache: 'no-store' }),
+        fetch(`/api/moni/finished-goods-inventory-adjustments?_=${stamp}`, { cache: 'no-store' }),
       ])
       const payload = await inventoryResponse.json() as Payload
       const exportPayload = await exportResponse.json() as { ok: boolean; error?: string; documents?: ExportDocument[] }
+      const adjustmentPayload = await adjustmentResponse.json().catch(() => ({ ok: false, adjustments: [] })) as { ok: boolean; adjustments?: AdjustmentRow[] }
       if (!inventoryResponse.ok || !payload.ok) throw new Error(payload.error || '완제품 재고를 불러오지 못했습니다.')
       if (!exportResponse.ok || !exportPayload.ok) throw new Error(exportPayload.error || '수출 출고기록을 불러오지 못했습니다.')
-      setData(mergeExportShipments(payload, exportPayload.documents ?? []))
+      const adjustments = adjustmentResponse.ok && adjustmentPayload.ok ? adjustmentPayload.adjustments ?? [] : []
+      setData(mergeInventoryData(payload, exportPayload.documents ?? [], adjustments))
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '완제품 재고를 불러오지 못했습니다.')
     } finally {
@@ -207,10 +292,99 @@ export default function FinishedGoodsInventoryPage() {
     () => data?.inventory.find((row) => row.product_id === selectedProductId) ?? null,
     [data, selectedProductId],
   )
+
   const selectedMovements = useMemo(
     () => (data?.movements ?? []).filter((movement) => movement.product_id === selectedProductId),
     [data, selectedProductId],
   )
+
+  const adjustmentBalanceBeforeG = useMemo(() => {
+    if (!adjustmentForm.productId || !adjustmentForm.date) return 0
+    return (data?.movements ?? [])
+      .filter((movement) => movement.product_id === adjustmentForm.productId && movement.date <= adjustmentForm.date)
+      .reduce((sum, movement) => sum + movementDelta(movement), 0)
+  }, [data, adjustmentForm.productId, adjustmentForm.date])
+
+  const adjustmentTargetG = useMemo(() => {
+    const quantity = Number(adjustmentForm.quantity)
+    if (!Number.isFinite(quantity) || quantity < 0) return null
+    return adjustmentForm.unit === 'kg' ? quantity * 1000 : quantity
+  }, [adjustmentForm.quantity, adjustmentForm.unit])
+
+  const adjustmentDeltaG = adjustmentTargetG === null ? null : adjustmentTargetG - adjustmentBalanceBeforeG
+
+  function openAdjustment() {
+    if (!selectedRow) return
+    const date = todayKst()
+    const currentG = (data?.movements ?? [])
+      .filter((movement) => movement.product_id === selectedRow.product_id && movement.date <= date)
+      .reduce((sum, movement) => sum + movementDelta(movement), 0)
+    setAdjustmentForm({
+      productId: selectedRow.product_id,
+      productName: selectedRow.product_name,
+      date,
+      quantity: String(Number((currentG / 1000).toFixed(3))),
+      unit: 'kg',
+      reason: '실사 재고 조정',
+    })
+    setAdjustmentMessage('')
+    setAdjustmentOpen(true)
+  }
+
+  function changeAdjustmentUnit(next: Unit) {
+    setAdjustmentForm((current) => {
+      if (current.unit === next) return current
+      const value = Number(current.quantity)
+      if (!Number.isFinite(value)) return { ...current, unit: next }
+      const converted = next === 'g' ? value * 1000 : value / 1000
+      return {
+        ...current,
+        unit: next,
+        quantity: String(Number(converted.toFixed(next === 'kg' ? 3 : 1))),
+      }
+    })
+  }
+
+  async function saveAdjustment() {
+    if (!adjustmentForm.productId || !adjustmentForm.date) return
+    if (adjustmentTargetG === null) {
+      setAdjustmentMessage('조정 후 재고 수량을 0 이상으로 입력해 주세요.')
+      return
+    }
+    if (!adjustmentForm.reason.trim()) {
+      setAdjustmentMessage('재고조정 사유를 입력해 주세요.')
+      return
+    }
+    if (adjustmentDeltaG !== null && Math.abs(adjustmentDeltaG) < 0.0001) {
+      setAdjustmentMessage('현재 재고와 동일합니다. 조정할 재고 수량을 변경해 주세요.')
+      return
+    }
+
+    setAdjustmentSaving(true)
+    setAdjustmentMessage('')
+    try {
+      const response = await fetch('/api/moni/finished-goods-inventory-adjustments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: adjustmentForm.productId,
+          adjustment_date: adjustmentForm.date,
+          input_quantity: Number(adjustmentForm.quantity),
+          input_unit: adjustmentForm.unit,
+          balance_before_g: adjustmentBalanceBeforeG,
+          reason: adjustmentForm.reason.trim(),
+        }),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload?.ok) throw new Error(payload?.error || '재고조정 저장에 실패했습니다.')
+      setAdjustmentOpen(false)
+      await load(true)
+    } catch (saveError) {
+      setAdjustmentMessage(saveError instanceof Error ? saveError.message : '재고조정 저장에 실패했습니다.')
+    } finally {
+      setAdjustmentSaving(false)
+    }
+  }
 
   if (loading) {
     return <main className="min-h-screen bg-transparent px-4 py-6 md:px-6"><div className="mx-auto max-w-[1500px] rounded-[26px] border border-[#d1e2ec] bg-white/95 p-16 text-center text-[#6f8796] shadow-[0_12px_34px_rgba(44,84,108,0.07)]">완제품 재고를 계산하는 중입니다.</div></main>
@@ -223,13 +397,13 @@ export default function FinishedGoodsInventoryPage() {
           <div>
             <p className="text-xs font-black uppercase tracking-[0.17em] text-[#2b9b76]">FINISHED GOODS INVENTORY</p>
             <h1 className="mt-2 text-3xl font-black tracking-[-0.035em] text-[#17384d]">완제품 재고관리</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#6b8392]">생산완료 제품은 자동 입고되고, 판매 확정과 수출 출고확정은 자동 출고됩니다. 별도 중복 입력 없이 원본기록으로 현재고를 계산합니다.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#6b8392]">생산완료 제품은 자동 입고되고, 판매 확정과 수출 출고확정은 자동 출고됩니다. 재고조정은 실제 입출고와 구분해 별도 이력으로 기록됩니다.</p>
           </div>
           <button type="button" onClick={() => void load(true)} disabled={refreshing} className="h-11 rounded-xl border border-[#b9d3df] bg-white px-5 text-sm font-black text-[#31556b] shadow-sm disabled:opacity-50">{refreshing ? '계산 중...' : '재고 새로고침'}</button>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-[#c6e3d6] bg-[#f3fbf7] p-5"><span className="text-xs font-bold text-[#618372]">현재 완제품 재고</span><strong className={`mt-1 block text-3xl font-black ${Number(data?.summary.total_stock_g ?? 0) < 0 ? 'text-[#c4515b]' : 'text-[#16825d]'}`}>{kg(data?.summary.total_stock_g ?? 0)}</strong><small className="mt-1 block text-[#789087]">생산입고 − 판매·수출출고</small></div>
+          <div className="rounded-2xl border border-[#c6e3d6] bg-[#f3fbf7] p-5"><span className="text-xs font-bold text-[#618372]">현재 완제품 재고</span><strong className={`mt-1 block text-3xl font-black ${Number(data?.summary.total_stock_g ?? 0) < 0 ? 'text-[#c4515b]' : 'text-[#16825d]'}`}>{kg(data?.summary.total_stock_g ?? 0)}</strong><small className="mt-1 block text-[#789087]">생산입고 − 판매·수출출고 ± 재고조정</small></div>
           <div className="rounded-2xl border border-[#cce0ed] bg-[#f6fbfe] p-5"><span className="text-xs font-bold text-[#6d8797]">재고 보유 제품</span><strong className="mt-1 block text-3xl font-black text-[#1e719e]">{data?.summary.stocked_product_count ?? 0}개</strong><small className="mt-1 block text-[#7b91a0]">현재고 0kg 초과</small></div>
           <div className="rounded-2xl border border-[#d7e5ed] bg-white p-5"><span className="text-xs font-bold text-[#708796]">누적 생산 입고</span><strong className="mt-1 block text-3xl font-black text-[#17384d]">{kg(data?.summary.total_inbound_g ?? 0)}</strong><small className="mt-1 block text-[#8295a1]">완료·확정 생산기록 기준</small></div>
           <div className={`rounded-2xl border p-5 ${(data?.summary.negative_product_count ?? 0) > 0 || (data?.summary.conversion_issue_count ?? 0) > 0 ? 'border-[#efc0c4] bg-[#fff7f7]' : 'border-[#d7e5ed] bg-white'}`}><span className="text-xs font-bold text-[#708796]">확인 필요</span><strong className={`mt-1 block text-3xl font-black ${(data?.summary.negative_product_count ?? 0) > 0 || (data?.summary.conversion_issue_count ?? 0) > 0 ? 'text-[#c4515b]' : 'text-[#16825d]'}`}>{(data?.summary.negative_product_count ?? 0) + (data?.summary.conversion_issue_count ?? 0)}건</strong><small className="mt-1 block text-[#8295a1]">마이너스 재고·단위 변환 오류</small></div>
@@ -237,7 +411,6 @@ export default function FinishedGoodsInventoryPage() {
       </header>
 
       {error && <div className="rounded-2xl border border-[#efb9bf] bg-[#fff6f7] p-4 text-sm font-semibold text-[#a94752]">{error}</div>}
-
       {(data?.summary.conversion_issue_count ?? 0) > 0 && <div className="rounded-2xl border border-[#edcf9f] bg-[#fffaf1] p-4 text-sm text-[#875e1d]"><b>판매 출고 단위 확인 필요:</b> {data?.summary.conversion_issue_count}건의 판매품목은 kg/g/개 단위로 변환할 수 없어 현재고에서 제외했습니다. 해당 판매등록의 단위를 확인해야 합니다.</div>}
 
       <section className="overflow-hidden rounded-[26px] border border-[#cfe1eb] bg-white/95 shadow-[0_12px_34px_rgba(43,84,109,0.07)]">
@@ -269,20 +442,86 @@ export default function FinishedGoodsInventoryPage() {
         </div>
       </section>
 
-      <div className="rounded-2xl border border-[#d2e3eb] bg-[#f8fbfd] px-5 py-4 text-xs leading-5 text-[#708795]"><b className="text-[#365669]">자동처리 기준</b> · {data?.policy.inbound} · {data?.policy.outbound} · {data?.policy.cancellation}</div>
+      <div className="rounded-2xl border border-[#d2e3eb] bg-[#f8fbfd] px-5 py-4 text-xs leading-5 text-[#708795]"><b className="text-[#365669]">자동처리 기준</b> · {data?.policy.inbound} · {data?.policy.outbound} · {data?.policy.cancellation} · {data?.policy.adjustment}</div>
     </div>
 
     {selectedRow && <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-[rgba(12,31,44,0.34)] p-4 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.currentTarget === event.target) setSelectedProductId('') }}>
       <div className="flex max-h-[86vh] w-full max-w-[1080px] flex-col overflow-hidden rounded-[26px] border border-[#cfe1eb] bg-white shadow-[0_28px_80px_rgba(22,52,72,0.24)]">
-        <div className="flex items-start justify-between gap-4 border-b border-[#dce9f0] px-6 py-5">
-          <div><p className="text-xs font-black uppercase tracking-[0.14em] text-[#2b9b76]">STOCK LEDGER</p><h2 className="mt-1 text-2xl font-black text-[#17384d]">{selectedRow.product_name} 재고 이력</h2><p className="mt-1 text-sm text-[#718896]">현재고 {kg(selectedRow.stock_g)} · 생산 {selectedRow.production_count}건 · 판매 {selectedRow.sales_count}건 · 수출 {selectedRow.export_count ?? 0}건</p></div>
+        <div className="flex items-start gap-3 border-b border-[#dce9f0] px-6 py-5">
+          <div className="mr-auto"><p className="text-xs font-black uppercase tracking-[0.14em] text-[#2b9b76]">STOCK LEDGER</p><h2 className="mt-1 text-2xl font-black text-[#17384d]">{selectedRow.product_name} 재고 이력</h2><p className="mt-1 text-sm text-[#718896]">현재고 {kg(selectedRow.stock_g)} · 생산 {selectedRow.production_count}건 · 판매 {selectedRow.sales_count}건 · 수출 {selectedRow.export_count ?? 0}건</p></div>
+          <button type="button" onClick={openAdjustment} className="rounded-xl bg-[#16b981] px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-[#10a874]">재고조정</button>
           <button type="button" onClick={() => setSelectedProductId('')} className="rounded-xl border border-[#d0e0e8] bg-white px-4 py-2.5 text-sm font-bold text-[#587283]">닫기</button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full min-w-[780px] border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-[#eef6fa]"><tr className="text-left text-xs font-bold text-[#657e8e]"><th className="px-6 py-4">일자</th><th className="px-4 py-4">구분</th><th className="px-4 py-4">근거</th><th className="px-4 py-4">LOT / 거래처</th><th className="px-4 py-4 text-right">입출고</th><th className="px-6 py-4 text-right">처리 후 잔량</th></tr></thead>
-            <tbody>{selectedMovements.map((movement) => <tr key={movement.id} className="border-t border-[#e7eff4]"><td className="px-6 py-4">{movement.date}</td><td className="px-4 py-4"><span className={`rounded-lg px-2.5 py-1.5 text-xs font-black ${movement.type === 'INBOUND' ? 'bg-[#eaf8f2] text-[#16825d]' : movement.source_kind === 'EXPORT' ? 'bg-[#edf2ff] text-[#4d65a8]' : 'bg-[#fff6e8] text-[#9e6818]'}`}>{movement.type === 'INBOUND' ? '생산 입고' : movement.source_kind === 'EXPORT' ? '수출 출고' : '판매 출고'}</span></td><td className="px-4 py-4 font-semibold text-[#31546a]">{movement.reference}</td><td className="px-4 py-4 text-[#718896]">{movement.type === 'INBOUND' ? movement.lot_number || '-' : movement.counterparty || '-'}</td><td className={`px-4 py-4 text-right font-black ${movement.type === 'INBOUND' ? 'text-[#16825d]' : 'text-[#a36b15]'}`}>{movement.type === 'INBOUND' ? '+' : '-'}{kg(movement.quantity_g)}</td><td className={`px-6 py-4 text-right font-black ${movement.balance_after_g < 0 ? 'text-[#c4515b]' : 'text-[#176f99]'}`}>{kg(movement.balance_after_g)}</td></tr>)}{!selectedMovements.length && <tr><td colSpan={6} className="px-6 py-12 text-center text-[#8296a3]">입출고 이력이 없습니다.</td></tr>}</tbody>
+            <tbody>
+              {selectedMovements.map((movement) => {
+                const isAdjustment = movement.source_kind === 'ADJUSTMENT'
+                const label = isAdjustment ? '재고 조정' : movement.type === 'INBOUND' ? '생산 입고' : movement.source_kind === 'EXPORT' ? '수출 출고' : '판매 출고'
+                const badgeClass = isAdjustment ? 'bg-[#eef7ff] text-[#2673a4]' : movement.type === 'INBOUND' ? 'bg-[#eaf8f2] text-[#16825d]' : movement.source_kind === 'EXPORT' ? 'bg-[#edf2ff] text-[#4d65a8]' : 'bg-[#fff6e8] text-[#9e6818]'
+                const quantityClass = isAdjustment ? (movement.type === 'INBOUND' ? 'text-[#16825d]' : 'text-[#c4515b]') : movement.type === 'INBOUND' ? 'text-[#16825d]' : 'text-[#a36b15]'
+                return <tr key={movement.id} className="border-t border-[#e7eff4]">
+                  <td className="px-6 py-4">{movement.date}</td>
+                  <td className="px-4 py-4"><span className={`rounded-lg px-2.5 py-1.5 text-xs font-black ${badgeClass}`}>{label}</span></td>
+                  <td className="px-4 py-4 font-semibold text-[#31546a]">{movement.reference}</td>
+                  <td className="px-4 py-4 text-[#718896]">{isAdjustment ? movement.counterparty || '-' : movement.type === 'INBOUND' ? movement.lot_number || '-' : movement.counterparty || '-'}</td>
+                  <td className={`px-4 py-4 text-right font-black ${quantityClass}`}>{movement.type === 'INBOUND' ? '+' : '-'}{kg(movement.quantity_g)}</td>
+                  <td className={`px-6 py-4 text-right font-black ${movement.balance_after_g < 0 ? 'text-[#c4515b]' : 'text-[#176f99]'}`}>{kg(movement.balance_after_g)}</td>
+                </tr>
+              })}
+              {!selectedMovements.length && <tr><td colSpan={6} className="px-6 py-12 text-center text-[#8296a3]">입출고 이력이 없습니다.</td></tr>}
+            </tbody>
           </table>
+        </div>
+      </div>
+    </div>}
+
+    {adjustmentOpen && <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-[rgba(12,31,44,0.38)] p-4 backdrop-blur-[4px]" onMouseDown={(event) => { if (event.currentTarget === event.target && !adjustmentSaving) setAdjustmentOpen(false) }}>
+      <div className="w-full max-w-[560px] overflow-hidden rounded-[26px] border border-[#cfe1eb] bg-white shadow-[0_28px_80px_rgba(22,52,72,0.28)]">
+        <div className="border-b border-[#dce9f0] px-6 py-5">
+          <p className="text-xs font-black uppercase tracking-[0.15em] text-[#2b9b76]">STOCK ADJUSTMENT</p>
+          <h2 className="mt-1 text-2xl font-black tracking-[-0.025em] text-[#17384d]">재고조정</h2>
+          <p className="mt-1 text-sm text-[#718896]">{adjustmentForm.productName}</p>
+        </div>
+
+        <div className="space-y-5 px-6 py-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm font-bold text-[#466274]">
+              <span className="mb-1.5 block">조정 일자</span>
+              <input type="date" max={todayKst()} value={adjustmentForm.date} onChange={(event) => setAdjustmentForm((current) => ({ ...current, date: event.target.value }))} className="h-11 w-full rounded-xl border border-[#cfe0e9] bg-white px-3 text-[#17384d] outline-none focus:border-[#75bad3]" />
+            </label>
+            <div className="block text-sm font-bold text-[#466274]">
+              <span className="mb-1.5 block">입력 단위</span>
+              <div className="grid h-11 grid-cols-2 overflow-hidden rounded-xl border border-[#cfe0e9] bg-[#f7fbfd] p-1">
+                {(['kg', 'g'] as Unit[]).map((unit) => <button key={unit} type="button" onClick={() => changeAdjustmentUnit(unit)} className={`rounded-lg text-sm font-black ${adjustmentForm.unit === unit ? 'bg-[#16b981] text-white shadow-sm' : 'text-[#5f7888]'}`}>{unit}</button>)}
+              </div>
+            </div>
+          </div>
+
+          <label className="block text-sm font-bold text-[#466274]">
+            <span className="mb-1.5 block">조정 후 재고 ({adjustmentForm.unit})</span>
+            <input type="number" min="0" step={adjustmentForm.unit === 'kg' ? '0.001' : '0.1'} value={adjustmentForm.quantity} onChange={(event) => setAdjustmentForm((current) => ({ ...current, quantity: event.target.value }))} className="h-12 w-full rounded-xl border border-[#cfe0e9] bg-white px-4 text-lg font-black text-[#17384d] outline-none focus:border-[#75bad3]" />
+            <span className="mt-1.5 block text-xs font-medium leading-5 text-[#8195a1]">kg 또는 g으로 입력하면 MONI 내부 기준인 g으로 자동 변환합니다. 선택한 일자의 마감재고를 입력한 수량으로 맞춥니다.</span>
+          </label>
+
+          <label className="block text-sm font-bold text-[#466274]">
+            <span className="mb-1.5 block">조정 사유</span>
+            <input value={adjustmentForm.reason} onChange={(event) => setAdjustmentForm((current) => ({ ...current, reason: event.target.value }))} placeholder="예: 실사 재고 조정" className="h-11 w-full rounded-xl border border-[#cfe0e9] bg-white px-3 text-[#17384d] outline-none focus:border-[#75bad3]" />
+          </label>
+
+          <div className="grid gap-3 rounded-2xl border border-[#d8e8ef] bg-[#f7fbfd] p-4 sm:grid-cols-3">
+            <div><span className="text-[11px] font-bold text-[#78909e]">조정 전</span><strong className="mt-1 block text-lg font-black text-[#17384d]">{kg(adjustmentBalanceBeforeG, 3)}</strong></div>
+            <div><span className="text-[11px] font-bold text-[#78909e]">조정 후</span><strong className="mt-1 block text-lg font-black text-[#176f99]">{adjustmentTargetG === null ? '-' : kg(adjustmentTargetG, 3)}</strong></div>
+            <div><span className="text-[11px] font-bold text-[#78909e]">재고 변동</span><strong className={`mt-1 block text-lg font-black ${adjustmentDeltaG === null ? 'text-[#81939e]' : adjustmentDeltaG >= 0 ? 'text-[#16825d]' : 'text-[#c4515b]'}`}>{adjustmentDeltaG === null ? '-' : `${adjustmentDeltaG >= 0 ? '+' : '-'}${kg(Math.abs(adjustmentDeltaG), 3)}`}</strong></div>
+          </div>
+
+          {adjustmentMessage && <div className="rounded-xl border border-[#efc0c4] bg-[#fff7f7] px-4 py-3 text-sm font-bold text-[#ad4b55]">{adjustmentMessage}</div>}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-[#dce9f0] bg-[#fbfdfe] px-6 py-4">
+          <button type="button" disabled={adjustmentSaving} onClick={() => setAdjustmentOpen(false)} className="h-11 rounded-xl border border-[#cbdde6] bg-white px-5 text-sm font-black text-[#587283] disabled:opacity-50">취소</button>
+          <button type="button" disabled={adjustmentSaving} onClick={() => void saveAdjustment()} className="h-11 rounded-xl bg-[#16b981] px-5 text-sm font-black text-white shadow-sm hover:bg-[#10a874] disabled:opacity-50">{adjustmentSaving ? '반영 중...' : '재고조정 반영'}</button>
         </div>
       </div>
     </div>}
