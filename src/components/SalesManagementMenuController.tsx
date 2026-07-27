@@ -36,6 +36,14 @@ function salesManagementHref(view: string) {
   return `/business-management?tab=sales-management&view=${view}`
 }
 
+function removeLegacySalesRegistrationEntries(nav: HTMLElement) {
+  for (const node of Array.from(nav.querySelectorAll<HTMLElement>('button, a'))) {
+    if (normalized(node) !== '판매 등록') continue
+    if (node.closest('[data-sales-management-menu]')) continue
+    node.remove()
+  }
+}
+
 export default function SalesManagementMenuController() {
   const pathname = usePathname()
   const router = useRouter()
@@ -73,6 +81,8 @@ export default function SalesManagementMenuController() {
       if (stopped) return
       const nav = document.querySelector<HTMLElement>('[data-moni-global-sidebar] nav')
       if (!nav) return
+
+      removeLegacySalesRegistrationEntries(nav)
 
       const existing = nav.querySelector<HTMLElement>('[data-sales-management-menu]')
       if (existing) {
@@ -130,6 +140,7 @@ export default function SalesManagementMenuController() {
       wrapper.addEventListener('mouseleave', () => setExpanded(false))
       wrapper.append(categoryButton, submenu)
       nav.insertBefore(wrapper, reference)
+      removeLegacySalesRegistrationEntries(nav)
       markActive(activeView)
     }
 
