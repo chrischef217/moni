@@ -54,8 +54,23 @@ export default function ExportSalesStatementPrintView({ id, autoPrint = false }:
     const previousTitle = document.title
     document.title = `${statementNumber}_TRANSACTION_STATEMENT`
     if (autoPrint) {
-      const timer = window.setTimeout(() => window.print(), 260)
-      return () => { window.clearTimeout(timer); document.title = previousTitle }
+      let cancelled = false
+      const timer = window.setTimeout(() => {
+        const printReady = () => {
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              if (!cancelled) window.print()
+            })
+          })
+        }
+        if (document.fonts?.ready) void document.fonts.ready.then(printReady, printReady)
+        else printReady()
+      }, 350)
+      return () => {
+        cancelled = true
+        window.clearTimeout(timer)
+        document.title = previousTitle
+      }
     }
     return () => { document.title = previousTitle }
   }, [autoPrint, payload, statementNumber])
@@ -81,7 +96,7 @@ export default function ExportSalesStatementPrintView({ id, autoPrint = false }:
       <button type="button" onClick={() => window.print()} className="rounded-lg bg-[#315d75] px-4 py-2 text-sm font-black text-white">PDF 저장 / 인쇄</button>
     </div>
 
-    <section className="transaction-statement-paper mx-auto box-border min-h-[297mm] w-[210mm] bg-white px-[12mm] py-[11mm] shadow-xl">
+    <section className="statement-print transaction-statement-paper mx-auto box-border min-h-[297mm] w-[210mm] bg-white px-[12mm] py-[11mm] shadow-xl">
       <header className="border-b-2 border-[#172b3a] pb-4 text-center">
         <h1 className="text-[24px] font-black tracking-[0.08em]">거래명세표</h1>
         <p className="mt-1 text-[12px] font-bold tracking-[0.12em] text-[#526776]">TRANSACTION STATEMENT</p>
@@ -156,7 +171,8 @@ export default function ExportSalesStatementPrintView({ id, autoPrint = false }:
       @media print {
         @page { size: A4 portrait; margin: 0; }
         html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-        body * { visibility: hidden !important; }
+        body .statement-print-root { visibility: visible !important; }
+        body .statement-print-root > *:not(.transaction-statement-paper) { display: none !important; }
         body .transaction-statement-paper,
         body .transaction-statement-paper * { visibility: visible !important; }
         body .transaction-statement-paper {
