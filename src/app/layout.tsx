@@ -37,6 +37,7 @@ import './moni-legacy-ai-chat.css'
 import './moni-sidebar-motion.css'
 import './production-dashboard-motion.css'
 import './moni-action-button-contrast.css'
+import './moni-export-statement-typography-fix.css'
 
 export const metadata: Metadata = {
   title: 'Moni — 경영 고민? 모니한테 물어봐',
