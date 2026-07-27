@@ -52,6 +52,16 @@
   line-height: 1.02 !important;
 }
 
+/* Give the long final-payment label more room without changing overall table width. */
+.statement-print-root .total-banner {
+  grid-template-columns: 52mm 1fr 13mm !important;
+}
+
+.statement-print-root .statement-footer-table col:nth-child(1) { width: 44mm !important; }
+.statement-print-root .statement-footer-table col:nth-child(4) { width: 24mm !important; }
+.statement-print-root .statement-footer-table col:nth-child(6) { width: 26mm !important; }
+.statement-print-root .statement-footer-table col:nth-child(8) { width: 22mm !important; }
+
 /* Keep the two statement copies symmetric on an A4 sheet.
    A4 content height is 289mm after 4mm top/bottom padding.
    136mm + 17mm + 136mm = 289mm, so the cut line sits exactly at 148.5mm. */
