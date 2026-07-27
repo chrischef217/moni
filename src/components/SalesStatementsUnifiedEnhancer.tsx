@@ -6,6 +6,38 @@ function exactText(element: Element | null) {
   return (element?.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
+function styleLightButton(button: HTMLButtonElement, tone: 'neutral' | 'blue' | 'red') {
+  button.style.display = 'inline-flex'
+  button.style.alignItems = 'center'
+  button.style.justifyContent = 'center'
+  button.style.borderWidth = '1px'
+  button.style.borderStyle = 'solid'
+  button.style.borderRadius = '10px'
+  button.style.padding = '7px 12px'
+  button.style.fontSize = '12px'
+  button.style.fontWeight = '800'
+  button.style.lineHeight = '1.2'
+  button.style.textDecoration = 'none'
+  button.style.whiteSpace = 'nowrap'
+  button.style.opacity = button.disabled ? '0.45' : '1'
+
+  if (tone === 'blue') {
+    button.style.backgroundColor = '#eaf4ff'
+    button.style.borderColor = '#8bbde8'
+    button.style.color = '#135b8f'
+    return
+  }
+  if (tone === 'red') {
+    button.style.backgroundColor = '#fff1f0'
+    button.style.borderColor = '#efaaa5'
+    button.style.color = '#b42318'
+    return
+  }
+  button.style.backgroundColor = '#ffffff'
+  button.style.borderColor = '#b9cbd7'
+  button.style.color = '#17384a'
+}
+
 export default function SalesStatementsUnifiedEnhancer() {
   useEffect(() => {
     let stopped = false
@@ -41,8 +73,7 @@ export default function SalesStatementsUnifiedEnhancer() {
         let visibleDataRows = 0
         for (const row of rows) {
           const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'))
-          if (!cells.length) continue
-          if (cells.length === 1) continue
+          if (!cells.length || cells.length === 1) continue
 
           if (statusIndex >= 0 && cells[statusIndex]) {
             const status = exactText(cells[statusIndex])
@@ -57,7 +88,10 @@ export default function SalesStatementsUnifiedEnhancer() {
           visibleDataRows += 1
           const managementCell = cells[cells.length - 1]
           for (const button of Array.from(managementCell.querySelectorAll<HTMLButtonElement>('button'))) {
-            if (exactText(button) === '취소') button.textContent = '삭제'
+            const label = exactText(button)
+            if (label === '취소') button.textContent = '삭제'
+            if (label === '출력') styleLightButton(button, 'neutral')
+            if (label === '수출서류 수정') styleLightButton(button, 'blue')
           }
         }
 
@@ -76,6 +110,17 @@ export default function SalesStatementsUnifiedEnhancer() {
           emptyRow.style.display = ''
         } else if (emptyRow) {
           emptyRow.style.display = 'none'
+        }
+      }
+
+      const otherSaleModalTitle = Array.from(document.querySelectorAll<HTMLElement>('h2')).find((node) => {
+        const label = exactText(node)
+        return label === '기타 상품 판매' || label === '기타 상품 판매 수정'
+      })
+      const otherSaleModal = otherSaleModalTitle?.closest<HTMLElement>('div.fixed')
+      if (otherSaleModal) {
+        for (const button of Array.from(otherSaleModal.querySelectorAll<HTMLButtonElement>('button'))) {
+          if (exactText(button) === '삭제') styleLightButton(button, 'red')
         }
       }
 
@@ -98,7 +143,7 @@ export default function SalesStatementsUnifiedEnhancer() {
     apply()
     const observer = new MutationObserver(apply)
     observer.observe(document.body, { childList: true, subtree: true })
-    const timer = window.setInterval(apply, 500)
+    const timer = window.setInterval(apply, 400)
 
     return () => {
       stopped = true
