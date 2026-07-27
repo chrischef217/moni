@@ -68,8 +68,6 @@ export default function ExportDocumentsAutoSalesBridge() {
       if ((method === 'POST' || method === 'PATCH') && typeof init?.body === 'string') {
         try {
           const body = JSON.parse(init.body || '{}') as Record<string, unknown>
-          // Export documents no longer have a user-facing draft/shipped/cancelled workflow.
-          // Saving the document means it exists and is immediately usable.
           if (!body.action) {
             nextInit = { ...init, body: JSON.stringify({ ...body, status: 'GENERATED' }) }
           }
@@ -146,10 +144,13 @@ export default function ExportDocumentsAutoSalesBridge() {
 
         const desiredOrder = ['Invoice', 'Packing', 'PDF/인쇄', '거래명세표 인쇄', '수정', '삭제']
         const buttons = Array.from(controls.querySelectorAll<HTMLButtonElement>('button'))
-        for (const label of desiredOrder) {
-          const button = buttons.find((item) => text(item) === label)
-          if (button) controls.appendChild(button)
+        const desiredButtons = desiredOrder.map((label) => buttons.find((item) => text(item) === label)).filter((item): item is HTMLButtonElement => Boolean(item))
+        const currentButtons = Array.from(controls.querySelectorAll<HTMLButtonElement>('button'))
+        const sameOrder = desiredButtons.length === currentButtons.length && desiredButtons.every((button, index) => currentButtons[index] === button)
+        if (!sameOrder) {
+          for (const button of desiredButtons) controls.appendChild(button)
         }
+
         controls.style.display = 'grid'
         controls.style.gridTemplateColumns = 'repeat(3, max-content)'
         controls.style.justifyContent = 'center'
