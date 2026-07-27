@@ -23,7 +23,7 @@ function applyLayout(table: HTMLTableElement, profile: CompanyProfile) {
   if (table.dataset.paymentAccountLayout === '1') return
 
   const oldRows = Array.from(table.tBodies[0]?.rows || [])
-  if (oldRows.length < 4) return
+  if (oldRows.length < 5) return
 
   const saleDate = cellText(oldRows[0], 1)
   const clientName = cellText(oldRows[1], 1)
@@ -82,6 +82,7 @@ function applyLayout(table: HTMLTableElement, profile: CompanyProfile) {
 export default function ExportStatementPaymentAccountEnhancer() {
   useEffect(() => {
     let stopped = false
+    let observer: MutationObserver | null = null
     let profile: CompanyProfile = {}
 
     const apply = () => {
@@ -91,25 +92,25 @@ export default function ExportStatementPaymentAccountEnhancer() {
         .forEach((table) => applyLayout(table, profile))
     }
 
+    const start = () => {
+      if (stopped) return
+      apply()
+      observer = new MutationObserver(apply)
+      observer.observe(document.body, { childList: true, subtree: true })
+    }
+
     fetch(`/api/moni/company-profile?_=${Date.now()}`, { cache: 'no-store' })
       .then((response) => response.json())
       .then((payload) => {
         if (stopped) return
         if (payload?.ok && payload.profile) profile = payload.profile as CompanyProfile
-        document
-          .querySelectorAll<HTMLTableElement>('.statement-print-root .korean-statement-copy .buyer-table')
-          .forEach((table) => { delete table.dataset.paymentAccountLayout })
-        apply()
+        start()
       })
-      .catch(() => apply())
-
-    apply()
-    const observer = new MutationObserver(apply)
-    observer.observe(document.body, { childList: true, subtree: true })
+      .catch(start)
 
     return () => {
       stopped = true
-      observer.disconnect()
+      observer?.disconnect()
     }
   }, [])
 
