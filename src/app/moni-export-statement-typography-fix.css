@@ -52,8 +52,9 @@
   line-height: 1.02 !important;
 }
 
-/* border-collapse can visually drop the outside edge in Chrome print/preview.
-   Draw a second inside outline so the right and bottom edges always remain visible. */
+/* Chrome can clip the outer half of collapsed table borders at the fixed A4 edge.
+   Keep the normal border, and paint the vulnerable right/bottom edges INSIDE the
+   last cells so they remain visible on screen and in print preview. */
 .statement-print-root .supplier-table,
 .statement-print-root .statement-lines,
 .statement-print-root .statement-footer-table {
@@ -66,12 +67,20 @@
 .statement-print-root .statement-lines tr > *:last-child,
 .statement-print-root .statement-footer-table tr > *:last-child {
   border-right: 1.5px solid #2942ef !important;
+  box-shadow: inset -1.5px 0 0 #2942ef !important;
 }
 
 .statement-print-root .supplier-table tr:last-child > *,
 .statement-print-root .statement-lines tbody tr:last-child > *,
 .statement-print-root .statement-footer-table tr:last-child > * {
   border-bottom: 1.5px solid #2942ef !important;
+  box-shadow: inset 0 -1.5px 0 #2942ef !important;
+}
+
+.statement-print-root .supplier-table tr:last-child > *:last-child,
+.statement-print-root .statement-lines tbody tr:last-child > *:last-child,
+.statement-print-root .statement-footer-table tr:last-child > *:last-child {
+  box-shadow: inset -1.5px 0 0 #2942ef, inset 0 -1.5px 0 #2942ef !important;
 }
 
 @media print {
@@ -82,5 +91,23 @@
     print-color-adjust: exact !important;
     outline: 1.5px solid #2942ef !important;
     outline-offset: -1.5px !important;
+  }
+
+  .statement-print-root .supplier-table tr > *:last-child,
+  .statement-print-root .statement-lines tr > *:last-child,
+  .statement-print-root .statement-footer-table tr > *:last-child {
+    box-shadow: inset -1.5px 0 0 #2942ef !important;
+  }
+
+  .statement-print-root .supplier-table tr:last-child > *,
+  .statement-print-root .statement-lines tbody tr:last-child > *,
+  .statement-print-root .statement-footer-table tr:last-child > * {
+    box-shadow: inset 0 -1.5px 0 #2942ef !important;
+  }
+
+  .statement-print-root .supplier-table tr:last-child > *:last-child,
+  .statement-print-root .statement-lines tbody tr:last-child > *:last-child,
+  .statement-print-root .statement-footer-table tr:last-child > *:last-child {
+    box-shadow: inset -1.5px 0 0 #2942ef, inset 0 -1.5px 0 #2942ef !important;
   }
 }
