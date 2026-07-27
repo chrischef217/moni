@@ -36,6 +36,8 @@ function salesManagementHref(view: string) {
   return `/business-management?tab=sales-management&view=${view}`
 }
 
+// Some older sidebar markup can still render the retired sales-registration entry.
+// Remove that UI entry only; the legacy URL itself is redirected to statements.
 function removeLegacySalesRegistrationEntries(nav: HTMLElement) {
   for (const node of Array.from(nav.querySelectorAll<HTMLElement>('button, a'))) {
     if (normalized(node) !== '판매 등록') continue
