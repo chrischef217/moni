@@ -107,9 +107,10 @@ async function loadReceivables(client: ReturnType<typeof createMoniServiceRoleCl
     const dueDate = text(row.due_date)
     const collection = collectionState(dueDate, outstandingAmount)
     const clientRow = clientById.get(text(row.client_id))
+    const manualClientName = text(row.manual_client_name)
     return {
       ...row,
-      client_name: text(clientRow?.company_name) || '거래처 확인 필요',
+      client_name: manualClientName || text(clientRow?.company_name) || '거래처 확인 필요',
       receipts,
       verified_received_amount: postedReceived,
       received_amount: receivedAmount,
@@ -235,21 +236,14 @@ export async function POST(request: NextRequest) {
       const current = await client.from('sales_receipts').select('*').eq('id', id).eq('business_id', BUSINESS_ID).single()
       if (current.error) throw new Error(current.error.message)
       if (text(current.data.status) === 'reversed') throw new Error('이미 취소된 입금기록입니다.')
-      const reason = text(data.reversal_reason)
-      if (!reason) throw new Error('입금 취소 사유를 입력해 주세요.')
-      const result = await client.from('sales_receipts').update({
-        status: 'reversed',
-        reversed_at: new Date().toISOString(),
-        reversal_reason: reason,
-        updated_at: new Date().toISOString(),
-      }).eq('id', id).select('*').single()
-      if (result.error) throw new Error(result.error.message)
+      const updated = await client.from('sales_receipts').update({ status: 'reversed', note: [text(current.data.note), text(data.reason) ? `취소사유: ${text(data.reason)}` : ''].filter(Boolean).join(' / ') || null }).eq('id', id).select('*').single()
+      if (updated.error) throw new Error(updated.error.message)
       await syncOrderPaymentStatus(client, text(current.data.order_id))
-      return NextResponse.json({ ok: true, receipt: result.data })
+      return NextResponse.json({ ok: true, receipt: updated.data })
     }
 
-    return NextResponse.json({ ok: false, error: '지원하지 않는 수금관리 작업입니다.' }, { status: 400 })
+    return NextResponse.json({ ok: false, error: '지원하지 않는 수금 작업입니다.' }, { status: 400 })
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : '수금관리 저장 중 오류가 발생했습니다.' }, { status: 500 })
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : '수금·미수금 처리 중 오류가 발생했습니다.' }, { status: 500 })
   }
 }
