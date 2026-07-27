@@ -131,21 +131,52 @@ export default function ExportDocumentPrintRuntimeFix({
           visibility: visible !important;
         }
 
+        /*
+         * IMPORTANT: this runtime layer must use the same physical A4 sizing as the
+         * shared invoice/packing print CSS. 196 mm + 7 mm left/right margins = 210 mm,
+         * and 283 mm + 7 mm top/bottom margins = 297 mm. The previous 210 x 297 mm
+         * minimum page plus content padding overflowed the physical A4 page and pushed
+         * the signature block onto a second sheet on invoice-only/packing-only prints.
+         */
         body:has([data-export-document-print-runtime]) .paper {
           position: relative !important;
           inset: auto !important;
-          display: block !important;
+          display: flex !important;
+          flex-direction: column !important;
           box-sizing: border-box !important;
-          width: 210mm !important;
-          min-height: 297mm !important;
+          width: 196mm !important;
+          min-height: 283mm !important;
           height: auto !important;
-          margin: 0 !important;
+          margin: 7mm auto !important;
+          padding: 7mm 8mm !important;
           overflow: visible !important;
+          background: #fff !important;
           box-shadow: none !important;
+          transform: none !important;
+          font-size: 9.1px !important;
+          line-height: 1.22 !important;
           break-before: auto !important;
           page-break-before: auto !important;
           break-after: page !important;
           page-break-after: always !important;
+        }
+
+        body:has([data-export-document-print-runtime]) .signature {
+          width: 54mm !important;
+          margin: auto 0 0 auto !important;
+          padding-top: 3mm !important;
+          break-inside: avoid !important;
+          page-break-inside: avoid !important;
+        }
+
+        body:has([data-export-document-print-runtime]) .signature img {
+          max-width: 43mm !important;
+          max-height: 13mm !important;
+          margin: 1.2mm auto 0 !important;
+        }
+
+        body:has([data-export-document-print-runtime]) .signature-placeholder {
+          height: 13mm !important;
         }
 
         body:has([data-export-document-print-runtime]) .page-break {
