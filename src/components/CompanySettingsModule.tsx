@@ -16,6 +16,8 @@ type CompanyProfile = {
   company_phone: string
   business_type: string
   business_items: string
+  logo_data_url: string | null
+  logo_file_name: string | null
   signature_data_url: string | null
   signature_file_name: string | null
   updated_at: string
@@ -36,8 +38,31 @@ const EMPTY_FORM: FormState = {
   company_phone: '',
   business_type: '',
   business_items: '',
+  logo_data_url: null,
+  logo_file_name: null,
   signature_data_url: null,
   signature_file_name: null,
+}
+
+function profileToForm(profile: CompanyProfile): FormState {
+  return {
+    company_name_ko: profile.company_name_ko || '',
+    company_name_en: profile.company_name_en || '',
+    business_registration_number: profile.business_registration_number || '',
+    representative_name_ko: profile.representative_name_ko || '',
+    representative_name_en: profile.representative_name_en || '',
+    opening_date: profile.opening_date || '',
+    address_ko: profile.address_ko || '',
+    address_en: profile.address_en || '',
+    company_email: profile.company_email || '',
+    company_phone: profile.company_phone || '',
+    business_type: profile.business_type || '',
+    business_items: profile.business_items || '',
+    logo_data_url: profile.logo_data_url || null,
+    logo_file_name: profile.logo_file_name || null,
+    signature_data_url: profile.signature_data_url || null,
+    signature_file_name: profile.signature_file_name || null,
+  }
 }
 
 export default function CompanySettingsModule() {
@@ -55,22 +80,7 @@ export default function CompanySettingsModule() {
       if (!response.ok || !payload.ok) throw new Error(payload.error || '회사 기본정보를 불러오지 못했습니다.')
       const profile = payload.profile as CompanyProfile | null
       if (!profile) throw new Error('회사 기본정보가 등록되어 있지 않습니다.')
-      setForm({
-        company_name_ko: profile.company_name_ko || '',
-        company_name_en: profile.company_name_en || '',
-        business_registration_number: profile.business_registration_number || '',
-        representative_name_ko: profile.representative_name_ko || '',
-        representative_name_en: profile.representative_name_en || '',
-        opening_date: profile.opening_date || '',
-        address_ko: profile.address_ko || '',
-        address_en: profile.address_en || '',
-        company_email: profile.company_email || '',
-        company_phone: profile.company_phone || '',
-        business_type: profile.business_type || '',
-        business_items: profile.business_items || '',
-        signature_data_url: profile.signature_data_url || null,
-        signature_file_name: profile.signature_file_name || null,
-      })
+      setForm(profileToForm(profile))
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '회사 기본정보를 불러오지 못했습니다.')
     } finally {
@@ -97,23 +107,7 @@ export default function CompanySettingsModule() {
       })
       const payload = await response.json()
       if (!response.ok || !payload.ok) throw new Error(payload.error || '회사 기본정보 저장에 실패했습니다.')
-      const profile = payload.profile as CompanyProfile
-      setForm({
-        company_name_ko: profile.company_name_ko || '',
-        company_name_en: profile.company_name_en || '',
-        business_registration_number: profile.business_registration_number || '',
-        representative_name_ko: profile.representative_name_ko || '',
-        representative_name_en: profile.representative_name_en || '',
-        opening_date: profile.opening_date || '',
-        address_ko: profile.address_ko || '',
-        address_en: profile.address_en || '',
-        company_email: profile.company_email || '',
-        company_phone: profile.company_phone || '',
-        business_type: profile.business_type || '',
-        business_items: profile.business_items || '',
-        signature_data_url: profile.signature_data_url || null,
-        signature_file_name: profile.signature_file_name || null,
-      })
+      setForm(profileToForm(payload.profile as CompanyProfile))
       setMessage('저장되었습니다.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '회사 기본정보 저장에 실패했습니다.')
@@ -122,18 +116,44 @@ export default function CompanySettingsModule() {
     }
   }
 
+  function validateImageFile(file: File, label: string) {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setError(`${label} 이미지는 PNG, JPG 또는 WEBP만 등록할 수 있습니다.`)
+      return false
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError(`${label} 이미지는 2MB 이하로 등록해 주세요.`)
+      return false
+    }
+    return true
+  }
+
+  function handleLogo(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !validateImageFile(file, '회사 로고')) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      if (!result) return
+      const next = { ...form, logo_data_url: result, logo_file_name: file.name }
+      setForm(next)
+      void save(next)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function removeLogo() {
+    const next = { ...form, logo_data_url: null, logo_file_name: null }
+    setForm(next)
+    void save(next)
+  }
+
   function handleSignature(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!file) return
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      setError('서명 이미지는 PNG, JPG 또는 WEBP만 등록할 수 있습니다.')
-      return
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setError('서명 이미지는 2MB 이하로 등록해 주세요.')
-      return
-    }
+    if (!file || !validateImageFile(file, '서명')) return
 
     const reader = new FileReader()
     reader.onload = () => {
@@ -147,7 +167,6 @@ export default function CompanySettingsModule() {
   }
 
   function removeSignature() {
-    if (!window.confirm('등록된 서명을 삭제하시겠습니까?')) return
     const next = { ...form, signature_data_url: null, signature_file_name: null }
     setForm(next)
     void save(next)
@@ -162,7 +181,7 @@ export default function CompanySettingsModule() {
       <header className="rounded-[26px] border border-[#cfe1eb] bg-white/95 p-6 shadow-[0_14px_36px_rgba(43,84,109,0.08)] lg:p-8">
         <p className="text-xs font-black uppercase tracking-[0.17em] text-[#2b9b76]">ADMIN · COMPANY MASTER</p>
         <h1 className="mt-2 text-3xl font-black tracking-[-0.035em]">회사 기본 정보등록</h1>
-        <p className="mt-2 text-sm leading-6 text-[#6b8392]">사업자 정보와 대표자 서명을 한 곳에서 관리합니다. 향후 Commercial Invoice와 Packing List는 이 회사정보와 서명을 자동 사용합니다.</p>
+        <p className="mt-2 text-sm leading-6 text-[#6b8392]">사업자 정보, 회사 로고와 대표자 서명을 한 곳에서 관리합니다. 등록된 정보는 거래명세표와 수출서류에 자동 반영됩니다.</p>
       </header>
 
       {error && <div className="rounded-2xl border border-[#efb9bf] bg-[#fff6f7] p-4 text-sm font-semibold text-[#a94752]">{error}</div>}
@@ -191,8 +210,21 @@ export default function CompanySettingsModule() {
       </section>
 
       <section className="rounded-[26px] border border-[#cfe1eb] bg-white/95 p-6 shadow-[0_12px_34px_rgba(43,84,109,0.07)] lg:p-7">
-        <div><p className="text-xs font-black uppercase tracking-[0.14em] text-[#8a72d5]">AUTHORIZED SIGNATURE</p><h2 className="mt-1 text-xl font-black">대표자 서명 등록</h2><p className="mt-2 text-sm text-[#718896]">등록된 서명은 수출용 Commercial Invoice와 Packing List의 Signature 영역에 자동 삽입됩니다.</p></div>
+        <div><p className="text-xs font-black uppercase tracking-[0.14em] text-[#ef7b3a]">COMPANY LOGO</p><h2 className="mt-1 text-xl font-black">회사 로고 등록</h2><p className="mt-2 text-sm text-[#718896]">등록된 로고는 거래명세표 좌측 상단에 자동 표시됩니다.</p></div>
+        <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="flex min-h-[150px] items-center justify-center rounded-2xl border border-dashed border-[#c8dce7] bg-[#f8fbfd] p-5">
+            {form.logo_data_url ? <img src={form.logo_data_url} alt="등록 회사 로고" className="max-h-[105px] max-w-[320px] object-contain" /> : <div className="text-center text-sm text-[#8296a3]">등록된 회사 로고가 없습니다.</div>}
+          </div>
+          <div className="flex min-w-[180px] flex-col gap-2">
+            <label className="cursor-pointer rounded-xl bg-[#315d75] px-5 py-3 text-center text-sm font-black text-white"><input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogo} />{form.logo_data_url ? '로고 이미지 변경' : '로고 이미지 등록'}</label>
+            <button type="button" onClick={removeLogo} disabled={!form.logo_data_url || saving} className="rounded-xl border border-[#efb9bf] bg-[#fffafa] px-5 py-3 text-sm font-black text-[#b44f58] disabled:cursor-not-allowed disabled:opacity-40">로고 삭제</button>
+            <div className="px-1 text-center text-xs leading-5 text-[#8296a3]">PNG · JPG · WEBP<br />최대 2MB</div>
+          </div>
+        </div>
+      </section>
 
+      <section className="rounded-[26px] border border-[#cfe1eb] bg-white/95 p-6 shadow-[0_12px_34px_rgba(43,84,109,0.07)] lg:p-7">
+        <div><p className="text-xs font-black uppercase tracking-[0.14em] text-[#8a72d5]">AUTHORIZED SIGNATURE</p><h2 className="mt-1 text-xl font-black">대표자 서명 등록</h2><p className="mt-2 text-sm text-[#718896]">등록된 서명은 수출용 Commercial Invoice와 Packing List의 Signature 영역에 자동 삽입됩니다.</p></div>
         <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
           <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-[#c8dce7] bg-[#f8fbfd] p-5">
             {form.signature_data_url ? <img src={form.signature_data_url} alt="대표자 등록 서명" className="max-h-[130px] max-w-full object-contain" /> : <div className="text-center text-sm text-[#8296a3]">등록된 서명이 없습니다.</div>}
