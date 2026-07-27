@@ -67,13 +67,15 @@ function applyLayout(table: HTMLTableElement, profile: CompanyProfile) {
 
   const accountRow = document.createElement('tr')
   accountRow.className = 'payment-account-row'
-  const accountValue = makeCell(
-    'td',
-    `${bankName} | 예금주: ${accountHolder} | 계좌번호: ${accountNumber}`,
-    'payment-account-cell',
-  )
-  accountValue.colSpan = 3
-  accountRow.append(makeCell('th', '입금 계좌'), accountValue)
+  const accountValue = document.createElement('td')
+  accountValue.className = 'payment-account-cell'
+  accountValue.colSpan = 4
+  accountValue.append(document.createTextNode(`${bankName} | 예금주: ${accountHolder} | 계좌번호: `))
+  const accountNumberElement = document.createElement('span')
+  accountNumberElement.className = 'payment-account-number'
+  accountNumberElement.textContent = accountNumber
+  accountValue.append(accountNumberElement)
+  accountRow.append(accountValue)
 
   tbody.append(firstRow, addressRow, phoneRow, accountRow)
   table.dataset.paymentAccountLayout = '1'
@@ -125,34 +127,29 @@ export default function ExportStatementPaymentAccountEnhancer() {
       height: 5.6mm !important;
     }
 
-    .statement-print-root .buyer-table .payment-account-row th,
     .statement-print-root .buyer-table .payment-account-row td {
       height: 5.6mm !important;
-      border-top: 1px solid #2942ef !important;
-      border-bottom: 1px solid #2942ef !important;
-    }
-
-    .statement-print-root .buyer-table .payment-account-row th {
-      border-left: 1px solid #2942ef !important;
-      text-align: center !important;
-      padding-left: 0.3mm !important;
-      padding-right: 0.3mm !important;
-    }
-
-    .statement-print-root .buyer-table .payment-account-row td {
-      border-right: 1px solid #2942ef !important;
+      border: 1px solid #2942ef !important;
     }
 
     .statement-print-root .buyer-table .payment-account-cell {
       font-size: 10.5px !important;
+      font-weight: 800 !important;
+      text-align: center !important;
+      vertical-align: middle !important;
       white-space: nowrap !important;
       overflow: hidden !important;
       text-overflow: clip !important;
-      padding-left: 0.8mm !important;
+      padding-left: 0.4mm !important;
       padding-right: 0.4mm !important;
     }
 
-    .statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .buyer-table .payment-account-row th,
+    .statement-print-root .buyer-table .payment-account-number {
+      font-size: 13px !important;
+      font-weight: 900 !important;
+      letter-spacing: 0.01em !important;
+    }
+
     .statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .buyer-table .payment-account-row td {
       border-color: #d62828 !important;
     }
