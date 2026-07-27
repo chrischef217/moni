@@ -3,46 +3,35 @@
 import { useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
-const items = [
-  { label: '판매규격·단가', view: 'pricing' },
-  { label: '거래처 관리', view: 'clients' },
+const salesItems = [
   { label: '거래명세표', view: 'statements' },
   { label: '수금·미수금', view: 'receivables' },
-  { label: '영업 정산서', view: 'settlements' },
-  { label: '판매 통계', view: 'statistics' },
   { label: '세금계산서', view: 'tax-invoices' },
-  { label: '수출 관리', view: 'exports' },
+  { label: '영업 수당 정산', view: 'settlements' },
+  { label: '거래처 관리', view: 'clients' },
+  { label: '판매규격·단가', view: 'pricing' },
 ]
 
-function normalized(element: Element) {
-  return (element.textContent || '').replace(/\s+/g, ' ').trim()
+function normalized(element: Element | null) {
+  return (element?.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
-function currentParams() {
-  if (window.location.pathname === '/sales-management/export') {
-    return { tab: 'sales-management', view: 'exports' }
-  }
-
+function currentView() {
+  if (typeof window === 'undefined') return ''
+  if (window.location.pathname !== '/business-management') return ''
   const params = new URLSearchParams(window.location.search)
-  const rawView = params.get('view') || 'pricing'
-  return {
-    tab: params.get('tab') || '',
-    view: rawView === 'sales' ? 'statements' : rawView,
-  }
+  if (params.get('tab') !== 'sales-management') return ''
+  const raw = params.get('view') || 'statements'
+  return raw === 'sales' ? 'statements' : raw
 }
 
-function salesManagementHref(view: string) {
-  if (view === 'exports') return '/sales-management/export'
+function salesHref(view: string) {
   return `/business-management?tab=sales-management&view=${view}`
 }
 
-// Some older sidebar markup can still render the retired sales-registration entry.
-// Remove that UI entry only; the legacy URL itself is redirected to statements.
-function removeLegacySalesRegistrationEntries(nav: HTMLElement) {
-  for (const node of Array.from(nav.querySelectorAll<HTMLElement>('button, a'))) {
-    if (normalized(node) !== '판매 등록') continue
-    if (node.closest('[data-sales-management-menu]')) continue
-    node.remove()
+function removeRetiredSalesEntry(nav: HTMLElement) {
+  for (const button of Array.from(nav.querySelectorAll<HTMLButtonElement>('button'))) {
+    if (normalized(button) === '판매 등록') button.remove()
   }
 }
 
@@ -53,120 +42,123 @@ export default function SalesManagementMenuController() {
   useEffect(() => {
     let stopped = false
 
-    const isActiveRoute = () => {
-      if (pathname === '/sales-management/export') return true
-      const params = currentParams()
-      return pathname === '/business-management' && params.tab === 'sales-management'
-    }
-
-    const markActive = (view: string) => {
-      const active = isActiveRoute()
-      const wrapper = document.querySelector<HTMLElement>('[data-sales-management-menu]')
-      if (!wrapper) return
+    const patchSalesMenu = (nav: HTMLElement, view: string) => {
+      const wrapper = nav.querySelector<HTMLElement>('[data-sales-management-menu]')
+      if (!wrapper) return null
 
       const categoryButton = wrapper.querySelector<HTMLButtonElement>('[data-sales-management-category]')
       const categoryIcon = wrapper.querySelector<HTMLElement>('[data-sales-management-icon]')
+      const statsActive = view === 'statistics'
+      const salesActive = pathname === '/business-management' && Boolean(view) && !statsActive
+
+      if (categoryButton) {
+        categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${salesActive ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
+      }
+      if (categoryIcon) {
+        categoryIcon.className = `flex h-8 w-8 items-center justify-center rounded-lg ${salesActive ? 'bg-emerald-500/20' : 'bg-slate-800'}`
+      }
+
+      const existingButtons = Array.from(wrapper.querySelectorAll<HTMLButtonElement>('button[data-sales-view]'))
+      const buttonByView = new Map(existingButtons.map((button) => [button.dataset.salesView || '', button]))
+      buttonByView.get('sales')?.remove()
+      buttonByView.get('statistics')?.remove()
+
+      const host = salesItems
+        .map((item) => buttonByView.get(item.view)?.parentElement)
+        .find((node): node is HTMLElement => Boolean(node))
+
+      if (host) {
+        for (const item of salesItems) {
+          const button = buttonByView.get(item.view)
+          if (!button) continue
+          button.textContent = item.label
+          button.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${salesActive && view === item.view ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`
+          host.appendChild(button)
+        }
+      }
+
+      return wrapper
+    }
+
+    const ensureStatisticsCategory = (nav: HTMLElement, salesWrapper: HTMLElement | null, view: string) => {
+      if (!salesWrapper) return
+      let wrapper = nav.querySelector<HTMLElement>('[data-sales-statistics-menu]')
+      const active = pathname === '/business-management' && view === 'statistics'
+
+      if (!wrapper) {
+        wrapper = document.createElement('div')
+        wrapper.dataset.salesStatisticsMenu = 'true'
+        wrapper.className = 'mb-1'
+
+        const categoryButton = document.createElement('button')
+        categoryButton.type = 'button'
+        categoryButton.dataset.moniGlobalNav = 'true'
+        categoryButton.dataset.salesStatisticsCategory = 'true'
+        categoryButton.className = 'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition text-slate-200 hover:bg-slate-800/80 hover:text-white'
+        categoryButton.innerHTML = '<span data-sales-statistics-icon class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800">▥</span><span class="flex-1">통계</span><span data-sales-statistics-arrow class="text-xs transition-transform duration-300">⌄</span>'
+
+        const submenu = document.createElement('div')
+        submenu.dataset.salesStatisticsSubmenu = 'true'
+        submenu.className = 'grid grid-rows-[0fr] opacity-0 transition-all duration-300 ease-out'
+        submenu.innerHTML = '<div class="overflow-hidden"><div class="ml-7 mt-1 border-l border-slate-700/80 pl-3"><button data-moni-global-nav data-sales-statistics-item type="button" class="mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition text-slate-400 hover:bg-slate-800 hover:text-slate-100">판매통계</button></div></div>'
+
+        const setExpanded = (expanded: boolean) => {
+          submenu.className = `grid transition-all duration-300 ease-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`
+          categoryButton.querySelector<HTMLElement>('[data-sales-statistics-arrow]')?.classList.toggle('rotate-180', expanded)
+        }
+
+        categoryButton.addEventListener('click', () => router.push(salesHref('statistics')))
+        submenu.querySelector<HTMLButtonElement>('[data-sales-statistics-item]')?.addEventListener('click', (event) => {
+          event.stopPropagation()
+          router.push(salesHref('statistics'))
+        })
+        wrapper.addEventListener('mouseenter', () => setExpanded(true))
+        wrapper.addEventListener('mouseleave', () => setExpanded(false))
+        wrapper.append(categoryButton, submenu)
+        salesWrapper.insertAdjacentElement('afterend', wrapper)
+      }
+
+      const categoryButton = wrapper.querySelector<HTMLButtonElement>('[data-sales-statistics-category]')
+      const icon = wrapper.querySelector<HTMLElement>('[data-sales-statistics-icon]')
+      const item = wrapper.querySelector<HTMLButtonElement>('[data-sales-statistics-item]')
       if (categoryButton) {
         categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
       }
-      if (categoryIcon) {
-        categoryIcon.className = `flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}`
-      }
+      if (icon) icon.className = `flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}`
+      if (item) item.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`
+    }
 
-      for (const button of Array.from(wrapper.querySelectorAll<HTMLButtonElement>('button[data-sales-view]'))) {
-        const selected = active && button.dataset.salesView === view
-        button.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${selected ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`
+    const patchSettlementTitle = (view: string) => {
+      if (view !== 'settlements') return
+      for (const heading of Array.from(document.querySelectorAll<HTMLElement>('h1, h2'))) {
+        const label = normalized(heading)
+        if (label === '영업 정산서' || label === '영업정산서') heading.textContent = '영업 수당 정산'
       }
     }
 
-    const inject = () => {
+    const apply = () => {
       if (stopped) return
       const nav = document.querySelector<HTMLElement>('[data-moni-global-sidebar] nav')
       if (!nav) return
-
-      removeLegacySalesRegistrationEntries(nav)
-
-      const existing = nav.querySelector<HTMLElement>('[data-sales-management-menu]')
-      if (existing) {
-        markActive(currentParams().view)
-        return
-      }
-
-      const wrappers = Array.from(nav.children) as HTMLElement[]
-      const accountingWrapper = wrappers.find((wrapper) => normalized(wrapper).includes('회계·세무관리'))
-      const salesWrapper = wrappers.find((wrapper) => normalized(wrapper).includes('영업관리'))
-      const reference = accountingWrapper || salesWrapper?.nextElementSibling
-      if (!reference) return
-
-      const active = isActiveRoute()
-      const activeView = currentParams().view
-      const wrapper = document.createElement('div')
-      wrapper.dataset.salesManagementMenu = 'true'
-      wrapper.className = 'mb-1'
-
-      const categoryButton = document.createElement('button')
-      categoryButton.type = 'button'
-      categoryButton.dataset.moniGlobalNav = 'true'
-      categoryButton.dataset.salesManagementCategory = 'true'
-      categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
-      categoryButton.innerHTML = `<span data-sales-management-icon class="flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}">▤</span><span class="flex-1">판매관리</span><span data-sales-arrow class="text-xs transition-transform duration-300">⌄</span>`
-      categoryButton.addEventListener('click', () => router.push(salesManagementHref('pricing')))
-
-      const submenu = document.createElement('div')
-      submenu.className = 'grid grid-rows-[0fr] opacity-0 transition-all duration-300 ease-out'
-      submenu.innerHTML = '<div class="overflow-hidden"><div data-sales-items class="ml-7 mt-1 border-l border-slate-700/80 pl-3"></div></div>'
-      const itemHost = submenu.querySelector<HTMLElement>('[data-sales-items]')
-
-      for (const item of items) {
-        const button = document.createElement('button')
-        button.type = 'button'
-        button.dataset.moniGlobalNav = 'true'
-        button.dataset.salesView = item.view
-        button.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${active && activeView === item.view ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`
-        button.textContent = item.label
-        button.addEventListener('click', (event) => {
-          event.stopPropagation()
-          markActive(item.view)
-          router.push(salesManagementHref(item.view))
-        })
-        itemHost?.appendChild(button)
-      }
-
-      const setExpanded = (expanded: boolean) => {
-        submenu.className = `grid transition-all duration-300 ease-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`
-        const arrow = categoryButton.querySelector<HTMLElement>('[data-sales-arrow]')
-        arrow?.classList.toggle('rotate-180', expanded)
-      }
-
-      wrapper.addEventListener('mouseenter', () => setExpanded(true))
-      wrapper.addEventListener('mouseleave', () => setExpanded(false))
-      wrapper.append(categoryButton, submenu)
-      nav.insertBefore(wrapper, reference)
-      removeLegacySalesRegistrationEntries(nav)
-      markActive(activeView)
+      removeRetiredSalesEntry(nav)
+      const view = currentView()
+      const salesWrapper = patchSalesMenu(nav, view)
+      ensureStatisticsCategory(nav, salesWrapper, view)
+      patchSettlementTitle(view)
     }
 
-    const syncFromAddress = () => {
-      inject()
-      markActive(currentParams().view)
-    }
-
-    window.addEventListener('popstate', syncFromAddress)
-    const observer = new MutationObserver(() => inject())
+    apply()
+    const observer = new MutationObserver(apply)
     observer.observe(document.body, { childList: true, subtree: true })
-
-    inject()
-    const timer = window.setInterval(() => {
-      inject()
-      markActive(currentParams().view)
-    }, 800)
+    const timer = window.setInterval(apply, 500)
+    window.addEventListener('popstate', apply)
 
     return () => {
       stopped = true
-      window.clearInterval(timer)
-      window.removeEventListener('popstate', syncFromAddress)
       observer.disconnect()
-      document.querySelector('[data-sales-management-menu]')?.remove()
+      window.clearInterval(timer)
+      window.removeEventListener('popstate', apply)
+      document.querySelector('[data-sales-statistics-menu]')?.remove()
     }
   }, [pathname, router])
 
