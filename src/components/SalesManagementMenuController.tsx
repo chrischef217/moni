@@ -6,7 +6,6 @@ import { usePathname, useRouter } from 'next/navigation'
 const items = [
   { label: '판매규격·단가', view: 'pricing' },
   { label: '거래처 관리', view: 'clients' },
-  { label: '판매 등록', view: 'sales' },
   { label: '거래명세표', view: 'statements' },
   { label: '수금·미수금', view: 'receivables' },
   { label: '영업 정산서', view: 'settlements' },
@@ -25,9 +24,10 @@ function currentParams() {
   }
 
   const params = new URLSearchParams(window.location.search)
+  const rawView = params.get('view') || 'pricing'
   return {
     tab: params.get('tab') || '',
-    view: params.get('view') || 'pricing',
+    view: rawView === 'sales' ? 'statements' : rawView,
   }
 }
 
