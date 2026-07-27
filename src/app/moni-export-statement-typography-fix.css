@@ -116,6 +116,37 @@
   }
 }
 
+/* Top “공급받는자 보관용” copy only. Make all pale blue separators as visible as the red supplier copy. */
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .buyer-table td {
+  border-bottom-color: #2942ef !important;
+}
+
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .supplier-table th,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .supplier-table td,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .statement-lines th,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .statement-lines td,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .statement-footer-table th,
+.statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .statement-footer-table td {
+  border-color: #2942ef !important;
+}
+
+@media print {
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .buyer-table td {
+    border-bottom-color: #2942ef !important;
+  }
+
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .supplier-table th,
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .supplier-table td,
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .statement-lines th,
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .statement-lines td,
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .statement-footer-table th,
+  .statement-print-root .korean-statement-a4 > .korean-statement-copy:first-child .statement-footer-table td {
+    border-color: #2942ef !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
 /* Bottom “공급자 보관용” copy only. The top customer copy remains untouched. */
 .statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .copy-title-wrap,
 .statement-print-root .korean-statement-a4 > .korean-statement-copy:last-child .copy-title,
