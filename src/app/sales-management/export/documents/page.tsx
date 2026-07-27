@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import ExportDocumentsPage from '@/components/ExportDocumentsPage'
-import ExportDocumentsListPolish from '@/components/ExportDocumentsListPolish'
+import ExportDocumentsAutoSalesBridge from '@/components/ExportDocumentsAutoSalesBridge'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +11,7 @@ export default async function ExportDocumentsRoute() {
   if (session.role !== 'admin') redirect('/freelancer')
 
   return <>
-    <ExportDocumentsListPolish />
+    <ExportDocumentsAutoSalesBridge />
     <ExportDocumentsPage />
   </>
 }
