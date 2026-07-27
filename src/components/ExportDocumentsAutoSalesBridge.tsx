@@ -5,8 +5,9 @@ import { useEffect, useRef } from 'react'
 type ExportDocument = {
   id: string
   invoice_no: string
-  status: string
+  status?: string | null
   sales_order_id?: string | null
+  updated_at?: string | null
 }
 
 function text(element: Element | null) {
@@ -27,6 +28,7 @@ export default function ExportDocumentsAutoSalesBridge() {
     const originalFetch = window.fetch.bind(window)
     let disposed = false
     let documents: ExportDocument[] = []
+    const syncedSignatures = new Set<string>()
 
     const syncSales = async (id: string, action: 'SYNC' | 'DELETE') => {
       const response = await originalFetch('/api/moni/export-sales-sync', {
@@ -36,7 +38,7 @@ export default function ExportDocumentsAutoSalesBridge() {
       })
       const payload = await response.clone().json().catch(() => null)
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || '판매관리 거래명세표 동기화에 실패했습니다.')
-      return payload
+      return payload as Record<string, unknown>
     }
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -62,19 +64,21 @@ export default function ExportDocumentsAutoSalesBridge() {
         return response
       }
 
-      if (method === 'PATCH' && typeof init?.body === 'string') {
-        const body = JSON.parse(init.body || '{}') as Record<string, unknown>
-        const action = String(body.action || '').toUpperCase()
-        if (action === 'SHIP') {
-          return originalFetch('/api/moni/export-shipment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: body.id, action: 'SHIP' }),
-          })
+      let nextInit = init
+      if ((method === 'POST' || method === 'PATCH') && typeof init?.body === 'string') {
+        try {
+          const body = JSON.parse(init.body || '{}') as Record<string, unknown>
+          // Export documents no longer have a user-facing draft/shipped/cancelled workflow.
+          // Saving the document means it exists and is immediately usable.
+          if (!body.action) {
+            nextInit = { ...init, body: JSON.stringify({ ...body, status: 'GENERATED' }) }
+          }
+        } catch {
+          // Preserve the original request if a non-JSON body ever reaches this path.
         }
       }
 
-      const response = await originalFetch(input, init)
+      const response = await originalFetch(input, nextInit)
       if (!response.ok || (method !== 'POST' && method !== 'PATCH')) return response
 
       const payload = await response.clone().json().catch(() => null)
@@ -92,6 +96,80 @@ export default function ExportDocumentsAutoSalesBridge() {
       return response
     }
 
+    const findDocumentTable = () => {
+      const tables = Array.from(document.querySelectorAll<HTMLTableElement>('main table'))
+      return tables.find((table) => {
+        const headers = Array.from(table.querySelectorAll('thead th')).map((cell) => text(cell))
+        return headers.includes('Invoice No.') && headers.includes('Packing List No.')
+      }) || null
+    }
+
+    const applyDom = () => {
+      const table = findDocumentTable()
+      if (!table) return
+
+      const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'))
+      const statusIndex = headers.findIndex((cell) => text(cell) === '상태')
+      const managementIndex = headers.findIndex((cell) => text(cell) === '관리')
+      if (statusIndex >= 0) headers[statusIndex].style.display = 'none'
+
+      const rows = Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr'))
+      for (const row of rows) {
+        const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'))
+        if (cells.length < 2) continue
+        if (statusIndex >= 0 && cells[statusIndex]) cells[statusIndex].style.display = 'none'
+
+        const invoiceNo = text(cells[1])
+        const documentRow = documents.find((item) => item.invoice_no === invoiceNo)
+        const managementCell = managementIndex >= 0 ? cells[managementIndex] : cells[cells.length - 1]
+        const controls = managementCell?.querySelector<HTMLElement>('div')
+        if (!controls) continue
+
+        for (const button of Array.from(controls.querySelectorAll<HTMLButtonElement>('button'))) {
+          const label = text(button)
+          if (label === '출고확정' || label === '출고취소' || label === '출고확정/거래명세표 인쇄' || label === '거래명세표 생성/인쇄') {
+            button.remove()
+          }
+        }
+
+        if (documentRow?.sales_order_id && !controls.querySelector('[data-export-auto-statement="true"]')) {
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.dataset.exportAutoStatement = 'true'
+          button.className = 'rounded-lg bg-[#315d75] px-2.5 py-2 text-xs font-black text-white'
+          button.textContent = '거래명세표 인쇄'
+          button.addEventListener('click', () => {
+            window.open(`/sales-management/export/documents/${encodeURIComponent(documentRow.id)}/statement?auto=1`, '_blank')
+          })
+          controls.appendChild(button)
+        }
+
+        const desiredOrder = ['Invoice', 'Packing', 'PDF/인쇄', '거래명세표 인쇄', '수정', '삭제']
+        const buttons = Array.from(controls.querySelectorAll<HTMLButtonElement>('button'))
+        for (const label of desiredOrder) {
+          const button = buttons.find((item) => text(item) === label)
+          if (button) controls.appendChild(button)
+        }
+        controls.style.display = 'grid'
+        controls.style.gridTemplateColumns = 'repeat(3, max-content)'
+        controls.style.justifyContent = 'center'
+        controls.style.alignItems = 'center'
+        controls.style.gap = '6px'
+
+        if (!openedEditRef.current) {
+          const editId = new URLSearchParams(window.location.search).get('edit')
+          if (editId && documentRow?.id === editId) {
+            const editButton = Array.from(controls.querySelectorAll<HTMLButtonElement>('button')).find((button) => text(button) === '수정')
+            if (editButton) {
+              openedEditRef.current = true
+              editButton.click()
+              window.history.replaceState(window.history.state, '', window.location.pathname)
+            }
+          }
+        }
+      }
+    }
+
     const loadDocuments = async () => {
       try {
         const response = await originalFetch(`/api/moni/export-documents?_=${Date.now()}`, { cache: 'no-store' })
@@ -100,8 +178,14 @@ export default function ExportDocumentsAutoSalesBridge() {
         documents = payload.documents as ExportDocument[]
 
         for (const row of documents) {
-          if (!row.sales_order_id && row.status !== 'CANCELLED') {
-            try { await syncSales(row.id, 'SYNC') } catch { /* surfaced on next explicit save */ }
+          const signature = `${row.id}:${row.updated_at || ''}:${row.sales_order_id || ''}`
+          if (syncedSignatures.has(signature)) continue
+          try {
+            const synced = await syncSales(row.id, 'SYNC')
+            if (synced.sales_order_id) row.sales_order_id = String(synced.sales_order_id)
+            syncedSignatures.add(signature)
+          } catch {
+            // Explicit save/delete will surface a synchronization error to the user.
           }
         }
         if (!disposed) applyDom()
@@ -110,55 +194,11 @@ export default function ExportDocumentsAutoSalesBridge() {
       }
     }
 
-    const applyDom = () => {
-      const main = document.querySelector('main')
-      if (!main) return
-      const rows = Array.from(main.querySelectorAll<HTMLTableRowElement>('tbody tr'))
-      for (const row of rows) {
-        const cells = row.querySelectorAll<HTMLTableCellElement>('td')
-        if (cells.length < 9) continue
-        const invoiceNo = text(cells[1])
-        const documentRow = documents.find((item) => item.invoice_no === invoiceNo)
-        if (!documentRow?.sales_order_id) continue
-        const controls = cells[8].querySelector<HTMLElement>('div')
-        if (!controls || controls.querySelector('[data-export-auto-statement="true"]')) continue
-        const button = document.createElement('button')
-        button.type = 'button'
-        button.dataset.exportAutoStatement = 'true'
-        button.className = 'rounded-lg bg-[#315d75] px-2.5 py-2 text-xs font-black text-white'
-        button.textContent = '거래명세표 인쇄'
-        button.addEventListener('click', () => {
-          window.open(`/sales-management/export/documents/${encodeURIComponent(documentRow.id)}/statement?auto=1`, '_blank')
-        })
-        controls.appendChild(button)
-      }
-
-      if (!openedEditRef.current) {
-        const editId = new URLSearchParams(window.location.search).get('edit')
-        if (editId) {
-          const target = documents.find((item) => item.id === editId)
-          if (target) {
-            for (const row of rows) {
-              const cells = row.querySelectorAll<HTMLTableCellElement>('td')
-              if (cells.length < 9 || text(cells[1]) !== target.invoice_no) continue
-              const editButton = Array.from(cells[8].querySelectorAll<HTMLButtonElement>('button')).find((button) => text(button) === '수정')
-              if (editButton) {
-                openedEditRef.current = true
-                editButton.click()
-                window.history.replaceState(window.history.state, '', window.location.pathname)
-              }
-              break
-            }
-          }
-        }
-      }
-    }
-
     void loadDocuments()
     const observer = new MutationObserver(applyDom)
     const root = document.querySelector('main') || document.body
     observer.observe(root, { childList: true, subtree: true })
-    const interval = window.setInterval(() => { if (!disposed) void loadDocuments() }, 1200)
+    const interval = window.setInterval(() => { if (!disposed) void loadDocuments() }, 1500)
 
     return () => {
       disposed = true
