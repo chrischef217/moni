@@ -38,7 +38,8 @@ type Order = {
   statement_number: string
   sale_date: string
   due_date?: string | null
-  client_id: string
+  client_id?: string | null
+  manual_client_name?: string | null
   status: 'draft' | 'confirmed' | 'cancelled'
   payment_status: 'unpaid' | 'partial' | 'paid'
   vat_rate: number
@@ -66,11 +67,12 @@ type Payload = {
 type DraftItem = { sales_variant_id: string; quantity: string; unit_price: string }
 type OrderDraft = { sale_date: string; client_id: string; status: 'draft' | 'confirmed'; vat_rate: string; note: string; items: DraftItem[] }
 type OtherDraftItem = { product_name: string; quantity: string; unit: string; unit_price: string }
-type OtherDraft = { sale_date: string; client_id: string; vat_applied: boolean; note: string; items: OtherDraftItem[] }
+type OtherDraft = { sale_date: string; customer_name: string; vat_applied: boolean; note: string; items: OtherDraftItem[] }
 
 const inputClass = 'w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-50'
 const secondaryButton = 'rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-slate-500 hover:text-white disabled:opacity-40'
 const primaryButton = 'rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40'
+const redButton = 'rounded-lg border border-red-400/50 bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 hover:bg-red-500/20 disabled:opacity-40'
 
 function todayKst() { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date()) }
 function monthNow() { return todayKst().slice(0, 7) }
@@ -98,10 +100,13 @@ function paymentLabel(value: Order['payment_status']) { return value === 'paid' 
 function escapeHtml(value: unknown) { return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;') }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="block text-sm text-slate-300"><span className="mb-1.5 block">{label}</span>{children}</label> }
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) { return <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/75 p-4"><div className="max-h-[94vh] w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-700 bg-[#0f1b2d] shadow-2xl"><div className="flex items-center justify-between border-b border-slate-700 px-6 py-4"><h2 className="text-xl font-black">{title}</h2><button type="button" onClick={onClose} className={secondaryButton}>닫기</button></div><div className="max-h-[calc(94vh-78px)] overflow-y-auto p-6">{children}</div></div></div> }
-function Summary({ label, value, note, tone = 'default' }: { label: string; value: string; note?: string; tone?: 'default' | 'success' | 'warning' }) { const cls = tone === 'success' ? 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-100' : tone === 'warning' ? 'border-amber-500/30 bg-amber-500/[0.06] text-amber-100' : 'border-slate-700 bg-slate-900/60 text-white'; return <div className={`rounded-2xl border p-5 ${cls}`}><div className="text-xs font-black uppercase tracking-[0.12em] opacity-60">{label}</div><div className="mt-2 text-2xl font-black">{value}</div>{note && <div className="mt-1 text-xs opacity-60">{note}</div>}</div> }
+function Summary({ label, value, note, tone = 'default' }: { label: string; value: string; note?: string; tone?: 'default' | 'success' | 'warning' }) {
+  const cls = tone === 'success' ? 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-100' : tone === 'warning' ? 'border-amber-500/30 bg-amber-500/[0.06] text-amber-100' : 'border-slate-700 bg-slate-900/60 text-white'
+  return <div className={`rounded-2xl border p-5 ${cls}`}><div className="text-xs font-black uppercase tracking-[0.12em] opacity-60">{label}</div><div className="mt-2 text-2xl font-black">{value}</div>{note && <div className="mt-1 text-xs opacity-60">{note}</div>}</div>
+}
 
 function emptyDraft(): OrderDraft { return { sale_date: todayKst(), client_id: '', status: 'confirmed', vat_rate: '10', note: '', items: [] } }
-function emptyOtherDraft(): OtherDraft { return { sale_date: todayKst(), client_id: '', vat_applied: true, note: '', items: [{ product_name: '', quantity: '1', unit: '개', unit_price: '0' }] } }
+function emptyOtherDraft(): OtherDraft { return { sale_date: todayKst(), customer_name: '', vat_applied: true, note: '', items: [{ product_name: '', quantity: '1', unit: '개', unit_price: '0' }] } }
 function sourceKind(row: Order): 'product' | 'export' | 'other' {
   const source = String(row.source_type || 'MANUAL').toUpperCase()
   if (source === 'EXPORT') return 'export'
@@ -118,7 +123,7 @@ function KindBadge({ kind }: { kind: 'product' | 'export' | 'other' }) {
   return <span className={`inline-flex min-w-[44px] items-center justify-center rounded-full border px-2 py-1 text-[11px] font-black ${style}`}>{label}</span>
 }
 
-export default function SalesOrderV4Module({ mode = 'sales' }: { mode?: 'sales' | 'statements' }) {
+export default function SalesOrderV4Module({ mode: _mode = 'sales' }: { mode?: 'sales' | 'statements' }) {
   const [month, setMonth] = useState(monthNow())
   const [data, setData] = useState<Payload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -159,6 +164,12 @@ export default function SalesOrderV4Module({ mode = 'sales' }: { mode?: 'sales' 
   const variantById = useMemo(() => new Map(variants.map((row) => [row.id, row])), [variants])
   const clientById = useMemo(() => new Map(clients.map((row) => [row.id, row])), [clients])
   const termByKey = useMemo(() => new Map(terms.map((row) => [`${row.client_id}:${row.variant_id}`, row])), [terms])
+
+  function customerName(row: Order) {
+    return sourceKind(row) === 'other'
+      ? String(row.manual_client_name || '').trim() || '-'
+      : clientById.get(String(row.client_id || ''))?.company_name || '-'
+  }
 
   function pricing(clientId: string, variantId: string) {
     const variant = variantById.get(variantId)
@@ -207,7 +218,7 @@ export default function SalesOrderV4Module({ mode = 'sales' }: { mode?: 'sales' 
 
   function openNewOther() {
     setOtherEditingId('')
-    setOtherDraft({ ...emptyOtherDraft(), client_id: firstActiveClient() })
+    setOtherDraft(emptyOtherDraft())
     setOtherModal(true)
     setError('')
   }
@@ -226,7 +237,7 @@ export default function SalesOrderV4Module({ mode = 'sales' }: { mode?: 'sales' 
       setOtherEditingId(row.id)
       setOtherDraft({
         sale_date: row.sale_date,
-        client_id: row.client_id,
+        customer_name: String(row.manual_client_name || ''),
         vat_applied: Number(row.vat_rate || 0) > 0,
         note: row.note ?? '',
         items: row.items.map((item) => ({
@@ -245,7 +256,7 @@ export default function SalesOrderV4Module({ mode = 'sales' }: { mode?: 'sales' 
       return
     }
     setEditingId(row.id)
-    setDraft({ sale_date: row.sale_date, client_id: row.client_id, status: row.status === 'draft' ? 'draft' : 'confirmed', vat_rate: String(row.vat_rate), note: row.note ?? '', items: row.items.map((item) => ({ sales_variant_id: item.sales_variant_id || '', quantity: String(item.quantity), unit_price: String(item.unit_price) })) })
+    setDraft({ sale_date: row.sale_date, client_id: String(row.client_id || ''), status: row.status === 'draft' ? 'draft' : 'confirmed', vat_rate: String(row.vat_rate), note: row.note ?? '', items: row.items.map((item) => ({ sales_variant_id: item.sales_variant_id || '', quantity: String(item.quantity), unit_price: String(item.unit_price) })) })
     setModal(true)
     setError('')
   }
@@ -276,13 +287,13 @@ export default function SalesOrderV4Module({ mode = 'sales' }: { mode?: 'sales' 
   }
 
   async function saveOtherOrder() {
-    if (!otherDraft.client_id) { setError('거래처를 선택해 주세요.'); return }
+    if (!otherDraft.customer_name.trim()) { setError('거래처를 입력해 주세요.'); return }
     if (!otherDraft.items.length) { setError('상품을 한 개 이상 입력해 주세요.'); return }
     setSaving(true); setError(''); setNotice('')
     try {
       await postOther({
         sale_date: otherDraft.sale_date,
-        client_id: otherDraft.client_id,
+        customer_name: otherDraft.customer_name,
         vat_applied: otherDraft.vat_applied,
         note: otherDraft.note,
         items: otherDraft.items.map((item) => ({ product_name: item.product_name, quantity: Number(item.quantity), unit: item.unit, unit_price: Number(item.unit_price) })),
@@ -309,11 +320,10 @@ export default function SalesOrderV4Module({ mode = 'sales' }: { mode?: 'sales' 
   }
 
   function printStatement(row: Order) {
-    const client = clientById.get(row.client_id)
     const lines = row.items.map((item, index) => `<tr><td>${index + 1}</td><td class="left">${escapeHtml(item.product_name)}</td><td>${escapeHtml(item.sales_variant_name || item.specification || '-')}</td><td>${escapeHtml(qty(item.quantity))}</td><td>${escapeHtml(unitLabel(item.unit))}</td><td class="money">${escapeHtml(money(item.unit_price))}</td><td class="money">${escapeHtml(money(item.supply_amount))}</td></tr>`).join('')
     const popup = window.open('', '_blank', 'width=1100,height=850')
     if (!popup) { setError('팝업이 차단되어 거래명세표를 열지 못했습니다.'); return }
-    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>거래명세표</title><style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;color:#111}h1{text-align:center}.party,.items,.totals{width:100%;border-collapse:collapse;margin-bottom:14px}.party th,.party td,.items th,.items td,.totals th,.totals td{border:1px solid #222;padding:7px;font-size:12px}.items td{text-align:center}.left{text-align:left!important}.money{text-align:right!important}.totals{width:45%;margin-left:auto}</style></head><body><h1>거 래 명 세 표</h1><p>거래일: <b>${escapeHtml(row.sale_date)}</b>${row.due_date ? ` / 입금예정일: <b>${escapeHtml(row.due_date)}</b>` : ''}</p><table class="party"><tr><th>공급자</th><td>두배</td><th>사업자번호</th><td>123-38-14284</td></tr><tr><th>공급받는 자</th><td>${escapeHtml(client?.company_name || '-')}</td><th>비고</th><td>${escapeHtml(row.note || '-')}</td></tr></table><table class="items"><thead><tr><th>No.</th><th>품목</th><th>판매규격</th><th>수량</th><th>단위</th><th>단가</th><th>공급가액</th></tr></thead><tbody>${lines}</tbody></table><table class="totals"><tr><th>공급가액</th><td class="money">${escapeHtml(money(row.supply_amount))}</td></tr><tr><th>부가세</th><td class="money">${escapeHtml(money(row.vat_amount))}</td></tr><tr><th>합계</th><td class="money"><b>${escapeHtml(money(row.total_amount))}</b></td></tr></table><script>window.onload=()=>window.print()</script></body></html>`)
+    popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>거래명세표</title><style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;color:#111}h1{text-align:center}.party,.items,.totals{width:100%;border-collapse:collapse;margin-bottom:14px}.party th,.party td,.items th,.items td,.totals th,.totals td{border:1px solid #222;padding:7px;font-size:12px}.items td{text-align:center}.left{text-align:left!important}.money{text-align:right!important}.totals{width:45%;margin-left:auto}</style></head><body><h1>거 래 명 세 표</h1><p>거래일: <b>${escapeHtml(row.sale_date)}</b>${row.due_date ? ` / 입금예정일: <b>${escapeHtml(row.due_date)}</b>` : ''}</p><table class="party"><tr><th>공급자</th><td>두배</td><th>사업자번호</th><td>123-38-14284</td></tr><tr><th>공급받는 자</th><td>${escapeHtml(customerName(row))}</td><th>비고</th><td>${escapeHtml(row.note || '-')}</td></tr></table><table class="items"><thead><tr><th>No.</th><th>품목</th><th>판매규격</th><th>수량</th><th>단위</th><th>단가</th><th>공급가액</th></tr></thead><tbody>${lines}</tbody></table><table class="totals"><tr><th>공급가액</th><td class="money">${escapeHtml(money(row.supply_amount))}</td></tr><tr><th>부가세</th><td class="money">${escapeHtml(money(row.vat_amount))}</td></tr><tr><th>합계</th><td class="money"><b>${escapeHtml(money(row.total_amount))}</b></td></tr></table><script>window.onload=()=>window.print()</script></body></html>`)
     popup.document.close()
   }
 
@@ -338,7 +348,7 @@ export default function SalesOrderV4Module({ mode = 'sales' }: { mode?: 'sales' 
     <section className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-900/55"><div className="border-b border-slate-700 p-5"><h2 className="text-xl font-black">명세표 출력 목록</h2><p className="mt-1 text-sm text-slate-400">일반 제품·기타 상품 판매는 여기서 수정·삭제하고, 수출 판매건은 원본 수출서류에서 수정합니다.</p></div><div className="overflow-x-auto"><table className="min-w-[1180px] w-full text-sm"><thead className="bg-slate-800 text-slate-400"><tr><th className="w-[68px] px-2 py-3 text-center">구분</th>{['판매일', '거래처', '판매 kg', '공급가액', '부가세', '합계', '수금상태', '입금예정일', '관리'].map((label) => <th key={label} className="px-4 py-3 text-left">{label}</th>)}</tr></thead><tbody>{visibleOrders.map((row) => {
       const kind = sourceKind(row)
       const totalKg = row.items.reduce((sum, item) => sum + Number(item.quantity_kg || 0), 0)
-      return <tr key={row.id} className="border-t border-slate-800"><td className="px-2 py-4 text-center"><KindBadge kind={kind} /></td><td className="px-4 py-4">{row.sale_date}</td><td className="px-4 py-4 font-bold">{clientById.get(row.client_id)?.company_name || '-'}</td><td className="px-4 py-4">{kind === 'other' ? <span className="text-slate-500">-</span> : `${qty(totalKg)}kg`}</td><td className="px-4 py-4">{orderMoney(row, row.supply_amount)}</td><td className="px-4 py-4">{orderMoney(row, row.vat_amount)}</td><td className="px-4 py-4 font-black text-emerald-200">{orderMoney(row, row.total_amount)}</td><td className="px-4 py-4"><button type="button" onClick={() => window.location.href = '/business-management?tab=sales-management&view=receivables'} className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:border-blue-500">{paymentLabel(row.payment_status)}{row.posted_receipt_amount > 0 ? ` · ${orderMoney(row, row.posted_receipt_amount)}` : ''}</button></td><td className="px-4 py-4">{row.due_date || <span className="text-slate-500">미설정</span>}</td><td className="px-4 py-4 whitespace-nowrap"><button type="button" onClick={() => printOrder(row)} className="mr-3 underline">출력</button>{kind === 'export' ? <button type="button" onClick={() => window.location.href = `/sales-management/export/documents?edit=${encodeURIComponent(String(row.source_reference))}`} className="rounded-lg border border-blue-400/50 bg-blue-500/10 px-3 py-1.5 text-xs font-black text-blue-300 hover:bg-blue-500/20">수출서류 수정</button> : <><button type="button" onClick={() => openEdit(row)} disabled={row.financial_locked} className="mr-3 underline disabled:opacity-30">수정</button><button type="button" onClick={() => { if (row.financial_locked) { setError('실제 입금이 등록된 판매건은 먼저 입금을 취소해야 삭제할 수 있습니다.'); return } setCancelOrderId(row.id); setCancelReason('거래명세표 목록에서 삭제') }} disabled={row.financial_locked} className="underline disabled:opacity-30">삭제</button></>}</td></tr>
+      return <tr key={row.id} className="border-t border-slate-800"><td className="px-2 py-4 text-center"><KindBadge kind={kind} /></td><td className="px-4 py-4">{row.sale_date}</td><td className="px-4 py-4 font-bold">{customerName(row)}</td><td className="px-4 py-4">{kind === 'other' ? <span className="text-slate-500">-</span> : `${qty(totalKg)}kg`}</td><td className="px-4 py-4">{orderMoney(row, row.supply_amount)}</td><td className="px-4 py-4">{orderMoney(row, row.vat_amount)}</td><td className="px-4 py-4 font-black text-emerald-200">{orderMoney(row, row.total_amount)}</td><td className="px-4 py-4"><button type="button" onClick={() => window.location.href = '/business-management?tab=sales-management&view=receivables'} className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:border-blue-500">{paymentLabel(row.payment_status)}{row.posted_receipt_amount > 0 ? ` · ${orderMoney(row, row.posted_receipt_amount)}` : ''}</button></td><td className="px-4 py-4">{row.due_date || <span className="text-slate-500">미설정</span>}</td><td className="px-4 py-4 whitespace-nowrap"><button type="button" onClick={() => printOrder(row)} className="mr-3 underline">출력</button>{kind === 'export' ? <button type="button" onClick={() => window.location.href = `/sales-management/export/documents?edit=${encodeURIComponent(String(row.source_reference))}`} className="rounded-lg border border-blue-400/50 bg-blue-500/10 px-3 py-1.5 text-xs font-black text-blue-300 hover:bg-blue-500/20">수출서류 수정</button> : <><button type="button" onClick={() => openEdit(row)} disabled={row.financial_locked} className="mr-3 underline disabled:opacity-30">수정</button><button type="button" onClick={() => { if (row.financial_locked) { setError('실제 입금이 등록된 판매건은 먼저 입금을 취소해야 삭제할 수 있습니다.'); return } setCancelOrderId(row.id); setCancelReason('거래명세표 목록에서 삭제') }} disabled={row.financial_locked} className="underline disabled:opacity-30">삭제</button></>}</td></tr>
     })}{!visibleOrders.length && <tr><td colSpan={10} className="px-5 py-14 text-center text-slate-500">조회 월에 등록된 판매가 없습니다.</td></tr>}</tbody></table></div></section>
   </div>
 
@@ -347,8 +357,8 @@ export default function SalesOrderV4Module({ mode = 'sales' }: { mode?: 'sales' 
     <div className="mt-5 grid gap-3 sm:grid-cols-3"><Summary label="공급가액" value={money(draftSupply)} /><Summary label="부가세" value={money(draftVat)} /><Summary label="합계" value={money(draftSupply + draftVat)} tone="success" /></div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setModal(false)} className={secondaryButton}>취소</button><button type="button" disabled={saving} onClick={() => void saveOrder()} className={primaryButton}>{saving ? '저장 중...' : '저장'}</button></div>
   </Modal>}
 
-  {otherModal && <Modal title={otherEditingId ? '기타 상품 판매 수정' : '기타 상품 판매'} onClose={() => setOtherModal(false)}><div className="grid gap-4 md:grid-cols-3"><Field label="판매일"><input type="date" value={otherDraft.sale_date} onChange={(e) => setOtherDraft((current) => ({ ...current, sale_date: e.target.value }))} className={inputClass} /></Field><Field label="거래처"><select value={otherDraft.client_id} onChange={(e) => setOtherDraft((current) => ({ ...current, client_id: e.target.value }))} className={inputClass}><option value="">선택</option>{clients.filter((row) => row.status === 'active').map((row) => <option key={row.id} value={row.id}>{row.company_name}</option>)}</select></Field><Field label="VAT"><select value={otherDraft.vat_applied ? 'applied' : 'none'} onChange={(e) => setOtherDraft((current) => ({ ...current, vat_applied: e.target.value === 'applied' }))} className={inputClass}><option value="applied">VAT 적용</option><option value="none">VAT 미적용</option></select></Field></div><div className="mt-4"><Field label="비고"><input value={otherDraft.note} onChange={(e) => setOtherDraft((current) => ({ ...current, note: e.target.value }))} className={inputClass} /></Field></div>
-    <div className="mt-6 overflow-hidden rounded-2xl border border-slate-700"><div className="flex items-center justify-between bg-slate-800 px-4 py-3"><div><b>상품 입력</b><div className="mt-1 text-xs text-slate-400">제품 마스터·재고와 연결되지 않는 판매입니다.</div></div><button type="button" onClick={addOtherItem} className={secondaryButton}>+ 상품 추가</button></div><div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead className="bg-slate-900 text-slate-500"><tr><th className="px-3 py-3 text-left">상품명</th><th className="px-3 py-3 text-left">수량</th><th className="px-3 py-3 text-left">단위</th><th className="px-3 py-3 text-left">단가</th><th className="px-3 py-3 text-left">공급가액</th><th className="px-3 py-3"></th></tr></thead><tbody>{otherDraft.items.map((item, index) => <tr key={index} className="border-t border-slate-800"><td className="px-3 py-3"><input value={item.product_name} onChange={(e) => patchOtherItem(index, { product_name: e.target.value })} placeholder="상품명 직접 입력" className={`${inputClass} min-w-[260px]`} /></td><td className="px-3 py-3"><input type="number" min="0" step="0.001" value={item.quantity} onChange={(e) => patchOtherItem(index, { quantity: e.target.value })} className={`${inputClass} w-28`} /></td><td className="px-3 py-3"><input value={item.unit} onChange={(e) => patchOtherItem(index, { unit: e.target.value })} placeholder="개, BOX 등" className={`${inputClass} w-28`} /></td><td className="px-3 py-3"><input type="number" min="0" value={item.unit_price} onChange={(e) => patchOtherItem(index, { unit_price: e.target.value })} className={`${inputClass} w-36`} /></td><td className="px-3 py-3"><input value={money(otherLineAmount(item))} readOnly className={`${inputClass} w-40 font-black text-emerald-200`} /></td><td className="px-3 py-3"><button type="button" onClick={() => removeOtherItem(index)} className="text-red-300 underline">삭제</button></td></tr>)}{!otherDraft.items.length && <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-500">상품을 추가해 주세요.</td></tr>}</tbody></table></div></div>
+  {otherModal && <Modal title={otherEditingId ? '기타 상품 판매 수정' : '기타 상품 판매'} onClose={() => setOtherModal(false)}><div className="grid gap-4 md:grid-cols-3"><Field label="판매일"><input type="date" value={otherDraft.sale_date} onChange={(e) => setOtherDraft((current) => ({ ...current, sale_date: e.target.value }))} className={inputClass} /></Field><Field label="거래처"><input value={otherDraft.customer_name} onChange={(e) => setOtherDraft((current) => ({ ...current, customer_name: e.target.value }))} placeholder="거래처 직접 입력" autoComplete="off" className={inputClass} /></Field><Field label="VAT"><select value={otherDraft.vat_applied ? 'applied' : 'none'} onChange={(e) => setOtherDraft((current) => ({ ...current, vat_applied: e.target.value === 'applied' }))} className={inputClass}><option value="applied">VAT 적용</option><option value="none">VAT 미적용</option></select></Field></div><div className="mt-4"><Field label="비고"><input value={otherDraft.note} onChange={(e) => setOtherDraft((current) => ({ ...current, note: e.target.value }))} className={inputClass} /></Field></div>
+    <div className="mt-6 overflow-hidden rounded-2xl border border-slate-700"><div className="flex items-center justify-between bg-slate-800 px-4 py-3"><div><b>상품 입력</b><div className="mt-1 text-xs text-slate-400">제품 마스터·거래처 마스터·재고와 연결되지 않는 독립 판매입니다.</div></div><button type="button" onClick={addOtherItem} className={secondaryButton}>+ 상품 추가</button></div><div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead className="bg-slate-900 text-slate-500"><tr><th className="px-3 py-3 text-left">상품명</th><th className="px-3 py-3 text-left">수량</th><th className="px-3 py-3 text-left">단위</th><th className="px-3 py-3 text-left">단가</th><th className="px-3 py-3 text-left">공급가액</th><th className="w-[92px] px-3 py-3"></th></tr></thead><tbody>{otherDraft.items.map((item, index) => <tr key={index} className="border-t border-slate-800"><td className="px-3 py-3"><input value={item.product_name} onChange={(e) => patchOtherItem(index, { product_name: e.target.value })} placeholder="상품명 직접 입력" className={`${inputClass} min-w-[260px]`} /></td><td className="px-3 py-3"><input type="number" min="0" step="0.001" value={item.quantity} onChange={(e) => patchOtherItem(index, { quantity: e.target.value })} className={`${inputClass} w-28`} /></td><td className="px-3 py-3"><input value={item.unit} onChange={(e) => patchOtherItem(index, { unit: e.target.value })} placeholder="개, BOX 등" className={`${inputClass} w-28`} /></td><td className="px-3 py-3"><input type="number" min="0" value={item.unit_price} onChange={(e) => patchOtherItem(index, { unit_price: e.target.value })} className={`${inputClass} w-36`} /></td><td className="px-3 py-3"><input value={money(otherLineAmount(item))} readOnly className={`${inputClass} w-40 font-black text-emerald-200`} /></td><td className="px-3 py-3 text-center"><button type="button" onClick={() => removeOtherItem(index)} className={redButton}>삭제</button></td></tr>)}{!otherDraft.items.length && <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-500">상품을 추가해 주세요.</td></tr>}</tbody></table></div></div>
     <div className="mt-5 grid gap-3 sm:grid-cols-3"><Summary label="공급가액" value={money(otherSupply)} /><Summary label="부가세" value={money(otherVat)} /><Summary label="합계" value={money(otherSupply + otherVat)} tone="success" /></div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setOtherModal(false)} className={secondaryButton}>취소</button><button type="button" disabled={saving} onClick={() => void saveOtherOrder()} className={primaryButton}>{saving ? '저장 중...' : '저장'}</button></div>
   </Modal>}
 
