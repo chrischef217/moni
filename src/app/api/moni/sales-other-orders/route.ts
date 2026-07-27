@@ -85,18 +85,9 @@ function prepareOtherItems(rawItems: unknown) {
 
 async function saveOtherOrder(client: ReturnType<typeof createMoniServiceRoleClient>, id: string, data: Record<string, unknown>) {
   const saleDate = text(data.sale_date) || todayKst()
-  const clientId = text(data.client_id)
+  const customerName = text(data.customer_name)
   if (!validDate(saleDate)) throw new Error('판매일자를 확인해 주세요.')
-  if (!clientId) throw new Error('거래처를 선택해 주세요.')
-
-  const clientResult = await client
-    .from('sales_clients')
-    .select('id,status')
-    .eq('id', clientId)
-    .eq('business_id', BUSINESS_ID)
-    .single()
-  if (clientResult.error) throw new Error('거래처를 확인해 주세요.')
-  if (text(clientResult.data.status) !== 'active') throw new Error('현재 거래 중지된 거래처입니다.')
+  if (!customerName) throw new Error('거래처를 입력해 주세요.')
 
   if (id && (await postedReceiptTotal(client, id)) > 0) {
     throw new Error('이미 실제 입금이 등록된 상품 판매건은 수정할 수 없습니다. 입금을 먼저 확인해 주세요.')
@@ -108,16 +99,6 @@ async function saveOtherOrder(client: ReturnType<typeof createMoniServiceRoleCli
   const vatRate = vatApplied ? 10 : 0
   const vatAmount = money(supplyAmount * vatRate / 100)
   const totalAmount = money(supplyAmount + vatAmount)
-
-  const peopleResult = await client
-    .from('sales_client_people')
-    .select('person_id,is_primary')
-    .eq('client_id', clientId)
-    .eq('active', true)
-    .order('is_primary', { ascending: false })
-    .limit(1)
-  if (peopleResult.error) throw new Error(peopleResult.error.message)
-  const primaryPersonId = text(peopleResult.data?.[0]?.person_id) || null
 
   let order: Record<string, unknown>
   if (id) {
@@ -141,10 +122,12 @@ async function saveOtherOrder(client: ReturnType<typeof createMoniServiceRoleCli
       .from('sales_orders')
       .update({
         sale_date: saleDate,
-        client_id: clientId,
-        assigned_person_id: primaryPersonId,
+        client_id: null,
+        manual_client_name: customerName,
+        assigned_person_id: null,
         status: 'confirmed',
         payment_status: 'unpaid',
+        due_date: null,
         vat_rate: vatRate,
         supply_amount: supplyAmount,
         vat_amount: vatAmount,
@@ -174,10 +157,12 @@ async function saveOtherOrder(client: ReturnType<typeof createMoniServiceRoleCli
         business_id: BUSINESS_ID,
         statement_number: statementNumber,
         sale_date: saleDate,
-        client_id: clientId,
-        assigned_person_id: primaryPersonId,
+        client_id: null,
+        manual_client_name: customerName,
+        assigned_person_id: null,
         status: 'confirmed',
         payment_status: 'unpaid',
+        due_date: null,
         vat_rate: vatRate,
         supply_amount: supplyAmount,
         vat_amount: vatAmount,
