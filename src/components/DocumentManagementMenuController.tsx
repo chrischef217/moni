@@ -38,6 +38,7 @@ function createDocumentMenu() {
   const categoryButton = document.createElement('button')
   categoryButton.type = 'button'
   categoryButton.setAttribute('data-moni-global-nav', 'true')
+  categoryButton.setAttribute('aria-expanded', 'false')
   categoryButton.className = 'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition'
   categoryButton.innerHTML = `
     <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800" aria-hidden="true">▧</span>
@@ -63,22 +64,13 @@ function createDocumentMenu() {
 
   const setExpanded = (expanded: boolean) => {
     submenuGrid.className = `grid transition-all duration-300 ease-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`
+    categoryButton.setAttribute('aria-expanded', String(expanded))
     const arrow = categoryButton.lastElementChild
     if (arrow instanceof HTMLElement) arrow.classList.toggle('rotate-180', expanded)
   }
 
-  root.addEventListener('mouseenter', () => {
-    if (window.innerWidth >= 1024) setExpanded(true)
-  })
-  root.addEventListener('mouseleave', () => {
-    if (window.innerWidth >= 1024) setExpanded(false)
-  })
   categoryButton.addEventListener('click', () => {
-    if (window.innerWidth < 1024) {
-      setExpanded(!submenuGrid.className.includes('grid-rows-[1fr]'))
-      return
-    }
-    navigate('official')
+    setExpanded(categoryButton.getAttribute('aria-expanded') !== 'true')
   })
 
   return root
