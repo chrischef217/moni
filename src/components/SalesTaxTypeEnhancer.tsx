@@ -37,6 +37,10 @@ function nativeSetInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+function setStyle(element: HTMLElement, property: string, value: string) {
+  if (element.style.getPropertyValue(property) !== value) element.style.setProperty(property, value)
+}
+
 export default function SalesTaxTypeEnhancer({ initialView }: { initialView: string }) {
   useEffect(() => {
     if (initialView !== 'clients' && initialView !== 'sales') return
@@ -44,6 +48,7 @@ export default function SalesTaxTypeEnhancer({ initialView }: { initialView: str
     let disposed = false
     let selectedTaxType: TaxType = 'TAXABLE'
     let exportLocked = false
+    let enhancementFrame: number | null = null
     const clientsById = new Map<string, ClientRow>()
     const clientsByName = new Map<string, ClientRow>()
     const originalFetch = window.fetch.bind(window)
@@ -83,20 +88,21 @@ export default function SalesTaxTypeEnhancer({ initialView }: { initialView: str
         const value = button.dataset.taxType as TaxType
         const selected = value === selectedTaxType
         const locked = exportLocked && value === 'TAXABLE'
-        button.disabled = locked
-        button.style.background = selected ? '#16b981' : '#ffffff'
-        button.style.color = selected ? '#ffffff' : locked ? '#9aaab4' : '#29485a'
-        button.style.borderColor = selected ? '#16b981' : '#c9dbe5'
-        button.style.opacity = locked ? '0.55' : '1'
-        button.style.cursor = locked ? 'not-allowed' : 'pointer'
+        if (button.disabled !== locked) button.disabled = locked
+        setStyle(button, 'background', selected ? '#16b981' : '#ffffff')
+        setStyle(button, 'color', selected ? '#ffffff' : locked ? '#9aaab4' : '#29485a')
+        setStyle(button, 'border-color', selected ? '#16b981' : '#c9dbe5')
+        setStyle(button, 'opacity', locked ? '0.55' : '1')
+        setStyle(button, 'cursor', locked ? 'not-allowed' : 'pointer')
       }
       const note = control.querySelector<HTMLElement>('[data-tax-helper]')
       if (note) {
-        note.textContent = exportLocked
+        const nextText = exportLocked
           ? '수출처 관리에서 연동된 거래처는 면세사업자(수출포함)로 고정되며 거래명세표 VAT는 항상 0%입니다.'
           : selectedTaxType === 'EXEMPT'
             ? '면세사업자는 판매·거래명세표 작성 시 VAT가 자동으로 0% 적용됩니다.'
             : '과세사업자는 판매 등록 시 설정된 부가세율이 적용됩니다.'
+        if (note.textContent !== nextText) note.textContent = nextText
       }
     }
 
@@ -161,10 +167,12 @@ export default function SalesTaxTypeEnhancer({ initialView }: { initialView: str
           helper.style.fontWeight = '700'
           vatField.appendChild(helper)
         }
-        helper.style.color = exempt ? '#16825d' : '#718895'
-        helper.textContent = exempt
+        const nextColor = exempt ? '#16825d' : '#718895'
+        const nextText = exempt
           ? '면세사업자(수출포함) · VAT 0% 자동 적용'
           : '과세사업자 · 부가세율 적용'
+        if (helper.style.color !== nextColor) helper.style.color = nextColor
+        if (helper.textContent !== nextText) helper.textContent = nextText
       }
 
       if (clientSelect.dataset.salesTaxTypeBound !== 'true') {
@@ -172,6 +180,18 @@ export default function SalesTaxTypeEnhancer({ initialView }: { initialView: str
         clientSelect.addEventListener('change', () => window.setTimeout(apply, 0))
       }
       apply()
+    }
+
+    const runEnhancement = () => {
+      enhancementFrame = null
+      if (disposed) return
+      injectClientTaxControl()
+      enhanceSalesVat()
+    }
+
+    const scheduleEnhancement = () => {
+      if (enhancementFrame !== null) return
+      enhancementFrame = window.requestAnimationFrame(runEnhancement)
     }
 
     const clickCapture = (event: MouseEvent) => {
@@ -182,14 +202,14 @@ export default function SalesTaxTypeEnhancer({ initialView }: { initialView: str
       if (label === '+ 거래처 등록') {
         selectedTaxType = 'TAXABLE'
         exportLocked = false
-        window.setTimeout(injectClientTaxControl, 0)
+        window.setTimeout(scheduleEnhancement, 0)
         return
       }
       if (label !== '수정') return
       const row = button.closest('tr')
       const name = text(row?.querySelectorAll('td')?.[1]?.textContent)
       setSelectedFromRow(clientsByName.get(name))
-      window.setTimeout(injectClientTaxControl, 0)
+      window.setTimeout(scheduleEnhancement, 0)
     }
 
     document.addEventListener('click', clickCapture, true)
@@ -223,20 +243,16 @@ export default function SalesTaxTypeEnhancer({ initialView }: { initialView: str
       }) as typeof window.fetch
     }
 
-    const observer = new MutationObserver(() => {
-      injectClientTaxControl()
-      enhanceSalesVat()
-    })
+    const observer = new MutationObserver(scheduleEnhancement)
     observer.observe(document.body, { childList: true, subtree: true })
     void loadClients().finally(() => {
-      if (disposed) return
-      injectClientTaxControl()
-      enhanceSalesVat()
+      if (!disposed) scheduleEnhancement()
     })
 
     return () => {
       disposed = true
       observer.disconnect()
+      if (enhancementFrame !== null) window.cancelAnimationFrame(enhancementFrame)
       document.removeEventListener('click', clickCapture, true)
       if (initialView === 'clients') window.fetch = originalFetch as typeof window.fetch
     }
