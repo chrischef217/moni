@@ -67,6 +67,8 @@ export default function GlobalSidebarLayoutController() {
       window.setTimeout(() => scheduleApply(), 80)
     }
 
+    const handleResize = () => scheduleApply()
+
     const handleStorage = (event: StorageEvent) => {
       if (!event.key || event.key === PIN_STORAGE_KEY) scheduleApply()
     }
@@ -82,7 +84,7 @@ export default function GlobalSidebarLayoutController() {
 
     const retryTimers = [50, 200, 600, 1200].map((delay) => window.setTimeout(attachPinObserver, delay))
     document.addEventListener('click', handlePinClick, true)
-    window.addEventListener('resize', scheduleApply)
+    window.addEventListener('resize', handleResize)
     window.addEventListener('storage', handleStorage)
 
     return () => {
@@ -91,7 +93,7 @@ export default function GlobalSidebarLayoutController() {
       pinObserver?.disconnect()
       shellObserver?.disconnect()
       document.removeEventListener('click', handlePinClick, true)
-      window.removeEventListener('resize', scheduleApply)
+      window.removeEventListener('resize', handleResize)
       window.removeEventListener('storage', handleStorage)
       const appContent = document.querySelector<HTMLElement>('[data-moni-app-content]')
       appContent?.classList.remove('moni-global-sidebar-active', 'moni-sidebar-offset-active')
