@@ -129,32 +129,46 @@ function clearCorrection(element: HTMLElement) {
   delete element.dataset.moniContrastCorrected
 }
 
+function applyCorrection(element: HTMLElement, background: Rgba) {
+  const nextColor = suitableDarkText(background)
+  if (element.style.getPropertyValue(COLOR_VARIABLE) !== nextColor) {
+    element.style.setProperty(COLOR_VARIABLE, nextColor)
+  }
+  if (!element.classList.contains(CORRECTED_CLASS)) element.classList.add(CORRECTED_CLASS)
+  if (element.dataset.moniContrastCorrected !== 'true') element.dataset.moniContrastCorrected = 'true'
+}
+
 function auditElement(element: HTMLElement) {
   if (!element.isConnected || !isButtonLike(element)) return
 
-  const style = window.getComputedStyle(element)
-  const text = parseColor(style.color)
-  if (!text) return
-
   const background = renderedBackground(element)
   const backgroundLuminance = luminance(background)
+  const alreadyCorrected = element.dataset.moniContrastCorrected === 'true'
+
+  // Once corrected, judge only the surface. The corrected dark text itself must
+  // not be mistaken for the original text and removed on the next audit pass.
+  if (alreadyCorrected) {
+    if (backgroundLuminance < 0.52) {
+      clearCorrection(element)
+      return
+    }
+    applyCorrection(element, background)
+    return
+  }
+
+  const text = parseColor(window.getComputedStyle(element).color)
+  if (!text) return
+
   const textLuminance = luminance(text)
   const ratio = contrastRatio(text, background)
 
-  // Preserve white text on genuinely dark buttons. Only correct light surfaces
+  // Preserve white text on genuinely dark buttons. Correct only light surfaces
   // where white or near-white text fails normal readable contrast.
   const needsCorrection = backgroundLuminance >= 0.52
     && textLuminance >= 0.72
     && ratio < 4.5
 
-  if (!needsCorrection) {
-    if (element.dataset.moniContrastCorrected === 'true') clearCorrection(element)
-    return
-  }
-
-  element.style.setProperty(COLOR_VARIABLE, suitableDarkText(background))
-  element.classList.add(CORRECTED_CLASS)
-  element.dataset.moniContrastCorrected = 'true'
+  if (needsCorrection) applyCorrection(element, background)
 }
 
 function auditAll() {
