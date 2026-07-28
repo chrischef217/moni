@@ -39,6 +39,7 @@ import './moni-sidebar-motion.css'
 import './production-dashboard-motion.css'
 import './moni-action-button-contrast.css'
 import './moni-export-statement-typography-fix.css'
+import './moni-export-document-table-balance.css'
 
 export const metadata: Metadata = {
   title: 'Moni — 경영 고민? 모니한테 물어봐',
