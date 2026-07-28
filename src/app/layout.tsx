@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import GlobalMoniSidebarRouteBoundary from '@/components/GlobalMoniSidebarRouteBoundary'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
+import GlobalInteractiveContrastController from '@/components/GlobalInteractiveContrastController'
 import SalesManagementMenuController from '@/components/SalesManagementMenuController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import SidebarSubmenuMotionController from '@/components/SidebarSubmenuMotionController'
@@ -123,6 +124,7 @@ export default async function RootLayout({
               <GlobalMoniSidebarRouteBoundary />
             </Suspense>
             <GlobalSidebarLayoutController />
+            <GlobalInteractiveContrastController />
             <SalesManagementMenuController />
             <SidebarPinToggleVisualFix />
             <SidebarSubmenuMotionController />
