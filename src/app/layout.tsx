@@ -6,6 +6,7 @@ import SalesManagementMenuController from '@/components/SalesManagementMenuContr
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import SidebarSubmenuMotionController from '@/components/SidebarSubmenuMotionController'
 import SidebarExportDestinationLabelController from '@/components/SidebarExportDestinationLabelController'
+import SidebarDashboardLabelController from '@/components/SidebarDashboardLabelController'
 import SidebarAdminMenuController from '@/components/SidebarAdminMenuController'
 import ModalNavigationDismissGuard from '@/components/ModalNavigationDismissGuard'
 import MoniWeatherShell from '@/components/MoniWeatherShell'
@@ -125,6 +126,7 @@ export default async function RootLayout({
             <SidebarPinToggleVisualFix />
             <SidebarSubmenuMotionController />
             <SidebarExportDestinationLabelController />
+            <SidebarDashboardLabelController />
             <SidebarAdminMenuController />
             <ModalNavigationDismissGuard />
             <Suspense fallback={null}>
