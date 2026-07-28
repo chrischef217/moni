@@ -121,26 +121,70 @@ function applyDocumentMenu() {
 export default function DocumentManagementMenuController() {
   useEffect(() => {
     let frame: number | null = null
+    let lastHref = window.location.href
+    const navigationTimers = new Set<number>()
+
+    const syncWorkspaceRoute = () => {
+      const nextHref = window.location.href
+      if (nextHref === lastHref) return
+      lastHref = nextHref
+      window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }))
+    }
+
     const schedule = () => {
       if (frame !== null) return
       frame = window.requestAnimationFrame(() => {
         frame = null
+        syncWorkspaceRoute()
         applyDocumentMenu()
       })
+    }
+
+    const handleSidebarNavigation = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null
+      if (!target?.closest('[data-moni-global-sidebar] [data-moni-global-nav]')) return
+      for (const delay of [0, 60, 180, 360]) {
+        const timer = window.setTimeout(() => {
+          navigationTimers.delete(timer)
+          schedule()
+        }, delay)
+        navigationTimers.add(timer)
+      }
     }
 
     applyDocumentMenu()
     const observer = new MutationObserver(schedule)
     observer.observe(document.body, { childList: true, subtree: true })
     window.addEventListener('popstate', schedule)
+    document.addEventListener('click', handleSidebarNavigation, true)
 
     return () => {
       observer.disconnect()
       if (frame !== null) window.cancelAnimationFrame(frame)
+      for (const timer of navigationTimers) window.clearTimeout(timer)
+      navigationTimers.clear()
       window.removeEventListener('popstate', schedule)
+      document.removeEventListener('click', handleSidebarNavigation, true)
       document.querySelectorAll(`[${MENU_ATTR}]`).forEach((node) => node.remove())
     }
   }, [])
 
-  return null
+  return (
+    <style jsx global>{`
+      [data-moni-app-content] [data-document-management-workspace] {
+        inset: 0 0 0 0 !important;
+        background:
+          radial-gradient(circle at 86% 0%, rgba(134, 207, 255, 0.22), transparent 30%),
+          linear-gradient(145deg, #f6fbff 0%, #e7f2fc 100%) !important;
+        background-color: #eef7fd !important;
+        isolation: isolate;
+      }
+
+      @media (min-width: 1024px) {
+        [data-moni-app-content].moni-sidebar-offset-active [data-document-management-workspace] {
+          left: var(--moni-sidebar-width, 264px) !important;
+        }
+      }
+    `}</style>
+  )
 }
