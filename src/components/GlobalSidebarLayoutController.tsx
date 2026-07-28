@@ -7,13 +7,15 @@ const SIDEBAR_WIDTH = 264
 function applySidebarLayout() {
   const appContent = document.querySelector<HTMLElement>('[data-moni-app-content]')
   const sidebar = document.querySelector<HTMLElement>('[data-moni-global-sidebar]')
+  const pinToggle = sidebar?.querySelector<HTMLButtonElement>('button[aria-pressed]')
   const isDesktop = window.matchMedia('(min-width: 1024px)').matches
-  const isOpen = Boolean(sidebar && sidebar.classList.contains('lg:translate-x-0'))
+  const isPinned = pinToggle?.getAttribute('aria-pressed') === 'true'
 
   if (!appContent) return
   appContent.style.setProperty('--moni-sidebar-width', `${SIDEBAR_WIDTH}px`)
   appContent.classList.toggle('moni-global-sidebar-active', Boolean(sidebar))
-  appContent.classList.toggle('moni-sidebar-offset-active', Boolean(sidebar) && isDesktop && isOpen)
+  appContent.classList.toggle('moni-sidebar-offset-active', Boolean(sidebar) && isDesktop && isPinned)
+  appContent.dataset.moniSidebarPinned = isPinned ? 'true' : 'false'
 }
 
 export default function GlobalSidebarLayoutController() {
@@ -39,13 +41,19 @@ export default function GlobalSidebarLayoutController() {
       }
 
       sidebarObserver = new MutationObserver(scheduleApply)
-      sidebarObserver.observe(sidebar, { attributes: true, attributeFilter: ['class'] })
+      sidebarObserver.observe(sidebar, {
+        attributes: true,
+        attributeFilter: ['class', 'aria-pressed'],
+        childList: true,
+        subtree: true,
+      })
       scheduleApply()
     }
 
     applySidebarLayout()
     attachSidebarObserver()
     window.addEventListener('resize', scheduleApply)
+    window.addEventListener('storage', scheduleApply)
 
     return () => {
       disposed = true
@@ -53,9 +61,11 @@ export default function GlobalSidebarLayoutController() {
       if (retryTimer !== null) window.clearTimeout(retryTimer)
       sidebarObserver?.disconnect()
       window.removeEventListener('resize', scheduleApply)
+      window.removeEventListener('storage', scheduleApply)
       const appContent = document.querySelector<HTMLElement>('[data-moni-app-content]')
       appContent?.classList.remove('moni-global-sidebar-active', 'moni-sidebar-offset-active')
       appContent?.style.removeProperty('--moni-sidebar-width')
+      delete appContent?.dataset.moniSidebarPinned
     }
   }, [])
 
