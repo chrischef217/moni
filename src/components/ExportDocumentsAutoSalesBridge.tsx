@@ -29,6 +29,17 @@ const BUTTON_HEIGHT = 38
 const BUTTON_GAP = 6
 const CONTROL_WIDTH = (SMALL_BUTTON_WIDTH * 2) + LARGE_BUTTON_WIDTH + (BUTTON_GAP * 2)
 
+const COLUMN_WIDTHS: Record<string, string> = {
+  Date: '10%',
+  'Invoice No.': '16%',
+  'Packing List No.': '17%',
+  Consignee: '10%',
+  Country: '9%',
+  CTN: '5%',
+  Amount: '12%',
+  관리: '21%',
+}
+
 function applyButtonSize(button: HTMLButtonElement) {
   const label = text(button)
   button.style.height = `${BUTTON_HEIGHT}px`
@@ -43,6 +54,45 @@ function applyButtonSize(button: HTMLButtonElement) {
     button.style.width = `${SMALL_BUTTON_WIDTH}px`
   } else if (LARGE_ACTIONS.has(label)) {
     button.style.width = `${LARGE_BUTTON_WIDTH}px`
+  }
+}
+
+function applyTableLayout(table: HTMLTableElement, headers: HTMLTableCellElement[], statusIndex: number, managementIndex: number) {
+  table.style.width = '100%'
+  table.style.minWidth = '0px'
+  table.style.tableLayout = 'fixed'
+
+  const scrollHost = table.parentElement
+  if (scrollHost) {
+    scrollHost.style.overflowX = 'hidden'
+    scrollHost.style.width = '100%'
+  }
+
+  headers.forEach((header, index) => {
+    const label = text(header)
+    header.style.boxSizing = 'border-box'
+    header.style.paddingLeft = index === managementIndex ? '4px' : '8px'
+    header.style.paddingRight = index === managementIndex ? '4px' : '8px'
+    header.style.overflow = 'hidden'
+    header.style.textOverflow = 'ellipsis'
+    header.style.whiteSpace = 'nowrap'
+    if (COLUMN_WIDTHS[label]) header.style.width = COLUMN_WIDTHS[label]
+    if (index === statusIndex) header.style.display = 'none'
+  })
+
+  for (const row of Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr'))) {
+    const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'))
+    cells.forEach((cell, index) => {
+      cell.style.boxSizing = 'border-box'
+      cell.style.paddingLeft = index === managementIndex ? '4px' : '8px'
+      cell.style.paddingRight = index === managementIndex ? '4px' : '8px'
+      cell.style.overflow = index === managementIndex ? 'visible' : 'hidden'
+      cell.style.textOverflow = index === managementIndex ? 'clip' : 'ellipsis'
+      cell.style.whiteSpace = index === 3 || index === 4 ? 'normal' : 'nowrap'
+      if (index === statusIndex) cell.style.display = 'none'
+      const headerLabel = text(headers[index])
+      if (COLUMN_WIDTHS[headerLabel]) cell.style.width = COLUMN_WIDTHS[headerLabel]
+    })
   }
 }
 
@@ -134,25 +184,16 @@ export default function ExportDocumentsAutoSalesBridge() {
       const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'))
       const statusIndex = headers.findIndex((cell) => text(cell) === '상태')
       const managementIndex = headers.findIndex((cell) => text(cell) === '관리')
-      if (statusIndex >= 0) headers[statusIndex].style.display = 'none'
-      if (managementIndex >= 0) {
-        headers[managementIndex].style.paddingLeft = '6px'
-        headers[managementIndex].style.paddingRight = '6px'
-      }
+      applyTableLayout(table, headers, statusIndex, managementIndex)
 
       const rows = Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr'))
       for (const row of rows) {
         const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'))
         if (cells.length < 2) continue
-        if (statusIndex >= 0 && cells[statusIndex]) cells[statusIndex].style.display = 'none'
 
         const invoiceNo = text(cells[1])
         const documentRow = documents.find((item) => item.invoice_no === invoiceNo)
         const managementCell = managementIndex >= 0 ? cells[managementIndex] : cells[cells.length - 1]
-        if (managementCell) {
-          managementCell.style.paddingLeft = '6px'
-          managementCell.style.paddingRight = '6px'
-        }
         const controls = managementCell?.querySelector<HTMLElement>('div')
         if (!controls) continue
 
