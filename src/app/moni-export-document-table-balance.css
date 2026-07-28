@@ -1,0 +1,67 @@
+/* Export document list: keep the table inside the card while reserving
+   proper outer breathing room for Date and management controls. */
+main table.min-w-\[1120px\] {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+
+main table.min-w-\[1120px\] th:nth-child(1),
+main table.min-w-\[1120px\] td:nth-child(1) {
+  width: 11.5% !important;
+  padding-left: 20px !important;
+  padding-right: 10px !important;
+}
+
+main table.min-w-\[1120px\] th:nth-child(2),
+main table.min-w-\[1120px\] td:nth-child(2) {
+  width: 15% !important;
+}
+
+main table.min-w-\[1120px\] th:nth-child(3),
+main table.min-w-\[1120px\] td:nth-child(3) {
+  width: 15.5% !important;
+}
+
+main table.min-w-\[1120px\] th:nth-child(4),
+main table.min-w-\[1120px\] td:nth-child(4) {
+  width: 8.5% !important;
+}
+
+main table.min-w-\[1120px\] th:nth-child(5),
+main table.min-w-\[1120px\] td:nth-child(5) {
+  width: 8% !important;
+}
+
+main table.min-w-\[1120px\] th:nth-child(6),
+main table.min-w-\[1120px\] td:nth-child(6) {
+  width: 4.5% !important;
+}
+
+main table.min-w-\[1120px\] th:nth-child(7),
+main table.min-w-\[1120px\] td:nth-child(7) {
+  width: 11% !important;
+}
+
+main table.min-w-\[1120px\] th:nth-child(9),
+main table.min-w-\[1120px\] td:nth-child(9) {
+  width: 26% !important;
+  padding-left: 16px !important;
+  padding-right: 20px !important;
+}
+
+main table.min-w-\[1120px\] th:nth-child(2),
+main table.min-w-\[1120px\] td:nth-child(2),
+main table.min-w-\[1120px\] th:nth-child(3),
+main table.min-w-\[1120px\] td:nth-child(3),
+main table.min-w-\[1120px\] th:nth-child(4),
+main table.min-w-\[1120px\] td:nth-child(4),
+main table.min-w-\[1120px\] th:nth-child(5),
+main table.min-w-\[1120px\] td:nth-child(5),
+main table.min-w-\[1120px\] th:nth-child(6),
+main table.min-w-\[1120px\] td:nth-child(6),
+main table.min-w-\[1120px\] th:nth-child(7),
+main table.min-w-\[1120px\] td:nth-child(7) {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
