@@ -44,6 +44,14 @@ export default function SalesManagementMenuController() {
   const router = useRouter()
 
   useEffect(() => {
+    // This controller directly adjusts the sales sidebar DOM. Running it on the
+    // control-tower home screen can block the browser during login hydration, so
+    // isolate it to the business-management route only.
+    if (pathname !== '/business-management') {
+      document.querySelector('[data-sales-statistics-menu]')?.remove()
+      return
+    }
+
     let stopped = false
 
     const patchSalesMenu = (nav: HTMLElement, view: string) => {
