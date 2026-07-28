@@ -3,6 +3,7 @@ import { Suspense } from 'react'
 import GlobalMoniSidebarRouteBoundary from '@/components/GlobalMoniSidebarRouteBoundary'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
 import GlobalInteractiveContrastController from '@/components/GlobalInteractiveContrastController'
+import GlobalReadableInteractiveTextController from '@/components/GlobalReadableInteractiveTextController'
 import SalesManagementMenuController from '@/components/SalesManagementMenuController'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import SidebarSubmenuMotionController from '@/components/SidebarSubmenuMotionController'
@@ -125,6 +126,7 @@ export default async function RootLayout({
             </Suspense>
             <GlobalSidebarLayoutController />
             <GlobalInteractiveContrastController />
+            <GlobalReadableInteractiveTextController />
             <SalesManagementMenuController />
             <SidebarPinToggleVisualFix />
             <SidebarSubmenuMotionController />
