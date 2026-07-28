@@ -46,38 +46,6 @@ export default function SalesManagementMenuController() {
   useEffect(() => {
     let stopped = false
 
-    const removeRetiredFromSidebar = () => {
-      if (stopped) return null
-      const nav = document.querySelector<HTMLElement>('[data-moni-global-sidebar] nav')
-      if (nav) removeRetiredSalesEntry(nav)
-      return nav
-    }
-
-    // Export and other standalone admin screens still render the shared sales menu.
-    // Remove the retired entry there as well, without running the heavier sales-menu
-    // DOM reordering logic that previously interfered with login/dashboard hydration.
-    if (pathname !== '/business-management') {
-      document.querySelector('[data-sales-statistics-menu]')?.remove()
-      let observedNav: HTMLElement | null = null
-      let observer: MutationObserver | null = null
-
-      const attachRemovalGuard = () => {
-        const nav = removeRetiredFromSidebar()
-        if (!nav || nav === observedNav) return
-        observer?.disconnect()
-        observedNav = nav
-        observer = new MutationObserver(() => removeRetiredSalesEntry(nav))
-        observer.observe(nav, { childList: true, subtree: true })
-      }
-
-      const timers = [0, 80, 250, 700, 1500].map((delay) => window.setTimeout(attachRemovalGuard, delay))
-      return () => {
-        stopped = true
-        timers.forEach((timer) => window.clearTimeout(timer))
-        observer?.disconnect()
-      }
-    }
-
     const patchSalesMenu = (nav: HTMLElement, view: string) => {
       const wrapper = nav.querySelector<HTMLElement>('[data-sales-management-menu]')
       if (!wrapper) return null
@@ -135,6 +103,7 @@ export default function SalesManagementMenuController() {
         categoryButton.type = 'button'
         categoryButton.dataset.moniGlobalNav = 'true'
         categoryButton.dataset.salesStatisticsCategory = 'true'
+        categoryButton.setAttribute('aria-expanded', 'false')
         categoryButton.className = 'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition text-slate-200 hover:bg-slate-800/80 hover:text-white'
         categoryButton.innerHTML = '<span data-sales-statistics-icon class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800">▥</span><span class="flex-1">통계</span><span data-sales-statistics-arrow class="text-xs transition-transform duration-300">⌄</span>'
 
@@ -143,18 +112,10 @@ export default function SalesManagementMenuController() {
         submenu.className = 'grid grid-rows-[0fr] opacity-0 transition-all duration-300 ease-out'
         submenu.innerHTML = '<div class="overflow-hidden"><div class="ml-7 mt-1 border-l border-slate-700/80 pl-3"><button data-moni-global-nav data-sales-statistics-item type="button" class="mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition text-slate-400 hover:bg-slate-800 hover:text-slate-100">판매통계</button></div></div>'
 
-        const setExpanded = (expanded: boolean) => {
-          setClassName(submenu, `grid transition-all duration-300 ease-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`)
-          categoryButton.querySelector<HTMLElement>('[data-sales-statistics-arrow]')?.classList.toggle('rotate-180', expanded)
-        }
-
-        categoryButton.addEventListener('click', () => router.push(salesHref('statistics')))
         submenu.querySelector<HTMLButtonElement>('[data-sales-statistics-item]')?.addEventListener('click', (event) => {
           event.stopPropagation()
           router.push(salesHref('statistics'))
         })
-        wrapper.addEventListener('mouseenter', () => setExpanded(true))
-        wrapper.addEventListener('mouseleave', () => setExpanded(false))
         wrapper.append(categoryButton, submenu)
         salesWrapper.insertAdjacentElement('afterend', wrapper)
       }
@@ -186,7 +147,7 @@ export default function SalesManagementMenuController() {
       patchSettlementTitle(view)
     }
 
-    const timers = [0, 80, 250, 700].map((delay) => window.setTimeout(apply, delay))
+    const timers = [0, 80, 250, 700, 1500].map((delay) => window.setTimeout(apply, delay))
     window.addEventListener('popstate', apply)
 
     return () => {
