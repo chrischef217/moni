@@ -6,6 +6,8 @@ import GlobalSidebarAutoHeightController from '@/components/GlobalSidebarAutoHei
 import GlobalInteractiveContrastController from '@/components/GlobalInteractiveContrastController'
 import GlobalReadableInteractiveTextController from '@/components/GlobalReadableInteractiveTextController'
 import SalesManagementMenuController from '@/components/SalesManagementMenuController'
+import DocumentManagementMenuController from '@/components/DocumentManagementMenuController'
+import DocumentManagementWorkspace from '@/components/DocumentManagementWorkspace'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import SidebarSubmenuMotionController from '@/components/SidebarSubmenuMotionController'
 import SidebarExportDestinationLabelController from '@/components/SidebarExportDestinationLabelController'
@@ -130,6 +132,7 @@ export default async function RootLayout({
             <GlobalInteractiveContrastController />
             <GlobalReadableInteractiveTextController />
             <SalesManagementMenuController />
+            <DocumentManagementMenuController />
             <SidebarPinToggleVisualFix />
             <SidebarSubmenuMotionController />
             <SidebarExportDestinationLabelController />
@@ -142,6 +145,7 @@ export default async function RootLayout({
             </Suspense>
             <GlobalAlertSyncController />
             {children}
+            <DocumentManagementWorkspace />
             <DeferredGlobalMoniAgent />
           </MoniWeatherShell>
         ) : children}
