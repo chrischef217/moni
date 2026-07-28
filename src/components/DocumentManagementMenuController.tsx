@@ -118,6 +118,26 @@ function applyDocumentMenu() {
   }
 }
 
+function resetDocumentViewport() {
+  if (!currentView()) return
+
+  const routeKey = `${window.location.pathname}${window.location.search}`
+  const appContent = document.querySelector<HTMLElement>('[data-moni-app-content]')
+  const workspace = document.querySelector<HTMLElement>('[data-document-management-workspace]')
+
+  if (appContent && appContent.dataset.documentViewportRoute !== routeKey) {
+    appContent.dataset.documentViewportRoute = routeKey
+    appContent.scrollTop = 0
+    appContent.scrollLeft = 0
+  }
+
+  if (workspace && workspace.dataset.documentViewportRoute !== routeKey) {
+    workspace.dataset.documentViewportRoute = routeKey
+    workspace.scrollTop = 0
+    workspace.scrollLeft = 0
+  }
+}
+
 export default function DocumentManagementMenuController() {
   useEffect(() => {
     let frame: number | null = null
@@ -137,6 +157,7 @@ export default function DocumentManagementMenuController() {
         frame = null
         syncWorkspaceRoute()
         applyDocumentMenu()
+        resetDocumentViewport()
       })
     }
 
@@ -153,6 +174,7 @@ export default function DocumentManagementMenuController() {
     }
 
     applyDocumentMenu()
+    resetDocumentViewport()
     const observer = new MutationObserver(schedule)
     observer.observe(document.body, { childList: true, subtree: true })
     window.addEventListener('popstate', schedule)
@@ -172,7 +194,12 @@ export default function DocumentManagementMenuController() {
   return (
     <style jsx global>{`
       [data-moni-app-content] [data-document-management-workspace] {
-        inset: 0 0 0 0 !important;
+        inset: 0 !important;
+        min-width: 0 !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
         background:
           radial-gradient(circle at 86% 0%, rgba(134, 207, 255, 0.22), transparent 30%),
           linear-gradient(145deg, #f6fbff 0%, #e7f2fc 100%) !important;
@@ -180,9 +207,79 @@ export default function DocumentManagementMenuController() {
         isolation: isolate;
       }
 
+      [data-document-management-workspace] > div,
+      [data-document-management-workspace] header,
+      [data-document-management-workspace] section {
+        min-width: 0 !important;
+        max-width: 100% !important;
+      }
+
+      [data-document-management-workspace] section > div.overflow-x-auto {
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+      }
+
+      [data-document-management-workspace] table {
+        width: 100% !important;
+        min-width: 0 !important;
+        table-layout: fixed !important;
+      }
+
+      [data-document-management-workspace] th,
+      [data-document-management-workspace] td {
+        min-width: 0 !important;
+        overflow-wrap: anywhere;
+        word-break: keep-all;
+      }
+
+      [data-document-management-workspace] th:nth-child(1),
+      [data-document-management-workspace] td:nth-child(1) { width: 15%; }
+      [data-document-management-workspace] th:nth-child(2),
+      [data-document-management-workspace] td:nth-child(2) { width: 10%; }
+      [data-document-management-workspace] th:nth-child(3),
+      [data-document-management-workspace] td:nth-child(3) { width: 10%; }
+      [data-document-management-workspace] th:nth-child(4),
+      [data-document-management-workspace] td:nth-child(4) { width: 14%; }
+      [data-document-management-workspace] th:nth-child(5),
+      [data-document-management-workspace] td:nth-child(5) { width: 22%; }
+      [data-document-management-workspace] th:nth-child(6),
+      [data-document-management-workspace] td:nth-child(6) { width: 10%; }
+      [data-document-management-workspace] th:nth-child(7),
+      [data-document-management-workspace] td:nth-child(7) { width: 19%; }
+
+      [data-document-management-workspace] td:nth-child(5) .truncate {
+        display: block !important;
+        overflow: visible !important;
+        white-space: normal !important;
+        text-overflow: clip !important;
+      }
+
+      [data-document-management-workspace] td:nth-child(7) > div {
+        align-items: center;
+        justify-content: center;
+      }
+
+      [data-document-management-workspace] ~ [data-global-moni-agent] {
+        z-index: 900 !important;
+      }
+
       @media (min-width: 1024px) {
         [data-moni-app-content].moni-sidebar-offset-active [data-document-management-workspace] {
           left: var(--moni-sidebar-width, 264px) !important;
+        }
+      }
+
+      @media (max-width: 1399px) and (min-width: 1024px) {
+        [data-document-management-workspace] th,
+        [data-document-management-workspace] td {
+          padding-left: 9px !important;
+          padding-right: 9px !important;
+          font-size: 12px;
+        }
+
+        [data-document-management-workspace] td:nth-child(7) button {
+          padding-left: 8px !important;
+          padding-right: 8px !important;
         }
       }
     `}</style>
