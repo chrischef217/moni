@@ -16,6 +16,10 @@ function normalized(element: Element | null) {
   return (element?.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
+function setClassName(element: HTMLElement | null, className: string) {
+  if (element && element.className !== className) element.className = className
+}
+
 function currentView() {
   if (typeof window === 'undefined') return ''
   if (window.location.pathname !== '/business-management') return ''
@@ -51,12 +55,8 @@ export default function SalesManagementMenuController() {
       const statsActive = view === 'statistics'
       const salesActive = pathname === '/business-management' && Boolean(view) && !statsActive
 
-      if (categoryButton) {
-        categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${salesActive ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
-      }
-      if (categoryIcon) {
-        categoryIcon.className = `flex h-8 w-8 items-center justify-center rounded-lg ${salesActive ? 'bg-emerald-500/20' : 'bg-slate-800'}`
-      }
+      setClassName(categoryButton, `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${salesActive ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`)
+      setClassName(categoryIcon, `flex h-8 w-8 items-center justify-center rounded-lg ${salesActive ? 'bg-emerald-500/20' : 'bg-slate-800'}`)
 
       const existingButtons = Array.from(wrapper.querySelectorAll<HTMLButtonElement>('button[data-sales-view]'))
       const buttonByView = new Map(existingButtons.map((button) => [button.dataset.salesView || '', button]))
@@ -68,12 +68,21 @@ export default function SalesManagementMenuController() {
         .find((node): node is HTMLElement => Boolean(node))
 
       if (host) {
+        let previousButton: HTMLButtonElement | null = null
         for (const item of salesItems) {
           const button = buttonByView.get(item.view)
           if (!button) continue
-          button.textContent = item.label
-          button.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${salesActive && view === item.view ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`
-          host.appendChild(button)
+          if (button.textContent !== item.label) button.textContent = item.label
+          setClassName(button, `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${salesActive && view === item.view ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`)
+
+          const correctlyPlaced = previousButton
+            ? previousButton.nextElementSibling === button
+            : host.firstElementChild === button
+          if (button.parentElement !== host || !correctlyPlaced) {
+            if (previousButton) previousButton.insertAdjacentElement('afterend', button)
+            else host.prepend(button)
+          }
+          previousButton = button
         }
       }
 
@@ -103,7 +112,7 @@ export default function SalesManagementMenuController() {
         submenu.innerHTML = '<div class="overflow-hidden"><div class="ml-7 mt-1 border-l border-slate-700/80 pl-3"><button data-moni-global-nav data-sales-statistics-item type="button" class="mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition text-slate-400 hover:bg-slate-800 hover:text-slate-100">판매통계</button></div></div>'
 
         const setExpanded = (expanded: boolean) => {
-          submenu.className = `grid transition-all duration-300 ease-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`
+          setClassName(submenu, `grid transition-all duration-300 ease-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`)
           categoryButton.querySelector<HTMLElement>('[data-sales-statistics-arrow]')?.classList.toggle('rotate-180', expanded)
         }
 
@@ -121,11 +130,9 @@ export default function SalesManagementMenuController() {
       const categoryButton = wrapper.querySelector<HTMLButtonElement>('[data-sales-statistics-category]')
       const icon = wrapper.querySelector<HTMLElement>('[data-sales-statistics-icon]')
       const item = wrapper.querySelector<HTMLButtonElement>('[data-sales-statistics-item]')
-      if (categoryButton) {
-        categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`
-      }
-      if (icon) icon.className = `flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}`
-      if (item) item.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`
+      setClassName(categoryButton, `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`)
+      setClassName(icon, `flex h-8 w-8 items-center justify-center rounded-lg ${active ? 'bg-emerald-500/20' : 'bg-slate-800'}`)
+      setClassName(item, `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`)
     }
 
     const patchSettlementTitle = (view: string) => {
@@ -147,16 +154,14 @@ export default function SalesManagementMenuController() {
       patchSettlementTitle(view)
     }
 
-    apply()
-    const observer = new MutationObserver(apply)
-    observer.observe(document.body, { childList: true, subtree: true })
-    const timer = window.setInterval(apply, 500)
+    // The sidebar is rendered with the app shell. A few finite retries cover hydration
+    // without observing the whole document and creating a self-triggered mutation loop.
+    const timers = [0, 80, 250, 700].map((delay) => window.setTimeout(apply, delay))
     window.addEventListener('popstate', apply)
 
     return () => {
       stopped = true
-      observer.disconnect()
-      window.clearInterval(timer)
+      timers.forEach((timer) => window.clearTimeout(timer))
       window.removeEventListener('popstate', apply)
       document.querySelector('[data-sales-statistics-menu]')?.remove()
     }
