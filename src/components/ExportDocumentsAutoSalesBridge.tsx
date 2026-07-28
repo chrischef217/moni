@@ -23,19 +23,26 @@ function jsonResponse(error: string, status = 500) {
 
 const SMALL_ACTIONS = new Set(['Invoice', 'Packing', '수정', '삭제'])
 const LARGE_ACTIONS = new Set(['PDF/인쇄', '거래명세표 인쇄'])
+const SMALL_BUTTON_WIDTH = 64
+const LARGE_BUTTON_WIDTH = 104
+const BUTTON_HEIGHT = 38
+const BUTTON_GAP = 6
+const CONTROL_WIDTH = (SMALL_BUTTON_WIDTH * 2) + LARGE_BUTTON_WIDTH + (BUTTON_GAP * 2)
 
 function applyButtonSize(button: HTMLButtonElement) {
   const label = text(button)
-  button.style.height = '42px'
-  button.style.paddingLeft = '10px'
-  button.style.paddingRight = '10px'
+  button.style.height = `${BUTTON_HEIGHT}px`
+  button.style.paddingLeft = '6px'
+  button.style.paddingRight = '6px'
   button.style.whiteSpace = 'nowrap'
   button.style.boxSizing = 'border-box'
+  button.style.fontSize = '12px'
+  button.style.lineHeight = '1'
 
   if (SMALL_ACTIONS.has(label)) {
-    button.style.width = '84px'
+    button.style.width = `${SMALL_BUTTON_WIDTH}px`
   } else if (LARGE_ACTIONS.has(label)) {
-    button.style.width = '120px'
+    button.style.width = `${LARGE_BUTTON_WIDTH}px`
   }
 }
 
@@ -128,6 +135,10 @@ export default function ExportDocumentsAutoSalesBridge() {
       const statusIndex = headers.findIndex((cell) => text(cell) === '상태')
       const managementIndex = headers.findIndex((cell) => text(cell) === '관리')
       if (statusIndex >= 0) headers[statusIndex].style.display = 'none'
+      if (managementIndex >= 0) {
+        headers[managementIndex].style.paddingLeft = '6px'
+        headers[managementIndex].style.paddingRight = '6px'
+      }
 
       const rows = Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr'))
       for (const row of rows) {
@@ -138,6 +149,10 @@ export default function ExportDocumentsAutoSalesBridge() {
         const invoiceNo = text(cells[1])
         const documentRow = documents.find((item) => item.invoice_no === invoiceNo)
         const managementCell = managementIndex >= 0 ? cells[managementIndex] : cells[cells.length - 1]
+        if (managementCell) {
+          managementCell.style.paddingLeft = '6px'
+          managementCell.style.paddingRight = '6px'
+        }
         const controls = managementCell?.querySelector<HTMLElement>('div')
         if (!controls) continue
 
@@ -174,10 +189,12 @@ export default function ExportDocumentsAutoSalesBridge() {
         for (const button of desiredButtons) applyButtonSize(button)
 
         controls.style.display = 'grid'
-        controls.style.gridTemplateColumns = '84px 84px 120px'
+        controls.style.gridTemplateColumns = `${SMALL_BUTTON_WIDTH}px ${SMALL_BUTTON_WIDTH}px ${LARGE_BUTTON_WIDTH}px`
+        controls.style.width = `${CONTROL_WIDTH}px`
+        controls.style.maxWidth = '100%'
         controls.style.justifyContent = 'center'
         controls.style.alignItems = 'center'
-        controls.style.gap = '6px'
+        controls.style.gap = `${BUTTON_GAP}px`
 
         if (!openedEditRef.current) {
           const editId = new URLSearchParams(window.location.search).get('edit')
