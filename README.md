@@ -33,3 +33,5 @@ npm run dev
 - 세션 미사용 30분 경과 시 만료
 - 주민등록번호/계정 비밀번호는 서버 저장 시 암호화 처리
 - 로그인 검증은 bcrypt 해시 기반
+
+<!-- production restore marker: stable control tower before loading regression -->
