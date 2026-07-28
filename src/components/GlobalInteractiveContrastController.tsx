@@ -230,7 +230,10 @@ export default function GlobalInteractiveContrastController() {
 
   return (
     <style jsx global>{`
-      .${CORRECTED_CLASS} {
+      .${CORRECTED_CLASS},
+      .${CORRECTED_CLASS} *,
+      .${CORRECTED_CLASS}::before,
+      .${CORRECTED_CLASS}::after {
         color: var(${COLOR_VARIABLE}) !important;
       }
     `}</style>
