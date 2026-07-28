@@ -21,6 +21,24 @@ function jsonResponse(error: string, status = 500) {
   })
 }
 
+const SMALL_ACTIONS = new Set(['Invoice', 'Packing', '수정', '삭제'])
+const LARGE_ACTIONS = new Set(['PDF/인쇄', '거래명세표 인쇄'])
+
+function applyButtonSize(button: HTMLButtonElement) {
+  const label = text(button)
+  button.style.height = '42px'
+  button.style.paddingLeft = '10px'
+  button.style.paddingRight = '10px'
+  button.style.whiteSpace = 'nowrap'
+  button.style.boxSizing = 'border-box'
+
+  if (SMALL_ACTIONS.has(label)) {
+    button.style.width = '84px'
+  } else if (LARGE_ACTIONS.has(label)) {
+    button.style.width = '120px'
+  }
+}
+
 export default function ExportDocumentsAutoSalesBridge() {
   const openedEditRef = useRef(false)
 
@@ -142,17 +160,21 @@ export default function ExportDocumentsAutoSalesBridge() {
           controls.appendChild(button)
         }
 
-        const desiredOrder = ['Invoice', 'Packing', 'PDF/인쇄', '거래명세표 인쇄', '수정', '삭제']
+        const desiredOrder = ['Invoice', 'Packing', 'PDF/인쇄', '수정', '삭제', '거래명세표 인쇄']
         const buttons = Array.from(controls.querySelectorAll<HTMLButtonElement>('button'))
-        const desiredButtons = desiredOrder.map((label) => buttons.find((item) => text(item) === label)).filter((item): item is HTMLButtonElement => Boolean(item))
+        const desiredButtons = desiredOrder
+          .map((label) => buttons.find((item) => text(item) === label))
+          .filter((item): item is HTMLButtonElement => Boolean(item))
         const currentButtons = Array.from(controls.querySelectorAll<HTMLButtonElement>('button'))
         const sameOrder = desiredButtons.length === currentButtons.length && desiredButtons.every((button, index) => currentButtons[index] === button)
         if (!sameOrder) {
           for (const button of desiredButtons) controls.appendChild(button)
         }
 
+        for (const button of desiredButtons) applyButtonSize(button)
+
         controls.style.display = 'grid'
-        controls.style.gridTemplateColumns = 'repeat(3, max-content)'
+        controls.style.gridTemplateColumns = '84px 84px 120px'
         controls.style.justifyContent = 'center'
         controls.style.alignItems = 'center'
         controls.style.gap = '6px'
