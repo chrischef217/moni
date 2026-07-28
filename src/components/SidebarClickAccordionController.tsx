@@ -50,6 +50,27 @@ function preferredActiveRow(rows: HTMLElement[]) {
   return rows.find(isActiveRow) ?? null
 }
 
+function revealRow(nav: HTMLElement, row: HTMLElement, behavior: ScrollBehavior) {
+  const navRect = nav.getBoundingClientRect()
+  const rowRect = row.getBoundingClientRect()
+  const padding = 12
+
+  if (rowRect.bottom > navRect.bottom - padding) {
+    nav.scrollTo({
+      top: nav.scrollTop + rowRect.bottom - navRect.bottom + padding,
+      behavior,
+    })
+    return
+  }
+
+  if (rowRect.top < navRect.top + padding) {
+    nav.scrollTo({
+      top: Math.max(0, nav.scrollTop - (navRect.top + padding - rowRect.top)),
+      behavior,
+    })
+  }
+}
+
 export default function SidebarClickAccordionController() {
   useEffect(() => {
     let nav: HTMLElement | null = null
@@ -58,6 +79,31 @@ export default function SidebarClickAccordionController() {
     let frame: number | null = null
     let openRow: HTMLElement | null = null
     let userHasToggled = false
+    const revealTimers = new Set<number>()
+
+    const clearRevealTimers = () => {
+      for (const timer of revealTimers) window.clearTimeout(timer)
+      revealTimers.clear()
+    }
+
+    const scheduleReveal = (row: HTMLElement, immediate = false) => {
+      if (!nav) return
+      clearRevealTimers()
+
+      if (immediate) {
+        const timer = window.setTimeout(() => {
+          revealTimers.delete(timer)
+          if (nav?.contains(row)) revealRow(nav, row, 'auto')
+        }, 0)
+        revealTimers.add(timer)
+      }
+
+      const finalTimer = window.setTimeout(() => {
+        revealTimers.delete(finalTimer)
+        if (nav?.contains(row)) revealRow(nav, row, 'smooth')
+      }, 330)
+      revealTimers.add(finalTimer)
+    }
 
     const syncRows = () => {
       frame = null
@@ -95,6 +141,9 @@ export default function SidebarClickAccordionController() {
       userHasToggled = true
       openRow = shouldClose ? null : row
       for (const category of categoryRows(nav)) setExpanded(category, category === openRow)
+
+      if (openRow) scheduleReveal(openRow, true)
+      else clearRevealTimers()
     }
 
     const blockCategoryRollover = (event: Event) => {
@@ -104,7 +153,6 @@ export default function SidebarClickAccordionController() {
       const row = target.closest<HTMLElement>('nav > div')
       if (!row || row.parentElement !== nav || !submenuGrid(row)) return
 
-      // 기존 React onMouseEnter가 카테고리를 자동으로 여는 것을 차단한다.
       event.stopPropagation()
       event.stopImmediatePropagation()
     }
@@ -112,6 +160,7 @@ export default function SidebarClickAccordionController() {
     const detachNav = () => {
       navObserver?.disconnect()
       navObserver = null
+      clearRevealTimers()
       if (nav) {
         nav.removeEventListener('click', handleCategoryClick, true)
         nav.removeEventListener('mouseover', blockCategoryRollover, true)
@@ -143,6 +192,7 @@ export default function SidebarClickAccordionController() {
         attributeFilter: ['class'],
       })
       syncRows()
+      if (openRow) scheduleReveal(openRow)
     }
 
     attachCurrentNav()
