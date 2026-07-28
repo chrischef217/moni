@@ -10,6 +10,7 @@ import DocumentManagementMenuController from '@/components/DocumentManagementMen
 import DocumentManagementWorkspace from '@/components/DocumentManagementWorkspace'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import SidebarSubmenuMotionController from '@/components/SidebarSubmenuMotionController'
+import SidebarClickAccordionController from '@/components/SidebarClickAccordionController'
 import SidebarExportDestinationLabelController from '@/components/SidebarExportDestinationLabelController'
 import SidebarDashboardLabelController from '@/components/SidebarDashboardLabelController'
 import SidebarMenuOrderController from '@/components/SidebarMenuOrderController'
@@ -135,6 +136,7 @@ export default async function RootLayout({
             <DocumentManagementMenuController />
             <SidebarPinToggleVisualFix />
             <SidebarSubmenuMotionController />
+            <SidebarClickAccordionController />
             <SidebarExportDestinationLabelController />
             <SidebarDashboardLabelController />
             <SidebarMenuOrderController />
