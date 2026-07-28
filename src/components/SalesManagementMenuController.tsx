@@ -34,8 +34,8 @@ function salesHref(view: string) {
 }
 
 function removeRetiredSalesEntry(nav: HTMLElement) {
-  for (const button of Array.from(nav.querySelectorAll<HTMLButtonElement>('button'))) {
-    if (normalized(button) === '판매 등록') button.remove()
+  for (const entry of Array.from(nav.querySelectorAll<HTMLElement>('button, a'))) {
+    if (normalized(entry) === '판매 등록') entry.remove()
   }
 }
 
@@ -44,15 +44,39 @@ export default function SalesManagementMenuController() {
   const router = useRouter()
 
   useEffect(() => {
-    // This controller directly adjusts the sales sidebar DOM. Running it on the
-    // control-tower home screen can block the browser during login hydration, so
-    // isolate it to the business-management route only.
-    if (pathname !== '/business-management') {
-      document.querySelector('[data-sales-statistics-menu]')?.remove()
-      return
+    let stopped = false
+
+    const removeRetiredFromSidebar = () => {
+      if (stopped) return null
+      const nav = document.querySelector<HTMLElement>('[data-moni-global-sidebar] nav')
+      if (nav) removeRetiredSalesEntry(nav)
+      return nav
     }
 
-    let stopped = false
+    // Export and other standalone admin screens still render the shared sales menu.
+    // Remove the retired entry there as well, without running the heavier sales-menu
+    // DOM reordering logic that previously interfered with login/dashboard hydration.
+    if (pathname !== '/business-management') {
+      document.querySelector('[data-sales-statistics-menu]')?.remove()
+      let observedNav: HTMLElement | null = null
+      let observer: MutationObserver | null = null
+
+      const attachRemovalGuard = () => {
+        const nav = removeRetiredFromSidebar()
+        if (!nav || nav === observedNav) return
+        observer?.disconnect()
+        observedNav = nav
+        observer = new MutationObserver(() => removeRetiredSalesEntry(nav))
+        observer.observe(nav, { childList: true, subtree: true })
+      }
+
+      const timers = [0, 80, 250, 700, 1500].map((delay) => window.setTimeout(attachRemovalGuard, delay))
+      return () => {
+        stopped = true
+        timers.forEach((timer) => window.clearTimeout(timer))
+        observer?.disconnect()
+      }
+    }
 
     const patchSalesMenu = (nav: HTMLElement, view: string) => {
       const wrapper = nav.querySelector<HTMLElement>('[data-sales-management-menu]')
@@ -162,8 +186,6 @@ export default function SalesManagementMenuController() {
       patchSettlementTitle(view)
     }
 
-    // The sidebar is rendered with the app shell. A few finite retries cover hydration
-    // without observing the whole document and creating a self-triggered mutation loop.
     const timers = [0, 80, 250, 700].map((delay) => window.setTimeout(apply, delay))
     window.addEventListener('popstate', apply)
 
