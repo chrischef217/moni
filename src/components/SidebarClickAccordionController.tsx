@@ -38,26 +38,37 @@ function setExpanded(row: HTMLElement, expanded: boolean) {
 
 function isActiveRow(row: HTMLElement) {
   const button = categoryButton(row)
-  if (!button) return false
-  return button.classList.contains('bg-emerald-500/15')
+  return Boolean(button?.classList.contains('bg-emerald-500/15'))
+}
+
+function preferredActiveRow(rows: HTMLElement[]) {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('tab') === 'document-management') {
+    const documentRow = rows.find((row) => row.hasAttribute('data-document-management-menu'))
+    if (documentRow) return documentRow
+  }
+  return rows.find(isActiveRow) ?? null
 }
 
 export default function SidebarClickAccordionController() {
   useEffect(() => {
-    let sidebar: HTMLElement | null = null
     let nav: HTMLElement | null = null
-    let observer: MutationObserver | null = null
-    let waitObserver: MutationObserver | null = null
+    let navObserver: MutationObserver | null = null
+    let bodyObserver: MutationObserver | null = null
     let frame: number | null = null
     let openRow: HTMLElement | null = null
+    let userHasToggled = false
 
     const syncRows = () => {
       frame = null
       if (!nav) return
       const rows = categoryRows(nav)
 
-      if (openRow && !nav.contains(openRow)) openRow = null
-      if (!openRow) openRow = rows.find(isActiveRow) ?? null
+      if (openRow && !nav.contains(openRow)) {
+        openRow = null
+        userHasToggled = false
+      }
+      if (!userHasToggled) openRow = preferredActiveRow(rows)
 
       for (const row of rows) setExpanded(row, row === openRow)
     }
@@ -81,6 +92,7 @@ export default function SidebarClickAccordionController() {
       event.stopImmediatePropagation()
 
       const shouldClose = openRow === row && button.getAttribute('aria-expanded') === 'true'
+      userHasToggled = true
       openRow = shouldClose ? null : row
       for (const category of categoryRows(nav)) setExpanded(category, category === openRow)
     }
@@ -89,50 +101,63 @@ export default function SidebarClickAccordionController() {
       if (!nav) return
       const target = event.target
       if (!(target instanceof Element)) return
-      const row = target.closest<HTMLElement>(':scope > div')
+      const row = target.closest<HTMLElement>('nav > div')
       if (!row || row.parentElement !== nav || !submenuGrid(row)) return
 
-      // React의 기존 onMouseEnter가 하위 메뉴를 여는 것을 차단한다.
+      // 기존 React onMouseEnter가 카테고리를 자동으로 여는 것을 차단한다.
       event.stopPropagation()
-      if ('stopImmediatePropagation' in event) event.stopImmediatePropagation()
+      event.stopImmediatePropagation()
     }
 
-    const attach = () => {
-      sidebar = document.querySelector<HTMLElement>(SIDEBAR_SELECTOR)
-      nav = sidebar?.querySelector<HTMLElement>('nav') ?? null
-      if (!sidebar || !nav) return false
+    const detachNav = () => {
+      navObserver?.disconnect()
+      navObserver = null
+      if (nav) {
+        nav.removeEventListener('click', handleCategoryClick, true)
+        nav.removeEventListener('mouseover', blockCategoryRollover, true)
+        nav.removeEventListener('pointerover', blockCategoryRollover, true)
+      }
+      nav = null
+      openRow = null
+      userHasToggled = false
+    }
+
+    const attachCurrentNav = () => {
+      const sidebar = document.querySelector<HTMLElement>(SIDEBAR_SELECTOR)
+      const nextNav = sidebar?.querySelector<HTMLElement>('nav') ?? null
+      if (nextNav === nav) return
+
+      detachNav()
+      if (!nextNav) return
+      nav = nextNav
 
       nav.addEventListener('click', handleCategoryClick, true)
       nav.addEventListener('mouseover', blockCategoryRollover, true)
       nav.addEventListener('pointerover', blockCategoryRollover, true)
 
-      observer = new MutationObserver(scheduleSync)
-      observer.observe(nav, {
+      navObserver = new MutationObserver(scheduleSync)
+      navObserver.observe(nav, {
         childList: true,
         subtree: true,
         attributes: true,
         attributeFilter: ['class'],
       })
       syncRows()
-      return true
     }
 
-    if (!attach()) {
-      waitObserver = new MutationObserver(() => {
-        if (!attach()) return
-        waitObserver?.disconnect()
-        waitObserver = null
-      })
-      waitObserver.observe(document.body, { childList: true, subtree: true })
-    }
+    attachCurrentNav()
+    bodyObserver = new MutationObserver(() => {
+      attachCurrentNav()
+      scheduleSync()
+    })
+    bodyObserver.observe(document.body, { childList: true, subtree: true })
+    window.addEventListener('popstate', scheduleSync)
 
     return () => {
-      observer?.disconnect()
-      waitObserver?.disconnect()
+      bodyObserver?.disconnect()
+      detachNav()
       if (frame !== null) window.cancelAnimationFrame(frame)
-      nav?.removeEventListener('click', handleCategoryClick, true)
-      nav?.removeEventListener('mouseover', blockCategoryRollover, true)
-      nav?.removeEventListener('pointerover', blockCategoryRollover, true)
+      window.removeEventListener('popstate', scheduleSync)
     }
   }, [])
 
