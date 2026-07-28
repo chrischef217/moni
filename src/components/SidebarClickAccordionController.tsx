@@ -26,11 +26,11 @@ function setExpanded(row: HTMLElement, expanded: boolean) {
   const submenu = submenuGrid(row)
   if (!button || !submenu) return
 
+  button.setAttribute('aria-expanded', String(expanded))
   submenu.classList.toggle('grid-rows-[1fr]', expanded)
   submenu.classList.toggle('opacity-100', expanded)
   submenu.classList.toggle('grid-rows-[0fr]', !expanded)
   submenu.classList.toggle('opacity-0', !expanded)
-  button.setAttribute('aria-expanded', String(expanded))
 
   const arrow = button.lastElementChild
   if (arrow instanceof HTMLElement) arrow.classList.toggle('rotate-180', expanded)
@@ -38,7 +38,8 @@ function setExpanded(row: HTMLElement, expanded: boolean) {
 
 function isActiveRow(row: HTMLElement) {
   const button = categoryButton(row)
-  return Boolean(button?.classList.contains('bg-emerald-500/15'))
+  if (button?.classList.contains('bg-emerald-500/15')) return true
+  return Boolean(row.querySelector("button[class*='bg-blue-600']"))
 }
 
 function preferredActiveRow(rows: HTMLElement[]) {
@@ -101,7 +102,7 @@ export default function SidebarClickAccordionController() {
       const finalTimer = window.setTimeout(() => {
         revealTimers.delete(finalTimer)
         if (nav?.contains(row)) revealRow(nav, row, 'smooth')
-      }, 330)
+      }, 320)
       revealTimers.add(finalTimer)
     }
 
@@ -140,32 +141,18 @@ export default function SidebarClickAccordionController() {
       const shouldClose = openRow === row && button.getAttribute('aria-expanded') === 'true'
       userHasToggled = true
       openRow = shouldClose ? null : row
+
       for (const category of categoryRows(nav)) setExpanded(category, category === openRow)
 
       if (openRow) scheduleReveal(openRow, true)
       else clearRevealTimers()
     }
 
-    const blockCategoryRollover = (event: Event) => {
-      if (!nav) return
-      const target = event.target
-      if (!(target instanceof Element)) return
-      const row = target.closest<HTMLElement>('nav > div')
-      if (!row || row.parentElement !== nav || !submenuGrid(row)) return
-
-      event.stopPropagation()
-      event.stopImmediatePropagation()
-    }
-
     const detachNav = () => {
       navObserver?.disconnect()
       navObserver = null
       clearRevealTimers()
-      if (nav) {
-        nav.removeEventListener('click', handleCategoryClick, true)
-        nav.removeEventListener('mouseover', blockCategoryRollover, true)
-        nav.removeEventListener('pointerover', blockCategoryRollover, true)
-      }
+      if (nav) nav.removeEventListener('click', handleCategoryClick, true)
       nav = null
       openRow = null
       userHasToggled = false
@@ -179,20 +166,33 @@ export default function SidebarClickAccordionController() {
       detachNav()
       if (!nextNav) return
       nav = nextNav
-
       nav.addEventListener('click', handleCategoryClick, true)
-      nav.addEventListener('mouseover', blockCategoryRollover, true)
-      nav.addEventListener('pointerover', blockCategoryRollover, true)
 
-      navObserver = new MutationObserver(scheduleSync)
+      navObserver = new MutationObserver((mutations) => {
+        const needsSync = mutations.some((mutation) => {
+          if (mutation.type === 'childList') return true
+          if (mutation.type !== 'attributes' || mutation.attributeName !== 'class') return false
+          const target = mutation.target
+          if (!(target instanceof HTMLElement)) return false
+          return target.matches(':scope > button[data-moni-global-nav]')
+            || (target.matches('button[data-moni-global-nav]') && target.parentElement?.parentElement === nav)
+        })
+        if (needsSync) scheduleSync()
+      })
       navObserver.observe(nav, {
         childList: true,
         subtree: true,
         attributes: true,
         attributeFilter: ['class'],
       })
+
       syncRows()
       if (openRow) scheduleReveal(openRow)
+    }
+
+    const handleRouteChange = () => {
+      userHasToggled = false
+      scheduleSync()
     }
 
     attachCurrentNav()
@@ -201,15 +201,47 @@ export default function SidebarClickAccordionController() {
       scheduleSync()
     })
     bodyObserver.observe(document.body, { childList: true, subtree: true })
-    window.addEventListener('popstate', scheduleSync)
+    window.addEventListener('popstate', handleRouteChange)
 
     return () => {
       bodyObserver?.disconnect()
       detachNav()
       if (frame !== null) window.cancelAnimationFrame(frame)
-      window.removeEventListener('popstate', scheduleSync)
+      window.removeEventListener('popstate', handleRouteChange)
     }
   }, [])
 
-  return null
+  return (
+    <style jsx global>{`
+      [data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='false'] + div.grid {
+        grid-template-rows: 0fr !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+
+      [data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid {
+        grid-template-rows: 1fr !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+      }
+
+      [data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='false'] > span:last-child {
+        transform: rotate(0deg) !important;
+      }
+
+      [data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] > span:last-child {
+        transform: rotate(180deg) !important;
+      }
+
+      [data-moni-global-sidebar] nav > div > button[data-moni-global-nav] {
+        transform: none !important;
+        translate: none !important;
+      }
+
+      [data-moni-global-sidebar] nav > div > button[data-moni-global-nav]:hover {
+        transform: none !important;
+        translate: none !important;
+      }
+    `}</style>
+  )
 }
