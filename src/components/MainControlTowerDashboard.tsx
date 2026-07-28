@@ -13,12 +13,15 @@ type TargetsPayload = { ok:boolean;error?:string;company:{target:{id:string;targ
 type FinancePayload = { ok:boolean;error?:string;summary:{actual_inflow:number;actual_outflow:number;actual_net_movement:number;planned_30d_inflow:number;planned_30d_outflow:number;planned_30d_net:number;registered_account_balance:number|null;active_account_count:number;accounts_without_balance:number;stale_balance_accounts:number;paid_settlement_without_date_count:number};tax:{output_vat:number;registered_input_vat:number;registered_vat_difference:number;freelancer_withholding_reference:number;basis:string} }
 type State = { sales:SalesPayload|null;production:ProductionPayload|null;receivables:ReceivablesPayload|null;targets:TargetsPayload|null;finance:FinancePayload|null }
 type Tone = 'neutral'|'success'|'warning'|'danger'|'violet'|'blue'
+type LoadResult<T> = { data:T|null; error:string }
 
 const salesHref='/business-management?tab=sales-management&view=sales'
 const receivablesHref='/business-management?tab=sales-management&view=receivables'
 const targetHref='/business-management?tab=sales&view=targets'
 const pipelineHref='/business-management?tab=sales&view=pipeline'
 const financeHref='/business-management?tab=accounting&view=financial-control'
+const REQUEST_TIMEOUT_MS=7000
+const LOADING_WATCHDOG_MS=9000
 
 function kstMonth(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit'}).format(new Date()).slice(0,7)}
 function kstTodayLabel(){return new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'short'}).format(new Date())}
@@ -26,6 +29,29 @@ function won(value:unknown){const n=Number(value??0);return `${new Intl.NumberFo
 function percent(value:unknown,digits=1){const n=Number(value??0);return `${(Number.isFinite(n)?n:0).toFixed(digits)}%`}
 function kg(valueG:unknown){const n=Number(valueG??0)/1000;return `${new Intl.NumberFormat('ko-KR',{maximumFractionDigits:n>=100?0:1}).format(Number.isFinite(n)?n:0)}kg`}
 function clamp(value:unknown){const n=Number(value??0);return Math.max(0,Math.min(100,Number.isFinite(n)?n:0))}
+
+async function fetchDashboardPayload<T extends {ok?:boolean;error?:string}>(url:string,label:string):Promise<LoadResult<T>>{
+  const controller=new AbortController()
+  const timeout=window.setTimeout(()=>controller.abort(),REQUEST_TIMEOUT_MS)
+  try{
+    const response=await fetch(url,{cache:'no-store',signal:controller.signal})
+    let payload:T|null=null
+    try{
+      payload=await response.json() as T
+    }catch{
+      return {data:null,error:`${label} 응답 형식 오류`}
+    }
+    if(!response.ok||payload?.ok===false){
+      return {data:null,error:payload?.error||`${label} 데이터 오류`}
+    }
+    return {data:payload,error:''}
+  }catch(error){
+    if(error instanceof DOMException&&error.name==='AbortError')return {data:null,error:`${label} 응답 지연(7초 초과)`}
+    return {data:null,error:error instanceof Error?`${label}: ${error.message}`:`${label} 데이터를 불러오지 못했습니다.`}
+  }finally{
+    window.clearTimeout(timeout)
+  }
+}
 
 function MetricCard({label,value,note,tone='neutral',onClick}:{label:string;value:string;note:string;tone?:Tone;onClick?:()=>void}){
   return <button type="button" onClick={onClick} disabled={!onClick} className={`ct-metric ct-tone-${tone} ${onClick?'ct-clickable':''}`}>
@@ -71,30 +97,43 @@ export default function MainControlTowerDashboard({session}:{session:AllowanceSe
     setError('')
     try{
       const month=kstMonth()
-      const [salesResponse,productionResponse,receivableResponse,targetResponse,financeResponse]=await Promise.all([
-        fetch(`/api/moni/sales-operations?month=${encodeURIComponent(month)}&_=${Date.now()}`,{cache:'no-store'}),
-        fetch(`/api/moni/production-dashboard?_=${Date.now()}`,{cache:'no-store'}),
-        fetch(`/api/moni/receivables?_=${Date.now()}`,{cache:'no-store'}),
-        fetch(`/api/moni/sales-targets?month=${encodeURIComponent(month)}&_=${Date.now()}`,{cache:'no-store'}),
-        fetch(`/api/moni/financial-control?month=${encodeURIComponent(month)}&_=${Date.now()}`,{cache:'no-store'}),
+      const [salesResult,productionResult,receivablesResult,targetsResult,financeResult]=await Promise.all([
+        fetchDashboardPayload<SalesPayload>(`/api/moni/sales-operations?month=${encodeURIComponent(month)}&_=${Date.now()}`,'판매'),
+        fetchDashboardPayload<ProductionPayload>(`/api/moni/production-dashboard?_=${Date.now()}`,'생산'),
+        fetchDashboardPayload<ReceivablesPayload>(`/api/moni/receivables?_=${Date.now()}`,'수금'),
+        fetchDashboardPayload<TargetsPayload>(`/api/moni/sales-targets?month=${encodeURIComponent(month)}&_=${Date.now()}`,'목표'),
+        fetchDashboardPayload<FinancePayload>(`/api/moni/financial-control?month=${encodeURIComponent(month)}&_=${Date.now()}`,'재무'),
       ])
-      const [sales,production,receivables,targets,finance]=await Promise.all([
-        salesResponse.json() as Promise<SalesPayload>,productionResponse.json() as Promise<ProductionPayload>,receivableResponse.json() as Promise<ReceivablesPayload>,targetResponse.json() as Promise<TargetsPayload>,financeResponse.json() as Promise<FinancePayload>,
-      ])
-      const messages:string[]=[]
-      if(!salesResponse.ok||!sales.ok)messages.push(sales.error||'판매 데이터 오류')
-      if(!productionResponse.ok||!production.ok)messages.push(production.error||'생산 데이터 오류')
-      if(!receivableResponse.ok||!receivables.ok)messages.push(receivables.error||'수금 데이터 오류')
-      if(!targetResponse.ok||!targets.ok)messages.push(targets.error||'목표 데이터 오류')
-      if(!financeResponse.ok||!finance.ok)messages.push(finance.error||'재무 데이터 오류')
-      setState({sales:salesResponse.ok&&sales.ok?sales:null,production:productionResponse.ok&&production.ok?production:null,receivables:receivableResponse.ok&&receivables.ok?receivables:null,targets:targetResponse.ok&&targets.ok?targets:null,finance:financeResponse.ok&&finance.ok?finance:null})
+      setState({
+        sales:salesResult.data,
+        production:productionResult.data,
+        receivables:receivablesResult.data,
+        targets:targetsResult.data,
+        finance:financeResult.data,
+      })
+      const messages=[salesResult.error,productionResult.error,receivablesResult.error,targetsResult.error,financeResult.error].filter(Boolean)
       setError(messages.join(' / '))
       setUpdatedAt(new Date())
-    }catch(e){setError(e instanceof Error?e.message:'통합 대시보드 데이터를 불러오지 못했습니다.')}
-    finally{setLoading(false);setRefreshing(false)}
+    }catch(loadError){
+      setError(loadError instanceof Error?loadError.message:'통합 대시보드 데이터를 불러오지 못했습니다.')
+    }finally{
+      setLoading(false)
+      setRefreshing(false)
+    }
   },[])
 
-  useEffect(()=>{void load();const timer=window.setInterval(()=>void load(),60_000);return()=>window.clearInterval(timer)},[load])
+  useEffect(()=>{
+    const watchdog=window.setTimeout(()=>{
+      setLoading(false)
+      setError((current)=>current||'일부 경영 데이터 응답이 지연되고 있습니다. 화면은 먼저 열고 가능한 데이터부터 표시합니다.')
+    },LOADING_WATCHDOG_MS)
+    void load().finally(()=>window.clearTimeout(watchdog))
+    const timer=window.setInterval(()=>void load(),60_000)
+    return()=>{
+      window.clearTimeout(watchdog)
+      window.clearInterval(timer)
+    }
+  },[load])
 
   useEffect(()=>{
     const count=CONTROL_TOWER_WISDOM.length
@@ -112,21 +151,34 @@ export default function MainControlTowerDashboard({session}:{session:AllowanceSe
 
   const sales=state.sales?.summary
   const production=state.production
+  const productionKpis=production?.kpis
+  const productionRun=productionKpis?.production
+  const productionRisk=productionKpis?.risk
+  const productionLoss=productionKpis?.loss
   const ar=state.receivables?.summary
   const target=state.targets?.company
   const finance=state.finance?.summary
   const tax=state.finance?.tax
-  const collectionRows=useMemo(()=>(state.receivables?.orders??[]).filter((row)=>row.outstanding_amount>0).sort((a,b)=>{const priority=(row:ReceivableOrder)=>row.collection_state==='overdue'?0:row.collection_state==='due_today'?1:row.collection_state==='due_soon'?2:row.collection_state==='no_due_date'?3:4;return priority(a)-priority(b)||String(a.due_date??'9999-12-31').localeCompare(String(b.due_date??'9999-12-31'))}),[state.receivables])
-  const urgentProductionAlerts=(production?.alerts??[]).filter((row)=>row.severity==='danger'||row.severity==='warning').slice(0,2)
+  const collectionRows=useMemo(()=>{
+    const orders:ReceivableOrder[]=Array.isArray(state.receivables?.orders)?state.receivables!.orders:[]
+    return orders.filter((row)=>row&&Number(row.outstanding_amount)>0).sort((a,b)=>{
+      const priority=(row:ReceivableOrder)=>row.collection_state==='overdue'?0:row.collection_state==='due_today'?1:row.collection_state==='due_soon'?2:row.collection_state==='no_due_date'?3:4
+      return priority(a)-priority(b)||String(a.due_date??'9999-12-31').localeCompare(String(b.due_date??'9999-12-31'))
+    })
+  },[state.receivables])
+  const productionAlerts:ProductionAlert[]=Array.isArray(production?.alerts)?production!.alerts:[]
+  const urgentProductionAlerts=productionAlerts.filter((row)=>row&&(row.severity==='danger'||row.severity==='warning')).slice(0,2)
   const goto=(href:string)=>{window.location.href=href}
   const openLegacy=(targetName:string,label:string)=>{window.sessionStorage.setItem('moni-pending-nav',JSON.stringify({category:'production',target:targetName,label,parentTarget:'생산관리'}));window.location.href='/?legacy=1'}
   const logout=async()=>{await fetch('/api/allowance/auth/logout',{method:'POST'}).catch(()=>null);window.location.href='/'}
-  const wisdom=CONTROL_TOWER_WISDOM[wisdomIndex]??CONTROL_TOWER_WISDOM[0]
+  const wisdom=CONTROL_TOWER_WISDOM[wisdomIndex]??CONTROL_TOWER_WISDOM[0]??{
+    id:'fallback',author:'MONI',line:'등록된 사실을 먼저 보고 다음 행동을 결정합니다.',application:'데이터가 늦거나 일부 누락되어도 화면 전체를 멈추지 않고 확인 가능한 정보부터 표시합니다.',source:'MONI fallback',
+  }
 
   if(loading)return <main data-moni-control-tower className="ct-root"><div className="ct-loading">MONI 경영 데이터를 불러오는 중입니다.</div></main>
 
   const attainment=Number(target?.attainment_rate??0)
-  const productionAttainment=Number(production?.kpis.production.attainment_rate??0)
+  const productionAttainment=Number(productionRun?.attainment_rate??0)
 
   return <main data-moni-control-tower className="ct-root">
     <div className="ct-shell">
@@ -184,9 +236,9 @@ export default function MainControlTowerDashboard({session}:{session:AllowanceSe
           <div className="ct-production-score"><strong>{percent(productionAttainment)}</strong><span>계획 대비 생산 달성</span></div>
           <div className="ct-progress-track ct-progress-blue"><span style={{width:`${clamp(productionAttainment)}%`}}/></div>
           <div className="ct-health-list ct-health-list-tight">
-            <div><span>14일 부족 원재료</span><b className={(production?.kpis.risk.shortage_materials??0)>0?'ct-negative':''}>{production?.kpis.risk.shortage_materials??0}종</b></div>
-            <div><span>위험 작업지시</span><b>{production?.kpis.risk.risk_work_orders??0}건</b></div>
-            <div><span>생산 로스율</span><b>{percent(production?.kpis.loss.loss_rate,2)}</b></div>
+            <div><span>14일 부족 원재료</span><b className={(productionRisk?.shortage_materials??0)>0?'ct-negative':''}>{productionRisk?.shortage_materials??0}종</b></div>
+            <div><span>위험 작업지시</span><b>{productionRisk?.risk_work_orders??0}건</b></div>
+            <div><span>생산 로스율</span><b>{percent(productionLoss?.loss_rate,2)}</b></div>
           </div>
         </article>
       </section>
@@ -215,8 +267,8 @@ export default function MainControlTowerDashboard({session}:{session:AllowanceSe
             <div className="ct-reference-grid">
               <div><span>VAT 등록자료 차액</span><b>{won(tax?.registered_vat_difference)}</b></div>
               <div><span>프리랜서 원천징수</span><b>{won(tax?.freelancer_withholding_reference)}</b></div>
-              <div><span>원재료 구매 참고</span><b>{won(production?.kpis.risk.known_purchase_cost_won)}</b></div>
-              <div><span>확인단가 로스 영향</span><b>{won(production?.kpis.loss.known_loss_cost_won)}</b></div>
+              <div><span>원재료 구매 참고</span><b>{won(productionRisk?.known_purchase_cost_won)}</b></div>
+              <div><span>확인단가 로스 영향</span><b>{won(productionLoss?.known_loss_cost_won)}</b></div>
             </div>
             <p className="ct-disclaimer">세무값은 현재 등록자료 기준 참고값이며 신고 확정값으로 표시하지 않습니다.</p>
           </article>
@@ -227,7 +279,7 @@ export default function MainControlTowerDashboard({session}:{session:AllowanceSe
         <MetricCard label="월 목표매출" value={target?.target?won(target.target.target_amount):'설정 필요'} note={target?.target?`달성률 ${percent(attainment)}`:'목표를 등록하면 자동 연결됩니다.'} tone={target?.target?'blue':'violet'} onClick={()=>goto(targetHref)}/>
         <MetricCard label="이번 달 실제 매출" value={won(sales?.total_amount)} note={`확정 판매 ${sales?.order_count??0}건`} tone="success" onClick={()=>goto(salesHref)}/>
         <MetricCard label="현재 받을 돈" value={won(ar?.outstanding_amount)} note={`미수 ${ar?.open_order_count??0}건 · 연체 ${ar?.overdue_count??0}건`} tone={(ar?.overdue_count??0)>0?'danger':'warning'} onClick={()=>goto(receivablesHref)}/>
-        <MetricCard label="생산 로스" value={percent(production?.kpis.loss.loss_rate,2)} note={`로스 ${kg(production?.kpis.loss.loss_g)}`} tone={(production?.kpis.loss.loss_rate??0)>=2?'danger':'neutral'} onClick={()=>openLegacy('생산 개요','생산 대시보드')}/>
+        <MetricCard label="생산 로스" value={percent(productionLoss?.loss_rate,2)} note={`로스 ${kg(productionLoss?.loss_g)}`} tone={(productionLoss?.loss_rate??0)>=2?'danger':'neutral'} onClick={()=>openLegacy('생산 개요','생산 대시보드')}/>
       </section>
 
       <footer className="ct-footer"><span>Snapshot 잔액 · 실제 등록 데이터 기준</span><button type="button" onClick={()=>goto(pipelineHref)}>영업 데이터 보완 →</button></footer>
