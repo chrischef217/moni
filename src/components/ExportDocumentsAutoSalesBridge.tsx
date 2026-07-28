@@ -24,7 +24,7 @@ function jsonResponse(error: string, status = 500) {
 const SMALL_ACTIONS = new Set(['Invoice', 'Packing', '수정', '삭제'])
 const LARGE_ACTIONS = new Set(['PDF/인쇄', '거래명세표 인쇄'])
 const SMALL_BUTTON_WIDTH = 64
-const LARGE_BUTTON_WIDTH = 104
+const LARGE_BUTTON_WIDTH = 92
 const BUTTON_HEIGHT = 38
 const BUTTON_GAP = 6
 const CONTROL_WIDTH = (SMALL_BUTTON_WIDTH * 2) + LARGE_BUTTON_WIDTH + (BUTTON_GAP * 2)
@@ -192,6 +192,8 @@ export default function ExportDocumentsAutoSalesBridge() {
         controls.style.gridTemplateColumns = `${SMALL_BUTTON_WIDTH}px ${SMALL_BUTTON_WIDTH}px ${LARGE_BUTTON_WIDTH}px`
         controls.style.width = `${CONTROL_WIDTH}px`
         controls.style.maxWidth = '100%'
+        controls.style.marginLeft = 'auto'
+        controls.style.marginRight = 'auto'
         controls.style.justifyContent = 'center'
         controls.style.alignItems = 'center'
         controls.style.gap = `${BUTTON_GAP}px`
