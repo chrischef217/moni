@@ -55,7 +55,7 @@ export default function SalesManagementMenuController() {
       const statsActive = view === 'statistics'
       const salesActive = pathname === '/business-management' && Boolean(view) && !statsActive
 
-      setClassName(categoryButton, `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${salesActive ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'}`)
+      setClassName(categoryButton, `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${salesActive ? 'bg-emerald-500/15 text-emerald-200' : 'bg-slate-800 text-slate-200 hover:bg-slate-800/80 hover:text-white'}`)
       setClassName(categoryIcon, `flex h-8 w-8 items-center justify-center rounded-lg ${salesActive ? 'bg-emerald-500/20' : 'bg-slate-800'}`)
 
       const existingButtons = Array.from(wrapper.querySelectorAll<HTMLButtonElement>('button[data-sales-view]'))
