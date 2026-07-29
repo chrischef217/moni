@@ -61,9 +61,18 @@ export function receiptDate(row: PurchaseReceipt) {
   return row.receipt_date || row.purchase_date || ''
 }
 
+export function isStockReconciliation(row: PurchaseReceipt) {
+  return String(row.notes || '').includes('marker=MONI_STOCK_RECONCILIATION')
+}
+
 export function receiptQuantity(row: PurchaseReceipt) {
   const unitLabel = String(row.receipt_unit_label || row.unit || '').trim()
-  if (unitLabel.includes('/EA')) return `${formatNumber(row.quantity)} × ${unitLabel}`
+  if (unitLabel.includes('/EA')) {
+    const quantity = Number(row.quantity)
+    if (Number.isInteger(quantity)) return `${integerNumber(quantity)} × ${unitLabel}`
+    const grams = totalGrams(row)
+    return grams === null ? `${formatNumber(quantity)} EA` : `${integerNumber(grams)}g`
+  }
   return `${formatNumber(row.quantity)} ${unitLabel}`.trim()
 }
 
