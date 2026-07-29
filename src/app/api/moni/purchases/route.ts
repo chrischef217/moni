@@ -38,9 +38,12 @@ type PurchaseRow = JsonRecord & {
   id: string
   purchase_no: string
   purchase_date: string
+  receipt_date?: string | null
   due_date: string | null
   total_amount: number | string
   status: string
+  source_transaction_id?: string | null
+  created_at?: string | null
 }
 
 type PaymentRow = JsonRecord & {
@@ -179,11 +182,7 @@ async function fetchAllRows(supabase: MoniClient, table: 'raw_material_transacti
   throw new Error(`${table} 입고내역이 ${PAGE_SIZE * MAX_PAGES}건을 초과해 전체 조회하지 못했습니다.`)
 }
 
-function legacyRawRows(
-  transactions: JsonRecord[],
-  linkedIds: Set<string>,
-  rawMeta: Map<string, JsonRecord>,
-) {
+function legacyRawRows(transactions: JsonRecord[], linkedIds: Set<string>, rawMeta: Map<string, JsonRecord>) {
   return transactions.flatMap((row) => {
     if (!scopedBusiness(row.business_id) || !inboundType(row.txn_type ?? row.transaction_type)) return []
     const id = text(row.id)
@@ -235,11 +234,7 @@ function legacyRawRows(
   })
 }
 
-function legacyPackagingRows(
-  transactions: JsonRecord[],
-  linkedIds: Set<string>,
-  packagingMeta: Map<string, JsonRecord>,
-) {
+function legacyPackagingRows(transactions: JsonRecord[], linkedIds: Set<string>, packagingMeta: Map<string, JsonRecord>) {
   return transactions.flatMap((row) => {
     if (!scopedBusiness(row.business_id) || !inboundType(row.txn_type)) return []
     const id = text(row.id)
@@ -314,9 +309,7 @@ async function loadState() {
   const packagingMaterials = ((packagingResult.data ?? []) as JsonRecord[]).filter((row) => row.is_active !== false && scopedBusiness(row.business_id))
 
   const paidByPurchase = new Map<string, number>()
-  for (const payment of payments) {
-    paidByPurchase.set(payment.purchase_id, (paidByPurchase.get(payment.purchase_id) ?? 0) + numberValue(payment.amount))
-  }
+  for (const payment of payments) paidByPurchase.set(payment.purchase_id, (paidByPurchase.get(payment.purchase_id) ?? 0) + numberValue(payment.amount))
 
   const today = kstToday()
   const dueSoonLimit = addDays(today, 7)
@@ -329,9 +322,7 @@ async function loadState() {
   let noDueDateCount = 0
   let paidThisMonth = 0
 
-  for (const payment of payments) {
-    if (text(payment.payment_date).startsWith(monthPrefix)) paidThisMonth += numberValue(payment.amount)
-  }
+  for (const payment of payments) if (text(payment.payment_date).startsWith(monthPrefix)) paidThisMonth += numberValue(payment.amount)
 
   const normalizedPurchases = purchases.map((purchase) => {
     const totalAmount = numberValue(purchase.total_amount)
@@ -350,47 +341,20 @@ async function loadState() {
     if (!cancelled && outstandingAmount > 0) {
       totalOutstanding += outstandingAmount
       if (!dueDate) noDueDateCount += 1
-      else if (dueDate < today) {
-        overdueAmount += outstandingAmount
-        overdueCount += 1
-      } else if (dueDate <= dueSoonLimit) {
-        dueSoonAmount += outstandingAmount
-        dueSoonCount += 1
-      }
+      else if (dueDate < today) { overdueAmount += outstandingAmount; overdueCount += 1 }
+      else if (dueDate <= dueSoonLimit) { dueSoonAmount += outstandingAmount; dueSoonCount += 1 }
     }
 
-    return {
-      ...purchase,
-      total_amount: totalAmount,
-      paid_amount: paidAmount,
-      outstanding_amount: outstandingAmount,
-      payment_state: paymentState,
-      payments: payments.filter((payment) => payment.purchase_id === purchase.id),
-      legacy_record: false,
-      legacy_amount_available: true,
-    }
+    return { ...purchase, total_amount: totalAmount, paid_amount: paidAmount, outstanding_amount: outstandingAmount, payment_state: paymentState, payments: payments.filter((payment) => payment.purchase_id === purchase.id), legacy_record: false, legacy_amount_available: true }
   })
 
   const linkedIds = new Set(normalizedPurchases.map((row) => text(row.source_transaction_id)).filter(Boolean))
   const rawMeta = new Map<string, JsonRecord>()
-  for (const row of rawMaterials) {
-    const id = text(row.id)
-    const code = text(row.item_code)
-    if (id) rawMeta.set(id, row)
-    if (code) rawMeta.set(code, row)
-  }
+  for (const row of rawMaterials) { const id = text(row.id); const code = text(row.item_code); if (id) rawMeta.set(id, row); if (code) rawMeta.set(code, row) }
   const packagingMeta = new Map<string, JsonRecord>()
-  for (const row of packagingMaterials) {
-    const id = text(row.id)
-    const code = text(row.material_code)
-    if (id) packagingMeta.set(id, row)
-    if (code) packagingMeta.set(code, row)
-  }
+  for (const row of packagingMaterials) { const id = text(row.id); const code = text(row.material_code); if (id) packagingMeta.set(id, row); if (code) packagingMeta.set(code, row) }
 
-  const legacyRows = [
-    ...legacyRawRows(rawTransactions, linkedIds, rawMeta),
-    ...legacyPackagingRows(packagingTransactions, linkedIds, packagingMeta),
-  ]
+  const legacyRows = [...legacyRawRows(rawTransactions, linkedIds, rawMeta), ...legacyPackagingRows(packagingTransactions, linkedIds, packagingMeta)]
   const allPurchases = [...normalizedPurchases, ...legacyRows].sort((a, b) => {
     const dateCompare = text(b.receipt_date ?? b.purchase_date).localeCompare(text(a.receipt_date ?? a.purchase_date))
     if (dateCompare !== 0) return dateCompare
@@ -404,12 +368,8 @@ async function loadState() {
     raw_materials: rawMaterials,
     packaging_materials: packagingMaterials,
     summary: {
-      total_outstanding: Math.round(totalOutstanding),
-      overdue_amount: Math.round(overdueAmount),
-      overdue_count: overdueCount,
-      due_soon_amount: Math.round(dueSoonAmount),
-      due_soon_count: dueSoonCount,
-      no_due_date_count: noDueDateCount,
+      total_outstanding: Math.round(totalOutstanding), overdue_amount: Math.round(overdueAmount), overdue_count: overdueCount,
+      due_soon_amount: Math.round(dueSoonAmount), due_soon_count: dueSoonCount, no_due_date_count: noDueDateCount,
       paid_this_month: Math.round(paidThisMonth),
       open_purchase_count: normalizedPurchases.filter((row) => row.outstanding_amount > 0 && row.status !== 'CANCELLED').length,
       legacy_receipt_count: legacyRows.length,
@@ -445,66 +405,33 @@ function preparePurchase(body: JsonRecord, supplier: SupplierRow): PreparedPurch
 
   const dueDate = calculateDueDate(purchaseDate, supplier, text(body.due_date))
   return {
-    business_id: BUSINESS_ID,
-    supplier_id: supplier.id,
-    purchase_date: purchaseDate,
-    receipt_date: receiptDate,
-    purchase_category: category as 'RAW_MATERIAL' | 'PACKAGING',
-    material_id: materialId,
-    quantity,
-    unit,
-    unit_price: unitPrice,
-    supply_amount: supplyAmount,
-    vat_amount: vatAmount,
-    total_amount: totalAmount,
-    due_date: dueDate,
+    business_id: BUSINESS_ID, supplier_id: supplier.id, purchase_date: purchaseDate, receipt_date: receiptDate,
+    purchase_category: category as 'RAW_MATERIAL' | 'PACKAGING', material_id: materialId, quantity, unit, unit_price: unitPrice,
+    supply_amount: supplyAmount, vat_amount: vatAmount, total_amount: totalAmount, due_date: dueDate,
     planned_payment_method: paymentMethod,
     planned_payment_account: text(body.planned_payment_account) || text(supplier.default_payment_account),
     planned_card_name: text(body.planned_card_name) || text(supplier.default_card_name),
-    planned_installment_months: paymentMethod === 'CARD'
-      ? Math.min(36, Math.max(1, integerValue(body.planned_installment_months, supplier.default_installment_months || 1)))
-      : 1,
+    planned_installment_months: paymentMethod === 'CARD' ? Math.min(36, Math.max(1, integerValue(body.planned_installment_months, supplier.default_installment_months || 1))) : 1,
     tax_invoice_status: taxInvoiceStatus,
-    tax_invoice_amount: body.tax_invoice_amount === null || body.tax_invoice_amount === undefined || text(body.tax_invoice_amount) === ''
-      ? null
-      : numberValue(body.tax_invoice_amount),
+    tax_invoice_amount: body.tax_invoice_amount === null || body.tax_invoice_amount === undefined || text(body.tax_invoice_amount) === '' ? null : numberValue(body.tax_invoice_amount),
     notes: text(body.notes),
   }
 }
 
 function rpcArgs(row: PreparedPurchase) {
   return {
-    p_business_id: row.business_id,
-    p_supplier_id: row.supplier_id,
-    p_purchase_date: row.purchase_date,
-    p_receipt_date: row.receipt_date,
-    p_purchase_category: row.purchase_category,
-    p_material_id: row.material_id,
-    p_quantity: row.quantity,
-    p_unit: row.unit,
-    p_unit_price: row.unit_price,
-    p_supply_amount: row.supply_amount,
-    p_vat_amount: row.vat_amount,
-    p_total_amount: row.total_amount,
-    p_due_date: row.due_date || null,
-    p_planned_payment_method: row.planned_payment_method,
-    p_planned_payment_account: row.planned_payment_account || null,
-    p_planned_card_name: row.planned_card_name || null,
-    p_planned_installment_months: row.planned_installment_months,
-    p_tax_invoice_status: row.tax_invoice_status,
-    p_tax_invoice_amount: row.tax_invoice_amount,
-    p_notes: row.notes || null,
+    p_business_id: row.business_id, p_supplier_id: row.supplier_id, p_purchase_date: row.purchase_date, p_receipt_date: row.receipt_date,
+    p_purchase_category: row.purchase_category, p_material_id: row.material_id, p_quantity: row.quantity, p_unit: row.unit,
+    p_unit_price: row.unit_price, p_supply_amount: row.supply_amount, p_vat_amount: row.vat_amount, p_total_amount: row.total_amount,
+    p_due_date: row.due_date || null, p_planned_payment_method: row.planned_payment_method,
+    p_planned_payment_account: row.planned_payment_account || null, p_planned_card_name: row.planned_card_name || null,
+    p_planned_installment_months: row.planned_installment_months, p_tax_invoice_status: row.tax_invoice_status,
+    p_tax_invoice_amount: row.tax_invoice_amount, p_notes: row.notes || null,
   }
 }
 
 async function loadSupplier(supabase: MoniClient, supplierId: string) {
-  const { data, error } = await supabase
-    .from('purchase_suppliers')
-    .select('*')
-    .eq('id', supplierId)
-    .eq('business_id', BUSINESS_ID)
-    .eq('status', 'ACTIVE')
-    .maybeSingle()
+  const { data, error } = await supabase.from('purchase_suppliers').select('*').eq('id', supplierId).eq('business_id', BUSINESS_ID).eq('status', 'ACTIVE').maybeSingle()
   if (error) throw new Error(error.message)
   if (!data) throw new Error('선택한 매입처를 찾을 수 없습니다.')
   return data as SupplierRow
@@ -515,13 +442,7 @@ export async function GET(request: NextRequest) {
     if (!await requireAdmin(request)) return NextResponse.json({ ok: false, error: '관리자 권한이 필요합니다.' }, { status: 401 })
     const state = await loadState()
     const scope = text(request.nextUrl.searchParams.get('scope'))
-    if (scope === 'dashboard') {
-      return NextResponse.json({
-        ok: true,
-        summary: state.summary,
-        purchases: state.purchases.filter((row) => !row.legacy_record).slice(0, 10),
-      })
-    }
+    if (scope === 'dashboard') return NextResponse.json({ ok: true, summary: state.summary, purchases: state.purchases.filter((row) => !row.legacy_record).slice(0, 10) })
     return NextResponse.json({ ok: true, ...state })
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : '매입 데이터를 불러오지 못했습니다.' }, { status: 500 })
@@ -543,32 +464,21 @@ export async function POST(request: NextRequest) {
       const dueType = text(body.default_due_type).toUpperCase() || 'DAYS'
       const paymentMethod = text(body.default_payment_method).toUpperCase() || 'BANK_TRANSFER'
       const taxType = text(body.tax_type).toUpperCase() || 'TAXABLE'
-      if (!SUPPLY_TYPES.has(supplyType) || !DUE_TYPES.has(dueType) || !PAYMENT_METHODS.has(paymentMethod) || !TAX_TYPES.has(taxType)) {
-        return NextResponse.json({ ok: false, error: '매입처 거래조건을 확인해 주세요.' }, { status: 400 })
-      }
+      if (!SUPPLY_TYPES.has(supplyType) || !DUE_TYPES.has(dueType) || !PAYMENT_METHODS.has(paymentMethod) || !TAX_TYPES.has(taxType)) return NextResponse.json({ ok: false, error: '매입처 거래조건을 확인해 주세요.' }, { status: 400 })
       const payload = {
-        business_id: BUSINESS_ID,
-        company_name: companyName,
+        business_id: BUSINESS_ID, company_name: companyName,
         business_registration_number: text(body.business_registration_number) || null,
-        representative_name: text(body.representative_name) || null,
-        contact_name: text(body.contact_name) || null,
-        phone: text(body.phone) || null,
-        email: text(body.email) || null,
-        address: text(body.address) || null,
-        supply_type: supplyType,
-        default_due_type: dueType,
+        representative_name: text(body.representative_name) || null, contact_name: text(body.contact_name) || null,
+        phone: text(body.phone) || null, email: text(body.email) || null, address: text(body.address) || null,
+        supply_type: supplyType, default_due_type: dueType,
         default_due_days: dueType === 'DAYS' ? Math.max(0, integerValue(body.default_due_days, 0)) : null,
         default_due_day: dueType === 'NEXT_MONTH_DAY' ? Math.min(31, Math.max(1, integerValue(body.default_due_day, 1))) : null,
-        default_payment_method: paymentMethod,
-        default_payment_account: text(body.default_payment_account) || null,
+        default_payment_method: paymentMethod, default_payment_account: text(body.default_payment_account) || null,
         default_card_name: text(body.default_card_name) || null,
         default_installment_months: paymentMethod === 'CARD' ? Math.min(36, Math.max(1, integerValue(body.default_installment_months, 1))) : 1,
-        tax_invoice_required: boolValue(body.tax_invoice_required, true),
-        tax_type: taxType,
-        currency: text(body.currency) || 'KRW',
-        status: text(body.status).toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
-        notes: text(body.notes) || null,
-        updated_at: new Date().toISOString(),
+        tax_invoice_required: boolValue(body.tax_invoice_required, true), tax_type: taxType,
+        currency: text(body.currency) || 'KRW', status: text(body.status).toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+        notes: text(body.notes) || null, updated_at: new Date().toISOString(),
       }
       if (action === 'create_supplier') {
         const { data, error } = await supabase.from('purchase_suppliers').insert(payload).select('*').single()
@@ -603,11 +513,7 @@ export async function POST(request: NextRequest) {
       const preparedRows = rows.map((row, index) => {
         const supplier = supplierById.get(text(row.supplier_id))
         if (!supplier) throw new Error(`${index + 2}행의 매입처를 찾을 수 없습니다.`)
-        try {
-          return preparePurchase(row, supplier)
-        } catch (error) {
-          throw new Error(`${index + 2}행: ${error instanceof Error ? error.message : '입력값을 확인해 주세요.'}`)
-        }
+        try { return preparePurchase(row, supplier) } catch (error) { throw new Error(`${index + 2}행: ${error instanceof Error ? error.message : '입력값을 확인해 주세요.'}`) }
       })
       const { data, error } = await supabase.rpc('moni_create_purchase_receipts_batch', { p_rows: preparedRows })
       if (error) throw new Error(error.message)
@@ -619,9 +525,7 @@ export async function POST(request: NextRequest) {
       const paymentDate = text(body.payment_date) || kstToday()
       const amount = numberValue(body.amount, 0)
       const method = text(body.payment_method).toUpperCase() || 'BANK_TRANSFER'
-      if (!purchaseId || !isDate(paymentDate) || amount <= 0 || !PAYMENT_METHODS.has(method)) {
-        return NextResponse.json({ ok: false, error: '지급일·금액·결제수단을 확인해 주세요.' }, { status: 400 })
-      }
+      if (!purchaseId || !isDate(paymentDate) || amount <= 0 || !PAYMENT_METHODS.has(method)) return NextResponse.json({ ok: false, error: '지급일·금액·결제수단을 확인해 주세요.' }, { status: 400 })
       const { data: purchase, error: purchaseError } = await supabase.from('purchases').select('id,total_amount,status').eq('id', purchaseId).eq('business_id', BUSINESS_ID).maybeSingle()
       if (purchaseError) throw new Error(purchaseError.message)
       if (!purchase || purchase.status === 'CANCELLED') return NextResponse.json({ ok: false, error: '지급할 수 없는 매입 건입니다.' }, { status: 409 })
@@ -630,18 +534,7 @@ export async function POST(request: NextRequest) {
       const alreadyPaid = (existingPayments ?? []).reduce((sum, row) => sum + numberValue(row.amount), 0)
       const remaining = Math.max(0, numberValue(purchase.total_amount) - alreadyPaid)
       if (amount > remaining + 0.0001) return NextResponse.json({ ok: false, error: `남은 미지급금 ${Math.round(remaining).toLocaleString('ko-KR')}원을 초과할 수 없습니다.` }, { status: 409 })
-      const paymentPayload = {
-        business_id: BUSINESS_ID,
-        purchase_id: purchaseId,
-        payment_date: paymentDate,
-        amount,
-        payment_method: method,
-        payment_account: text(body.payment_account) || null,
-        card_name: text(body.card_name) || null,
-        installment_months: method === 'CARD' ? Math.min(36, Math.max(1, integerValue(body.installment_months, 1))) : 1,
-        reference: text(body.reference) || null,
-        notes: text(body.notes) || null,
-      }
+      const paymentPayload = { business_id: BUSINESS_ID, purchase_id: purchaseId, payment_date: paymentDate, amount, payment_method: method, payment_account: text(body.payment_account) || null, card_name: text(body.card_name) || null, installment_months: method === 'CARD' ? Math.min(36, Math.max(1, integerValue(body.installment_months, 1))) : 1, reference: text(body.reference) || null, notes: text(body.notes) || null }
       const { data, error } = await supabase.from('purchase_payments').insert(paymentPayload).select('*').single()
       if (error) throw new Error(error.message)
       const nextRemaining = Math.max(0, remaining - amount)
@@ -655,11 +548,7 @@ export async function POST(request: NextRequest) {
       const id = text(body.id)
       const status = text(body.tax_invoice_status).toUpperCase()
       if (!id || !TAX_INVOICE_STATUSES.has(status)) return NextResponse.json({ ok: false, error: '세금계산서 상태를 확인해 주세요.' }, { status: 400 })
-      const { data, error } = await supabase.from('purchases').update({
-        tax_invoice_status: status,
-        tax_invoice_amount: body.tax_invoice_amount === null || body.tax_invoice_amount === undefined ? null : numberValue(body.tax_invoice_amount),
-        updated_at: new Date().toISOString(),
-      }).eq('id', id).eq('business_id', BUSINESS_ID).select('*').single()
+      const { data, error } = await supabase.from('purchases').update({ tax_invoice_status: status, tax_invoice_amount: body.tax_invoice_amount === null || body.tax_invoice_amount === undefined ? null : numberValue(body.tax_invoice_amount), updated_at: new Date().toISOString() }).eq('id', id).eq('business_id', BUSINESS_ID).select('*').single()
       if (error) throw new Error(error.message)
       return NextResponse.json({ ok: true, purchase: data })
     }
