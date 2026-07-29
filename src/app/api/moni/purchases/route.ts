@@ -10,13 +10,17 @@ const PAYMENT_METHODS = new Set(['BANK_TRANSFER', 'CARD', 'CASH', 'OTHER'])
 const SUPPLY_TYPES = new Set(['RAW_MATERIAL', 'PACKAGING', 'BOTH', 'OTHER'])
 const DUE_TYPES = new Set(['IMMEDIATE', 'DAYS', 'NEXT_MONTH_DAY', 'MONTH_END', 'DIRECT'])
 const TAX_TYPES = new Set(['TAXABLE', 'EXEMPT', 'ZERO_RATE'])
-const PURCHASE_CATEGORIES = new Set(['RAW_MATERIAL', 'PACKAGING', 'OTHER'])
+const PURCHASE_CATEGORIES = new Set(['RAW_MATERIAL', 'PACKAGING'])
 const TAX_INVOICE_STATUSES = new Set(['NOT_REQUIRED', 'NOT_RECEIVED', 'RECEIVED', 'MATCHED', 'MISMATCH'])
+const RAW_UNITS = new Set(['KG', 'G', 'EA'])
+const MAX_BATCH_ROWS = 500
 
 type JsonRecord = Record<string, unknown>
+type MoniClient = ReturnType<typeof createMoniServiceRoleClient>
 
 type SupplierRow = {
   id: string
+  business_id: string
   company_name: string
   default_due_type: string
   default_due_days: number | null
@@ -27,6 +31,7 @@ type SupplierRow = {
   default_installment_months: number
   tax_invoice_required: boolean
   tax_type: string
+  status: string
   [key: string]: unknown
 }
 
@@ -47,6 +52,29 @@ type PaymentRow = {
   payment_date: string
   amount: number | string
   [key: string]: unknown
+}
+
+type PreparedPurchase = {
+  business_id: string
+  supplier_id: string
+  purchase_date: string
+  receipt_date: string
+  purchase_category: 'RAW_MATERIAL' | 'PACKAGING'
+  material_id: string
+  quantity: number
+  unit: string
+  unit_price: number
+  supply_amount: number
+  vat_amount: number
+  total_amount: number
+  due_date: string
+  planned_payment_method: string
+  planned_payment_account: string
+  planned_card_name: string
+  planned_installment_months: number
+  tax_invoice_status: string
+  tax_invoice_amount: number | null
+  notes: string
 }
 
 function text(value: unknown) {
@@ -80,7 +108,10 @@ function isoDate(date: Date) {
 
 function kstToday() {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).format(new Date())
 }
 
@@ -110,7 +141,7 @@ function calculateDueDate(purchaseDate: string, supplier: SupplierRow, directDat
   if (dueType === 'DAYS') return addDays(purchaseDate, Math.max(0, integerValue(supplier.default_due_days, 0)))
   if (dueType === 'NEXT_MONTH_DAY') return nextMonthDate(purchaseDate, integerValue(supplier.default_due_day, 1))
   if (dueType === 'MONTH_END') return monthEnd(purchaseDate)
-  return null
+  return ''
 }
 
 async function requireAdmin(request: NextRequest) {
@@ -118,36 +149,32 @@ async function requireAdmin(request: NextRequest) {
   return session?.role === 'admin' ? session : null
 }
 
-async function nextPurchaseNo() {
-  const year = kstToday().slice(0, 4)
-  const prefix = `DB-PO-${year}-`
-  const supabase = createMoniServiceRoleClient()
-  const { data, error } = await supabase
-    .from('purchases')
-    .select('purchase_no')
-    .like('purchase_no', `${prefix}%`)
-    .order('purchase_no', { ascending: false })
-    .limit(1)
-  if (error) throw new Error(error.message)
-  const previous = text(data?.[0]?.purchase_no)
-  const sequence = previous.startsWith(prefix) ? integerValue(previous.slice(prefix.length), 0) + 1 : 1
-  return `${prefix}${String(sequence).padStart(3, '0')}`
+function scopedBusiness(value: unknown) {
+  const businessId = text(value)
+  return businessId === BUSINESS_ID || businessId === 'default' || businessId === ''
 }
 
 async function loadState() {
   const supabase = createMoniServiceRoleClient()
-  const [supplierResult, purchaseResult, paymentResult] = await Promise.all([
+  const [supplierResult, purchaseResult, paymentResult, rawResult, packagingResult] = await Promise.all([
     supabase.from('purchase_suppliers').select('*').eq('business_id', BUSINESS_ID).order('company_name'),
     supabase.from('purchases').select('*').eq('business_id', BUSINESS_ID).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('purchase_payments').select('*').eq('business_id', BUSINESS_ID).order('payment_date', { ascending: false }).order('created_at', { ascending: false }),
+    supabase.from('raw_materials').select('id,item_name,country_of_origin,packing_weight_g,unit_price_per_kg,current_stock_g,is_active,business_id').order('item_name'),
+    supabase.from('packaging_materials').select('id,material_code,material_name,spec,unit_price,current_stock,is_active,business_id').order('material_name'),
   ])
   if (supplierResult.error) throw new Error(supplierResult.error.message)
   if (purchaseResult.error) throw new Error(purchaseResult.error.message)
   if (paymentResult.error) throw new Error(paymentResult.error.message)
+  if (rawResult.error) throw new Error(rawResult.error.message)
+  if (packagingResult.error) throw new Error(packagingResult.error.message)
 
   const suppliers = (supplierResult.data ?? []) as SupplierRow[]
   const purchases = (purchaseResult.data ?? []) as PurchaseRow[]
   const payments = (paymentResult.data ?? []) as PaymentRow[]
+  const rawMaterials = (rawResult.data ?? []).filter((row) => row.is_active !== false && scopedBusiness(row.business_id))
+  const packagingMaterials = (packagingResult.data ?? []).filter((row) => row.is_active !== false && scopedBusiness(row.business_id))
+
   const paidByPurchase = new Map<string, number>()
   for (const payment of payments) {
     paidByPurchase.set(payment.purchase_id, (paidByPurchase.get(payment.purchase_id) ?? 0) + numberValue(payment.amount))
@@ -185,8 +212,13 @@ async function loadState() {
     if (!cancelled && outstandingAmount > 0) {
       totalOutstanding += outstandingAmount
       if (!dueDate) noDueDateCount += 1
-      else if (dueDate < today) { overdueAmount += outstandingAmount; overdueCount += 1 }
-      else if (dueDate <= dueSoonLimit) { dueSoonAmount += outstandingAmount; dueSoonCount += 1 }
+      else if (dueDate < today) {
+        overdueAmount += outstandingAmount
+        overdueCount += 1
+      } else if (dueDate <= dueSoonLimit) {
+        dueSoonAmount += outstandingAmount
+        dueSoonCount += 1
+      }
     }
 
     return {
@@ -203,6 +235,8 @@ async function loadState() {
     suppliers,
     purchases: normalizedPurchases,
     payments,
+    raw_materials: rawMaterials,
+    packaging_materials: packagingMaterials,
     summary: {
       total_outstanding: Math.round(totalOutstanding),
       overdue_amount: Math.round(overdueAmount),
@@ -214,6 +248,99 @@ async function loadState() {
       open_purchase_count: normalizedPurchases.filter((row) => row.outstanding_amount > 0 && row.status !== 'CANCELLED').length,
     },
   }
+}
+
+function preparePurchase(body: JsonRecord, supplier: SupplierRow): PreparedPurchase {
+  const purchaseDate = text(body.purchase_date) || kstToday()
+  const receiptDate = text(body.receipt_date) || purchaseDate
+  const category = text(body.purchase_category).toUpperCase()
+  const materialId = text(body.material_id)
+  const quantity = numberValue(body.quantity, 0)
+  const unitPrice = numberValue(body.unit_price, 0)
+  const suppliedSupplyAmount = text(body.supply_amount)
+  const supplyAmount = suppliedSupplyAmount === '' ? quantity * unitPrice : numberValue(body.supply_amount, quantity * unitPrice)
+  const vatAmount = numberValue(body.vat_amount, 0)
+  const suppliedTotalAmount = text(body.total_amount)
+  const totalAmount = suppliedTotalAmount === '' ? supplyAmount + vatAmount : numberValue(body.total_amount, supplyAmount + vatAmount)
+  const unit = category === 'PACKAGING' ? 'EA' : text(body.unit).toUpperCase() || 'KG'
+  const paymentMethod = text(body.planned_payment_method).toUpperCase() || text(supplier.default_payment_method) || 'BANK_TRANSFER'
+  const taxInvoiceStatus = text(body.tax_invoice_status).toUpperCase() || (supplier.tax_invoice_required ? 'NOT_RECEIVED' : 'NOT_REQUIRED')
+
+  if (!isDate(purchaseDate) || !isDate(receiptDate)) throw new Error('매입일과 입고일을 확인해 주세요.')
+  if (!PURCHASE_CATEGORIES.has(category)) throw new Error('원재료 또는 부재료를 선택해 주세요.')
+  if (!materialId) throw new Error('입고할 품목을 선택해 주세요.')
+  if (quantity <= 0) throw new Error('입고수량은 0보다 커야 합니다.')
+  if (category === 'RAW_MATERIAL' && !RAW_UNITS.has(unit)) throw new Error('원재료 단위는 kg, g, EA만 사용할 수 있습니다.')
+  if (category === 'PACKAGING' && (!Number.isInteger(quantity) || unit !== 'EA')) throw new Error('부재료 수량은 정수 EA로 입력해 주세요.')
+  if (unitPrice < 0 || supplyAmount < 0 || vatAmount < 0 || totalAmount < 0) throw new Error('매입금액을 확인해 주세요.')
+  if (!PAYMENT_METHODS.has(paymentMethod)) throw new Error('결제수단을 확인해 주세요.')
+  if (!TAX_INVOICE_STATUSES.has(taxInvoiceStatus)) throw new Error('세금계산서 상태를 확인해 주세요.')
+
+  const dueDate = calculateDueDate(purchaseDate, supplier, text(body.due_date))
+  return {
+    business_id: BUSINESS_ID,
+    supplier_id: supplier.id,
+    purchase_date: purchaseDate,
+    receipt_date: receiptDate,
+    purchase_category: category as 'RAW_MATERIAL' | 'PACKAGING',
+    material_id: materialId,
+    quantity,
+    unit,
+    unit_price: unitPrice,
+    supply_amount: supplyAmount,
+    vat_amount: vatAmount,
+    total_amount: totalAmount,
+    due_date: dueDate,
+    planned_payment_method: paymentMethod,
+    planned_payment_account: text(body.planned_payment_account) || text(supplier.default_payment_account),
+    planned_card_name: text(body.planned_card_name) || text(supplier.default_card_name),
+    planned_installment_months: paymentMethod === 'CARD'
+      ? Math.min(36, Math.max(1, integerValue(body.planned_installment_months, supplier.default_installment_months || 1)))
+      : 1,
+    tax_invoice_status: taxInvoiceStatus,
+    tax_invoice_amount: body.tax_invoice_amount === null || body.tax_invoice_amount === undefined || text(body.tax_invoice_amount) === ''
+      ? null
+      : numberValue(body.tax_invoice_amount),
+    notes: text(body.notes),
+  }
+}
+
+function rpcArgs(row: PreparedPurchase) {
+  return {
+    p_business_id: row.business_id,
+    p_supplier_id: row.supplier_id,
+    p_purchase_date: row.purchase_date,
+    p_receipt_date: row.receipt_date,
+    p_purchase_category: row.purchase_category,
+    p_material_id: row.material_id,
+    p_quantity: row.quantity,
+    p_unit: row.unit,
+    p_unit_price: row.unit_price,
+    p_supply_amount: row.supply_amount,
+    p_vat_amount: row.vat_amount,
+    p_total_amount: row.total_amount,
+    p_due_date: row.due_date || null,
+    p_planned_payment_method: row.planned_payment_method,
+    p_planned_payment_account: row.planned_payment_account || null,
+    p_planned_card_name: row.planned_card_name || null,
+    p_planned_installment_months: row.planned_installment_months,
+    p_tax_invoice_status: row.tax_invoice_status,
+    p_tax_invoice_amount: row.tax_invoice_amount,
+    p_notes: row.notes || null,
+  }
+}
+
+async function loadSupplier(supabase: MoniClient, supplierId: string) {
+  const { data, error } = await supabase
+    .from('purchase_suppliers')
+    .select('*')
+    .eq('id', supplierId)
+    .eq('business_id', BUSINESS_ID)
+    .eq('status', 'ACTIVE')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('선택한 매입처를 찾을 수 없습니다.')
+  return data as SupplierRow
 }
 
 export async function GET(request: NextRequest) {
@@ -286,56 +413,35 @@ export async function POST(request: NextRequest) {
 
     if (action === 'create_purchase') {
       const supplierId = text(body.supplier_id)
-      const purchaseDate = text(body.purchase_date) || kstToday()
-      const category = text(body.purchase_category).toUpperCase() || 'RAW_MATERIAL'
-      const itemName = text(body.item_name)
-      const quantity = numberValue(body.quantity, 0)
-      const unitPrice = numberValue(body.unit_price, 0)
-      const supplyAmount = numberValue(body.supply_amount, quantity * unitPrice)
-      const vatAmount = numberValue(body.vat_amount, 0)
-      const totalAmount = numberValue(body.total_amount, supplyAmount + vatAmount)
-      if (!supplierId || !isDate(purchaseDate) || !PURCHASE_CATEGORIES.has(category) || !itemName || quantity <= 0 || totalAmount < 0) {
-        return NextResponse.json({ ok: false, error: '매입 기본정보와 금액을 확인해 주세요.' }, { status: 400 })
-      }
-      const { data: supplier, error: supplierError } = await supabase.from('purchase_suppliers').select('*').eq('id', supplierId).eq('business_id', BUSINESS_ID).maybeSingle()
-      if (supplierError) throw new Error(supplierError.message)
-      if (!supplier) return NextResponse.json({ ok: false, error: '선택한 매입처를 찾을 수 없습니다.' }, { status: 404 })
-      const supplierRow = supplier as SupplierRow
-      const paymentMethod = text(body.planned_payment_method).toUpperCase() || text(supplierRow.default_payment_method) || 'BANK_TRANSFER'
-      if (!PAYMENT_METHODS.has(paymentMethod)) return NextResponse.json({ ok: false, error: '결제수단을 확인해 주세요.' }, { status: 400 })
-      const taxInvoiceStatus = text(body.tax_invoice_status).toUpperCase() || (supplierRow.tax_invoice_required ? 'NOT_RECEIVED' : 'NOT_REQUIRED')
-      if (!TAX_INVOICE_STATUSES.has(taxInvoiceStatus)) return NextResponse.json({ ok: false, error: '세금계산서 상태를 확인해 주세요.' }, { status: 400 })
-      const purchaseNo = await nextPurchaseNo()
-      const payload = {
-        business_id: BUSINESS_ID,
-        purchase_no: purchaseNo,
-        supplier_id: supplierId,
-        supplier_name_snapshot: supplierRow.company_name,
-        purchase_date: purchaseDate,
-        receipt_date: isDate(text(body.receipt_date)) ? text(body.receipt_date) : null,
-        purchase_category: category,
-        item_name: itemName,
-        quantity,
-        unit: text(body.unit) || 'EA',
-        unit_price: unitPrice,
-        supply_amount: supplyAmount,
-        vat_amount: vatAmount,
-        total_amount: totalAmount,
-        due_date: calculateDueDate(purchaseDate, supplierRow, text(body.due_date)),
-        planned_payment_method: paymentMethod,
-        planned_payment_account: text(body.planned_payment_account) || text(supplierRow.default_payment_account) || null,
-        planned_card_name: text(body.planned_card_name) || text(supplierRow.default_card_name) || null,
-        planned_installment_months: paymentMethod === 'CARD' ? Math.min(36, Math.max(1, integerValue(body.planned_installment_months, supplierRow.default_installment_months || 1))) : 1,
-        tax_invoice_status: taxInvoiceStatus,
-        tax_invoice_amount: body.tax_invoice_amount === null || body.tax_invoice_amount === undefined ? null : numberValue(body.tax_invoice_amount),
-        status: 'OPEN',
-        source_transaction_type: PURCHASE_CATEGORIES.has(text(body.source_transaction_type).toUpperCase()) ? text(body.source_transaction_type).toUpperCase() : null,
-        source_transaction_id: text(body.source_transaction_id) || null,
-        notes: text(body.notes) || null,
-      }
-      const { data, error } = await supabase.from('purchases').insert(payload).select('*').single()
+      if (!supplierId) return NextResponse.json({ ok: false, error: '매입처를 선택해 주세요.' }, { status: 400 })
+      const supplier = await loadSupplier(supabase, supplierId)
+      const prepared = preparePurchase(body, supplier)
+      const { data, error } = await supabase.rpc('moni_create_purchase_receipt', rpcArgs(prepared))
       if (error) throw new Error(error.message)
       return NextResponse.json({ ok: true, purchase: data })
+    }
+
+    if (action === 'create_purchase_batch') {
+      const rows = Array.isArray(body.rows) ? body.rows as JsonRecord[] : []
+      if (!rows.length) return NextResponse.json({ ok: false, error: '등록할 엑셀 내역이 없습니다.' }, { status: 400 })
+      if (rows.length > MAX_BATCH_ROWS) return NextResponse.json({ ok: false, error: `한 번에 최대 ${MAX_BATCH_ROWS}건까지 등록할 수 있습니다.` }, { status: 400 })
+
+      const supplierIds = Array.from(new Set(rows.map((row) => text(row.supplier_id)).filter(Boolean)))
+      const supplierResult = await supabase.from('purchase_suppliers').select('*').eq('business_id', BUSINESS_ID).eq('status', 'ACTIVE').in('id', supplierIds)
+      if (supplierResult.error) throw new Error(supplierResult.error.message)
+      const supplierById = new Map((supplierResult.data ?? []).map((row) => [text(row.id), row as SupplierRow]))
+      const preparedRows = rows.map((row, index) => {
+        const supplier = supplierById.get(text(row.supplier_id))
+        if (!supplier) throw new Error(`${index + 2}행의 매입처를 찾을 수 없습니다.`)
+        try {
+          return preparePurchase(row, supplier)
+        } catch (error) {
+          throw new Error(`${index + 2}행: ${error instanceof Error ? error.message : '입력값을 확인해 주세요.'}`)
+        }
+      })
+      const { data, error } = await supabase.rpc('moni_create_purchase_receipts_batch', { p_rows: preparedRows })
+      if (error) throw new Error(error.message)
+      return NextResponse.json({ ok: true, purchases: data, created_count: preparedRows.length })
     }
 
     if (action === 'add_payment') {
@@ -391,10 +497,7 @@ export async function POST(request: NextRequest) {
     if (action === 'cancel_purchase') {
       const id = text(body.id)
       if (!id) return NextResponse.json({ ok: false, error: '매입 ID가 필요합니다.' }, { status: 400 })
-      const { count, error: paymentError } = await supabase.from('purchase_payments').select('id', { count: 'exact', head: true }).eq('purchase_id', id)
-      if (paymentError) throw new Error(paymentError.message)
-      if ((count ?? 0) > 0) return NextResponse.json({ ok: false, error: '지급 이력이 있는 매입 건은 취소할 수 없습니다.' }, { status: 409 })
-      const { data, error } = await supabase.from('purchases').update({ status: 'CANCELLED', updated_at: new Date().toISOString() }).eq('id', id).eq('business_id', BUSINESS_ID).select('*').single()
+      const { data, error } = await supabase.rpc('moni_cancel_purchase_receipt', { p_purchase_id: id, p_business_id: BUSINESS_ID })
       if (error) throw new Error(error.message)
       return NextResponse.json({ ok: true, purchase: data })
     }
