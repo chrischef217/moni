@@ -1,8 +1,8 @@
 'use client'
 
-import type { Dispatch, SetStateAction } from 'react'
+import { useEffect, useId, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import type { PackagingMaterial, PurchaseCategory, PurchaseReceipt, PurchaseUnit, RawMaterial, ReceiptDraft, Supplier } from './types'
-import { integerNumber, rawMaterialName } from './utils'
+import { integerNumber, normalize, rawMaterialName } from './utils'
 
 type Props = {
   editing: PurchaseReceipt | null
@@ -14,6 +14,11 @@ type Props = {
   busy: boolean
   onClose: () => void
   onSave: () => void
+}
+
+type MaterialOption = {
+  id: string
+  label: string
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -32,10 +37,32 @@ export default function ReceiptEditorModal({
   onSave,
 }: Props) {
   const legacy = Boolean(editing?.legacy_record)
+  const materialListId = useId().replace(/:/g, '')
   const selectedRaw = rawMaterials.find((row) => row.id === draft.material_id || row.item_code === draft.material_id)
   const selectedPackaging = packagingMaterials.find((row) => row.id === draft.material_id || row.material_code === draft.material_id)
   const selectedMaterial = draft.purchase_category === 'RAW_MATERIAL' ? selectedRaw : selectedPackaging
   const availableSuppliers = suppliers.filter((row) => row.status === 'ACTIVE' && (row.supply_type === 'BOTH' || row.supply_type === 'OTHER' || row.supply_type === draft.purchase_category))
+
+  const materialOptions = useMemo<MaterialOption[]>(() => {
+    if (draft.purchase_category === 'RAW_MATERIAL') {
+      return rawMaterials.map((row) => ({ id: row.id, label: rawMaterialName(row) }))
+    }
+    return packagingMaterials.map((row) => ({
+      id: row.id,
+      label: `${row.material_name}${row.spec ? ` · ${row.spec}` : ''}`,
+    }))
+  }, [draft.purchase_category, packagingMaterials, rawMaterials])
+
+  const selectedMaterialLabel = useMemo(() => {
+    if (!draft.material_id) return ''
+    return materialOptions.find((row) => row.id === draft.material_id)?.label || ''
+  }, [draft.material_id, materialOptions])
+
+  const [materialQuery, setMaterialQuery] = useState(selectedMaterialLabel)
+
+  useEffect(() => {
+    setMaterialQuery(selectedMaterialLabel)
+  }, [draft.purchase_category, selectedMaterialLabel])
 
   const priceFor = (category: PurchaseCategory, materialId: string, unit: PurchaseUnit) => {
     if (category === 'PACKAGING') return Number(packagingMaterials.find((row) => row.id === materialId || row.material_code === materialId)?.unit_price ?? 0)
@@ -61,6 +88,7 @@ export default function ReceiptEditorModal({
   }
 
   const changeCategory = (category: PurchaseCategory) => {
+    setMaterialQuery('')
     setDraft((current) => ({
       ...current,
       purchase_category: category,
@@ -89,6 +117,31 @@ export default function ReceiptEditorModal({
       const supplyAmount = Number(current.quantity || 0) * unitPrice
       return { ...current, material_id: materialId, unit_price: unitPrice, supply_amount: supplyAmount, total_amount: supplyAmount + Number(current.vat_amount || 0) }
     })
+  }
+
+  const changeMaterialQuery = (value: string) => {
+    setMaterialQuery(value)
+    const normalizedValue = normalize(value)
+    const matched = materialOptions.find((option) => normalize(option.label) === normalizedValue)
+    if (matched) {
+      selectMaterial(matched.id)
+      return
+    }
+    if (draft.material_id) selectMaterial('')
+  }
+
+  const confirmMaterialQuery = () => {
+    const normalizedValue = normalize(materialQuery)
+    const exact = materialOptions.find((option) => normalize(option.label) === normalizedValue)
+    if (exact) {
+      if (draft.material_id !== exact.id) selectMaterial(exact.id)
+      setMaterialQuery(exact.label)
+      return
+    }
+    if (draft.material_id) {
+      const selected = materialOptions.find((option) => option.id === draft.material_id)
+      setMaterialQuery(selected?.label || '')
+    }
   }
 
   const changeAmount = (field: 'quantity' | 'unit_price' | 'supply_amount' | 'vat_amount', value: number) => {
@@ -133,13 +186,26 @@ export default function ReceiptEditorModal({
           <Field label="입고일 *"><input type="date" className="pr-input" value={draft.receipt_date} onChange={(event) => setDraft({ ...draft, receipt_date: event.target.value })} /></Field>
         </div>
 
-        <Field label={`${draft.purchase_category === 'RAW_MATERIAL' ? '원재료' : '부재료'} 품목 *`}>
-          <select className="pr-input" value={draft.material_id} onChange={(event) => selectMaterial(event.target.value)}>
-            <option value="">등록된 품목 선택</option>
-            {draft.purchase_category === 'RAW_MATERIAL'
-              ? rawMaterials.map((row) => <option key={row.id} value={row.id}>{rawMaterialName(row)}</option>)
-              : packagingMaterials.map((row) => <option key={row.id} value={row.id}>{row.material_name}{row.spec ? ` · ${row.spec}` : ''}</option>)}
-          </select>
+        <Field label={`${draft.purchase_category === 'RAW_MATERIAL' ? '원재료' : '부재료'} 품목 선택·검색 *`}>
+          <div className="relative">
+            <input
+              type="text"
+              list={materialListId}
+              autoComplete="off"
+              className="pr-input pr-searchable-input pr-material-combobox"
+              value={materialQuery}
+              placeholder="품목을 선택하거나 이름을 입력해 검색"
+              onChange={(event) => changeMaterialQuery(event.target.value)}
+              onBlur={confirmMaterialQuery}
+            />
+            <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-sm font-black text-sky-700">⌄</span>
+            <datalist id={materialListId}>
+              {materialOptions.map((option) => <option key={option.id} value={option.label} />)}
+            </datalist>
+          </div>
+          <div className="mt-1.5 text-[11px] font-bold text-[#78909d]">
+            입력하면 등록된 {draft.purchase_category === 'RAW_MATERIAL' ? '원재료' : '부재료'}만 검색됩니다. 목록에서 정확한 품목을 선택해 주세요.
+          </div>
         </Field>
 
         {selectedMaterial ? (
