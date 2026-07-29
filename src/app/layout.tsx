@@ -7,6 +7,7 @@ import GlobalInteractiveContrastController from '@/components/GlobalInteractiveC
 import GlobalReadableInteractiveTextController from '@/components/GlobalReadableInteractiveTextController'
 import SalesManagementMenuController from '@/components/SalesManagementMenuController'
 import DocumentManagementMenuController from '@/components/DocumentManagementMenuController'
+import PurchaseManagementMenuController from '@/components/PurchaseManagementMenuController'
 import DocumentManagementWorkspace from '@/components/DocumentManagementWorkspace'
 import SidebarPinToggleVisualFix from '@/components/SidebarPinToggleVisualFix'
 import SidebarSubmenuMotionController from '@/components/SidebarSubmenuMotionController'
@@ -134,6 +135,7 @@ export default async function RootLayout({
             <GlobalReadableInteractiveTextController />
             <SalesManagementMenuController />
             <DocumentManagementMenuController />
+            <PurchaseManagementMenuController />
             <SidebarPinToggleVisualFix />
             <SidebarSubmenuMotionController />
             <SidebarClickAccordionController />
