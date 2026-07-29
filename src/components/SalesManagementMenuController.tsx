@@ -20,36 +20,6 @@ function setClassName(element: HTMLElement | null, className: string) {
   if (element && element.className !== className) element.className = className
 }
 
-function applySalesCategoryVisual(
-  categoryButton: HTMLButtonElement | null,
-  categoryIcon: HTMLElement | null,
-  active: boolean,
-) {
-  if (categoryButton) {
-    if (active) {
-      categoryButton.style.removeProperty('background')
-      categoryButton.style.removeProperty('background-color')
-      categoryButton.style.removeProperty('color')
-    } else {
-      categoryButton.style.setProperty('background', 'rgb(255 255 255 / 0.62)', 'important')
-      categoryButton.style.setProperty('background-color', 'rgb(255 255 255 / 0.62)', 'important')
-      categoryButton.style.setProperty('color', 'rgb(24 54 72)', 'important')
-    }
-  }
-
-  if (categoryIcon) {
-    if (active) {
-      categoryIcon.style.removeProperty('background')
-      categoryIcon.style.removeProperty('background-color')
-      categoryIcon.style.removeProperty('color')
-    } else {
-      categoryIcon.style.setProperty('background', 'rgb(255 255 255 / 0.62)', 'important')
-      categoryIcon.style.setProperty('background-color', 'rgb(255 255 255 / 0.62)', 'important')
-      categoryIcon.style.setProperty('color', 'rgb(24 54 72)', 'important')
-    }
-  }
-}
-
 function currentView() {
   if (typeof window === 'undefined') return ''
   if (window.location.pathname !== '/business-management') return ''
@@ -80,15 +50,7 @@ export default function SalesManagementMenuController() {
       const wrapper = nav.querySelector<HTMLElement>('[data-sales-management-menu]')
       if (!wrapper) return null
 
-      const categoryButton = wrapper.querySelector<HTMLButtonElement>('[data-sales-management-category]')
-      const categoryIcon = wrapper.querySelector<HTMLElement>('[data-sales-management-icon]')
-      const statsActive = view === 'statistics'
-      const salesActive = pathname === '/business-management' && Boolean(view) && !statsActive
-
-      setClassName(categoryButton, `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${salesActive ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200'}`)
-      setClassName(categoryIcon, `flex h-8 w-8 items-center justify-center rounded-lg ${salesActive ? 'bg-emerald-500/20' : ''}`)
-      applySalesCategoryVisual(categoryButton, categoryIcon, salesActive)
-
+      const salesActive = pathname === '/business-management' && Boolean(view) && view !== 'statistics'
       const existingButtons = Array.from(wrapper.querySelectorAll<HTMLButtonElement>('button[data-sales-view]'))
       const buttonByView = new Map(existingButtons.map((button) => [button.dataset.salesView || '', button]))
       buttonByView.get('sales')?.remove()
