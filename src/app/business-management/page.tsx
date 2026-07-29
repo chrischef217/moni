@@ -16,7 +16,7 @@ export default async function BusinessManagementPage({ searchParams }: PageProps
   const rawTab = searchParams?.tab
   const initialTab = rawTab === 'sales-management'
     ? 'salesManagement'
-    : rawTab === 'sales' || rawTab === 'accounting'
+    : rawTab === 'sales' || rawTab === 'accounting' || rawTab === 'purchase'
       ? rawTab
       : 'hr'
   const initialView = String(searchParams?.view ?? '')
