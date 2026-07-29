@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import PurchaseDesignConsistencyController from '@/components/PurchaseDesignConsistencyController'
 import PurchaseFinancialManagementModule from '@/components/PurchaseFinancialManagementModule'
 import PurchaseReceiptManagementModule from '@/components/PurchaseReceiptManagementModule'
 import type { ReceiptView } from '@/components/purchase-receipts/types'
@@ -27,6 +28,12 @@ export default function PurchaseManagementRouter({ initialView }: { initialView:
     window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }))
   }
 
-  if (view === 'purchases') return <PurchaseReceiptManagementModule onNavigate={navigate} />
-  return <PurchaseFinancialManagementModule view={view} onNavigate={navigate} />
+  return (
+    <>
+      <PurchaseDesignConsistencyController />
+      {view === 'purchases'
+        ? <PurchaseReceiptManagementModule onNavigate={navigate} />
+        : <PurchaseFinancialManagementModule view={view} onNavigate={navigate} />}
+    </>
+  )
 }
