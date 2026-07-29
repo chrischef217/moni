@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'rea
 import ReceiptEditorModal from './purchase-receipts/ReceiptEditorModal'
 import ReceiptHistoryTable from './purchase-receipts/ReceiptHistoryTable'
 import type { DateMode, PurchaseCategory, PurchaseReceipt, ReceiptDraft, ReceiptPayload, ReceiptView } from './purchase-receipts/types'
-import { emptyDraft, excelDate, monthStart, normalize, paymentCode, rawMaterialName, receiptDate, today } from './purchase-receipts/utils'
+import { emptyDraft, excelDate, isStockReconciliation, monthStart, normalize, paymentCode, rawMaterialName, receiptDate, today } from './purchase-receipts/utils'
 
 type Props = {
   onNavigate: (view: ReceiptView) => void
@@ -70,7 +70,10 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
   const suppliers = data?.suppliers ?? []
   const rawMaterials = data?.raw_materials ?? []
   const packagingMaterials = data?.packaging_materials ?? []
-  const rows = data?.rows ?? []
+  const rows = useMemo(
+    () => (data?.rows ?? []).filter((row) => !isStockReconciliation(row)),
+    [data?.rows],
+  )
   const query = normalize(search)
 
   const searchedRows = useMemo(
@@ -123,6 +126,11 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
   }
 
   const saveReceipt = async () => {
+    if (draft.unit === 'EA' && !Number.isInteger(Number(draft.quantity))) {
+      setError('입고수량은 패킹단위 기준 정수 EA로 입력해 주세요.')
+      return
+    }
+
     const body = { ...draft }
     let result: unknown
     if (!editing) {
@@ -208,6 +216,7 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
         const quantity = Number(row['수량'])
         if (!Number.isFinite(quantity) || quantity <= 0) throw new Error(`${line}행: 수량을 확인해 주세요.`)
         const unit = category === 'PACKAGING' ? 'EA' : String(row['단위'] || 'KG').trim().toUpperCase()
+        if (unit === 'EA' && !Number.isInteger(quantity)) throw new Error(`${line}행: 입고수량은 패킹단위 기준 정수 EA여야 합니다.`)
         const unitPrice = Number(row['단가'] || 0)
         const supplyAmount = row['공급가액'] === '' ? quantity * unitPrice : Number(row['공급가액'])
         const vatAmount = Number(row['부가세'] || 0)
@@ -292,14 +301,7 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
 
       {editorOpen ? <ReceiptEditorModal editing={editing} draft={draft} setDraft={setDraft} suppliers={suppliers} rawMaterials={rawMaterials} packagingMaterials={packagingMaterials} busy={busy} onClose={() => setEditorOpen(false)} onSave={() => void saveReceipt()} /> : null}
 
-      <style jsx global>{`
-        [data-purchase-receipt-management] .pr-input{height:44px;width:100%;border-radius:12px;border:1px solid #cfdee7;background:white;padding:0 14px;font-size:14px;outline:none;color:#173b52}
-        [data-purchase-receipt-management] .pr-input:focus{border-color:#0284c7;box-shadow:0 0 0 3px rgba(2,132,199,.08)}
-        [data-purchase-receipt-management] .pr-input:disabled{background:#eef3f6;color:#6f8795}
-        [data-purchase-receipt-management] .pr-primary{display:inline-flex;align-items:center;justify-content:center;border-radius:12px;background:#0369a1;padding:11px 20px;font-size:14px;font-weight:900;color:white}
-        [data-purchase-receipt-management] .pr-primary:disabled{opacity:.55}
-        [data-purchase-receipt-management] .pr-secondary{display:inline-flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid #bae6fd;background:white;padding:10px 16px;font-size:13px;font-weight:900;color:#075985}
-      `}</style>
+      <style jsx global>{`[data-purchase-receipt-management] .pr-input{height:44px;width:100%;border-radius:12px;border:1px solid #cfdee7;background:white;padding:0 14px;font-size:14px;outline:none;color:#173b52}[data-purchase-receipt-management] .pr-input:focus{border-color:#0284c7;box-shadow:0 0 0 3px rgba(2,132,199,.08)}[data-purchase-receipt-management] .pr-input:disabled{background:#eef3f6;color:#6f8795}[data-purchase-receipt-management] .pr-primary{display:inline-flex;align-items:center;justify-content:center;border-radius:12px;background:#0369a1;padding:11px 20px;font-size:14px;font-weight:900;color:white}[data-purchase-receipt-management] .pr-primary:disabled{opacity:.55}[data-purchase-receipt-management] .pr-secondary{display:inline-flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid #bae6fd;background:white;padding:10px 16px;font-size:13px;font-weight:900;color:#075985}`}</style>
     </main>
   )
 }
