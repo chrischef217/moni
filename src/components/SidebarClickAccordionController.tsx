@@ -27,10 +27,31 @@ function setExpanded(row: HTMLElement, expanded: boolean) {
   if (!button || !submenu) return
 
   button.setAttribute('aria-expanded', String(expanded))
+  submenu.setAttribute('aria-hidden', String(!expanded))
   submenu.classList.toggle('grid-rows-[1fr]', expanded)
   submenu.classList.toggle('opacity-100', expanded)
   submenu.classList.toggle('grid-rows-[0fr]', !expanded)
   submenu.classList.toggle('opacity-0', !expanded)
+
+  // React category hover/route renders can replace Tailwind class strings after
+  // the click controller opens a row. Keep the actual accordion geometry and
+  // visibility independent from those class replacements.
+  submenu.style.setProperty('grid-template-rows', expanded ? '1fr' : '0fr', 'important')
+  submenu.style.setProperty('opacity', expanded ? '1' : '0', 'important')
+  submenu.style.setProperty('pointer-events', expanded ? 'auto' : 'none', 'important')
+
+  const content = submenu.querySelector<HTMLElement>(':scope > div > div')
+  if (content) {
+    content.style.setProperty('opacity', expanded ? '1' : '0', 'important')
+    content.style.setProperty('transform', expanded ? 'translate3d(0, 0, 0) scale(1)' : 'translate3d(0, -6px, 0) scale(0.992)', 'important')
+    content.style.setProperty('pointer-events', expanded ? 'auto' : 'none', 'important')
+  }
+
+  for (const item of Array.from(submenu.querySelectorAll<HTMLElement>('button[data-moni-global-nav]'))) {
+    item.style.setProperty('opacity', expanded ? '1' : '0', 'important')
+    item.style.setProperty('transform', expanded ? 'translate3d(0, 0, 0)' : 'translate3d(-4px, -1px, 0)', 'important')
+    item.style.setProperty('pointer-events', expanded ? 'auto' : 'none', 'important')
+  }
 
   const arrow = button.lastElementChild
   if (arrow instanceof HTMLElement) arrow.classList.toggle('rotate-180', expanded)
