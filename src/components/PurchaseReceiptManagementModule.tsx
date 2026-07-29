@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import ReceiptEditorModal from './purchase-receipts/ReceiptEditorModal'
 import ReceiptHistoryTable from './purchase-receipts/ReceiptHistoryTable'
-import type { DateMode, PurchaseCategory, PurchaseReceipt, ReceiptDraft, ReceiptPayload, ReceiptView } from './purchase-receipts/types'
+import type { DateMode, PurchaseCategory, PurchaseReceipt, ReceiptDraft, ReceiptPayload, ReceiptView, RawMaterial } from './purchase-receipts/types'
 import { emptyDraft, excelDate, isStockReconciliation, monthStart, normalize, paymentCode, rawMaterialName, receiptDate, today } from './purchase-receipts/utils'
 
 type Props = {
   onNavigate: (view: ReceiptView) => void
+}
+
+function isInlineSemifinished(material: RawMaterial) {
+  return normalize(material.ingredient_type) === '반제품' || normalize(material.semifinished_usage_type) === 'inline'
 }
 
 export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
@@ -68,11 +72,28 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
   }
 
   const suppliers = data?.suppliers ?? []
-  const rawMaterials = data?.raw_materials ?? []
+  const allRawMaterials = data?.raw_materials ?? []
   const packagingMaterials = data?.packaging_materials ?? []
+  const inlineSemifinishedIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const material of data?.raw_materials ?? []) {
+      if (!isInlineSemifinished(material)) continue
+      ids.add(material.id)
+      if (material.item_code) ids.add(material.item_code)
+    }
+    return ids
+  }, [data?.raw_materials])
+  const rawMaterials = useMemo(
+    () => allRawMaterials.filter((material) => !isInlineSemifinished(material)),
+    [allRawMaterials],
+  )
   const rows = useMemo(
-    () => (data?.rows ?? []).filter((row) => !isStockReconciliation(row)),
-    [data?.rows],
+    () => (data?.rows ?? []).filter((row) => {
+      if (isStockReconciliation(row)) return false
+      if (row.purchase_category === 'RAW_MATERIAL' && row.material_id && inlineSemifinishedIds.has(row.material_id)) return false
+      return true
+    }),
+    [data?.rows, inlineSemifinishedIds],
   )
   const query = normalize(search)
 
@@ -126,6 +147,10 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
   }
 
   const saveReceipt = async () => {
+    if (draft.purchase_category === 'RAW_MATERIAL' && inlineSemifinishedIds.has(draft.material_id)) {
+      setError('인라인 자체생산 반제품은 매입·입고로 등록할 수 없습니다.')
+      return
+    }
     if (draft.unit === 'EA' && !Number.isInteger(Number(draft.quantity))) {
       setError('입고수량은 패킹단위 기준 정수 EA로 입력해 주세요.')
       return
@@ -212,7 +237,7 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
         const category = categoryText === '원재료' || categoryText === 'raw_material' ? 'RAW_MATERIAL' : categoryText === '부재료' || categoryText === 'packaging' ? 'PACKAGING' : ''
         if (!category) throw new Error(`${line}행: 구분은 원재료 또는 부재료여야 합니다.`)
         const material = category === 'RAW_MATERIAL' ? rawByName.get(normalize(row['품목'])) : packagingByName.get(normalize(row['품목']))
-        if (!material) throw new Error(`${line}행: 등록된 품목을 찾을 수 없습니다.`)
+        if (!material) throw new Error(`${line}행: 등록 가능한 원재료 또는 부재료를 찾을 수 없습니다.`)
         const quantity = Number(row['수량'])
         if (!Number.isFinite(quantity) || quantity <= 0) throw new Error(`${line}행: 수량을 확인해 주세요.`)
         const unit = category === 'PACKAGING' ? 'EA' : String(row['단위'] || 'KG').trim().toUpperCase()
