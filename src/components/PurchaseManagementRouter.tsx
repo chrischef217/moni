@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import PurchaseManagementModule from '@/components/PurchaseManagementModule'
+import PurchaseFinancialManagementModule from '@/components/PurchaseFinancialManagementModule'
 import PurchaseReceiptManagementModule from '@/components/PurchaseReceiptManagementModule'
 import type { ReceiptView } from '@/components/purchase-receipts/types'
 
@@ -28,5 +28,5 @@ export default function PurchaseManagementRouter({ initialView }: { initialView:
   }
 
   if (view === 'purchases') return <PurchaseReceiptManagementModule onNavigate={navigate} />
-  return <PurchaseManagementModule key={`legacy-purchase-${view}`} initialView={view} />
+  return <PurchaseFinancialManagementModule view={view} onNavigate={navigate} />
 }
