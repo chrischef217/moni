@@ -57,6 +57,9 @@ export type PurchaseReceipt = {
   supply_amount: number
   vat_amount: number
   total_amount: number
+  estimated_total_amount?: number | null
+  verification_status?: string | null
+  amount_basis?: string | null
   inventory_quantity_base?: number | null
   inventory_unit?: string | null
   due_date?: string | null
