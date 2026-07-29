@@ -12,7 +12,7 @@ import SalesTaxTypeEnhancer from '@/components/SalesTaxTypeEnhancer'
 import SalesTargetsModule from '@/components/SalesTargetsModule'
 import FinancialControlModule from '@/components/FinancialControlModule'
 import RegularEmployeeManagementModule from '@/components/RegularEmployeeManagementModule'
-import PurchaseManagementModule from '@/components/PurchaseManagementModule'
+import PurchaseManagementRouter from '@/components/PurchaseManagementRouter'
 
 type MainTab = 'hr' | 'sales' | 'accounting' | 'salesManagement' | 'purchase'
 
@@ -108,7 +108,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
       {initialTab === 'salesManagement'
         ? salesManagementContent
         : purchaseView
-          ? <PurchaseManagementModule key={`purchase-${initialView}`} initialView={initialView} />
+          ? <PurchaseManagementRouter key={`purchase-${initialView}`} initialView={initialView} />
           : salesTargetView
             ? <SalesTargetsModule key="sales-targets" />
             : financialControlView
