@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import AdminDashboard from '@/components/AdminDashboard'
 import AllowanceLogin from '@/components/AllowanceLogin'
 import MainControlTowerDashboard from '@/components/MainControlTowerDashboard'
+import PurchaseDashboardSummary from '@/components/PurchaseDashboardSummary'
 import ControlTowerAlertFeed from '@/components/ControlTowerAlertFeed'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
@@ -32,6 +33,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   return (
     <>
       <MainControlTowerDashboard session={session} />
+      <PurchaseDashboardSummary />
       <ControlTowerAlertFeed />
     </>
   )
