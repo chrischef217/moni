@@ -4,9 +4,19 @@ import { useEffect } from 'react'
 
 const MENU_ATTR = 'data-document-management-menu'
 const DOCUMENT_TAB = 'document-management'
+const CATEGORY_ACTIVE = 'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition bg-emerald-500/15 text-emerald-200'
+const CATEGORY_INACTIVE = 'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition text-slate-200 hover:bg-slate-800/80 hover:text-white'
+const ICON_ACTIVE = 'flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20'
+const ICON_INACTIVE = 'flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800'
+const ITEM_ACTIVE = 'mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition bg-blue-600 text-white'
+const ITEM_INACTIVE = 'mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition text-slate-400 hover:bg-slate-800 hover:text-slate-100'
 
 function normalizedText(element: Element | null) {
   return (element?.textContent || '').replace(/\s+/g, ' ').trim()
+}
+
+function setClassName(element: HTMLElement | null, className: string) {
+  if (element && element.className !== className) element.className = className
 }
 
 function currentView() {
@@ -16,7 +26,10 @@ function currentView() {
 }
 
 function navigate(view: 'official' | 'quotes') {
-  window.location.assign(`/business-management?tab=${DOCUMENT_TAB}&view=${view}`)
+  const nextPath = `/business-management?tab=${DOCUMENT_TAB}&view=${view}`
+  const currentPath = `${window.location.pathname}${window.location.search}`
+  if (currentPath !== nextPath) window.history.pushState(window.history.state, '', nextPath)
+  window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }))
 }
 
 function createSubmenuButton(label: string, view: 'official' | 'quotes') {
@@ -24,9 +37,13 @@ function createSubmenuButton(label: string, view: 'official' | 'quotes') {
   button.type = 'button'
   button.setAttribute('data-moni-global-nav', 'true')
   button.dataset.documentView = view
-  button.className = 'mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition'
+  button.className = ITEM_INACTIVE
   button.textContent = label
-  button.addEventListener('click', () => navigate(view))
+  button.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    navigate(view)
+  })
   return button
 }
 
@@ -39,7 +56,7 @@ function createDocumentMenu() {
   categoryButton.type = 'button'
   categoryButton.setAttribute('data-moni-global-nav', 'true')
   categoryButton.setAttribute('aria-expanded', 'false')
-  categoryButton.className = 'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition'
+  categoryButton.className = CATEGORY_INACTIVE
   categoryButton.innerHTML = `
     <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800" aria-hidden="true">▧</span>
     <span class="flex-1">문서관리</span>
@@ -62,18 +79,22 @@ function createDocumentMenu() {
   submenuGrid.appendChild(submenuClip)
   root.append(categoryButton, submenuGrid)
 
-  const setExpanded = (expanded: boolean) => {
-    submenuGrid.className = `grid transition-all duration-300 ease-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`
-    categoryButton.setAttribute('aria-expanded', String(expanded))
-    const arrow = categoryButton.lastElementChild
-    if (arrow instanceof HTMLElement) arrow.classList.toggle('rotate-180', expanded)
-  }
-
-  categoryButton.addEventListener('click', () => {
-    setExpanded(categoryButton.getAttribute('aria-expanded') !== 'true')
-  })
-
   return root
+}
+
+function clearOtherActiveCategories(nav: HTMLElement, documentRoot: HTMLElement) {
+  for (const row of Array.from(nav.children)) {
+    if (!(row instanceof HTMLElement) || row === documentRoot) continue
+    const button = row.querySelector<HTMLButtonElement>(':scope > button[data-moni-global-nav]')
+    if (!button) continue
+    setClassName(button, CATEGORY_INACTIVE)
+    const icon = button.firstElementChild
+    if (icon instanceof HTMLElement) setClassName(icon, ICON_INACTIVE)
+
+    for (const item of Array.from(row.querySelectorAll<HTMLButtonElement>('div.grid button[data-moni-global-nav]'))) {
+      if (item.className.includes('bg-blue-600')) setClassName(item, ITEM_INACTIVE)
+    }
+  }
 }
 
 function applyDocumentMenu() {
@@ -95,46 +116,20 @@ function applyDocumentMenu() {
   const categoryIcon = categoryButton?.firstElementChild
   const itemButtons = Array.from(documentRoot.querySelectorAll<HTMLButtonElement>('[data-document-view]'))
 
-  if (categoryButton) {
-    categoryButton.className = `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold transition ${
-      activeView ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'
-    }`
-  }
-  if (categoryIcon instanceof HTMLElement) {
-    categoryIcon.className = `flex h-8 w-8 items-center justify-center rounded-lg ${activeView ? 'bg-emerald-500/20' : 'bg-slate-800'}`
-  }
+  if (activeView) clearOtherActiveCategories(nav, documentRoot)
+  setClassName(categoryButton, activeView ? CATEGORY_ACTIVE : CATEGORY_INACTIVE)
+  if (categoryIcon instanceof HTMLElement) setClassName(categoryIcon, activeView ? ICON_ACTIVE : ICON_INACTIVE)
 
   for (const button of itemButtons) {
-    const active = button.dataset.documentView === activeView
-    button.className = `mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-      active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
-    }`
+    setClassName(button, button.dataset.documentView === activeView ? ITEM_ACTIVE : ITEM_INACTIVE)
   }
 
   if (activeView) {
     const footerLabel = Array.from(sidebar.querySelectorAll<HTMLElement>('span.block.truncate'))
       .find((element) => normalizedText(element).startsWith('현재 영역:'))
-    if (footerLabel) footerLabel.innerHTML = '현재 영역: <b class="text-slate-300">문서관리</b>'
-  }
-}
-
-function resetDocumentViewport() {
-  if (!currentView()) return
-
-  const routeKey = `${window.location.pathname}${window.location.search}`
-  const appContent = document.querySelector<HTMLElement>('[data-moni-app-content]')
-  const workspace = document.querySelector<HTMLElement>('[data-document-management-workspace]')
-
-  if (appContent && appContent.dataset.documentViewportRoute !== routeKey) {
-    appContent.dataset.documentViewportRoute = routeKey
-    appContent.scrollTop = 0
-    appContent.scrollLeft = 0
-  }
-
-  if (workspace && workspace.dataset.documentViewportRoute !== routeKey) {
-    workspace.dataset.documentViewportRoute = routeKey
-    workspace.scrollTop = 0
-    workspace.scrollLeft = 0
+    if (footerLabel && normalizedText(footerLabel) !== '현재 영역: 문서관리') {
+      footerLabel.innerHTML = '현재 영역: <b class="text-slate-300">문서관리</b>'
+    }
   }
 }
 
@@ -157,7 +152,6 @@ export default function DocumentManagementMenuController() {
         frame = null
         syncWorkspaceRoute()
         applyDocumentMenu()
-        resetDocumentViewport()
       })
     }
 
@@ -174,7 +168,6 @@ export default function DocumentManagementMenuController() {
     }
 
     applyDocumentMenu()
-    resetDocumentViewport()
     const observer = new MutationObserver(schedule)
     observer.observe(document.body, { childList: true, subtree: true })
     window.addEventListener('popstate', schedule)
