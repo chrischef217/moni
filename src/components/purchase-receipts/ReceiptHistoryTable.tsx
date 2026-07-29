@@ -50,6 +50,7 @@ export default function ReceiptHistoryTable({ rows, onEdit, onDelete, onTax }: P
         <tbody className="divide-y divide-[#e3edf3]">
           {rows.map((row) => {
             const grams = totalGrams(row)
+            const reviewRequired = row.verification_status === 'REVIEW_REQUIRED'
             return (
               <tr key={row.id}>
                 <td className="px-2 py-4 text-center"><CategoryBadge category={row.purchase_category} /></td>
@@ -59,7 +60,9 @@ export default function ReceiptHistoryTable({ rows, onEdit, onDelete, onTax }: P
                 <td className="break-words px-3 py-4 font-black">{receiptQuantity(row)}</td>
                 <td className="px-3 py-4 text-right text-base font-black tabular-nums">{grams === null ? '-' : `${integerNumber(grams)}g`}</td>
                 <td className="break-words px-3 py-4">
-                  {row.legacy_record ? '-' : (
+                  {row.legacy_record ? '-' : reviewRequired ? (
+                    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-800">지급 확인 필요</span>
+                  ) : (
                     <>
                       {row.due_date ? monthDay(row.due_date) : '미설정'}
                       <div className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${stateTone(row.payment_state)}`}>{label(row.payment_state)}</div>
@@ -67,7 +70,9 @@ export default function ReceiptHistoryTable({ rows, onEdit, onDelete, onTax }: P
                   )}
                 </td>
                 <td className="px-2 py-4">
-                  {row.legacy_record ? '-' : (
+                  {row.legacy_record ? '-' : reviewRequired ? (
+                    <span className="inline-flex rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-[10px] font-black text-amber-800">확인 필요</span>
+                  ) : (
                     <select
                       value={row.tax_invoice_status}
                       onChange={(event) => void onTax(row, event.target.value)}
