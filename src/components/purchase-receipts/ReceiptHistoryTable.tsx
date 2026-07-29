@@ -26,13 +26,13 @@ export default function ReceiptHistoryTable({ rows, onEdit, onDelete, onTax }: P
         <colgroup>
           <col className="w-[5%]" />
           <col className="w-[7%]" />
-          <col className="w-[16%]" />
-          <col className="w-[18%]" />
-          <col className="w-[12%]" />
-          <col className="w-[12%]" />
+          <col className="w-[10%]" />
+          <col className="w-[22%]" />
+          <col className="w-[14%]" />
           <col className="w-[12%]" />
           <col className="w-[10%]" />
-          <col className="w-[8%]" />
+          <col className="w-[10%]" />
+          <col className="w-[10%]" />
         </colgroup>
         <thead className="bg-[#eef5f9] text-xs font-black text-[#5c788a]">
           <tr>
@@ -82,9 +82,9 @@ export default function ReceiptHistoryTable({ rows, onEdit, onDelete, onTax }: P
                   )}
                 </td>
                 <td className="px-2 py-4">
-                  <div className="flex flex-col items-stretch gap-1.5">
-                    <button type="button" onClick={() => onEdit(row)} className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-2 text-[11px] font-black text-sky-800">수정</button>
-                    <button type="button" onClick={() => onDelete(row)} className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-[11px] font-black text-rose-700">삭제</button>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <button type="button" onClick={() => onEdit(row)} className="min-w-0 flex-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-2 text-[11px] font-black text-sky-800">수정</button>
+                    <button type="button" onClick={() => onDelete(row)} className="min-w-0 flex-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-[11px] font-black text-rose-700">삭제</button>
                   </div>
                 </td>
               </tr>
