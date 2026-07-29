@@ -14,13 +14,14 @@ const PURCHASE_CATEGORIES = new Set(['RAW_MATERIAL', 'PACKAGING'])
 const TAX_INVOICE_STATUSES = new Set(['NOT_REQUIRED', 'NOT_RECEIVED', 'RECEIVED', 'MATCHED', 'MISMATCH'])
 const RAW_UNITS = new Set(['KG', 'G', 'EA'])
 const MAX_BATCH_ROWS = 500
+const PAGE_SIZE = 1000
+const MAX_PAGES = 100
 
 type JsonRecord = Record<string, unknown>
 type MoniClient = ReturnType<typeof createMoniServiceRoleClient>
 
-type SupplierRow = {
+type SupplierRow = JsonRecord & {
   id: string
-  business_id: string
   company_name: string
   default_due_type: string
   default_due_days: number | null
@@ -30,28 +31,23 @@ type SupplierRow = {
   default_card_name: string | null
   default_installment_months: number
   tax_invoice_required: boolean
-  tax_type: string
   status: string
-  [key: string]: unknown
 }
 
-type PurchaseRow = {
+type PurchaseRow = JsonRecord & {
   id: string
-  supplier_id: string
   purchase_no: string
   purchase_date: string
   due_date: string | null
   total_amount: number | string
   status: string
-  [key: string]: unknown
 }
 
-type PaymentRow = {
+type PaymentRow = JsonRecord & {
   id: string
   purchase_id: string
   payment_date: string
   amount: number | string
-  [key: string]: unknown
 }
 
 type PreparedPurchase = {
@@ -154,14 +150,156 @@ function scopedBusiness(value: unknown) {
   return businessId === BUSINESS_ID || businessId === 'default' || businessId === ''
 }
 
+function inboundType(value: unknown) {
+  const normalized = text(value).toUpperCase()
+  return normalized === 'INBOUND' || normalized.includes('입고')
+}
+
+function rowDate(row: JsonRecord) {
+  const direct = text(row.receipt_date) || text(row.transaction_date) || text(row.txn_date)
+  if (isDate(direct)) return direct
+  const created = text(row.created_at)
+  return /^\d{4}-\d{2}-\d{2}/.test(created) ? created.slice(0, 10) : ''
+}
+
+async function fetchAllRows(supabase: MoniClient, table: 'raw_material_transactions' | 'packaging_transactions') {
+  const rows: JsonRecord[] = []
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const from = page * PAGE_SIZE
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .order('created_at', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) throw new Error(error.message)
+    const pageRows = (data ?? []) as JsonRecord[]
+    rows.push(...pageRows)
+    if (pageRows.length < PAGE_SIZE) return rows
+  }
+  throw new Error(`${table} 입고내역이 ${PAGE_SIZE * MAX_PAGES}건을 초과해 전체 조회하지 못했습니다.`)
+}
+
+function legacyRawRows(
+  transactions: JsonRecord[],
+  linkedIds: Set<string>,
+  rawMeta: Map<string, JsonRecord>,
+) {
+  return transactions.flatMap((row) => {
+    if (!scopedBusiness(row.business_id) || !inboundType(row.txn_type ?? row.transaction_type)) return []
+    const id = text(row.id)
+    if (!id || linkedIds.has(id)) return []
+    const materialRef = text(row.item_code ?? row.raw_material_id)
+    const meta = rawMeta.get(materialRef)
+    const quantityG = Math.max(0, numberValue(row.total_weight_g ?? row.quantity_g ?? row.quantity))
+    const date = rowDate(row)
+    if (!date || quantityG <= 0) return []
+    const itemName = text(row.raw_material_name ?? row.item_name) || text(meta?.item_name) || materialRef || '원재료명 확인 필요'
+    const unitPrice = Math.max(0, numberValue(row.unit_price ?? row.unit_price_won ?? meta?.unit_price_per_kg))
+    const recordedTotal = Math.max(0, numberValue(row.total_price))
+    return [{
+      id: `legacy-raw-${id}`,
+      purchase_no: `기존입고-${id}`,
+      supplier_id: '',
+      supplier_name_snapshot: text(row.supplier) || text(meta?.supplier) || '매입처 미등록',
+      purchase_date: date,
+      receipt_date: date,
+      purchase_category: 'RAW_MATERIAL',
+      material_id: materialRef,
+      item_name: itemName,
+      quantity: quantityG,
+      unit: 'G',
+      unit_price: unitPrice,
+      supply_amount: recordedTotal,
+      vat_amount: 0,
+      total_amount: recordedTotal,
+      due_date: null,
+      planned_payment_method: 'OTHER',
+      planned_payment_account: null,
+      planned_card_name: null,
+      planned_installment_months: 1,
+      tax_invoice_status: 'NOT_REQUIRED',
+      tax_invoice_amount: null,
+      status: 'LEGACY',
+      inventory_status: 'POSTED',
+      source_transaction_type: 'RAW_MATERIAL',
+      source_transaction_id: id,
+      notes: text(row.note),
+      paid_amount: 0,
+      outstanding_amount: 0,
+      payment_state: 'LEGACY',
+      payments: [],
+      legacy_record: true,
+      legacy_amount_available: recordedTotal > 0,
+      created_at: text(row.created_at),
+    }]
+  })
+}
+
+function legacyPackagingRows(
+  transactions: JsonRecord[],
+  linkedIds: Set<string>,
+  packagingMeta: Map<string, JsonRecord>,
+) {
+  return transactions.flatMap((row) => {
+    if (!scopedBusiness(row.business_id) || !inboundType(row.txn_type)) return []
+    const id = text(row.id)
+    if (!id || linkedIds.has(id)) return []
+    const materialRef = text(row.material_code)
+    const meta = packagingMeta.get(materialRef)
+    const quantity = Math.max(0, numberValue(row.quantity))
+    const date = rowDate(row)
+    if (!date || quantity <= 0) return []
+    const itemName = text(meta?.material_name) || materialRef || '부재료명 확인 필요'
+    const unitPrice = Math.max(0, numberValue(meta?.unit_price))
+    return [{
+      id: `legacy-packaging-${id}`,
+      purchase_no: `기존입고-${id}`,
+      supplier_id: '',
+      supplier_name_snapshot: text(row.counterparty ?? row.supplier) || text(meta?.supplier) || '매입처 미등록',
+      purchase_date: date,
+      receipt_date: date,
+      purchase_category: 'PACKAGING',
+      material_id: materialRef,
+      item_name: itemName,
+      quantity,
+      unit: 'EA',
+      unit_price: unitPrice,
+      supply_amount: 0,
+      vat_amount: 0,
+      total_amount: 0,
+      due_date: null,
+      planned_payment_method: 'OTHER',
+      planned_payment_account: null,
+      planned_card_name: null,
+      planned_installment_months: 1,
+      tax_invoice_status: 'NOT_REQUIRED',
+      tax_invoice_amount: null,
+      status: 'LEGACY',
+      inventory_status: 'POSTED',
+      source_transaction_type: 'PACKAGING',
+      source_transaction_id: id,
+      notes: text(row.note),
+      paid_amount: 0,
+      outstanding_amount: 0,
+      payment_state: 'LEGACY',
+      payments: [],
+      legacy_record: true,
+      legacy_amount_available: false,
+      created_at: text(row.created_at),
+    }]
+  })
+}
+
 async function loadState() {
   const supabase = createMoniServiceRoleClient()
-  const [supplierResult, purchaseResult, paymentResult, rawResult, packagingResult] = await Promise.all([
+  const [supplierResult, purchaseResult, paymentResult, rawResult, packagingResult, rawTransactions, packagingTransactions] = await Promise.all([
     supabase.from('purchase_suppliers').select('*').eq('business_id', BUSINESS_ID).order('company_name'),
     supabase.from('purchases').select('*').eq('business_id', BUSINESS_ID).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('purchase_payments').select('*').eq('business_id', BUSINESS_ID).order('payment_date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('raw_materials').select('id,item_name,country_of_origin,packing_weight_g,unit_price_per_kg,current_stock_g,is_active,business_id').order('item_name'),
-    supabase.from('packaging_materials').select('id,material_code,material_name,spec,unit_price,current_stock,is_active,business_id').order('material_name'),
+    supabase.from('raw_materials').select('*').order('item_name'),
+    supabase.from('packaging_materials').select('*').order('material_name'),
+    fetchAllRows(supabase, 'raw_material_transactions'),
+    fetchAllRows(supabase, 'packaging_transactions'),
   ])
   if (supplierResult.error) throw new Error(supplierResult.error.message)
   if (purchaseResult.error) throw new Error(purchaseResult.error.message)
@@ -172,8 +310,8 @@ async function loadState() {
   const suppliers = (supplierResult.data ?? []) as SupplierRow[]
   const purchases = (purchaseResult.data ?? []) as PurchaseRow[]
   const payments = (paymentResult.data ?? []) as PaymentRow[]
-  const rawMaterials = (rawResult.data ?? []).filter((row) => row.is_active !== false && scopedBusiness(row.business_id))
-  const packagingMaterials = (packagingResult.data ?? []).filter((row) => row.is_active !== false && scopedBusiness(row.business_id))
+  const rawMaterials = ((rawResult.data ?? []) as JsonRecord[]).filter((row) => row.is_active !== false && scopedBusiness(row.business_id))
+  const packagingMaterials = ((packagingResult.data ?? []) as JsonRecord[]).filter((row) => row.is_active !== false && scopedBusiness(row.business_id))
 
   const paidByPurchase = new Map<string, number>()
   for (const payment of payments) {
@@ -228,12 +366,40 @@ async function loadState() {
       outstanding_amount: outstandingAmount,
       payment_state: paymentState,
       payments: payments.filter((payment) => payment.purchase_id === purchase.id),
+      legacy_record: false,
+      legacy_amount_available: true,
     }
+  })
+
+  const linkedIds = new Set(normalizedPurchases.map((row) => text(row.source_transaction_id)).filter(Boolean))
+  const rawMeta = new Map<string, JsonRecord>()
+  for (const row of rawMaterials) {
+    const id = text(row.id)
+    const code = text(row.item_code)
+    if (id) rawMeta.set(id, row)
+    if (code) rawMeta.set(code, row)
+  }
+  const packagingMeta = new Map<string, JsonRecord>()
+  for (const row of packagingMaterials) {
+    const id = text(row.id)
+    const code = text(row.material_code)
+    if (id) packagingMeta.set(id, row)
+    if (code) packagingMeta.set(code, row)
+  }
+
+  const legacyRows = [
+    ...legacyRawRows(rawTransactions, linkedIds, rawMeta),
+    ...legacyPackagingRows(packagingTransactions, linkedIds, packagingMeta),
+  ]
+  const allPurchases = [...normalizedPurchases, ...legacyRows].sort((a, b) => {
+    const dateCompare = text(b.receipt_date ?? b.purchase_date).localeCompare(text(a.receipt_date ?? a.purchase_date))
+    if (dateCompare !== 0) return dateCompare
+    return text(b.created_at).localeCompare(text(a.created_at))
   })
 
   return {
     suppliers,
-    purchases: normalizedPurchases,
+    purchases: allPurchases,
     payments,
     raw_materials: rawMaterials,
     packaging_materials: packagingMaterials,
@@ -246,6 +412,7 @@ async function loadState() {
       no_due_date_count: noDueDateCount,
       paid_this_month: Math.round(paidThisMonth),
       open_purchase_count: normalizedPurchases.filter((row) => row.outstanding_amount > 0 && row.status !== 'CANCELLED').length,
+      legacy_receipt_count: legacyRows.length,
     },
   }
 }
@@ -349,7 +516,11 @@ export async function GET(request: NextRequest) {
     const state = await loadState()
     const scope = text(request.nextUrl.searchParams.get('scope'))
     if (scope === 'dashboard') {
-      return NextResponse.json({ ok: true, summary: state.summary, purchases: state.purchases.slice(0, 10) })
+      return NextResponse.json({
+        ok: true,
+        summary: state.summary,
+        purchases: state.purchases.filter((row) => !row.legacy_record).slice(0, 10),
+      })
     }
     return NextResponse.json({ ok: true, ...state })
   } catch (error) {
@@ -425,7 +596,6 @@ export async function POST(request: NextRequest) {
       const rows = Array.isArray(body.rows) ? body.rows as JsonRecord[] : []
       if (!rows.length) return NextResponse.json({ ok: false, error: '등록할 엑셀 내역이 없습니다.' }, { status: 400 })
       if (rows.length > MAX_BATCH_ROWS) return NextResponse.json({ ok: false, error: `한 번에 최대 ${MAX_BATCH_ROWS}건까지 등록할 수 있습니다.` }, { status: 400 })
-
       const supplierIds = Array.from(new Set(rows.map((row) => text(row.supplier_id)).filter(Boolean)))
       const supplierResult = await supabase.from('purchase_suppliers').select('*').eq('business_id', BUSINESS_ID).eq('status', 'ACTIVE').in('id', supplierIds)
       if (supplierResult.error) throw new Error(supplierResult.error.message)
