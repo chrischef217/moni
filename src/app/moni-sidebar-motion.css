@@ -3,9 +3,9 @@
  *
  * Performance strategy:
  * - submenu layout state changes immediately (no per-frame height/grid interpolation)
- * - surrounding category rows are animated with FLIP transforms by SidebarSubmenuMotionController
+ * - click accordion aria-expanded is the single source of truth
  * - submenu contents use only compositor-friendly opacity/translate3d
- * - no blur, filter, large shadow, or transition-all during hover expansion
+ * - no blur, filter, large shadow, or transition-all during expansion
  */
 
 [data-moni-global-sidebar] nav > div {
@@ -29,13 +29,13 @@
 }
 
 /*
- * Tailwind's previous grid transition animated grid-template-rows over 300ms.
- * That forces layout work every frame and is visibly choppy on slower PCs.
- * Let the grid snap to its final layout before paint; FLIP handles the visible movement.
+ * The click accordion owns the open/closed state through aria-expanded.
+ * Do not read Tailwind class text here: React route/hover renders can replace
+ * those classes while the accordion state remains open, which previously made
+ * the submenu occupy space but rendered its contents transparent.
  */
 [data-moni-global-sidebar] nav > div > div.grid {
   transition: none !important;
-  opacity: 1 !important;
   contain: paint;
 }
 
@@ -56,7 +56,7 @@
     transform 95ms cubic-bezier(0.32, 0, 0.67, 0);
 }
 
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div {
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div {
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
   pointer-events: auto;
@@ -77,22 +77,22 @@
   transition-delay: 0ms !important;
 }
 
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button {
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button {
   opacity: 1;
   transform: translate3d(0, 0, 0);
 }
 
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(1) { transition-delay: 0ms !important; }
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(2) { transition-delay: 7ms !important; }
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(3) { transition-delay: 12ms !important; }
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(4) { transition-delay: 17ms !important; }
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(5) { transition-delay: 22ms !important; }
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(6) { transition-delay: 27ms !important; }
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(7) { transition-delay: 31ms !important; }
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(8) { transition-delay: 35ms !important; }
-[data-moni-global-sidebar] nav > div > div.grid[class*='grid-rows-[1fr]'] > div > div > button:nth-child(n+9) { transition-delay: 38ms !important; }
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button:nth-child(1) { transition-delay: 0ms !important; }
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button:nth-child(2) { transition-delay: 7ms !important; }
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button:nth-child(3) { transition-delay: 12ms !important; }
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button:nth-child(4) { transition-delay: 17ms !important; }
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button:nth-child(5) { transition-delay: 22ms !important; }
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button:nth-child(6) { transition-delay: 27ms !important; }
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button:nth-child(7) { transition-delay: 31ms !important; }
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button:nth-child(8) { transition-delay: 35ms !important; }
+[data-moni-global-sidebar] nav > div > button[data-moni-global-nav][aria-expanded='true'] + div.grid > div > div > button:nth-child(n+9) { transition-delay: 38ms !important; }
 
-/* Keep hover feedback crisp; avoid transform scaling that would compete with FLIP. */
+/* Keep hover feedback crisp; avoid transform scaling that would compete with the accordion. */
 [data-moni-global-sidebar] nav > div > div.grid > div > div > button:hover {
   transform: translate3d(0, 0, 0) !important;
 }
