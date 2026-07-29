@@ -26,6 +26,9 @@ export type RawMaterial = {
   packing_weight_g?: number | null
   unit_price_per_kg?: number | null
   current_stock_g?: number | null
+  ingredient_type?: string | null
+  linked_product_id?: string | null
+  semifinished_usage_type?: string | null
 }
 
 export type PackagingMaterial = {
