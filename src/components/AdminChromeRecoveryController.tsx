@@ -68,7 +68,12 @@ export default function AdminChromeRecoveryController() {
     sync()
 
     const observer = new MutationObserver(scheduleSync)
-    observer.observe(document.body, { childList: true, subtree: true })
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'aria-pressed'],
+    })
 
     window.addEventListener('resize', scheduleSync)
     window.addEventListener('storage', scheduleSync)
