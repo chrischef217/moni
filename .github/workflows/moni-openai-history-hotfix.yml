@@ -1,0 +1,63 @@
+name: MONI OpenAI history hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/moni-openai-history-hotfix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Patch OpenAI Responses history content types
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/app/api/moni/agent-chat/route.ts')
+          content = path.read_text(encoding='utf-8')
+          old = """  const input: Json[] = history.map((item) => ({
+            role: item.role,
+            content: [{ type: 'input_text', text: item.content }],
+          }))"""
+          new = """  const input: Json[] = history.map((item) => ({
+            role: item.role,
+            content: [{
+              type: item.role === 'assistant' ? 'output_text' : 'input_text',
+              text: item.content,
+            }],
+          }))"""
+          count = content.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one history mapping block, found {count}')
+          path.write_text(content.replace(old, new), encoding='utf-8')
+
+      - name: Verify patch
+        shell: python
+        run: |
+          from pathlib import Path
+          content = Path('src/app/api/moni/agent-chat/route.ts').read_text(encoding='utf-8')
+          assert "item.role === 'assistant' ? 'output_text' : 'input_text'" in content
+          assert "content: [{ type: 'input_text', text: item.content }]" not in content
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit hotfix
+        run: |
+          git config user.name "MONI PMO Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/app/api/moni/agent-chat/route.ts
+          git commit -m "fix: encode OpenAI assistant history as output text"
+          git push origin main
