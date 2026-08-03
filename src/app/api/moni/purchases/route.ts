@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import { getSessionFromRequest } from '@/lib/allowance/session'
+import { resolveMasterPurchasePricing } from '@/lib/moni/purchasePricingServer'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,6 +32,7 @@ type SupplierRow = JsonRecord & {
   default_card_name: string | null
   default_installment_months: number
   tax_invoice_required: boolean
+  tax_type?: string | null
   status: string
 }
 
@@ -377,18 +379,12 @@ async function loadState() {
   }
 }
 
-function preparePurchase(body: JsonRecord, supplier: SupplierRow): PreparedPurchase {
+async function preparePurchase(supabase: MoniClient, body: JsonRecord, supplier: SupplierRow): Promise<PreparedPurchase> {
   const purchaseDate = text(body.purchase_date) || kstToday()
   const receiptDate = text(body.receipt_date) || purchaseDate
   const category = text(body.purchase_category).toUpperCase()
   const materialId = text(body.material_id)
   const quantity = numberValue(body.quantity, 0)
-  const unitPrice = numberValue(body.unit_price, 0)
-  const suppliedSupplyAmount = text(body.supply_amount)
-  const supplyAmount = suppliedSupplyAmount === '' ? quantity * unitPrice : numberValue(body.supply_amount, quantity * unitPrice)
-  const vatAmount = numberValue(body.vat_amount, 0)
-  const suppliedTotalAmount = text(body.total_amount)
-  const totalAmount = suppliedTotalAmount === '' ? supplyAmount + vatAmount : numberValue(body.total_amount, supplyAmount + vatAmount)
   const unit = category === 'PACKAGING' ? 'EA' : text(body.unit).toUpperCase() || 'KG'
   const paymentMethod = text(body.planned_payment_method).toUpperCase() || text(supplier.default_payment_method) || 'BANK_TRANSFER'
   const taxInvoiceStatus = text(body.tax_invoice_status).toUpperCase() || (supplier.tax_invoice_required ? 'NOT_RECEIVED' : 'NOT_REQUIRED')
@@ -399,11 +395,23 @@ function preparePurchase(body: JsonRecord, supplier: SupplierRow): PreparedPurch
   if (quantity <= 0) throw new Error('입고수량은 0보다 커야 합니다.')
   if (category === 'RAW_MATERIAL' && !RAW_UNITS.has(unit)) throw new Error('원재료 단위는 kg, g, EA만 사용할 수 있습니다.')
   if (category === 'PACKAGING' && (!Number.isInteger(quantity) || unit !== 'EA')) throw new Error('부재료 수량은 정수 EA로 입력해 주세요.')
-  if (unitPrice < 0 || supplyAmount < 0 || vatAmount < 0 || totalAmount < 0) throw new Error('매입금액을 확인해 주세요.')
   if (!PAYMENT_METHODS.has(paymentMethod)) throw new Error('결제수단을 확인해 주세요.')
   if (!TAX_INVOICE_STATUSES.has(taxInvoiceStatus)) throw new Error('세금계산서 상태를 확인해 주세요.')
 
+  const pricing = await resolveMasterPurchasePricing(supabase, {
+    businessId: BUSINESS_ID,
+    category: category as 'RAW_MATERIAL' | 'PACKAGING',
+    materialId,
+    quantity,
+    unit: unit as 'KG' | 'G' | 'EA',
+  })
+  const unitPrice = pricing.unitPrice
+  const supplyAmount = pricing.supplyAmount
+  const supplierTaxType = text(supplier.tax_type).toUpperCase() || 'TAXABLE'
+  const vatAmount = supplierTaxType === 'EXEMPT' || supplierTaxType === 'ZERO_RATE' ? 0 : Math.round(supplyAmount * 0.1)
+  const totalAmount = supplyAmount + vatAmount
   const dueDate = calculateDueDate(purchaseDate, supplier, text(body.due_date))
+
   return {
     business_id: BUSINESS_ID, supplier_id: supplier.id, purchase_date: purchaseDate, receipt_date: receiptDate,
     purchase_category: category as 'RAW_MATERIAL' | 'PACKAGING', material_id: materialId, quantity, unit, unit_price: unitPrice,
@@ -496,7 +504,7 @@ export async function POST(request: NextRequest) {
       const supplierId = text(body.supplier_id)
       if (!supplierId) return NextResponse.json({ ok: false, error: '매입처를 선택해 주세요.' }, { status: 400 })
       const supplier = await loadSupplier(supabase, supplierId)
-      const prepared = preparePurchase(body, supplier)
+      const prepared = await preparePurchase(supabase, body, supplier)
       const { data, error } = await supabase.rpc('moni_create_purchase_receipt', rpcArgs(prepared))
       if (error) throw new Error(error.message)
       return NextResponse.json({ ok: true, purchase: data })
@@ -510,11 +518,11 @@ export async function POST(request: NextRequest) {
       const supplierResult = await supabase.from('purchase_suppliers').select('*').eq('business_id', BUSINESS_ID).eq('status', 'ACTIVE').in('id', supplierIds)
       if (supplierResult.error) throw new Error(supplierResult.error.message)
       const supplierById = new Map((supplierResult.data ?? []).map((row) => [text(row.id), row as SupplierRow]))
-      const preparedRows = rows.map((row, index) => {
+      const preparedRows = await Promise.all(rows.map(async (row, index) => {
         const supplier = supplierById.get(text(row.supplier_id))
         if (!supplier) throw new Error(`${index + 2}행의 매입처를 찾을 수 없습니다.`)
-        try { return preparePurchase(row, supplier) } catch (error) { throw new Error(`${index + 2}행: ${error instanceof Error ? error.message : '입력값을 확인해 주세요.'}`) }
-      })
+        try { return await preparePurchase(supabase, row, supplier) } catch (error) { throw new Error(`${index + 2}행: ${error instanceof Error ? error.message : '입력값을 확인해 주세요.'}`) }
+      }))
       const { data, error } = await supabase.rpc('moni_create_purchase_receipts_batch', { p_rows: preparedRows })
       if (error) throw new Error(error.message)
       return NextResponse.json({ ok: true, purchases: data, created_count: preparedRows.length })

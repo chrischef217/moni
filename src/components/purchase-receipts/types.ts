@@ -16,6 +16,7 @@ export type Supplier = {
   default_card_name?: string | null
   default_installment_months: number
   tax_invoice_required: boolean
+  tax_type?: 'TAXABLE' | 'EXEMPT' | 'ZERO_RATE' | null
 }
 
 export type RawMaterial = {
@@ -23,6 +24,8 @@ export type RawMaterial = {
   item_code?: string | null
   item_name: string
   country_of_origin?: string | null
+  spec?: string | null
+  packing_unit?: string | null
   packing_weight_g?: number | null
   unit_price_per_kg?: number | null
   current_stock_g?: number | null

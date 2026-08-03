@@ -131,6 +131,13 @@ export default function ReceiptEditorModal({ editing, draft, setDraft, suppliers
   const rawMasterReady = draft.purchase_category !== 'RAW_MATERIAL' || (Number(selectedRaw?.packing_weight_g || 0) > 0 && Number(selectedRaw?.unit_price_per_kg || 0) > 0)
   const packagingMasterReady = draft.purchase_category !== 'PACKAGING' || Number(selectedPackaging?.unit_price || 0) > 0
   const masterReady = Boolean(selectedMaterial) && rawMasterReady && packagingMasterReady
+  const convertedInventoryQuantity = draft.purchase_category === 'PACKAGING'
+    ? Number(draft.quantity || 0)
+    : draft.unit === 'EA'
+      ? Number(draft.quantity || 0) * Number(selectedRaw?.packing_weight_g || 0)
+      : draft.unit === 'KG'
+        ? Number(draft.quantity || 0) * 1000
+        : Number(draft.quantity || 0)
 
   return (
     <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-slate-950/65 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
@@ -156,11 +163,12 @@ export default function ReceiptEditorModal({ editing, draft, setDraft, suppliers
         {selectedMaterial ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${masterReady ? 'border-slate-200 bg-slate-50 text-slate-700' : 'border-red-200 bg-red-50 text-red-800'}`}>
           현재고: <b>{draft.purchase_category === 'RAW_MATERIAL' ? `${integerNumber(selectedRaw?.current_stock_g)}g` : `${integerNumber(selectedPackaging?.current_stock)}EA`}</b>
           {draft.purchase_category === 'RAW_MATERIAL' ? <><span> · 매입 1EA {integerNumber(selectedRaw?.packing_weight_g)}g</span><span> · 매입단가 {integerNumber(selectedRaw?.unit_price_per_kg)}원/EA</span></> : <span> · 매입단가 {integerNumber(selectedPackaging?.unit_price)}원/EA</span>}
+          {masterReady ? <div className="mt-2 font-black text-sky-800">입력 환산: {integerNumber(draft.quantity)}{draft.unit} → {integerNumber(convertedInventoryQuantity)}{draft.purchase_category === 'RAW_MATERIAL' ? 'g' : 'EA'} · 자동 공급가 {integerNumber(draft.supply_amount)}원</div> : null}
           {!masterReady ? <div className="mt-2 font-black">매입단가 또는 매입중량이 없어 등록할 수 없습니다. 원재료 관리에서 기준정보를 먼저 입력해 주세요.</div> : null}
         </div> : null}
 
         <div className="grid gap-4 md:grid-cols-4">
-          <Field label="입고수량 *"><input type="number" min="0" step={draft.unit === 'EA' ? '1' : 'any'} className="pr-input" value={draft.quantity} onChange={(event) => changeQuantity(Number(event.target.value))} /></Field>
+          <Field label="입고수량 *"><input type="number" min="0" step={draft.unit === 'KG' ? '0.001' : '1'} className="pr-input" value={draft.quantity} onChange={(event) => changeQuantity(Number(event.target.value))} /></Field>
           <Field label="입고단위 *"><select disabled={draft.purchase_category === 'PACKAGING'} className="pr-input" value={draft.unit} onChange={(event) => changeUnit(event.target.value as PurchaseUnit)}>{draft.purchase_category === 'RAW_MATERIAL' ? <><option value="KG">kg</option><option value="G">g</option><option value="EA">EA</option></> : <option value="EA">EA</option>}</select></Field>
           <Field label={`자동 단가 / ${draft.unit}`}><input readOnly className="pr-input bg-slate-50 font-black" value={draft.unit_price} /></Field>
           <Field label="자동 공급가액"><input readOnly className="pr-input bg-slate-50 font-black" value={draft.supply_amount} /></Field>
@@ -179,7 +187,7 @@ export default function ReceiptEditorModal({ editing, draft, setDraft, suppliers
         </div> : null}
 
         <Field label="비고"><input className="pr-input" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></Field>
-        <div className="mt-6 text-right"><button type="button" disabled={busy || !masterReady || !draft.supplier_id || Number(draft.quantity) <= 0} onClick={onSave} className="pr-primary">{busy ? '저장 중...' : editing ? '수정 저장' : '매입·입고 등록'}</button></div>
+        <div className="mt-6 text-right"><button type="button" disabled={busy || !masterReady || (legacy ? !draft.supplier_name_snapshot.trim() : !draft.supplier_id) || Number(draft.quantity) <= 0} onClick={onSave} className="pr-primary">{busy ? '저장 중...' : editing ? '수정 저장' : '매입·입고 등록'}</button></div>
       </div>
     </div>
   )

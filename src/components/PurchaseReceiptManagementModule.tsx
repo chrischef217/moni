@@ -195,8 +195,8 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
   const downloadTemplate = async () => {
     const XLSX = await import('xlsx')
     const sample = [
-      { 매입처: '등록된 매입처명', 구분: '원재료', 품목: '등록된 원재료명', 수량: 10, 단위: 'kg', 매입일: initialToday, 입고일: initialToday, 단가: 1000, 공급가액: 10000, 부가세: 1000, 지급예정일: '', 결제수단: '계좌이체', '계좌/카드': '', 할부개월: 1, 비고: '' },
-      { 매입처: '등록된 매입처명', 구분: '부재료', 품목: '등록된 부재료명', 수량: 100, 단위: 'EA', 매입일: initialToday, 입고일: initialToday, 단가: 100, 공급가액: 10000, 부가세: 1000, 지급예정일: '', 결제수단: '카드', '계좌/카드': '법인카드 별칭', 할부개월: 3, 비고: '' },
+      { 매입처: '등록된 매입처명', 구분: '원재료', 품목: '등록된 원재료명', 수량: 10, 단위: 'kg', 매입일: initialToday, 입고일: initialToday, 단가: '자동', 공급가액: '자동', 부가세: '자동', 지급예정일: '', 결제수단: '계좌이체', '계좌/카드': '', 할부개월: 1, 비고: '' },
+      { 매입처: '등록된 매입처명', 구분: '부재료', 품목: '등록된 부재료명', 수량: 100, 단위: 'EA', 매입일: initialToday, 입고일: initialToday, 단가: '자동', 공급가액: '자동', 부가세: '자동', 지급예정일: '', 결제수단: '카드', '계좌/카드': '법인카드 별칭', 할부개월: 3, 비고: '' },
     ]
     const workbook = XLSX.utils.book_new()
     const sheet = XLSX.utils.json_to_sheet(sample)
@@ -241,11 +241,8 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
         const quantity = Number(row['수량'])
         if (!Number.isFinite(quantity) || quantity <= 0) throw new Error(`${line}행: 수량을 확인해 주세요.`)
         const unit = category === 'PACKAGING' ? 'EA' : String(row['단위'] || 'KG').trim().toUpperCase()
+        if (!['KG', 'G', 'EA'].includes(unit)) throw new Error(`${line}행: 원재료 단위는 kg, g, EA만 사용할 수 있습니다.`)
         if (unit === 'EA' && !Number.isInteger(quantity)) throw new Error(`${line}행: 입고수량은 패킹단위 기준 정수 EA여야 합니다.`)
-        const unitPrice = Number(row['단가'] || 0)
-        const supplyAmount = row['공급가액'] === '' ? quantity * unitPrice : Number(row['공급가액'])
-        const vatAmount = Number(row['부가세'] || 0)
-        if (![unitPrice, supplyAmount, vatAmount].every(Number.isFinite)) throw new Error(`${line}행: 금액을 확인해 주세요.`)
         const method = paymentCode(row['결제수단']) || supplier.default_payment_method
         const account = String(row['계좌/카드'] || '').trim()
         return {
@@ -256,10 +253,10 @@ export default function PurchaseReceiptManagementModule({ onNavigate }: Props) {
           unit,
           purchase_date: excelDate(row['매입일']) || initialToday,
           receipt_date: excelDate(row['입고일']) || excelDate(row['매입일']) || initialToday,
-          unit_price: unitPrice,
-          supply_amount: supplyAmount,
-          vat_amount: vatAmount,
-          total_amount: supplyAmount + vatAmount,
+          unit_price: 0,
+          supply_amount: 0,
+          vat_amount: 0,
+          total_amount: 0,
           due_date: excelDate(row['지급예정일']),
           planned_payment_method: method,
           planned_payment_account: method === 'CARD' ? '' : account,
