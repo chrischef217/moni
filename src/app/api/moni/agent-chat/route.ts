@@ -55,8 +55,9 @@ const num = (value: unknown) => {
 }
 
 function resolveGeminiModel() {
-  const configured = text(process.env.GEMINI_MODEL, 100) || DEFAULT_GEMINI_MODEL
-  return /^gemini-2\.0(?:-|$)/.test(configured) ? DEFAULT_GEMINI_MODEL : configured
+  // MONI production must use a Gemini model supported by v1beta generateContent.
+  // Ignore stale or incompatible environment values such as gemma-* models.
+  return DEFAULT_GEMINI_MODEL
 }
 
 function resolveOpenAIModel() {
