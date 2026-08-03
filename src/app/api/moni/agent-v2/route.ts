@@ -224,7 +224,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const legacyRequest = request.clone()
+  const legacyRequest = new NextRequest(request.clone())
   try {
     const body = await request.json().catch(() => null) as AgentRequest | null
     if (!body) return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
