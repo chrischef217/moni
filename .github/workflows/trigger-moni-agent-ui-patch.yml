@@ -24,3 +24,5 @@ jobs:
           git add src/components/GlobalMoniAgent.tsx
           git commit -m "feat: brighten MONI chat and add contextual thinking states"
           git push origin HEAD:main
+
+# trigger: 2026-08-03
