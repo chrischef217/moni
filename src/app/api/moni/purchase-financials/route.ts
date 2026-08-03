@@ -81,18 +81,26 @@ async function requireAdmin(request: NextRequest) {
 
 async function loadState() {
   const supabase = createMoniServiceRoleClient()
-  const [supplierResult, purchaseResult, paymentResult] = await Promise.all([
+  const [supplierResult, purchaseResult, paymentResult, statementResult] = await Promise.all([
     supabase.from('purchase_suppliers').select('*').eq('business_id', BUSINESS_ID).order('company_name'),
     supabase.from('purchases').select('*').eq('business_id', BUSINESS_ID).order('receipt_date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('purchase_payments').select('*').eq('business_id', BUSINESS_ID).order('payment_date', { ascending: false }).order('created_at', { ascending: false }),
+    supabase.from('purchase_supplier_statement_balances')
+      .select('*')
+      .eq('business_id', BUSINESS_ID)
+      .eq('reconciliation_status', 'APPROVED')
+      .order('statement_date', { ascending: false })
+      .order('created_at', { ascending: false }),
   ])
   if (supplierResult.error) throw new Error(supplierResult.error.message)
   if (purchaseResult.error) throw new Error(purchaseResult.error.message)
   if (paymentResult.error) throw new Error(paymentResult.error.message)
+  if (statementResult.error) throw new Error(statementResult.error.message)
 
   const suppliers = (supplierResult.data ?? []) as JsonRecord[]
   const purchases = (purchaseResult.data ?? []) as JsonRecord[]
   const payments = (paymentResult.data ?? []) as JsonRecord[]
+  const statements = (statementResult.data ?? []) as JsonRecord[]
 
   const paidByPurchase = new Map<string, number>()
   for (const payment of payments) {
@@ -127,9 +135,6 @@ async function loadState() {
 
   const purchaseById = new Map<string, JsonRecord>()
   const payableRows: JsonRecord[] = []
-  let totalOutstanding = 0
-  let thisMonthDue = 0
-  let previousMonthPaid = 0
   let reviewRequiredAmount = 0
   let reviewRequiredCount = 0
   let unpricedReviewCount = 0
@@ -168,11 +173,7 @@ async function loadState() {
 
     if (verificationStatus === 'CONFIRMED' && status !== 'CANCELLED' && outstandingAmount > 0) {
       supplier.total_outstanding += outstandingAmount
-      totalOutstanding += outstandingAmount
-      if (dueDate.startsWith(currentMonth)) {
-        supplier.this_month_remaining += outstandingAmount
-        thisMonthDue += outstandingAmount
-      }
+      if (dueDate.startsWith(currentMonth)) supplier.this_month_remaining += outstandingAmount
       if (dueDate && (!supplier.next_due_date || dueDate < supplier.next_due_date)) supplier.next_due_date = dueDate
     }
 
@@ -203,9 +204,34 @@ async function loadState() {
     if (!purchase) continue
     const supplier = supplierMap.get(text(purchase.supplier_id))
     if (!supplier) continue
-    const amount = numberValue(payment.amount)
-    supplier.previous_month_paid += amount
-    previousMonthPaid += amount
+    supplier.previous_month_paid += numberValue(payment.amount)
+  }
+
+  const statementsBySupplier = new Map<string, JsonRecord[]>()
+  for (const statement of statements) {
+    const supplierId = text(statement.supplier_id)
+    if (!supplierId) continue
+    statementsBySupplier.set(supplierId, [...(statementsBySupplier.get(supplierId) ?? []), statement])
+  }
+
+  for (const [supplierId, supplierStatements] of statementsBySupplier) {
+    const supplier = supplierMap.get(supplierId)
+    if (!supplier || !supplierStatements.length) continue
+
+    const latest = supplierStatements[0]
+    const latestDate = text(latest.period_end) || text(latest.statement_date)
+    const currentStatement = supplierStatements.find((row) => text(row.statement_date).startsWith(currentMonth))
+    const previousStatement = supplierStatements.find((row) => text(row.statement_date).startsWith(previousMonth))
+
+    supplier.total_outstanding = Math.max(0, numberValue(latest.closing_balance))
+    supplier.this_month_purchase_amount = currentStatement ? numberValue(currentStatement.statement_purchase_amount) : 0
+    supplier.this_month_remaining = currentStatement ? Math.max(0, numberValue(currentStatement.closing_balance)) : 0
+    supplier.previous_month_paid = previousStatement ? numberValue(previousStatement.statement_payment_amount) : 0
+    supplier.latest_purchase_date = latestDate > supplier.latest_purchase_date ? latestDate : supplier.latest_purchase_date
+    supplier.next_due_date = ''
+    supplier.statement_balance_source = true
+    supplier.statement_date = text(latest.statement_date)
+    supplier.statement_closing_balance = numberValue(latest.closing_balance)
   }
 
   const supplierSummaries = Array.from(supplierMap.values())
@@ -233,9 +259,9 @@ async function loadState() {
     payables: payableRows,
     summary: {
       supplier_count: supplierSummaries.length,
-      total_outstanding: Math.round(totalOutstanding),
-      this_month_due: Math.round(thisMonthDue),
-      previous_month_paid: Math.round(previousMonthPaid),
+      total_outstanding: Math.round(supplierSummaries.reduce((sum, row) => sum + numberValue(row.total_outstanding), 0)),
+      this_month_due: Math.round(supplierSummaries.reduce((sum, row) => sum + numberValue(row.this_month_remaining), 0)),
+      previous_month_paid: Math.round(supplierSummaries.reduce((sum, row) => sum + numberValue(row.previous_month_paid), 0)),
       review_required_amount: Math.round(reviewRequiredAmount),
       review_required_count: reviewRequiredCount,
       unpriced_review_count: unpricedReviewCount,
