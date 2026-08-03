@@ -1,0 +1,26 @@
+name: Trigger MONI agent UI patch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/trigger-moni-agent-ui-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - run: python .github/scripts/patch_moni_agent_ui.py
+      - run: npm run build
+      - run: |
+          git config user.name "MONI PMO"
+          git config user.email "actions@github.com"
+          git add src/components/GlobalMoniAgent.tsx
+          git commit -m "feat: brighten MONI chat and add contextual thinking states"
+          git push origin HEAD:main
