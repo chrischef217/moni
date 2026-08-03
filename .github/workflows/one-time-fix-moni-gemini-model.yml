@@ -1,0 +1,37 @@
+name: One-time fix MONI Gemini model
+
+on:
+  push:
+    paths:
+      - '.github/workflows/one-time-fix-moni-gemini-model.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Force supported Gemini model
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/app/api/moni/agent-chat/route.ts')
+          text = path.read_text(encoding='utf-8')
+          old = """function resolveGeminiModel() {\n  const configured = text(process.env.GEMINI_MODEL, 100) || DEFAULT_GEMINI_MODEL\n  return /^gemini-2\\.0(?:-|$)/.test(configured) ? DEFAULT_GEMINI_MODEL : configured\n}\n"""
+          new = """function resolveGeminiModel() {\n  // MONI production must use a Gemini model supported by v1beta generateContent.\n  // Ignore stale or incompatible environment values such as gemma-* models.\n  return DEFAULT_GEMINI_MODEL\n}\n"""
+          if old not in text:
+              raise SystemExit('Expected resolveGeminiModel block was not found; refusing broad replacement.')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "MONI PMO"
+          git config user.email "actions@github.com"
+          git add src/app/api/moni/agent-chat/route.ts
+          git commit -m "fix: force supported Gemini model for MONI AI"
+          git push origin HEAD:main
