@@ -1,0 +1,435 @@
+name: One-time fix purchase master pricing
+
+on:
+  push:
+    paths:
+      - '.github/workflows/one-time-fix-purchase-master-pricing.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply purchase pricing repair
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              file = Path(path)
+              content = file.read_text(encoding='utf-8')
+              count = content.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}')
+              file.write_text(content.replace(old, new, 1), encoding='utf-8')
+
+          # Types: expose the raw-material master fields used by the receipt editor.
+          replace_once(
+              'src/components/purchase-receipts/types.ts',
+              "  country_of_origin?: string | null\n  packing_weight_g?: number | null\n",
+              "  country_of_origin?: string | null\n  spec?: string | null\n  packing_unit?: string | null\n  packing_weight_g?: number | null\n",
+          )
+
+          modal = 'src/components/purchase-receipts/ReceiptEditorModal.tsx'
+          replace_once(
+              modal,
+              "import { integerNumber, normalize, rawMaterialName } from './utils'\n",
+              "import { integerNumber, normalize, rawMaterialName } from './utils'\nimport { derivePackagingPurchasePricing, deriveRawPurchasePricing, type MasterPurchasePricing } from '@/lib/moni/purchasePricing'\n",
+          )
+          replace_once(
+              modal,
+              "function Field({ label, children }: { label: string; children: React.ReactNode }) {\n  return <label className=\"block\"><span className=\"mb-1.5 block text-xs font-black text-[#607d8d]\">{label}</span>{children}</label>\n}\n",
+              "function Field({ label, children }: { label: string; children: React.ReactNode }) {\n  return <label className=\"block\"><span className=\"mb-1.5 block text-xs font-black text-[#607d8d]\">{label}</span>{children}</label>\n}\n\nfunction formatNumber(value: number, maximumFractionDigits = 2) {\n  return new Intl.NumberFormat('ko-KR', { maximumFractionDigits }).format(Number(value || 0))\n}\n",
+          )
+          replace_once(
+              modal,
+              """  const priceFor = (category: PurchaseCategory, materialId: string, unit: PurchaseUnit) => {
+    if (category === 'PACKAGING') return Number(packagingMaterials.find((row) => row.id === materialId || row.material_code === materialId)?.unit_price ?? 0)
+    const raw = rawMaterials.find((row) => row.id === materialId || row.item_code === materialId)
+    const perKg = Number(raw?.unit_price_per_kg ?? 0)
+    if (unit === 'G') return perKg / 1000
+    if (unit === 'EA') return perKg * Number(raw?.packing_weight_g ?? 0) / 1000
+    return perKg
+  }
+""",
+              """  const calculatePricing = (
+    category: PurchaseCategory,
+    materialId: string,
+    unit: PurchaseUnit,
+    quantity: number,
+  ): MasterPurchasePricing => {
+    if (category === 'PACKAGING') {
+      const material = packagingMaterials.find((row) => row.id === materialId || row.material_code === materialId)
+      return derivePackagingPurchasePricing({ quantity, unitPrice: Number(material?.unit_price ?? 0) })
+    }
+    const material = rawMaterials.find((row) => row.id === materialId || row.item_code === materialId)
+    return deriveRawPurchasePricing({
+      quantity,
+      unit,
+      packingWeightG: Number(material?.packing_weight_g ?? 0),
+      packagePrice: Number(material?.unit_price_per_kg ?? 0),
+    })
+  }
+
+  const safePricing = (category: PurchaseCategory, materialId: string, unit: PurchaseUnit, quantity: number) => {
+    if (!materialId) return null
+    try {
+      return calculatePricing(category, materialId, unit, quantity)
+    } catch {
+      return null
+    }
+  }
+
+  let selectedPricing: MasterPurchasePricing | null = null
+  let selectedPricingError = ''
+  if (draft.material_id) {
+    try {
+      selectedPricing = calculatePricing(draft.purchase_category, draft.material_id, draft.unit, Number(draft.quantity || 0))
+    } catch (reason) {
+      selectedPricingError = reason instanceof Error ? reason.message : '기준 단가를 계산하지 못했습니다.'
+    }
+  }
+""",
+          )
+          replace_once(
+              modal,
+              """  const changeUnit = (unit: PurchaseUnit) => {
+    setDraft((current) => {
+      const unitPrice = priceFor(current.purchase_category, current.material_id, unit)
+      const supplyAmount = Number(current.quantity || 0) * unitPrice
+      return { ...current, unit, unit_price: unitPrice, supply_amount: supplyAmount, total_amount: supplyAmount + Number(current.vat_amount || 0) }
+    })
+  }
+
+  const selectMaterial = (materialId: string) => {
+    setDraft((current) => {
+      const unitPrice = priceFor(current.purchase_category, materialId, current.unit)
+      const supplyAmount = Number(current.quantity || 0) * unitPrice
+      return { ...current, material_id: materialId, unit_price: unitPrice, supply_amount: supplyAmount, total_amount: supplyAmount + Number(current.vat_amount || 0) }
+    })
+  }
+""",
+              """  const changeUnit = (unit: PurchaseUnit) => {
+    setDraft((current) => {
+      const pricing = safePricing(current.purchase_category, current.material_id, unit, Number(current.quantity || 0))
+      const supplyAmount = pricing?.supplyAmount ?? 0
+      return {
+        ...current,
+        unit,
+        unit_price: pricing?.unitPrice ?? 0,
+        supply_amount: supplyAmount,
+        total_amount: supplyAmount + Number(current.vat_amount || 0),
+      }
+    })
+  }
+
+  const selectMaterial = (materialId: string) => {
+    setDraft((current) => {
+      const pricing = safePricing(current.purchase_category, materialId, current.unit, Number(current.quantity || 0))
+      const supplyAmount = pricing?.supplyAmount ?? 0
+      return {
+        ...current,
+        material_id: materialId,
+        unit_price: pricing?.unitPrice ?? 0,
+        supply_amount: supplyAmount,
+        total_amount: supplyAmount + Number(current.vat_amount || 0),
+      }
+    })
+  }
+""",
+          )
+          replace_once(
+              modal,
+              """  const changeAmount = (field: 'quantity' | 'unit_price' | 'supply_amount' | 'vat_amount', value: number) => {
+    setDraft((current) => {
+      const next = { ...current, [field]: value }
+      if (field === 'quantity' || field === 'unit_price') next.supply_amount = Number(next.quantity || 0) * Number(next.unit_price || 0)
+      next.total_amount = Number(next.supply_amount || 0) + Number(next.vat_amount || 0)
+      return next
+    })
+  }
+""",
+              """  const changeAmount = (field: 'quantity' | 'vat_amount', value: number) => {
+    setDraft((current) => {
+      const next = { ...current, [field]: value }
+      if (field === 'quantity') {
+        const pricing = safePricing(next.purchase_category, next.material_id, next.unit, Number(value || 0))
+        next.unit_price = pricing?.unitPrice ?? 0
+        next.supply_amount = pricing?.supplyAmount ?? 0
+      }
+      next.total_amount = Number(next.supply_amount || 0) + Number(next.vat_amount || 0)
+      return next
+    })
+  }
+""",
+          )
+          replace_once(
+              modal,
+              """        {selectedMaterial ? (
+          <div className=\"mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700\">
+            현재고: <b>{draft.purchase_category === 'RAW_MATERIAL' ? `${integerNumber((selectedMaterial as RawMaterial).current_stock_g)}g` : `${integerNumber((selectedMaterial as PackagingMaterial).current_stock)}EA`}</b>
+            {draft.purchase_category === 'RAW_MATERIAL' && (selectedMaterial as RawMaterial).packing_weight_g ? <span> · 1EA 규격 {integerNumber((selectedMaterial as RawMaterial).packing_weight_g)}g</span> : null}
+          </div>
+        ) : null}
+""",
+              """        {selectedMaterial ? (
+          <div className=\"mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700\">
+            <div>
+              현재고: <b>{draft.purchase_category === 'RAW_MATERIAL' ? `${integerNumber((selectedMaterial as RawMaterial).current_stock_g)}g` : `${integerNumber((selectedMaterial as PackagingMaterial).current_stock)}EA`}</b>
+              {draft.purchase_category === 'RAW_MATERIAL' ? (
+                <span>
+                  {' '}· 기준 포장 {formatNumber(Number((selectedMaterial as RawMaterial).packing_weight_g ?? 0), 0)}g/EA
+                  {' '}· 기준 개당단가 {formatNumber(Number((selectedMaterial as RawMaterial).unit_price_per_kg ?? 0), 0)}원/EA
+                </span>
+              ) : (
+                <span> · 기준 단가 {formatNumber(Number((selectedMaterial as PackagingMaterial).unit_price ?? 0), 0)}원/EA</span>
+              )}
+            </div>
+            {selectedPricing ? (
+              <div className=\"mt-2 font-bold text-sky-800\">
+                입력 환산: {formatNumber(Number(draft.quantity || 0))}{draft.unit} → {formatNumber(selectedPricing.inventoryQuantityBase, 0)}{selectedPricing.inventoryUnit}
+                {' '}· 자동 단가 {formatNumber(selectedPricing.unitPrice)}원/{draft.unit}
+                {' '}· 공급가 {formatNumber(selectedPricing.supplyAmount)}원
+              </div>
+            ) : null}
+            {selectedPricingError ? <div className=\"mt-2 font-bold text-rose-700\">{selectedPricingError}</div> : null}
+          </div>
+        ) : null}
+""",
+          )
+          replace_once(
+              modal,
+              """        <div className=\"grid gap-4 md:grid-cols-4\">
+          <Field label=\"입고수량 *\"><input type=\"number\" min=\"0\" step=\"any\" className=\"pr-input\" value={draft.quantity} onChange={(event) => changeAmount('quantity', Number(event.target.value))} /></Field>
+          <Field label=\"입고단위 *\">
+            <select disabled={draft.purchase_category === 'PACKAGING'} className=\"pr-input\" value={draft.unit} onChange={(event) => changeUnit(event.target.value as PurchaseUnit)}>
+              {draft.purchase_category === 'RAW_MATERIAL' ? <><option value=\"KG\">kg</option><option value=\"G\">g</option><option value=\"EA\">EA</option></> : <option value=\"EA\">EA</option>}
+            </select>
+          </Field>
+          <Field label={`단가 / ${draft.unit}`}><input type=\"number\" min=\"0\" step=\"any\" className=\"pr-input\" value={draft.unit_price} onChange={(event) => changeAmount('unit_price', Number(event.target.value))} /></Field>
+          <Field label=\"공급가액\"><input type=\"number\" min=\"0\" className=\"pr-input\" value={draft.supply_amount} onChange={(event) => changeAmount('supply_amount', Number(event.target.value))} /></Field>
+        </div>
+""",
+              """        <div className=\"grid gap-4 md:grid-cols-4\">
+          <Field label=\"입고수량 *\"><input type=\"number\" min=\"0\" step={draft.unit === 'KG' ? '0.001' : '1'} className=\"pr-input\" value={draft.quantity} onChange={(event) => changeAmount('quantity', Number(event.target.value))} /></Field>
+          <Field label=\"입고단위 *\">
+            <select disabled={draft.purchase_category === 'PACKAGING'} className=\"pr-input\" value={draft.unit} onChange={(event) => changeUnit(event.target.value as PurchaseUnit)}>
+              {draft.purchase_category === 'RAW_MATERIAL' ? <><option value=\"KG\">kg</option><option value=\"G\">g</option><option value=\"EA\">EA</option></> : <option value=\"EA\">EA</option>}
+            </select>
+          </Field>
+          <Field label={`자동 단가 / ${draft.unit}`}><input readOnly className=\"pr-input bg-slate-50 font-black\" value={draft.unit_price} /></Field>
+          <Field label=\"공급가액 (자동)\"><input readOnly className=\"pr-input bg-slate-50 font-black\" value={draft.supply_amount} /></Field>
+        </div>
+""",
+          )
+          replace_once(
+              modal,
+              "<div className=\"mt-6 text-right\"><button type=\"button\" disabled={busy} onClick={onSave} className=\"pr-primary\">{busy ? '저장 중...' : editing ? '수정 저장' : '매입·입고 등록'}</button></div>",
+              "<div className=\"mt-6 text-right\"><button type=\"button\" disabled={busy || (!editing && Boolean(selectedPricingError))} onClick={onSave} className=\"pr-primary\">{busy ? '저장 중...' : editing ? '수정 저장' : '매입·입고 등록'}</button></div>",
+          )
+
+          module = 'src/components/PurchaseReceiptManagementModule.tsx'
+          replace_once(
+              module,
+              """      { 매입처: '등록된 매입처명', 구분: '원재료', 품목: '등록된 원재료명', 수량: 10, 단위: 'kg', 매입일: initialToday, 입고일: initialToday, 단가: 1000, 공급가액: 10000, 부가세: 1000, 지급예정일: '', 결제수단: '계좌이체', '계좌/카드': '', 할부개월: 1, 비고: '' },
+      { 매입처: '등록된 매입처명', 구분: '부재료', 품목: '등록된 부재료명', 수량: 100, 단위: 'EA', 매입일: initialToday, 입고일: initialToday, 단가: 100, 공급가액: 10000, 부가세: 1000, 지급예정일: '', 결제수단: '카드', '계좌/카드': '법인카드 별칭', 할부개월: 3, 비고: '' },
+""",
+              """      { 매입처: '등록된 매입처명', 구분: '원재료', 품목: '등록된 원재료명', 수량: 10, 단위: 'kg', 매입일: initialToday, 입고일: initialToday, 단가: '자동', 공급가액: '자동', 부가세: 0, 지급예정일: '', 결제수단: '계좌이체', '계좌/카드': '', 할부개월: 1, 비고: '' },
+      { 매입처: '등록된 매입처명', 구분: '부재료', 품목: '등록된 부재료명', 수량: 100, 단위: 'EA', 매입일: initialToday, 입고일: initialToday, 단가: '자동', 공급가액: '자동', 부가세: 0, 지급예정일: '', 결제수단: '카드', '계좌/카드': '법인카드 별칭', 할부개월: 3, 비고: '' },
+""",
+          )
+          replace_once(
+              module,
+              """        const unit = category === 'PACKAGING' ? 'EA' : String(row['단위'] || 'KG').trim().toUpperCase()
+        if (unit === 'EA' && !Number.isInteger(quantity)) throw new Error(`${line}행: 입고수량은 패킹단위 기준 정수 EA여야 합니다.`)
+        const unitPrice = Number(row['단가'] || 0)
+        const supplyAmount = row['공급가액'] === '' ? quantity * unitPrice : Number(row['공급가액'])
+        const vatAmount = Number(row['부가세'] || 0)
+        if (![unitPrice, supplyAmount, vatAmount].every(Number.isFinite)) throw new Error(`${line}행: 금액을 확인해 주세요.`)
+""",
+              """        const unit = category === 'PACKAGING' ? 'EA' : String(row['단위'] || 'KG').trim().toUpperCase()
+        if (!['KG', 'G', 'EA'].includes(unit)) throw new Error(`${line}행: 원재료 단위는 kg, g, EA만 사용할 수 있습니다.`)
+        if (unit === 'EA' && !Number.isInteger(quantity)) throw new Error(`${line}행: 입고수량은 패킹단위 기준 정수 EA여야 합니다.`)
+        const vatAmount = Number(row['부가세'] || 0)
+        if (!Number.isFinite(vatAmount)) throw new Error(`${line}행: 부가세를 확인해 주세요.`)
+""",
+          )
+          replace_once(
+              module,
+              """          unit_price: unitPrice,
+          supply_amount: supplyAmount,
+          vat_amount: vatAmount,
+          total_amount: supplyAmount + vatAmount,
+""",
+              """          unit_price: 0,
+          supply_amount: 0,
+          vat_amount: vatAmount,
+          total_amount: vatAmount,
+""",
+          )
+
+          purchases = 'src/app/api/moni/purchases/route.ts'
+          replace_once(
+              purchases,
+              "import { getSessionFromRequest } from '@/lib/allowance/session'\n",
+              "import { getSessionFromRequest } from '@/lib/allowance/session'\nimport { resolveMasterPurchasePricing } from '@/lib/moni/purchasePricingServer'\n",
+          )
+          replace_once(
+              purchases,
+              "function preparePurchase(body: JsonRecord, supplier: SupplierRow): PreparedPurchase {",
+              "async function preparePurchase(supabase: MoniClient, body: JsonRecord, supplier: SupplierRow): Promise<PreparedPurchase> {",
+          )
+          replace_once(
+              purchases,
+              """  const quantity = numberValue(body.quantity, 0)
+  const unitPrice = numberValue(body.unit_price, 0)
+  const suppliedSupplyAmount = text(body.supply_amount)
+  const supplyAmount = suppliedSupplyAmount === '' ? quantity * unitPrice : numberValue(body.supply_amount, quantity * unitPrice)
+  const vatAmount = numberValue(body.vat_amount, 0)
+  const suppliedTotalAmount = text(body.total_amount)
+  const totalAmount = suppliedTotalAmount === '' ? supplyAmount + vatAmount : numberValue(body.total_amount, supplyAmount + vatAmount)
+  const unit = category === 'PACKAGING' ? 'EA' : text(body.unit).toUpperCase() || 'KG'
+""",
+              """  const quantity = numberValue(body.quantity, 0)
+  const vatAmount = numberValue(body.vat_amount, 0)
+  const unit = category === 'PACKAGING' ? 'EA' : text(body.unit).toUpperCase() || 'KG'
+""",
+          )
+          replace_once(
+              purchases,
+              """  if (unitPrice < 0 || supplyAmount < 0 || vatAmount < 0 || totalAmount < 0) throw new Error('매입금액을 확인해 주세요.')
+  if (!PAYMENT_METHODS.has(paymentMethod)) throw new Error('결제수단을 확인해 주세요.')
+""",
+              """  if (vatAmount < 0) throw new Error('부가세를 확인해 주세요.')
+  if (!PAYMENT_METHODS.has(paymentMethod)) throw new Error('결제수단을 확인해 주세요.')
+""",
+          )
+          replace_once(
+              purchases,
+              """  const dueDate = calculateDueDate(purchaseDate, supplier, text(body.due_date))
+  return {
+""",
+              """  const pricing = await resolveMasterPurchasePricing(supabase, {
+    businessId: BUSINESS_ID,
+    category: category as 'RAW_MATERIAL' | 'PACKAGING',
+    materialId,
+    quantity,
+    unit: unit as 'KG' | 'G' | 'EA',
+  })
+  const unitPrice = pricing.unitPrice
+  const supplyAmount = pricing.supplyAmount
+  const totalAmount = supplyAmount + vatAmount
+  const dueDate = calculateDueDate(purchaseDate, supplier, text(body.due_date))
+  return {
+""",
+          )
+          replace_once(
+              purchases,
+              "const prepared = preparePurchase(body, supplier)",
+              "const prepared = await preparePurchase(supabase, body, supplier)",
+          )
+          replace_once(
+              purchases,
+              """      const preparedRows = rows.map((row, index) => {
+        const supplier = supplierById.get(text(row.supplier_id))
+        if (!supplier) throw new Error(`${index + 2}행의 매입처를 찾을 수 없습니다.`)
+        try { return preparePurchase(row, supplier) } catch (error) { throw new Error(`${index + 2}행: ${error instanceof Error ? error.message : '입력값을 확인해 주세요.'}`) }
+      })
+""",
+              """      const preparedRows = await Promise.all(rows.map(async (row, index) => {
+        const supplier = supplierById.get(text(row.supplier_id))
+        if (!supplier) throw new Error(`${index + 2}행의 매입처를 찾을 수 없습니다.`)
+        try { return await preparePurchase(supabase, row, supplier) } catch (error) { throw new Error(`${index + 2}행: ${error instanceof Error ? error.message : '입력값을 확인해 주세요.'}`) }
+      }))
+""",
+          )
+
+          receipts = 'src/app/api/moni/purchase-receipts/route.ts'
+          replace_once(
+              receipts,
+              "import { getSessionFromRequest } from '@/lib/allowance/session'\n",
+              "import { getSessionFromRequest } from '@/lib/allowance/session'\nimport { resolveMasterPurchasePricing } from '@/lib/moni/purchasePricingServer'\n",
+          )
+          replace_once(
+              receipts,
+              "function prepare(body: JsonRecord, supplier: SupplierRow): PreparedPurchase {",
+              "async function prepare(supabase: MoniClient, body: JsonRecord, supplier: SupplierRow, existing?: JsonRecord | null): Promise<PreparedPurchase> {",
+          )
+          replace_once(
+              receipts,
+              """  const unitPrice = Math.max(0, numberValue(body.unit_price))
+  const supplyAmount = Math.max(0, numberValue(body.supply_amount, quantity * unitPrice))
+  const vatAmount = Math.max(0, numberValue(body.vat_amount))
+  const totalAmount = Math.max(0, numberValue(body.total_amount, supplyAmount + vatAmount))
+""",
+              """  const vatAmount = Math.max(0, numberValue(body.vat_amount))
+""",
+          )
+          replace_once(
+              receipts,
+              """  if (!PAYMENT_METHODS.has(method)) throw new Error('결제수단을 확인해 주세요.')
+  if (!TAX_STATUSES.has(taxStatus)) throw new Error('세금계산서 상태를 확인해 주세요.')
+
+  return {
+""",
+              """  if (!PAYMENT_METHODS.has(method)) throw new Error('결제수단을 확인해 주세요.')
+  if (!TAX_STATUSES.has(taxStatus)) throw new Error('세금계산서 상태를 확인해 주세요.')
+
+  const pricingBasisChanged = !existing
+    || text(existing.material_id) !== materialId
+    || text(existing.unit).toUpperCase() !== unit
+    || Math.abs(numberValue(existing.quantity) - quantity) > 0.000001
+  const pricing = pricingBasisChanged
+    ? await resolveMasterPurchasePricing(supabase, {
+        businessId: BUSINESS_ID,
+        category: category as 'RAW_MATERIAL' | 'PACKAGING',
+        materialId,
+        quantity,
+        unit: unit as 'KG' | 'G' | 'EA',
+      })
+    : null
+  const unitPrice = pricing?.unitPrice ?? Math.max(0, numberValue(existing?.unit_price))
+  const supplyAmount = pricing?.supplyAmount ?? Math.max(0, numberValue(existing?.supply_amount))
+  const totalAmount = supplyAmount + vatAmount
+
+  return {
+""",
+          )
+          replace_once(
+              receipts,
+              """      const prepared = prepare(body, await activeSupplier(supabase, supplierId))
+      const { data, error } = await supabase.rpc('moni_update_purchase_receipt', { p_purchase_id: id, ...rpcArgs(prepared) })
+""",
+              """      const existingResult = await supabase
+        .from('purchases')
+        .select('material_id,quantity,unit,unit_price,supply_amount')
+        .eq('id', id)
+        .eq('business_id', BUSINESS_ID)
+        .maybeSingle()
+      if (existingResult.error) throw new Error(existingResult.error.message)
+      if (!existingResult.data) return NextResponse.json({ ok: false, error: '수정할 매입·입고 내역을 찾을 수 없습니다.' }, { status: 404 })
+      const prepared = await prepare(supabase, body, await activeSupplier(supabase, supplierId), existingResult.data)
+      const { data, error } = await supabase.rpc('moni_update_purchase_receipt', { p_purchase_id: id, ...rpcArgs(prepared) })
+""",
+          )
+
+          PY
+
+      - name: Commit repair
+        run: |
+          git config user.name "MONI PMO"
+          git config user.email "actions@github.com"
+          git add src/components/purchase-receipts/types.ts \
+                  src/components/purchase-receipts/ReceiptEditorModal.tsx \
+                  src/components/PurchaseReceiptManagementModule.tsx \
+                  src/app/api/moni/purchases/route.ts \
+                  src/app/api/moni/purchase-receipts/route.ts
+          git commit -m "fix: derive purchase amounts from material masters"
+          git push origin HEAD:main
