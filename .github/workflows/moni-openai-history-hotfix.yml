@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/moni-openai-history-hotfix.yml'
+      - '.github/moni-openai-history-hotfix.trigger'
 
 permissions:
   contents: write
@@ -16,6 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Patch OpenAI Responses history content types
         shell: python
