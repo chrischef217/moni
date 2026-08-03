@@ -417,7 +417,7 @@ async function toolSearchProduction(args: Json, context: MoniAgentToolContext) {
       unaccounted_gap_g: planned - actual - defect - sample,
       warning: 'unaccounted_gap_g는 확정 로스가 아니라 계획량에서 완료·불량·샘플을 뺀 단순 차이입니다.',
     },
-    by_product: [...byProduct.values()].sort((a, b) => b.actual_quantity_g - a.actual_quantity_g),
+    by_product: [...byProduct.values()].sort((a: any, b: any) => b.actual_quantity_g - a.actual_quantity_g),
     records: rows,
   }
 }
@@ -440,7 +440,7 @@ async function toolSearchProductionPlans(args: Json, context: MoniAgentToolConte
   return {
     range: { start_date: startDate, end_date: endDate, time_zone: 'Asia/Seoul' },
     filters: { product_query: product || null },
-    summary: { plan_count: rows.length, planned_quantity_g: rows.reduce((sum, row) => sum + num(row.planned_quantity_g), 0) },
+    summary: { plan_count: rows.length, planned_quantity_g: rows.reduce((sum: number, row: any) => sum + num(row.planned_quantity_g), 0) },
     plans: rows,
   }
 }
@@ -458,7 +458,7 @@ async function toolGetRawInventory(args: Json, context: MoniAgentToolContext) {
   if (bool(args.out_of_stock_only)) query = query.lte('current_stock_g', 0)
   const { data, error } = await query
   if (error) throw new Error(error.message)
-  const rows = (data ?? []).map((row) => ({
+  const rows = (data ?? []).map((row: any) => ({
     ...row,
     out_of_stock: num(row.current_stock_g) <= 0,
     base_purchase_price_note: 'unit_price_per_kg 컬럼명은 레거시이며 운영상 기준 포장 1EA 가격입니다.',
@@ -507,9 +507,9 @@ async function toolSearchSales(args: Json, context: MoniAgentToolContext) {
     .select('id,company_name,contact_name,status,payment_terms,payment_due_type,payment_due_days,payment_due_day,tax_type')
     .eq('business_id', context.businessId)
   if (clientError) throw new Error(clientError.message)
-  const clientMap = new Map((clients ?? []).map((row) => [row.id, row]))
+  const clientMap = new Map((clients ?? []).map((row: any) => [row.id, row]))
   const matchingClientIds = clientQuery
-    ? (clients ?? []).filter((row) => text(row.company_name).toLowerCase().includes(clientQuery.toLowerCase())).map((row) => row.id)
+    ? (clients ?? []).filter((row: any) => text(row.company_name).toLowerCase().includes(clientQuery.toLowerCase())).map((row: any) => row.id)
     : []
 
   let orderQuery = context.supabase
@@ -525,7 +525,7 @@ async function toolSearchSales(args: Json, context: MoniAgentToolContext) {
   const { data: ordersRaw, error: orderError } = await orderQuery
   if (orderError) throw new Error(orderError.message)
   let orders = ordersRaw ?? []
-  const orderIds = orders.map((row) => row.id)
+  const orderIds = orders.map((row: any) => row.id)
 
   const [{ data: receipts, error: receiptError }, { data: items, error: itemError }] = await Promise.all([
     orderIds.length
@@ -539,8 +539,8 @@ async function toolSearchSales(args: Json, context: MoniAgentToolContext) {
   if (itemError) throw new Error(itemError.message)
 
   if (productQuery) {
-    const matchingOrderIds = new Set((items ?? []).filter((row) => text(row.product_name).toLowerCase().includes(productQuery.toLowerCase()) || text(row.product_id).toLowerCase().includes(productQuery.toLowerCase())).map((row) => row.order_id))
-    orders = orders.filter((row) => matchingOrderIds.has(row.id))
+    const matchingOrderIds = new Set((items ?? []).filter((row: any) => text(row.product_name).toLowerCase().includes(productQuery.toLowerCase()) || text(row.product_id).toLowerCase().includes(productQuery.toLowerCase())).map((row: any) => row.order_id))
+    orders = orders.filter((row: any) => matchingOrderIds.has(row.id))
   }
 
   const receiptByOrder = new Map<string, number>()
@@ -551,7 +551,7 @@ async function toolSearchSales(args: Json, context: MoniAgentToolContext) {
   const itemByOrder = new Map<string, Json[]>()
   for (const row of items ?? []) itemByOrder.set(row.order_id, [...(itemByOrder.get(row.order_id) || []), row])
 
-  let enriched = orders.map((row) => {
+  let enriched = orders.map((row: any) => {
     const received = receiptByOrder.get(row.id) || 0
     const outstanding = Math.max(0, num(row.total_amount) - received)
     const client = row.client_id ? clientMap.get(row.client_id) : null
@@ -563,16 +563,16 @@ async function toolSearchSales(args: Json, context: MoniAgentToolContext) {
       items: itemByOrder.get(row.id) || [],
     }
   })
-  if (bool(args.outstanding_only)) enriched = enriched.filter((row) => row.outstanding_amount > 0)
+  if (bool(args.outstanding_only)) enriched = enriched.filter((row: any) => row.outstanding_amount > 0)
 
   return {
     range: { start_date: startDate, end_date: endDate, time_zone: 'Asia/Seoul' },
     filters: { client_query: clientQuery || null, product_query: productQuery || null, outstanding_only: bool(args.outstanding_only) },
     summary: {
       order_count: enriched.length,
-      total_sales_amount: enriched.reduce((sum, row) => sum + num(row.total_amount), 0),
-      received_amount: enriched.reduce((sum, row) => sum + num(row.received_amount), 0),
-      outstanding_amount: enriched.reduce((sum, row) => sum + num(row.outstanding_amount), 0),
+      total_sales_amount: enriched.reduce((sum: number, row: any) => sum + num(row.total_amount), 0),
+      received_amount: enriched.reduce((sum: number, row: any) => sum + num(row.received_amount), 0),
+      outstanding_amount: enriched.reduce((sum: number, row: any) => sum + num(row.outstanding_amount), 0),
     },
     orders: enriched,
   }
@@ -595,8 +595,8 @@ async function toolSearchPurchases(args: Json, context: MoniAgentToolContext) {
   const { data: purchases, error } = await query
   if (error) throw new Error(error.message)
   const purchaseRows = purchases ?? []
-  const purchaseIds = purchaseRows.map((row) => row.id)
-  const supplierIds = [...new Set(purchaseRows.map((row) => row.supplier_id).filter(Boolean))]
+  const purchaseIds = purchaseRows.map((row: any) => row.id)
+  const supplierIds = [...new Set(purchaseRows.map((row: any) => row.supplier_id).filter(Boolean))]
 
   const [{ data: payments, error: paymentError }, { data: statements, error: statementError }] = await Promise.all([
     purchaseIds.length
@@ -611,11 +611,11 @@ async function toolSearchPurchases(args: Json, context: MoniAgentToolContext) {
 
   const paidByPurchase = new Map<string, number>()
   for (const row of payments ?? []) paidByPurchase.set(row.purchase_id, (paidByPurchase.get(row.purchase_id) || 0) + num(row.amount))
-  let enriched = purchaseRows.map((row) => {
+  let enriched = purchaseRows.map((row: any) => {
     const paid = paidByPurchase.get(row.id) || 0
     return { ...row, paid_amount: paid, outstanding_amount: Math.max(0, num(row.total_amount) - paid) }
   })
-  if (bool(args.outstanding_only)) enriched = enriched.filter((row) => row.outstanding_amount > 0)
+  if (bool(args.outstanding_only)) enriched = enriched.filter((row: any) => row.outstanding_amount > 0)
 
   const latestStatementBySupplier = new Map<string, Json>()
   for (const row of statements ?? []) {
@@ -628,9 +628,9 @@ async function toolSearchPurchases(args: Json, context: MoniAgentToolContext) {
     filters: { supplier_query: supplier || null, item_query: item || null, outstanding_only: bool(args.outstanding_only) },
     actual_purchases_summary: {
       purchase_count: enriched.length,
-      total_amount: enriched.reduce((sum, row) => sum + num(row.total_amount), 0),
-      paid_amount: enriched.reduce((sum, row) => sum + num(row.paid_amount), 0),
-      outstanding_amount: enriched.reduce((sum, row) => sum + num(row.outstanding_amount), 0),
+      total_amount: enriched.reduce((sum: number, row: any) => sum + num(row.total_amount), 0),
+      paid_amount: enriched.reduce((sum: number, row: any) => sum + num(row.paid_amount), 0),
+      outstanding_amount: enriched.reduce((sum: number, row: any) => sum + num(row.outstanding_amount), 0),
     },
     actual_purchases: enriched,
     supplier_statement_balances: [...latestStatementBySupplier.values()],
@@ -649,7 +649,7 @@ async function toolSearchProducts(args: Json, context: MoniAgentToolContext) {
   if (bool(args.active_only)) query = query.eq('is_active', true)
   const { data: products, error } = await query
   if (error) throw new Error(error.message)
-  const productIds = (products ?? []).map((row) => row.id)
+  const productIds = (products ?? []).map((row: any) => row.id)
   const [{ data: recipes, error: recipeError }, { data: mappings, error: mappingError }] = await Promise.all([
     productIds.length
       ? context.supabase.from('recipes').select('id,product_id,product_name,food_type_id,food_type_name,ratio_percent,sort_order,is_active,ingredient_type,semi_product_id').in('product_id', productIds).order('sort_order')
