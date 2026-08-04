@@ -10,22 +10,32 @@ export const maxDuration = 60
 
 const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
 const DEFAULT_OPENAI_MODEL = 'gpt-5'
-const RequestSchema = z.object({
-  token: z.string().trim().min(32).max(256),
-})
+const TokenSchema = z.string().trim().min(32).max(256)
+const RequestSchema = z.object({ token: TokenSchema })
 
 function hashToken(token: string) {
   return createHash('sha256').update(token, 'utf8').digest('hex')
 }
 
-export async function POST(request: NextRequest) {
-  const parsed = RequestSchema.safeParse(await request.json().catch(() => null))
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, error: '유효한 카나리 토큰이 필요합니다.' }, { status: 400 })
+function json(body: unknown, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      'Cache-Control': 'no-store, max-age=0',
+      Pragma: 'no-cache',
+      'Referrer-Policy': 'no-referrer',
+    },
+  })
+}
+
+async function executeCanary(token: string) {
+  const parsedToken = TokenSchema.safeParse(token)
+  if (!parsedToken.success) {
+    return json({ ok: false, error: '유효한 카나리 토큰이 필요합니다.' }, 400)
   }
 
   const supabase = createMoniServiceRoleClient()
-  const tokenHash = hashToken(parsed.data.token)
+  const tokenHash = hashToken(parsedToken.data)
   const now = new Date()
   const nowIso = now.toISOString()
 
@@ -38,13 +48,13 @@ export async function POST(request: NextRequest) {
 
   if (readError) {
     console.error('[MONI_AGENT_CANARY_LOOKUP_ERROR]', { message: readError.message, occurred_at: nowIso })
-    return NextResponse.json({ ok: false, error: '카나리 요청 확인에 실패했습니다.' }, { status: 500 })
+    return json({ ok: false, error: '카나리 요청 확인에 실패했습니다.' }, 500)
   }
   if (!pending) {
-    return NextResponse.json({ ok: false, error: '유효하지 않거나 만료된 카나리 요청입니다.' }, { status: 401 })
+    return json({ ok: false, error: '유효하지 않거나 만료된 카나리 요청입니다.' }, 401)
   }
   if (pending.status !== 'PENDING') {
-    return NextResponse.json({ ok: false, error: '이미 사용된 카나리 요청입니다.' }, { status: 409 })
+    return json({ ok: false, error: '이미 사용된 카나리 요청입니다.' }, 409)
   }
   if (Date.parse(pending.expires_at) <= now.getTime()) {
     await supabase
@@ -52,7 +62,7 @@ export async function POST(request: NextRequest) {
       .update({ status: 'EXPIRED', finished_at: nowIso, updated_at: nowIso })
       .eq('id', pending.id)
       .eq('status', 'PENDING')
-    return NextResponse.json({ ok: false, error: '만료된 카나리 요청입니다.' }, { status: 410 })
+    return json({ ok: false, error: '만료된 카나리 요청입니다.' }, 410)
   }
 
   const { data: claimed, error: claimError } = await supabase
@@ -65,10 +75,10 @@ export async function POST(request: NextRequest) {
 
   if (claimError) {
     console.error('[MONI_AGENT_CANARY_CLAIM_ERROR]', { message: claimError.message, occurred_at: nowIso })
-    return NextResponse.json({ ok: false, error: '카나리 요청 잠금에 실패했습니다.' }, { status: 500 })
+    return json({ ok: false, error: '카나리 요청 잠금에 실패했습니다.' }, 500)
   }
   if (!claimed) {
-    return NextResponse.json({ ok: false, error: '이미 실행 중이거나 사용된 카나리 요청입니다.' }, { status: 409 })
+    return json({ ok: false, error: '이미 실행 중이거나 사용된 카나리 요청입니다.' }, 409)
   }
 
   try {
@@ -88,7 +98,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', claimed.id)
 
-    return NextResponse.json({
+    return json({
       ok: true,
       result: {
         eval_run_id: result.evalRunId,
@@ -120,6 +130,18 @@ export async function POST(request: NextRequest) {
       message,
       occurred_at: finishedAt,
     })
-    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+    return json({ ok: false, error: message }, 500)
   }
+}
+
+export async function POST(request: NextRequest) {
+  const parsed = RequestSchema.safeParse(await request.json().catch(() => null))
+  if (!parsed.success) {
+    return json({ ok: false, error: '유효한 카나리 토큰이 필요합니다.' }, 400)
+  }
+  return executeCanary(parsed.data.token)
+}
+
+export async function GET(request: NextRequest) {
+  return executeCanary(request.nextUrl.searchParams.get('token') || '')
 }
