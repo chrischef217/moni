@@ -1,8 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/cron/morning-check",
-      "schedule": "0 8 * * *"
+      "path": "/api/cron/moni-alert-sync",
+      "schedule": "0 * * * *"
     }
   ]
 }

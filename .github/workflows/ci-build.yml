@@ -1,0 +1,48 @@
+name: MONI CI Build
+
+on:
+  push:
+    branches:
+      - 'feat/**'
+      - 'fix/**'
+      - 'refactor/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://nvzxlejpmsfzbpprgvfh.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_dvlB9GtrobIRjRipY6G-dg_78hIy_EZ
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-production-secret
+      ALLOWANCE_ENCRYPTION_KEY: ci-placeholder-encryption-key
+      GOOGLE_AI_API_KEY: ci-placeholder-google-key
+      GEMINI_MODEL: gemini-2.5-flash
+      MFDS_API_KEY: ci-placeholder-mfds-key
+      MFDS_COMPANY_ID: ci-placeholder-company
+      CRON_SECRET: ci-placeholder-cron-secret
+      LINE_CHANNEL_ACCESS_TOKEN: ci-placeholder-line-token
+      LINE_CHANNEL_SECRET: ci-placeholder-line-secret
+      MONI_PUBLIC_BASE_URL: https://moni-sigma.vercel.app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
