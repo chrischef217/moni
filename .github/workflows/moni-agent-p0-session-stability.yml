@@ -1,9 +1,9 @@
 name: MONI Agent P0 Session Stability
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/moni-session-toolchain-p0
+      - main
     paths:
       - '.github/workflows/moni-agent-p0-session-stability.yml'
       - 'scripts/apply-moni-agent-p0-session-stability.py'
