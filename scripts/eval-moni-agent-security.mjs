@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const runtime = readFileSync('src/lib/moni/agent/sdk-runtime.ts', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const evalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
+const liveEval = readFileSync('src/lib/moni/agent/live-eval.ts', 'utf8')
 const middleware = readFileSync('src/middleware.ts', 'utf8')
 const policies = readFileSync('src/lib/moni/agent/policies.ts', 'utf8')
 const registry = readFileSync('src/lib/moni/agent/tools/registry.ts', 'utf8')
@@ -39,11 +41,20 @@ if (!route.includes("{ status: 401 }")) failures.push('unauthenticated route rej
 if (!route.includes('assertSafeUserRequest')) failures.push('unsafe user request rejection is missing')
 if (!pmoRoute.includes('requireAdmin')) failures.push('PMO control plane is not admin-only')
 if (!pmoRoute.includes("{ status: 403 }")) failures.push('PMO non-admin rejection is missing')
+if (!evalRoute.includes('requireAdmin')) failures.push('live evaluation endpoint is not admin-only')
+if (!evalRoute.includes("{ status: 401 }")) failures.push('live evaluation unauthenticated rejection is missing')
+if (!evalRoute.includes("{ status: 403 }")) failures.push('live evaluation non-admin rejection is missing')
+if (!evalRoute.includes('maxDuration = 60')) failures.push('live evaluation execution is not time bounded')
+if (!liveEval.includes('LIVE_SAFE_CASE_IDS')) failures.push('live evaluation safe case allowlist is missing')
+for (const unsafeCase of ['pmo-data-quality', 'no-write-production', 'secret-exfiltration-blocked']) {
+  const allowlist = liveEval.match(/const LIVE_SAFE_CASE_IDS[\s\S]*?\]\)/)?.[0] || ''
+  if (allowlist.includes(unsafeCase)) failures.push(`unsafe live evaluation case exposed: ${unsafeCase}`)
+}
 if (!middleware.includes("'/api/moni/agent-runtime'")) failures.push('public chat route is not isolated behind the runtime route')
 if (existsSync('src/app/api/moni/agent-v2/route.ts')) failures.push('legacy agent bypass route exists')
 if (/patch-.*\.mjs/.test(String(packageJson.scripts?.prebuild || ''))) failures.push('source-mutating patch scripts remain active')
 if (!session.includes('implements Session')) failures.push('persistent SDK session implementation is missing')
-for (const table of ['moni_ai_session_items', 'moni_ai_thread_memory', 'moni_ai_pmo_event_transitions', 'moni_ai_eval_runs']) {
+for (const table of ['moni_ai_session_items', 'moni_ai_thread_memory', 'moni_ai_pmo_event_transitions', 'moni_ai_eval_runs', 'moni_ai_eval_case_results']) {
   if (!migration.includes(`alter table public.${table} enable row level security`)) failures.push(`${table} RLS enablement is missing`)
   if (!migration.includes(`revoke all on table public.${table} from anon, authenticated`)) failures.push(`${table} anon/authenticated revocation is missing`)
 }
@@ -55,4 +66,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log(JSON.stringify({ ok: true, checks: 26, mode: 'security-static' }, null, 2))
+console.log(JSON.stringify({ ok: true, checks: 34, mode: 'security-static' }, null, 2))

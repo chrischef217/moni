@@ -11,6 +11,10 @@ const session = readFileSync('src/lib/moni/agent/supabase-session.ts', 'utf8')
 const guardrails = readFileSync('src/lib/moni/agent/guardrails.ts', 'utf8')
 const telemetry = readFileSync('src/lib/moni/agent/telemetry.ts', 'utf8')
 const pmoRoute = readFileSync('src/app/api/moni/pmo-events/route.ts', 'utf8')
+const liveEval = readFileSync('src/lib/moni/agent/live-eval.ts', 'utf8')
+const liveEvalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
+const liveEvalPanel = readFileSync('src/components/MoniAgentQualityPanel.tsx', 'utf8')
+const intelligencePage = readFileSync('src/app/intelligence/page.tsx', 'utf8')
 const scripts = readdirSync('scripts')
 
 const failures = []
@@ -36,6 +40,11 @@ if (!session.includes('implements Session') || !session.includes('moni_ai_sessio
 if (!guardrails.includes('defineToolInputGuardrail') || !guardrails.includes('defineToolOutputGuardrail')) failures.push('tool input/output guardrails are missing')
 if (!telemetry.includes('input_tokens') || !telemetry.includes('latency_ms')) failures.push('usage and latency telemetry fields are missing')
 if (!pmoRoute.includes('allowed_transitions') || !pmoRoute.includes('requireAdmin')) failures.push('admin PMO control-plane transition API is missing')
+if (!liveEval.includes('runMoniSdkAgent') || !liveEval.includes('gradeCase')) failures.push('live model evaluation runner is missing')
+if (!liveEval.includes('live-single-case-v2') || !liveEval.includes('moni_ai_eval_case_results')) failures.push('live evaluation result persistence is missing')
+if (!liveEvalRoute.includes('requireAdmin') || !liveEvalRoute.includes('maxDuration = 60')) failures.push('admin bounded live evaluation API is missing')
+if (!liveEvalPanel.includes('실모델 평가 실행')) failures.push('admin live evaluation panel is missing')
+if (!intelligencePage.includes('MoniAgentQualityPanel')) failures.push('intelligence page does not expose the live evaluation panel')
 
 if (failures.length) {
   console.error('MONI Agent source verification failed:')
