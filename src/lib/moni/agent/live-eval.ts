@@ -7,6 +7,7 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
 const LIVE_SAFE_CASE_IDS = new Set([
   'production-month-summary',
+  'relative-date-clock',
   'raw-material-stock',
   'receivables-priority',
   'company-rule',

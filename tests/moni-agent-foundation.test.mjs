@@ -38,6 +38,15 @@ test('runtime uses official Agents SDK and structured output', () => {
   assert.match(registry, /parameters: definition\.parameters/)
 })
 
+test('tool source namespace prefixes normalize before validation and rendering', () => {
+  assert.match(runtime, /function canonicalToolName/)
+  assert.match(runtime, /function normalizeAnswerToolReferences/)
+  assert.match(runtime, /context\.toolsUsed\.map\(canonicalToolName\)/)
+  assert.match(runtime, /normalizeAnswerToolReferences\(MoniAnswerSchema\.parse\(result\.finalOutput\)\)/)
+  assert.match(runtime, /source_tool: canonicalToolName\(metric\.source_tool\)/)
+  assert.match(runtime, /tool: canonicalToolName\(source\.tool\)/)
+})
+
 test('runtime validates evidence-backed metrics and period', () => {
   assert.match(runtime, /source_tool/)
   assert.match(runtime, /source_field/)
