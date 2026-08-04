@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
 const middleware = readFileSync('src/middleware.ts', 'utf8')
@@ -10,12 +10,14 @@ const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
 test('prebuild verifies source without mutating TypeScript', () => {
   assert.equal(packageJson.scripts.prebuild, 'node scripts/verify-moni-agent-source.mjs')
   assert.ok(!packageJson.scripts.prebuild.includes('patch-'))
+  assert.equal(readdirSync('scripts').some((name) => /^patch-.*\.mjs$/.test(name)), false)
 })
 
-test('public MONI endpoint is routed to SDK runtime', () => {
+test('public MONI endpoint is routed only to SDK runtime', () => {
   assert.match(middleware, /\/api\/moni\/agent-chat/)
   assert.match(middleware, /\/api\/moni\/agent-runtime/)
   assert.match(route, /runMoniSdkAgent/)
+  assert.equal(existsSync('src/app/api/moni/agent-v2/route.ts'), false)
 })
 
 test('runtime uses official Agents SDK and strict Zod contracts', () => {
