@@ -27,6 +27,12 @@ function messageToInputItem(role: 'user' | 'assistant', content: string): AgentI
   } as AgentInputItem
 }
 
+function isReplayableMessage(item: AgentInputItem) {
+  const value = item as Record<string, unknown>
+  if (value.type === 'message') return true
+  return value.role === 'user' || value.role === 'assistant'
+}
+
 export class SupabaseMoniSession implements Session {
   private readonly supabase: SupabaseClient
   private readonly businessId: string
@@ -47,14 +53,15 @@ export class SupabaseMoniSession implements Session {
   }
 
   async getItems(limit?: number): Promise<AgentInputItem[]> {
-    const rowLimit = Math.max(1, Math.min(100, limit || 40))
+    const messageLimit = Math.max(1, Math.min(50, limit || 24))
+    const fetchLimit = Math.min(300, Math.max(messageLimit * 8, 80))
     let { data, error } = await this.supabase
       .from('moni_ai_session_items')
       .select('item')
       .eq('business_id', this.businessId)
       .eq('thread_id', this.threadId)
       .order('id', { ascending: false })
-      .limit(rowLimit)
+      .limit(fetchLimit)
     if (error) throw new Error(error.message)
 
     if (!data?.length) {
@@ -65,12 +72,16 @@ export class SupabaseMoniSession implements Session {
         .eq('business_id', this.businessId)
         .eq('thread_id', this.threadId)
         .order('id', { ascending: false })
-        .limit(rowLimit)
+        .limit(fetchLimit)
       if (retry.error) throw new Error(retry.error.message)
       data = retry.data
     }
 
-    return (data ?? []).reverse().map((row) => row.item as AgentInputItem)
+    return (data ?? [])
+      .reverse()
+      .map((row) => row.item as AgentInputItem)
+      .filter(isReplayableMessage)
+      .slice(-messageLimit)
   }
 
   async addItems(items: AgentInputItem[]) {
