@@ -6,6 +6,11 @@ on:
       - fix/moni-answer-validator-negation
     paths:
       - '.github/workflows/moni-answer-validator-source-fix.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/moni-answer-validator-source-fix.yml'
 
 permissions:
   contents: write
