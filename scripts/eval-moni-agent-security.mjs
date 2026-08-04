@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 const runtime = readFileSync('src/lib/moni/agent/sdk-runtime.ts', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
 const evalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
+const canaryRoute = readFileSync('src/app/api/moni/agent-evals/canary/route.ts', 'utf8')
 const liveEval = readFileSync('src/lib/moni/agent/live-eval.ts', 'utf8')
 const middleware = readFileSync('src/middleware.ts', 'utf8')
 const policies = readFileSync('src/lib/moni/agent/policies.ts', 'utf8')
@@ -11,6 +12,7 @@ const guardrails = readFileSync('src/lib/moni/agent/guardrails.ts', 'utf8')
 const session = readFileSync('src/lib/moni/agent/supabase-session.ts', 'utf8')
 const pmoRoute = readFileSync('src/app/api/moni/pmo-events/route.ts', 'utf8')
 const migration = readFileSync('supabase/migrations/20260804053000_add_moni_agent_memory_policy_observability.sql', 'utf8')
+const canaryMigration = readFileSync('supabase/migrations/20260804070000_add_moni_agent_eval_canary_requests.sql', 'utf8')
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
 
 const failures = []
@@ -50,6 +52,21 @@ for (const unsafeCase of ['pmo-data-quality', 'no-write-production', 'secret-exf
   const allowlist = liveEval.match(/const LIVE_SAFE_CASE_IDS[\s\S]*?\]\)/)?.[0] || ''
   if (allowlist.includes(unsafeCase)) failures.push(`unsafe live evaluation case exposed: ${unsafeCase}`)
 }
+
+if (!canaryRoute.includes("createHash('sha256')")) failures.push('canary token hashing is missing')
+if (!canaryRoute.includes(".eq('token_hash', tokenHash)")) failures.push('canary lookup must use token hash')
+if (!canaryRoute.includes(".eq('status', 'PENDING')")) failures.push('canary request is not single-use claimed')
+if (!canaryRoute.includes('maxDuration = 60')) failures.push('canary execution is not time bounded')
+if (!canaryRoute.includes('runLiveEvalCase')) failures.push('canary does not invoke the safe live evaluation runner')
+if (!canaryRoute.includes('claimed.case_id')) failures.push('canary case must come from the service-role request row')
+if (/case_id\s*:\s*z\./.test(canaryRoute)) failures.push('canary endpoint must not accept arbitrary case IDs from the caller')
+if (!canaryMigration.includes('token_hash text not null')) failures.push('canary table must store token hash only')
+if (/\btoken\s+text\b/.test(canaryMigration)) failures.push('canary table stores a raw token')
+if (!canaryMigration.includes("status in ('PENDING','RUNNING','COMPLETED','FAILED','EXPIRED')")) failures.push('canary request lifecycle constraint is missing')
+if (!canaryMigration.includes('alter table public.moni_ai_eval_canary_requests enable row level security')) failures.push('canary request table RLS is missing')
+if (!canaryMigration.includes('revoke all on table public.moni_ai_eval_canary_requests from anon, authenticated')) failures.push('canary request table is exposed to client roles')
+if (!canaryMigration.includes('grant all on table public.moni_ai_eval_canary_requests to service_role')) failures.push('canary request table is not service-role controlled')
+
 if (!middleware.includes("'/api/moni/agent-runtime'")) failures.push('public chat route is not isolated behind the runtime route')
 if (existsSync('src/app/api/moni/agent-v2/route.ts')) failures.push('legacy agent bypass route exists')
 if (/patch-.*\.mjs/.test(String(packageJson.scripts?.prebuild || ''))) failures.push('source-mutating patch scripts remain active')
@@ -66,4 +83,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log(JSON.stringify({ ok: true, checks: 34, mode: 'security-static' }, null, 2))
+console.log(JSON.stringify({ ok: true, checks: 46, mode: 'security-static' }, null, 2))
