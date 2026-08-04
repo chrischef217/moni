@@ -1,0 +1,16 @@
+export const dynamic = 'force-static'
+
+const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#111827"/>
+  <path d="M16 46V18h7l9 14 9-14h7v28h-7V29l-9 13-9-13v17z" fill="#ffffff"/>
+</svg>`
+
+export async function GET() {
+  return new Response(faviconSvg, {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400, immutable',
+    },
+  })
+}
