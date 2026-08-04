@@ -13,6 +13,9 @@ const session = readFileSync('src/lib/moni/agent/supabase-session.ts', 'utf8')
 const guardrails = readFileSync('src/lib/moni/agent/guardrails.ts', 'utf8')
 const telemetry = readFileSync('src/lib/moni/agent/telemetry.ts', 'utf8')
 const pmoRoute = readFileSync('src/app/api/moni/pmo-events/route.ts', 'utf8')
+const liveEvalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
+const canaryRoute = readFileSync('src/app/api/moni/agent-evals/canary/route.ts', 'utf8')
+const canaryMigration = readFileSync('supabase/migrations/20260804070000_add_moni_agent_eval_canary_requests.sql', 'utf8')
 
 test('prebuild verifies source without mutating TypeScript', () => {
   assert.equal(packageJson.scripts.prebuild, 'node scripts/verify-moni-agent-source.mjs')
@@ -85,4 +88,23 @@ test('PMO control plane enforces admin and transitions', () => {
   assert.match(pmoRoute, /allowed_transitions/)
   assert.match(pmoRoute, /PREVIEW_TESTING/)
   assert.match(pmoRoute, /PMO_REVIEW/)
+})
+
+test('admin live evaluation remains authenticated and bounded', () => {
+  assert.match(liveEvalRoute, /requireAdmin/)
+  assert.match(liveEvalRoute, /maxDuration = 60/)
+  assert.match(liveEvalRoute, /runLiveEvalCase/)
+})
+
+test('one-time canary stores only token hash and atomically claims request', () => {
+  assert.match(canaryRoute, /createHash\('sha256'\)/)
+  assert.match(canaryRoute, /\.eq\('token_hash', tokenHash\)/)
+  assert.match(canaryRoute, /\.eq\('status', 'PENDING'\)/)
+  assert.match(canaryRoute, /claimed\.case_id/)
+  assert.match(canaryRoute, /maxDuration = 60/)
+  assert.doesNotMatch(canaryRoute, /case_id\s*:\s*z\./)
+  assert.match(canaryMigration, /token_hash text not null/)
+  assert.doesNotMatch(canaryMigration, /\btoken\s+text\b/)
+  assert.match(canaryMigration, /enable row level security/)
+  assert.match(canaryMigration, /revoke all on table public\.moni_ai_eval_canary_requests from anon, authenticated/)
 })
