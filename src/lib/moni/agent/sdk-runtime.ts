@@ -102,6 +102,21 @@ function collectRanges(context: MoniRuntimeContext) {
   return ranges
 }
 
+function hasUnsafeUnaccountedGapInterpretation(answer: MoniAnswer) {
+  const segments = [
+    answer.conclusion,
+    ...answer.metrics.map((metric) => `${metric.label} ${metric.source_field} ${metric.interpretation}`),
+    ...answer.sections.flatMap((section) => [section.title, ...section.bullets]),
+    ...answer.warnings,
+    ...answer.sources.map((source) => source.criteria),
+  ]
+  const safeNegation = /(?:아니|아님|않|금지|오해|단정하지|표현하지|사용하지|해석하지|의미하지|해당하지|구분)/i
+  return segments.some((segment) => {
+    if (!/unaccounted_gap_g/i.test(segment) || !/(?:미완료|로스)/.test(segment)) return false
+    return !safeNegation.test(segment)
+  })
+}
+
 function validateAnswer(answer: MoniAnswer, context: MoniRuntimeContext) {
   const errors: string[] = []
   const used = new Set(context.toolsUsed)
@@ -136,9 +151,9 @@ function validateAnswer(answer: MoniAnswer, context: MoniRuntimeContext) {
   if (/\bsk-[A-Za-z0-9_-]{16,}\b|SUPABASE_SERVICE_ROLE_KEY|BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/i.test(serialized)) {
     errors.push('최종 답변에 민감정보 패턴이 포함됨')
   }
-  if (/unaccounted_gap_g.{0,20}(?:미완료|로스)|(?:미완료|로스).{0,20}unaccounted_gap_g/i.test(serialized)) {
-    errors.push('unaccounted_gap_g를 미완료 또는 로스로 잘못 해석함')
-  }
+  if (hasUnsafeUnaccountedGapInterpretation(answer)) {
+  errors.push('unaccounted_gap_g를 미완료 또는 로스로 잘못 해석함')
+}
   return errors
 }
 
@@ -248,23 +263,22 @@ export async function runMoniSdkAgent(input: RunMoniSdkAgentInput): Promise<RunM
     pinnedProjectContext,
   }
 
-  const supervisor = new Agent<MoniRuntimeContext, typeof MoniAnswerSchema>({
-    name: 'MONI Supervisor',
-    model,
-    instructions: buildInstructions(runtimeContext),
-    tools: createMoniTools(context.session.role),
-    outputType: MoniAnswerSchema,
-  })
-  const session = new SupabaseMoniSession({
-    supabase: context.supabase,
-    businessId: context.businessId,
-    threadId: context.threadId,
-    excludeBootstrapMessageId: context.messageId,
-    bootstrapLimit: SESSION_HISTORY_LIMIT,
-  })
-  const currentInput = [{ role: 'user', content: currentContent }] as Record<string, unknown>[]
-
   try {
+    const supervisor = new Agent<MoniRuntimeContext, typeof MoniAnswerSchema>({
+      name: 'MONI Supervisor',
+      model,
+      instructions: buildInstructions(runtimeContext),
+      tools: createMoniTools(context.session.role),
+      outputType: MoniAnswerSchema,
+    })
+    const session = new SupabaseMoniSession({
+      supabase: context.supabase,
+      businessId: context.businessId,
+      threadId: context.threadId,
+      excludeBootstrapMessageId: context.messageId,
+      bootstrapLimit: SESSION_HISTORY_LIMIT,
+    })
+    const currentInput = [{ role: 'user', content: currentContent }] as Record<string, unknown>[]
     const result = await run(supervisor, currentInput as any, {
       context: runtimeContext,
       maxTurns: MAX_AGENT_TURNS,
