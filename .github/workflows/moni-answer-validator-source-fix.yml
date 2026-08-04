@@ -1,11 +1,6 @@
 name: MONI Answer Validator Source Fix
 
 on:
-  push:
-    branches:
-      - fix/moni-answer-validator-negation
-    paths:
-      - '.github/workflows/moni-answer-validator-source-fix.yml'
   pull_request:
     branches:
       - main
@@ -25,7 +20,7 @@ jobs:
           ref: fix/moni-answer-validator-negation
           fetch-depth: 0
 
-      - name: Apply exact source changes
+      - name: Apply marker-based source changes
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -33,7 +28,7 @@ jobs:
           path = Path('src/lib/moni/agent/sdk-runtime.ts')
           source = path.read_text()
 
-          marker = 'function validateAnswer(answer: MoniAnswer, context: MoniRuntimeContext) {'
+          validate_marker = 'function validateAnswer(answer: MoniAnswer, context: MoniRuntimeContext) {'
           helper = '''function hasUnsafeUnaccountedGapInterpretation(answer: MoniAnswer) {
             const segments = [
               answer.conclusion,
@@ -51,60 +46,32 @@ jobs:
 
           '''
           if 'function hasUnsafeUnaccountedGapInterpretation' not in source:
-            if marker not in source:
+            if validate_marker not in source:
               raise SystemExit('validateAnswer marker not found')
-            source = source.replace(marker, helper + marker, 1)
+            source = source.replace(validate_marker, helper + validate_marker, 1)
 
-          old_check = '''  if (/unaccounted_gap_g.{0,20}(?:미완료|로스)|(?:미완료|로스).{0,20}unaccounted_gap_g/i.test(serialized)) {
-            errors.push('unaccounted_gap_g를 미완료 또는 로스로 잘못 해석함')
-          }'''
           new_check = '''  if (hasUnsafeUnaccountedGapInterpretation(answer)) {
             errors.push('unaccounted_gap_g를 미완료 또는 로스로 잘못 해석함')
-          }'''
-          if old_check in source:
-            source = source.replace(old_check, new_check, 1)
-          elif new_check not in source:
-            raise SystemExit('unaccounted gap validation marker not found')
+          }
+          '''
+          if 'if (hasUnsafeUnaccountedGapInterpretation(answer))' not in source:
+            check_start = source.find('  if (/unaccounted_gap_g')
+            check_end_marker = '  return errors\n}'
+            check_end = source.find(check_end_marker, check_start)
+            if check_start < 0 or check_end < 0:
+              raise SystemExit('unaccounted gap validation block not found')
+            source = source[:check_start] + new_check + source[check_end:]
 
-          old_init = '''  const supervisor = new Agent<MoniRuntimeContext, typeof MoniAnswerSchema>({
-            name: 'MONI Supervisor',
-            model,
-            instructions: buildInstructions(runtimeContext),
-            tools: createMoniTools(context.session.role),
-            outputType: MoniAnswerSchema,
-          })
-          const session = new SupabaseMoniSession({
-            supabase: context.supabase,
-            businessId: context.businessId,
-            threadId: context.threadId,
-            excludeBootstrapMessageId: context.messageId,
-            bootstrapLimit: SESSION_HISTORY_LIMIT,
-          })
-          const currentInput = [{ role: 'user', content: currentContent }] as Record<string, unknown>[]
-
-          try {
-            const result = await run(supervisor, currentInput as any, {'''
-          new_init = '''  try {
-            const supervisor = new Agent<MoniRuntimeContext, typeof MoniAnswerSchema>({
-              name: 'MONI Supervisor',
-              model,
-              instructions: buildInstructions(runtimeContext),
-              tools: createMoniTools(context.session.role),
-              outputType: MoniAnswerSchema,
-            })
-            const session = new SupabaseMoniSession({
-              supabase: context.supabase,
-              businessId: context.businessId,
-              threadId: context.threadId,
-              excludeBootstrapMessageId: context.messageId,
-              bootstrapLimit: SESSION_HISTORY_LIMIT,
-            })
-            const currentInput = [{ role: 'user', content: currentContent }] as Record<string, unknown>[]
-            const result = await run(supervisor, currentInput as any, {'''
-          if old_init in source:
-            source = source.replace(old_init, new_init, 1)
-          elif new_init not in source:
-            raise SystemExit('agent initialization marker not found')
+          if '  try {\n    const supervisor = new Agent<MoniRuntimeContext' not in source:
+            init_start = source.find('  const supervisor = new Agent<MoniRuntimeContext')
+            result_marker = '  try {\n    const result = await run(supervisor, currentInput as any, {'
+            result_start = source.find(result_marker, init_start)
+            if init_start < 0 or result_start < 0:
+              raise SystemExit('agent initialization block not found')
+            init_block = source[init_start:result_start].rstrip()
+            indented = '\n'.join(('  ' + line) if line else line for line in init_block.splitlines())
+            replacement = '  try {\n' + indented + '\n    const result = await run(supervisor, currentInput as any, {'
+            source = source[:init_start] + replacement + source[result_start + len(result_marker):]
 
           path.write_text(source)
           PY
