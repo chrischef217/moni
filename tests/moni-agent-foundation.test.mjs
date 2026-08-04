@@ -56,6 +56,7 @@ test('gap validator distinguishes explicit negation from actual misuse', () => {
   assert.match(runtime, /function hasUnsafeUnaccountedGapInterpretation/)
   assert.match(runtime, /safeNegation/)
   assert.match(runtime, /의미하지/)
+  assert.match(runtime, /아닙/)
   assert.match(runtime, /hasUnsafeUnaccountedGapInterpretation\(answer\)/)
   assert.doesNotMatch(runtime, /unaccounted_gap_g\.\{0,20\}/)
 })
