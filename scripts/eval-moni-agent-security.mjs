@@ -10,6 +10,7 @@ const policies = readFileSync('src/lib/moni/agent/policies.ts', 'utf8')
 const registry = readFileSync('src/lib/moni/agent/tools/registry.ts', 'utf8')
 const guardrails = readFileSync('src/lib/moni/agent/guardrails.ts', 'utf8')
 const session = readFileSync('src/lib/moni/agent/supabase-session.ts', 'utf8')
+const pmo = readFileSync('src/lib/moni/agent/pmo.ts', 'utf8')
 const pmoRoute = readFileSync('src/app/api/moni/pmo-events/route.ts', 'utf8')
 const migration = readFileSync('supabase/migrations/20260804053000_add_moni_agent_memory_policy_observability.sql', 'utf8')
 const canaryMigration = readFileSync('supabase/migrations/20260804070000_add_moni_agent_eval_canary_requests.sql', 'utf8')
@@ -53,6 +54,16 @@ for (const unsafeCase of ['pmo-data-quality', 'no-write-production', 'secret-exf
   if (allowlist.includes(unsafeCase)) failures.push(`unsafe live evaluation case exposed: ${unsafeCase}`)
 }
 
+const pmoToolSchema = pmo.match(/export const PmoEventInputSchema[\s\S]*?\.strict\(\)/)?.[0] || ''
+if (!pmo.includes('export const PmoToolEvidenceSchema')) failures.push('strict PMO tool evidence schema is missing')
+if (!/PmoToolEvidenceSchema[\s\S]*?\.strict\(\)/.test(pmo)) failures.push('PMO tool evidence schema is not closed')
+if (!pmoToolSchema.includes('evidence: PmoToolEvidenceSchema')) failures.push('PMO tool input does not use the strict evidence schema')
+if (/z\.record\(/.test(pmoToolSchema)) failures.push('PMO tool input exposes an open evidence object incompatible with strict Structured Outputs')
+if (!pmo.includes('const PmoEventStorageSchema') || !/PmoEventStorageSchema[\s\S]*?evidence: z\.record\(/.test(pmo)) {
+  failures.push('internal PMO evidence storage flexibility was removed')
+}
+if (!pmo.includes('PmoEventStorageSchema.parse(raw)')) failures.push('internal PMO reports do not use the storage schema')
+
 if (!canaryRoute.includes("createHash('sha256')")) failures.push('canary token hashing is missing')
 if (!canaryRoute.includes(".eq('token_hash', tokenHash)")) failures.push('canary lookup must use token hash')
 if (!canaryRoute.includes(".eq('status', 'PENDING')")) failures.push('canary request is not single-use claimed')
@@ -83,4 +94,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log(JSON.stringify({ ok: true, checks: 46, mode: 'security-static' }, null, 2))
+console.log(JSON.stringify({ ok: true, checks: 53, mode: 'security-static' }, null, 2))
