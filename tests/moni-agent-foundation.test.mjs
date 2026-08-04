@@ -52,6 +52,24 @@ test('production terminology is protected', () => {
   assert.match(runtime, /unaccounted_gap_g는 미완료량이나 로스가 아닙니다/)
 })
 
+test('gap validator distinguishes explicit negation from actual misuse', () => {
+  assert.match(runtime, /function hasUnsafeUnaccountedGapInterpretation/)
+  assert.match(runtime, /safeNegation/)
+  assert.match(runtime, /의미하지/)
+  assert.match(runtime, /hasUnsafeUnaccountedGapInterpretation\(answer\)/)
+  assert.doesNotMatch(runtime, /unaccounted_gap_g\.\{0,20\}/)
+})
+
+test('agent initialization is covered by failure telemetry', () => {
+  const tryIndex = runtime.indexOf('  try {\n    const supervisor = new Agent')
+  const catchIndex = runtime.indexOf('  } catch (error) {', tryIndex)
+  assert.ok(tryIndex >= 0)
+  assert.ok(catchIndex > tryIndex)
+  assert.match(runtime.slice(tryIndex, catchIndex), /createMoniTools\(context\.session\.role\)/)
+  assert.match(runtime.slice(tryIndex, catchIndex), /new SupabaseMoniSession/)
+  assert.match(runtime.slice(catchIndex), /markAgentRunFailed/)
+})
+
 test('runtime remains read only and role scoped', () => {
   assert.match(runtime, /READ ONLY/)
   assert.match(policies, /FREELANCER_TOOLS/)
