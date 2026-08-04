@@ -10,6 +10,7 @@ const memory = readFileSync('src/lib/moni/agent/memory.ts', 'utf8')
 const session = readFileSync('src/lib/moni/agent/supabase-session.ts', 'utf8')
 const guardrails = readFileSync('src/lib/moni/agent/guardrails.ts', 'utf8')
 const telemetry = readFileSync('src/lib/moni/agent/telemetry.ts', 'utf8')
+const pmo = readFileSync('src/lib/moni/agent/pmo.ts', 'utf8')
 const pmoRoute = readFileSync('src/app/api/moni/pmo-events/route.ts', 'utf8')
 const liveEval = readFileSync('src/lib/moni/agent/live-eval.ts', 'utf8')
 const liveEvalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
@@ -42,6 +43,16 @@ if (!session.includes('implements Session') || !session.includes('moni_ai_sessio
 if (!guardrails.includes('defineToolInputGuardrail') || !guardrails.includes('defineToolOutputGuardrail')) failures.push('tool input/output guardrails are missing')
 if (!telemetry.includes('input_tokens') || !telemetry.includes('latency_ms')) failures.push('usage and latency telemetry fields are missing')
 if (!pmoRoute.includes('allowed_transitions') || !pmoRoute.includes('requireAdmin')) failures.push('admin PMO control-plane transition API is missing')
+
+const pmoToolSchema = pmo.match(/export const PmoEventInputSchema[\s\S]*?\.strict\(\)/)?.[0] || ''
+if (!pmo.includes('export const PmoToolEvidenceSchema')) failures.push('strict PMO tool evidence schema is missing')
+if (!/PmoToolEvidenceSchema[\s\S]*?\.strict\(\)/.test(pmo)) failures.push('PMO tool evidence schema must be closed')
+if (!pmoToolSchema.includes('evidence: PmoToolEvidenceSchema')) failures.push('PMO tool input must use the strict evidence schema')
+if (/z\.record\(/.test(pmoToolSchema)) failures.push('PMO tool input must not expose an open evidence record')
+if (!pmo.includes('const PmoEventStorageSchema') || !pmo.includes('PmoEventStorageSchema.parse(raw)')) {
+  failures.push('internal PMO storage schema separation is missing')
+}
+
 if (!liveEval.includes('runMoniSdkAgent') || !liveEval.includes('gradeCase')) failures.push('live model evaluation runner is missing')
 if (!liveEval.includes('live-single-case-v2') || !liveEval.includes('moni_ai_eval_case_results')) failures.push('live evaluation result persistence is missing')
 if (!liveEvalRoute.includes('requireAdmin') || !liveEvalRoute.includes('maxDuration = 60')) failures.push('admin bounded live evaluation API is missing')
