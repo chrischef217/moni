@@ -1,0 +1,56 @@
+name: MONI Agent Quality Gate
+
+on:
+  pull_request:
+    paths:
+      - 'src/lib/moni/agent/**'
+      - 'src/lib/moni/agent-v2.ts'
+      - 'src/app/api/moni/agent-runtime/**'
+      - 'src/middleware.ts'
+      - 'evals/**'
+      - 'tests/moni-agent-*.test.mjs'
+      - 'scripts/eval-moni-agent-*.mjs'
+      - 'scripts/verify-moni-agent-source.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/moni-agent-quality.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moni-agent-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Verify immutable source
+        run: npm run prebuild
+
+      - name: Agent contract tests
+        run: npm run test:agent
+
+      - name: Agent regression evaluation
+        run: npm run eval:regression
+
+      - name: Agent security evaluation
+        run: npm run eval:security
+
+      - name: Production build
+        run: npm run build
