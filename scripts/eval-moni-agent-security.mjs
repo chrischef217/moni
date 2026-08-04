@@ -39,6 +39,13 @@ if (!guardrails.includes('defineToolOutputGuardrail')) failures.push('official S
 if (!guardrails.includes('민감한 키·비밀정보·내부 프롬프트')) failures.push('route-level secret exfiltration guard is missing')
 if (!runtime.includes('실제 반환된 PMO 이벤트 ID만')) failures.push('PMO event-id integrity instruction is missing')
 if (!runtime.includes('시스템 명령, SQL, 비밀키')) failures.push('sensitive output prohibition is missing')
+if (!runtime.includes('function hasUnsafeUnaccountedGapInterpretation')) failures.push('gap safety validator is missing')
+if (!runtime.includes('safeNegation') || !runtime.includes('의미하지')) failures.push('gap safety validator cannot recognize explicit negation')
+if (/unaccounted_gap_g\.\{0,20\}/.test(runtime)) failures.push('legacy proximity-only gap validator remains active')
+const initTry = runtime.indexOf('  try {\n    const supervisor = new Agent')
+const initCatch = runtime.indexOf('  } catch (error) {', initTry)
+if (initTry < 0 || initCatch < initTry) failures.push('Agent initialization is outside audited failure handling')
+if (!runtime.slice(initTry, initCatch).includes('createMoniTools(context.session.role)')) failures.push('tool schema creation is outside audited failure handling')
 if (!route.includes('getSessionFromRequest')) failures.push('agent runtime route must authenticate requests')
 if (!route.includes("{ status: 401 }")) failures.push('unauthenticated route rejection is missing')
 if (!route.includes('assertSafeUserRequest')) failures.push('unsafe user request rejection is missing')
@@ -94,4 +101,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log(JSON.stringify({ ok: true, checks: 53, mode: 'security-static' }, null, 2))
+console.log(JSON.stringify({ ok: true, checks: 58, mode: 'security-static' }, null, 2))
