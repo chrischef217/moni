@@ -21,29 +21,15 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          # Pair-preserving persistent session history.
           p = Path('src/lib/moni/agent/supabase-session.ts')
           s = p.read_text()
           marker = 'export class SupabaseMoniSession implements Session {'
           helper = '''function coherentSessionSuffix(items: AgentInputItem[], limit: number) {
             const suffix = items.slice(-limit)
-            const presentCalls = new Set(
-              suffix
-                .filter((item) => (item as any)?.type === 'function_call')
-                .map((item) => String((item as any).callId || ''))
-                .filter(Boolean),
-            )
-            const missingCallIds = new Set(
-              suffix
-                .filter((item) => (item as any)?.type === 'function_call_result')
-                .map((item) => String((item as any).callId || ''))
-                .filter((callId) => callId && !presentCalls.has(callId)),
-            )
+            const presentCalls = new Set(suffix.filter((item) => (item as any)?.type === 'function_call').map((item) => String((item as any).callId || '')).filter(Boolean))
+            const missingCallIds = new Set(suffix.filter((item) => (item as any)?.type === 'function_call_result').map((item) => String((item as any).callId || '')).filter((callId) => callId && !presentCalls.has(callId)))
             if (!missingCallIds.size) return suffix
-            const requiredCalls = items.filter((item) =>
-              (item as any)?.type === 'function_call'
-              && missingCallIds.has(String((item as any).callId || '')),
-            )
+            const requiredCalls = items.filter((item) => (item as any)?.type === 'function_call' && missingCallIds.has(String((item as any).callId || '')))
             return [...requiredCalls, ...suffix]
           }
 
@@ -59,24 +45,21 @@ jobs:
           elif new not in s: raise SystemExit('session return marker missing')
           p.write_text(s)
 
-          # Do not slice the SDK history independently of tool-call pairs.
           p = Path('src/lib/moni/agent/sdk-runtime.ts')
           s = p.read_text()
-          block = '''      sessionInputCallback: (history: any[], newItems: any[]) => [
+          block = """      sessionInputCallback: (history: any[], newItems: any[]) => [
         ...history.slice(-SESSION_HISTORY_LIMIT),
         ...newItems,
       ],
-'''
+"""
           if block in s: s = s.replace(block, '', 1)
-          elif 'sessionInputCallback:' in s: raise SystemExit('unexpected sessionInputCallback shape')
+          elif 'sessionInputCallback:' in s: raise SystemExit('unexpected callback shape')
           p.write_text(s)
 
-          # Synchronous browser submission lock and idempotency key.
           p = Path('src/components/GlobalMoniAgent.tsx')
           s = p.read_text()
           marker = "  const threadIdRef = useRef('')"
-          if 'const sendingRef = useRef(false)' not in s:
-            s = s.replace(marker, marker + "\n  const sendingRef = useRef(false)", 1)
+          if 'const sendingRef = useRef(false)' not in s: s = s.replace(marker, marker + "\n  const sendingRef = useRef(false)", 1)
           old = "    if ((!question && !readyAttachments.length) || sending || uploading) return"
           new = "    if ((!question && !readyAttachments.length) || sendingRef.current || uploading) return\n    sendingRef.current = true\n    const clientRequestId = crypto.randomUUID()"
           if old in s: s = s.replace(old, new, 1)
@@ -88,67 +71,36 @@ jobs:
           s = s.replace("    } finally { setSending(false) }", "    } finally { sendingRef.current = false; setSending(false) }", 1)
           p.write_text(s)
 
-          # Backend claim: one in-flight run per thread and one result per client request.
           p = Path('src/app/api/moni/agent-runtime/route.ts')
           s = p.read_text()
           s = s.replace("  attachment_ids?: string[]\n}", "  attachment_ids?: string[]\n  client_request_id?: string\n}", 1)
           post = "export async function POST(request: NextRequest) {\n  const legacyRequest = new NextRequest(request.clone())\n  try {"
-          replacement = "export async function POST(request: NextRequest) {\n  const legacyRequest = new NextRequest(request.clone())\n  let requestClaim: { supabase: SupabaseClient; id: string } | null = null\n  try {"
-          if post in s: s = s.replace(post, replacement, 1)
-          elif replacement not in s: raise SystemExit('POST marker missing')
-          claim_marker = "    const thread = await ensureThread(supabase, session, text(body.thread_id, 80), page)\n    const attachments = await loadAttachments"
-          claim_code = '''    const thread = await ensureThread(supabase, session, text(body.thread_id, 80), page)
+          repl = "export async function POST(request: NextRequest) {\n  const legacyRequest = new NextRequest(request.clone())\n  let requestClaim: { supabase: SupabaseClient; id: string } | null = null\n  try {"
+          if post in s: s = s.replace(post, repl, 1)
+          elif repl not in s: raise SystemExit('POST marker missing')
+          marker = "    const thread = await ensureThread(supabase, session, text(body.thread_id, 80), page)\n    const attachments = await loadAttachments"
+          code = """    const thread = await ensureThread(supabase, session, text(body.thread_id, 80), page)
     const clientRequestId = text(body.client_request_id, 120)
     if (!clientRequestId) return NextResponse.json({ ok: false, error: '요청 식별자가 필요합니다.' }, { status: 400 })
     const staleBefore = new Date(Date.now() - 2 * 60 * 1000).toISOString()
-    await supabase.from('moni_ai_agent_request_claims')
-      .update({ status: 'ABORTED', finished_at: new Date().toISOString(), error_message: 'stale in-flight request recovered', updated_at: new Date().toISOString() })
-      .eq('business_id', BUSINESS_ID).eq('thread_id', thread.id).eq('status', 'RUNNING').lt('started_at', staleBefore)
-    const { data: claim, error: claimError } = await supabase.from('moni_ai_agent_request_claims')
-      .insert({ business_id: BUSINESS_ID, thread_id: thread.id, client_request_id: clientRequestId, status: 'RUNNING' })
-      .select('id').single()
+    await supabase.from('moni_ai_agent_request_claims').update({ status: 'ABORTED', finished_at: new Date().toISOString(), error_message: 'stale in-flight request recovered', updated_at: new Date().toISOString() }).eq('business_id', BUSINESS_ID).eq('thread_id', thread.id).eq('status', 'RUNNING').lt('started_at', staleBefore)
+    const { data: claim, error: claimError } = await supabase.from('moni_ai_agent_request_claims').insert({ business_id: BUSINESS_ID, thread_id: thread.id, client_request_id: clientRequestId, status: 'RUNNING' }).select('id').single()
     if (claimError) {
-      if (claimError.code === '23505') {
-        return NextResponse.json({ ok: false, error: '이 대화의 이전 요청이 아직 처리 중이거나 이미 처리됐습니다.' }, { status: 409 })
-      }
+      if (claimError.code === '23505') return NextResponse.json({ ok: false, error: '이 대화의 이전 요청이 아직 처리 중이거나 이미 처리됐습니다.' }, { status: 409 })
       throw new Error(claimError.message)
     }
     requestClaim = { supabase, id: claim.id }
-    const attachments = await loadAttachments'''
-          if claim_marker in s: s = s.replace(claim_marker, claim_code, 1)
-          elif 'moni_ai_agent_request_claims' not in s: raise SystemExit('claim insertion marker missing')
-          response_marker = "    return NextResponse.json({\n      ok: true,\n      text: result.text,"
-          response_replacement = "    await requestClaim.supabase.from('moni_ai_agent_request_claims').update({ status: 'COMPLETED', finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', requestClaim.id)\n    return NextResponse.json({\n      ok: true,\n      text: result.text,"
-          if response_marker in s: s = s.replace(response_marker, response_replacement, 1)
-          elif response_replacement not in s: raise SystemExit('success claim marker missing')
-          catch_marker = "  } catch (error) {\n    const message = error instanceof Error ? error.message : 'MONI Agent 응답 생성 중 오류가 발생했습니다.'"
-          catch_replacement = "  } catch (error) {\n    const message = error instanceof Error ? error.message : 'MONI Agent 응답 생성 중 오류가 발생했습니다.'\n    if (requestClaim) await requestClaim.supabase.from('moni_ai_agent_request_claims').update({ status: 'FAILED', finished_at: new Date().toISOString(), error_message: message.slice(0, 1000), updated_at: new Date().toISOString() }).eq('id', requestClaim.id).catch(() => undefined)"
-          if catch_marker in s: s = s.replace(catch_marker, catch_replacement, 1)
-          elif catch_replacement not in s: raise SystemExit('catch claim marker missing')
-          p.write_text(s)
-
-          # Regression contract.
-          p = Path('tests/moni-agent-foundation.test.mjs')
-          s = p.read_text()
-          marker = "test('runtime validates evidence-backed metrics and period', () => {"
-          test = '''test('session history preserves function call and result pairs', () => {
-            assert.match(sessionSource, /function coherentSessionSuffix/)
-            assert.doesNotMatch(runtime, /sessionInputCallback:/)
-          })
-
-          test('agent requests use synchronous client idempotency and a thread claim', () => {
-            assert.match(globalAgent, /sendingRef\.current/)
-            assert.match(globalAgent, /client_request_id: clientRequestId/)
-            assert.match(agentRoute, /moni_ai_agent_request_claims/)
-            assert.match(agentRoute, /status: 'ABORTED'/)
-          })
-
-          '''
-          if 'session history preserves function call' not in s:
-            # Ensure source fixtures exist near top.
-            if "const sessionSource" not in s:
-              s = s.replace("const runtime = readFileSync('src/lib/moni/agent/sdk-runtime.ts', 'utf8')", "const runtime = readFileSync('src/lib/moni/agent/sdk-runtime.ts', 'utf8')\nconst sessionSource = readFileSync('src/lib/moni/agent/supabase-session.ts', 'utf8')\nconst globalAgent = readFileSync('src/components/GlobalMoniAgent.tsx', 'utf8')\nconst agentRoute = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')", 1)
-            s = s.replace(marker, test + marker, 1)
+    const attachments = await loadAttachments"""
+          if marker in s: s = s.replace(marker, code, 1)
+          elif 'moni_ai_agent_request_claims' not in s: raise SystemExit('claim marker missing')
+          marker = "    return NextResponse.json({\n      ok: true,\n      text: result.text,"
+          repl = "    await requestClaim.supabase.from('moni_ai_agent_request_claims').update({ status: 'COMPLETED', finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', requestClaim.id)\n    return NextResponse.json({\n      ok: true,\n      text: result.text,"
+          if marker in s: s = s.replace(marker, repl, 1)
+          elif repl not in s: raise SystemExit('success marker missing')
+          marker = "  } catch (error) {\n    const message = error instanceof Error ? error.message : 'MONI Agent 응답 생성 중 오류가 발생했습니다.'"
+          repl = "  } catch (error) {\n    const message = error instanceof Error ? error.message : 'MONI Agent 응답 생성 중 오류가 발생했습니다.'\n    if (requestClaim) await requestClaim.supabase.from('moni_ai_agent_request_claims').update({ status: 'FAILED', finished_at: new Date().toISOString(), error_message: message.slice(0, 1000), updated_at: new Date().toISOString() }).eq('id', requestClaim.id).catch(() => undefined)"
+          if marker in s: s = s.replace(marker, repl, 1)
+          elif repl not in s: raise SystemExit('catch marker missing')
           p.write_text(s)
           PY
       - name: Remove workflow
@@ -157,6 +109,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/lib/moni/agent/supabase-session.ts src/lib/moni/agent/sdk-runtime.ts src/components/GlobalMoniAgent.tsx src/app/api/moni/agent-runtime/route.ts tests/moni-agent-foundation.test.mjs .github/workflows/moni-agent-session-state-fix.yml
+          git add src/lib/moni/agent/supabase-session.ts src/lib/moni/agent/sdk-runtime.ts src/components/GlobalMoniAgent.tsx src/app/api/moni/agent-runtime/route.ts .github/workflows/moni-agent-session-state-fix.yml
           git commit -m 'fix: stabilize MONI agent session state machine'
           git push origin HEAD:fix/moni-agent-session-state-machine
