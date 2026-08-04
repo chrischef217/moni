@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import type { MoniToolDefinition } from '@/lib/moni/agent/tools/types'
 
-const DateValue = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
-const Query = z.string().trim().min(1).max(200).optional()
-const Rows100 = z.number().int().min(1).max(100).optional()
+const DateValue = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish()
+const Query = z.string().trim().min(1).max(200).nullish()
+const Rows100 = z.number().int().min(1).max(100).nullish()
 
 export const commercialToolDefinitions: MoniToolDefinition[] = [
   {
@@ -14,7 +14,7 @@ export const commercialToolDefinitions: MoniToolDefinition[] = [
       end_date: DateValue,
       client_query: Query,
       product_query: Query,
-      outstanding_only: z.boolean().optional(),
+      outstanding_only: z.boolean().nullish(),
       limit: Rows100,
     }),
   },
@@ -26,7 +26,7 @@ export const commercialToolDefinitions: MoniToolDefinition[] = [
       end_date: DateValue,
       supplier_query: Query,
       item_query: Query,
-      outstanding_only: z.boolean().optional(),
+      outstanding_only: z.boolean().nullish(),
       limit: Rows100,
     }),
   },
