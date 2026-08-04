@@ -4,7 +4,7 @@
   "description": "한국 소규모 식품 공장을 위한 AI 경영관리 SaaS",
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node scripts/patch-openai-responses-history.mjs && node scripts/patch-moni-agent-empty-text.mjs",
+    "prebuild": "node scripts/patch-openai-responses-history.mjs && node scripts/patch-moni-agent-empty-text.mjs && node scripts/patch-moni-agent-direct-route.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
