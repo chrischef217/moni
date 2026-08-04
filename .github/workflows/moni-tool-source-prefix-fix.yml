@@ -53,56 +53,43 @@ jobs:
               raise SystemExit('getPath marker not found')
             runtime = runtime.replace(marker, helper + marker, 1)
 
-          old_used = '  const used = new Set(context.toolsUsed)'
-          new_used = '  const used = new Set(context.toolsUsed.map(canonicalToolName))'
-          if old_used in runtime:
-            runtime = runtime.replace(old_used, new_used, 1)
-          elif new_used not in runtime:
-            raise SystemExit('toolsUsed normalization marker not found')
-
-          old_source = '''  for (const source of answer.sources) {
-            if (!used.has(source.tool)) errors.push(`사용하지 않은 도구를 출처로 표시함: ${source.tool}`)
-          }'''
-          new_source = '''  for (const source of answer.sources) {
-            const sourceTool = canonicalToolName(source.tool)
-            if (!used.has(sourceTool)) errors.push(`사용하지 않은 도구를 출처로 표시함: ${sourceTool}`)
-          }'''
-          if old_source in runtime:
-            runtime = runtime.replace(old_source, new_source, 1)
-          elif new_source not in runtime:
-            raise SystemExit('source validation marker not found')
-
-          old_metric = '''  for (const metric of answer.metrics) {
-            const outputs = context.toolOutputs.get(metric.source_tool) || []
-            if (!outputs.length) {
-              errors.push(`수치 출처 도구 결과 없음: ${metric.source_tool}`)
-              continue
-            }'''
-          new_metric = '''  for (const metric of answer.metrics) {
-            const sourceTool = canonicalToolName(metric.source_tool)
-            const outputs = context.toolOutputs.get(sourceTool) || []
-            if (!outputs.length) {
-              errors.push(`수치 출처 도구 결과 없음: ${sourceTool}`)
-              continue
-            }'''
-          if old_metric in runtime:
-            runtime = runtime.replace(old_metric, new_metric, 1)
-          elif new_metric not in runtime:
-            raise SystemExit('metric source normalization marker not found')
-
-          old_parse = '    const answer = MoniAnswerSchema.parse(result.finalOutput)'
-          new_parse = '    const answer = normalizeAnswerToolReferences(MoniAnswerSchema.parse(result.finalOutput))'
-          if old_parse in runtime:
-            runtime = runtime.replace(old_parse, new_parse, 1)
-          elif new_parse not in runtime:
-            raise SystemExit('answer normalization marker not found')
-
-          old_instruction = '13. 실제로 사용하지 않은 도구를 sources에 적지 않습니다.'
-          new_instruction = '13. 실제로 사용하지 않은 도구를 sources에 적지 않습니다. sources.tool과 metrics.source_tool에는 functions. 같은 접두어 없이 실제 도구 이름만 적습니다.'
-          if old_instruction in runtime:
-            runtime = runtime.replace(old_instruction, new_instruction, 1)
-          elif new_instruction not in runtime:
-            raise SystemExit('tool source instruction marker not found')
+          replacements = [
+            (
+              '  const used = new Set(context.toolsUsed)',
+              '  const used = new Set(context.toolsUsed.map(canonicalToolName))',
+              'toolsUsed normalization marker not found',
+            ),
+            (
+              '    if (!used.has(source.tool)) errors.push(`사용하지 않은 도구를 출처로 표시함: ${source.tool}`)',
+              '    const sourceTool = canonicalToolName(source.tool)\n    if (!used.has(sourceTool)) errors.push(`사용하지 않은 도구를 출처로 표시함: ${sourceTool}`)',
+              'source validation marker not found',
+            ),
+            (
+              '    const outputs = context.toolOutputs.get(metric.source_tool) || []',
+              '    const sourceTool = canonicalToolName(metric.source_tool)\n    const outputs = context.toolOutputs.get(sourceTool) || []',
+              'metric output lookup marker not found',
+            ),
+            (
+              '      errors.push(`수치 출처 도구 결과 없음: ${metric.source_tool}`)',
+              '      errors.push(`수치 출처 도구 결과 없음: ${sourceTool}`)',
+              'metric source error marker not found',
+            ),
+            (
+              '    const answer = MoniAnswerSchema.parse(result.finalOutput)',
+              '    const answer = normalizeAnswerToolReferences(MoniAnswerSchema.parse(result.finalOutput))',
+              'answer normalization marker not found',
+            ),
+            (
+              '13. 실제로 사용하지 않은 도구를 sources에 적지 않습니다.',
+              '13. 실제로 사용하지 않은 도구를 sources에 적지 않습니다. sources.tool과 metrics.source_tool에는 functions. 같은 접두어 없이 실제 도구 이름만 적습니다.',
+              'tool source instruction marker not found',
+            ),
+          ]
+          for old, new, error in replacements:
+            if old in runtime:
+              runtime = runtime.replace(old, new, 1)
+            elif new not in runtime:
+              raise SystemExit(error)
 
           runtime_path.write_text(runtime)
 
