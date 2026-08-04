@@ -110,7 +110,7 @@ function hasUnsafeUnaccountedGapInterpretation(answer: MoniAnswer) {
     ...answer.warnings,
     ...answer.sources.map((source) => source.criteria),
   ]
-  const safeNegation = /(?:아니|아님|않|금지|오해|단정하지|표현하지|사용하지|해석하지|의미하지|해당하지|구분)/i
+  const safeNegation = /(?:아니|아님|아닙|않|금지|오해|단정하지|표현하지|사용하지|해석하지|의미하지|해당하지|구분)/i
   return segments.some((segment) => {
     if (!/unaccounted_gap_g/i.test(segment) || !/(?:미완료|로스)/.test(segment)) return false
     return !safeNegation.test(segment)
