@@ -11,6 +11,7 @@ type SupabaseMoniSessionOptions = {
   bootstrapLimit?: number
 }
 
+const MAX_SESSION_ROWS = 500
 const text = (value: unknown, max = 6000) => String(value ?? '').trim().slice(0, max)
 
 function itemType(item: AgentInputItem) {
@@ -25,6 +26,36 @@ function messageToInputItem(role: 'user' | 'assistant', content: string): AgentI
     role,
     content: [{ type: role === 'assistant' ? 'output_text' : 'input_text', text: content }],
   } as AgentInputItem
+}
+
+function canonicalConversationItem(raw: unknown): AgentInputItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const value = raw as Record<string, unknown>
+  const role = value.role === 'assistant' ? 'assistant' : value.role === 'user' ? 'user' : null
+  if (!role) return null
+  if (typeof value.type === 'string' && value.type !== 'message') return null
+
+  const content = Array.isArray(value.content) ? value.content : []
+  const combined = content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return ''
+      const item = part as Record<string, unknown>
+      if (!['input_text', 'output_text', 'text'].includes(String(item.type || ''))) return ''
+      return text(item.text)
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim()
+  if (!combined) return null
+  return messageToInputItem(role, combined)
+}
+
+export function selectReplaySafeSessionItems(items: unknown[], limit = 24): AgentInputItem[] {
+  const messageLimit = Math.max(1, Math.min(50, limit))
+  return items
+    .map(canonicalConversationItem)
+    .filter((item): item is AgentInputItem => Boolean(item))
+    .slice(-messageLimit)
 }
 
 export class SupabaseMoniSession implements Session {
@@ -47,7 +78,8 @@ export class SupabaseMoniSession implements Session {
   }
 
   async getItems(limit?: number): Promise<AgentInputItem[]> {
-    const rowLimit = Math.max(1, Math.min(100, limit || 40))
+    const messageLimit = Math.max(1, Math.min(50, limit || this.bootstrapLimit))
+    const rowLimit = Math.max(100, Math.min(MAX_SESSION_ROWS, messageLimit * 20))
     let { data, error } = await this.supabase
       .from('moni_ai_session_items')
       .select('item')
@@ -70,7 +102,7 @@ export class SupabaseMoniSession implements Session {
       data = retry.data
     }
 
-    return (data ?? []).reverse().map((row) => row.item as AgentInputItem)
+    return selectReplaySafeSessionItems((data ?? []).reverse().map((row) => row.item), messageLimit)
   }
 
   async addItems(items: AgentInputItem[]) {
