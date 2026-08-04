@@ -1,0 +1,187 @@
+name: MONI Agent empty text hotfix
+
+on:
+  push:
+    branches:
+      - fix/moni-agent-empty-text
+    paths:
+      - '.github/workflows/moni-agent-empty-text-hotfix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/moni-agent-empty-text
+          fetch-depth: 0
+
+      - name: Patch agent routing and OpenAI final text recovery
+        shell: python
+        run: |
+          from pathlib import Path
+
+          route_path = Path('src/app/api/moni/agent-v2/route.ts')
+          route = route_path.read_text(encoding='utf-8')
+          old_route = """    const disabled = text(process.env.MONI_AGENT_V2_DISABLED, 10) === '1'
+    if (action === 'handoff' || !openAIKey || disabled) return legacyPOST(legacyRequest)
+"""
+          new_route = """    const disabled = text(process.env.MONI_AGENT_V2_DISABLED, 10).toLowerCase() === 'true'
+    if (action === 'handoff') return legacyPOST(legacyRequest)
+    if (!openAIKey) {
+      return NextResponse.json({ ok: false, error: 'MONI Agent의 OPENAI_API_KEY가 설정되지 않았습니다.' }, { status: 503 })
+    }
+    if (disabled) {
+      return NextResponse.json({ ok: false, error: 'MONI Agent V2가 운영 설정에서 비활성화되어 있습니다.' }, { status: 503 })
+    }
+"""
+          if old_route not in route:
+              raise SystemExit('agent route fallback anchor not found')
+          route = route.replace(old_route, new_route, 1)
+
+          old_catch = """  } catch (error) {
+    return NextResponse.json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'MONI Agent 응답 생성 중 오류가 발생했습니다.',
+    }, { status: 500 })
+  }
+}
+"""
+          new_catch = """  } catch (error) {
+    const message = error instanceof Error ? error.message : 'MONI Agent 응답 생성 중 오류가 발생했습니다.'
+    console.error('[MONI_AGENT_V2_ERROR]', { message, occurred_at: new Date().toISOString() })
+    return NextResponse.json({
+      ok: false,
+      error: message,
+    }, { status: 500 })
+  }
+}
+"""
+          if old_catch not in route:
+              raise SystemExit('agent route catch anchor not found')
+          route_path.write_text(route.replace(old_catch, new_catch, 1), encoding='utf-8')
+
+          agent_path = Path('src/lib/moni/agent-v2.ts')
+          agent = agent_path.read_text(encoding='utf-8')
+
+          old_extract = """function extractOpenAIText(payload: Json) {
+  if (typeof payload.output_text === 'string') return text(payload.output_text, 20000)
+  const output = Array.isArray(payload.output) ? payload.output : []
+  return output
+    .flatMap((item: Json) => Array.isArray(item.content) ? item.content : [])
+    .filter((item: Json) => item.type === 'output_text' && typeof item.text === 'string')
+    .map((item: Json) => item.text)
+    .join('\\n')
+    .trim()
+}
+"""
+          new_extract = """function extractOpenAIText(payload: Json) {
+  if (typeof payload.output_text === 'string' && payload.output_text.trim()) return text(payload.output_text, 20000)
+  const output = Array.isArray(payload.output) ? payload.output : []
+  return output
+    .flatMap((item: Json) => Array.isArray(item.content) ? item.content : [])
+    .map((item: Json) => {
+      if (item.type === 'output_text' && typeof item.text === 'string') return item.text
+      if (item.type === 'refusal' && typeof item.refusal === 'string') return item.refusal
+      return ''
+    })
+    .filter(Boolean)
+    .join('\\n')
+    .trim()
+}
+"""
+          if old_extract not in agent:
+              raise SystemExit('extractOpenAIText anchor not found')
+          agent = agent.replace(old_extract, new_extract, 1)
+
+          old_call = """      const payload = await openAIResponse(apiKey, {
+        model,
+        instructions: buildAgentInstructions(context),
+        input: conversationInput,
+        tools: MONI_AGENT_TOOLS,
+        tool_choice: 'auto',
+        parallel_tool_calls: false,
+        max_output_tokens: 2600,
+        store: false,
+      })
+"""
+          new_call = """      const payload = await openAIResponse(apiKey, {
+        model,
+        instructions: buildAgentInstructions(context),
+        input: conversationInput,
+        tools: MONI_AGENT_TOOLS,
+        tool_choice: 'auto',
+        parallel_tool_calls: false,
+        reasoning: { effort: 'low' },
+        max_output_tokens: 6000,
+        store: false,
+      })
+"""
+          if old_call not in agent:
+              raise SystemExit('primary OpenAI call anchor not found')
+          agent = agent.replace(old_call, new_call, 1)
+
+          old_answer = """      if (!calls.length) {
+        const answer = extractOpenAIText(payload)
+        if (!answer) throw new Error('MONI Agent가 최종 텍스트 응답을 반환하지 않았습니다.')
+        await context.supabase
+"""
+          new_answer = """      if (!calls.length) {
+        let answer = extractOpenAIText(payload)
+        if (!answer) {
+          console.warn('[MONI_AGENT_EMPTY_TEXT_RETRY]', {
+            response_id: responseId,
+            status: text(payload.status, 80),
+            incomplete_reason: text(payload?.incomplete_details?.reason, 120),
+            output_types: output.map((item: Json) => text(item.type, 80)),
+          })
+          const retryPayload = await openAIResponse(apiKey, {
+            model,
+            instructions: `${buildAgentInstructions(context)}\\n\\n도구를 더 호출하지 말고, 지금까지 확인한 사실만으로 반드시 한국어 최종 텍스트 답변을 작성하세요.`,
+            input: conversationInput,
+            tools: MONI_AGENT_TOOLS,
+            tool_choice: 'none',
+            parallel_tool_calls: false,
+            reasoning: { effort: 'low' },
+            max_output_tokens: 6000,
+            store: false,
+          })
+          responseId = text(retryPayload.id, 120) || responseId
+          answer = extractOpenAIText(retryPayload)
+          if (!answer) {
+            const reason = text(retryPayload?.incomplete_details?.reason || payload?.incomplete_details?.reason, 160)
+              || text(retryPayload?.status || payload?.status, 80)
+              || 'unknown'
+            throw new Error(`MONI Agent가 최종 텍스트 응답을 반환하지 않았습니다. 상태: ${reason}`)
+          }
+        }
+        await context.supabase
+"""
+          if old_answer not in agent:
+              raise SystemExit('final answer anchor not found')
+          agent = agent.replace(old_answer, new_answer, 1)
+
+          old_final = """      tool_choice: 'none',
+      max_output_tokens: 2200,
+      store: false,
+"""
+          new_final = """      tool_choice: 'none',
+      reasoning: { effort: 'low' },
+      max_output_tokens: 6000,
+      store: false,
+"""
+          if old_final not in agent:
+              raise SystemExit('limit final answer anchor not found')
+          agent_path.write_text(agent.replace(old_final, new_final, 1), encoding='utf-8')
+
+      - name: Commit hotfix and remove one-time workflow
+        run: |
+          git config user.name "MONI PMO Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/moni-agent-empty-text-hotfix.yml
+          git add src/app/api/moni/agent-v2/route.ts src/lib/moni/agent-v2.ts
+          git commit -m "fix: prevent MONI agent empty text and silent fallback"
+          git push origin HEAD:fix/moni-agent-empty-text
