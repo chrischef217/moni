@@ -21,6 +21,32 @@ jobs:
           ref: fix/moni-session-toolchain-p0
           fetch-depth: 0
 
+      - name: Correct chat payload insertion selector
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply-moni-agent-p0-session-stability.py')
+          source = path.read_text()
+          old = """if \"payload.code === 'THREAD_BUSY'\" not in component:
+              if component.count(payload_anchor) != 1:
+                  raise SystemExit(f'payload anchor count={component.count(payload_anchor)}')
+              component = component.replace(payload_anchor, payload_anchor + payload_code, 1)
+          """
+          new = """if \"payload.code === 'THREAD_BUSY'\" not in component:
+              request_index = component.find('client_request_id: clientRequestId')
+              if request_index < 0:
+                  raise SystemExit('chat request id marker not found')
+              payload_index = component.find(payload_anchor, request_index)
+              if payload_index < 0:
+                  raise SystemExit('chat payload anchor not found')
+              insert_at = payload_index + len(payload_anchor)
+              component = component[:insert_at] + payload_code + component[insert_at:]
+          """
+          if old not in source:
+              raise SystemExit('payload selector source marker not found')
+          path.write_text(source.replace(old, new, 1))
+          PY
+
       - name: Apply source wiring
         run: python scripts/apply-moni-agent-p0-session-stability.py
 
