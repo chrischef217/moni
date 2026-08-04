@@ -343,9 +343,7 @@ function validateAnswer(answer: MoniAnswer, context: RuntimeContext) {
 
 function renderAnswer(answer: MoniAnswer) {
   const lines: string[] = ['## 결론', answer.conclusion]
-  if (answer.period) {
-    lines.push('', `**조회 기간:** ${answer.period.start || '미지정'} ~ ${answer.period.end || '미지정'} (${answer.period.time_zone})`)
-  }
+  if (answer.period) lines.push('', `**조회 기간:** ${answer.period.start || '미지정'} ~ ${answer.period.end || '미지정'} (${answer.period.time_zone})`)
   if (answer.metrics.length) {
     lines.push('', '## 핵심 수치')
     for (const metric of answer.metrics) lines.push(`- **${metric.label}:** ${metric.value.toLocaleString('ko-KR')}${metric.unit} — ${metric.interpretation}`)
@@ -446,15 +444,6 @@ export async function runMoniSdkAgent(input: RunMoniSdkAgentInput): Promise<RunM
     const result = await run(supervisor, conversationInput as any, {
       context: runtimeContext,
       maxTurns: 8,
-      workflowName: 'MONI Production Agent V2',
-      traceMetadata: {
-        business_id: context.businessId,
-        thread_id: context.threadId,
-        message_id: context.messageId,
-        user_login_id: context.session.loginId,
-      },
-      toolNotFoundBehavior: 'return_error_to_model',
-      toolExecution: { maxFunctionToolConcurrency: 1 },
     })
 
     const answer = MoniAnswerSchema.parse(result.finalOutput)
