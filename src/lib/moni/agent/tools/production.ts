@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import type { MoniToolDefinition } from '@/lib/moni/agent/tools/types'
 
-const DateValue = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
-const Query = z.string().trim().min(1).max(200).optional()
-const Rows100 = z.number().int().min(1).max(100).optional()
+const DateValue = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish()
+const Query = z.string().trim().min(1).max(200).nullish()
+const Rows100 = z.number().int().min(1).max(100).nullish()
 
 export const productionToolDefinitions: MoniToolDefinition[] = [
   {
@@ -13,7 +13,7 @@ export const productionToolDefinitions: MoniToolDefinition[] = [
       start_date: DateValue,
       end_date: DateValue,
       product_query: Query,
-      status: z.string().trim().min(1).max(80).optional(),
+      status: z.string().trim().min(1).max(80).nullish(),
       limit: Rows100,
     }),
   },
@@ -27,8 +27,8 @@ export const productionToolDefinitions: MoniToolDefinition[] = [
     description: '제품 마스터, 레시피, 원재료 매핑을 검색한다.',
     parameters: z.object({
       product_query: Query,
-      active_only: z.boolean().optional(),
-      limit: z.number().int().min(1).max(50).optional(),
+      active_only: z.boolean().nullish(),
+      limit: z.number().int().min(1).max(50).nullish(),
     }),
   },
 ]
