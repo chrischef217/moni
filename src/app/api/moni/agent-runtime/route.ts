@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { GET as legacyGET, POST as legacyPOST } from '@/app/api/moni/agent-chat/route'
@@ -10,12 +11,14 @@ import {
   maybeRefreshThreadMemory,
 } from '@/lib/moni/agent/memory'
 import { reportPmoEvent } from '@/lib/moni/agent/pmo'
+import { claimAgentRequest, finishAgentRequest } from '@/lib/moni/agent/request-lease'
 import { runMoniSdkAgent } from '@/lib/moni/agent/sdk-runtime'
 import type { MoniAgentPageContext } from '@/lib/moni/agent-v2'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
 const MAX_MESSAGE_LENGTH = 6000
@@ -31,6 +34,7 @@ type AgentRequest = {
   page?: MoniAgentPageContext
   thread_id?: string
   attachment_ids?: string[]
+  client_request_id?: string
 }
 type LoadedAttachment = {
   id: string
@@ -210,6 +214,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const legacyRequest = new NextRequest(request.clone())
+  let requestTracker: { supabase: SupabaseClient; requestId: string } | null = null
   try {
     const body = await request.json().catch(() => null) as AgentRequest | null
     if (!body) return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
@@ -234,6 +239,38 @@ export async function POST(request: NextRequest) {
       || (attachments.length ? '첨부한 자료를 분석해 주세요.' : '')
     if (!message) return NextResponse.json({ ok: false, error: '질문 또는 첨부파일이 필요합니다.' }, { status: 400 })
     assertSafeUserRequest(message)
+
+
+    const clientRequestId = text(body.client_request_id, 120) || randomUUID()
+    const requestClaim = await claimAgentRequest({
+      supabase,
+      businessId: BUSINESS_ID,
+      threadId: thread.id,
+      clientRequestId,
+      ttlSeconds: 120,
+    })
+    if (requestClaim.claim_status === 'REPLAY' && requestClaim.response_json) {
+      return NextResponse.json({ ...requestClaim.response_json, idempotent_replay: true })
+    }
+    if (requestClaim.claim_status === 'IN_PROGRESS' || requestClaim.claim_status === 'BUSY') {
+      return NextResponse.json({
+        ok: false,
+        error: '이 대화의 이전 요청을 아직 처리 중입니다. 완료 후 다시 시도해 주세요.',
+        code: 'THREAD_BUSY',
+        retryable: true,
+        thread_id: thread.id,
+      }, { status: 409 })
+    }
+    if (requestClaim.claim_status === 'DUPLICATE_FAILED') {
+      return NextResponse.json({
+        ok: false,
+        error: '이미 실패 처리된 동일 요청입니다. 새 요청으로 다시 전송해 주세요.',
+        code: 'REQUEST_ALREADY_FAILED',
+        retryable: false,
+        thread_id: thread.id,
+      }, { status: 409 })
+    }
+    requestTracker = { supabase, requestId: requestClaim.request_id }
 
     const { data: userMessage, error: userMessageError } = await supabase
       .from('moni_ai_messages')
@@ -380,7 +417,7 @@ export async function POST(request: NextRequest) {
       occurred_at: new Date().toISOString(),
     })
 
-    return NextResponse.json({
+    const responseBody = {
       ok: true,
       text: result.text,
       provider: 'openai',
@@ -395,9 +432,30 @@ export async function POST(request: NextRequest) {
       usage: result.usage,
       memory_version: memoryRefresh.memoryVersion,
       pmo_handoff_status: isPmoRequest ? 'REQUESTED' : thread.pmo_handoff_status,
+    }
+    await finishAgentRequest({
+      supabase,
+      requestId: requestTracker!.requestId,
+      status: 'COMPLETED',
+      agentRunId: result.agentRunId,
+      responseJson: responseBody,
     })
+    requestTracker = null
+    return NextResponse.json(responseBody)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'MONI Agent 응답 생성 중 오류가 발생했습니다.'
+    if (requestTracker) {
+      const tracker = requestTracker
+      await finishAgentRequest({
+        supabase: tracker.supabase,
+        requestId: tracker.requestId,
+        status: 'FAILED',
+        errorMessage: message,
+      }).catch((finishError) => console.error('[MONI_AGENT_REQUEST_FINISH_ERROR]', {
+        message: finishError instanceof Error ? finishError.message : String(finishError),
+        request_id: tracker.requestId,
+      }))
+    }
     console.error('[MONI_AGENT_SDK_ROUTE_ERROR]', { message, occurred_at: new Date().toISOString() })
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }

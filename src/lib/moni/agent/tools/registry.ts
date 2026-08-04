@@ -21,6 +21,12 @@ const allDefinitions: MoniToolDefinition[] = [
 
 const text = (value: unknown, max = 500) => String(value ?? '').trim().slice(0, max)
 
+export function compactToolArguments(raw: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(raw).filter(([, value]) => (
+    value !== null && value !== undefined && value !== ''
+  )))
+}
+
 function normalizeProductionResult(raw: unknown, args: Record<string, unknown>) {
   if (!raw || typeof raw !== 'object') return raw
   const result = raw as Record<string, any>
@@ -199,7 +205,7 @@ export function createMoniTools(role: unknown) {
       outputGuardrails: [moniToolOutputGuardrail],
       execute: async (args, runContext) => runAuditedTool(
         definition.name,
-        args as Record<string, unknown>,
+        compactToolArguments(args as Record<string, unknown>),
         runContext as RunContext<MoniRuntimeContext>,
       ),
     }))

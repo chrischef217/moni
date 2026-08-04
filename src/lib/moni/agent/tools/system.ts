@@ -12,8 +12,8 @@ export const systemToolDefinitions: MoniToolDefinition[] = [
     name: 'get_company_context',
     description: 'MONI의 확정 의사결정, 운영 원칙, PMO 기준과 장기 프로젝트 문맥을 검색한다.',
     parameters: z.object({
-      query: z.string().trim().min(1).max(200).optional(),
-      limit: z.number().int().min(1).max(20).optional(),
+      query: z.string().trim().min(1).max(200).nullish(),
+      limit: z.number().int().min(1).max(20).nullish(),
     }),
   },
   {
