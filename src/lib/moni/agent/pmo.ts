@@ -7,20 +7,44 @@ type SupabaseClient = ReturnType<typeof createMoniServiceRoleClient>
 
 const text = (value: unknown, max = 500) => String(value ?? '').trim().slice(0, max)
 
-export const PmoEventInputSchema = z.object({
+const PmoEventBaseShape = {
   event_type: z.enum(['BUG', 'IMPROVEMENT', 'DATA_QUALITY', 'SECURITY', 'TOOL_FAILURE', 'CAPABILITY_GAP']),
   severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
   title: z.string().trim().min(1).max(180),
   summary: z.string().trim().min(1).max(4000),
-  evidence: z.record(z.string(), z.unknown()).default({}),
   detection_source: z.enum(['SYSTEM_DETECTED', 'USER_REPORTED', 'MODEL_SUSPECTED', 'VALIDATOR_DETECTED']).default('MODEL_SUSPECTED'),
   confidence: z.number().min(0).max(1).nullable().optional(),
   validation_status: z.enum(['PENDING', 'VERIFIED', 'REJECTED', 'NOT_REQUIRED']).default('PENDING'),
   validator_name: z.string().trim().max(160).nullable().optional(),
   recommended_owner: z.string().trim().max(160).nullable().optional(),
+}
+
+export const PmoToolEvidenceSchema = z.object({
+  tool_name: z.string().trim().max(120).nullable().optional(),
+  error_code: z.string().trim().max(160).nullable().optional(),
+  table: z.string().trim().max(160).nullable().optional(),
+  capability: z.string().trim().max(240).nullable().optional(),
+  affected_record_ids: z.array(z.string().trim().max(120)).max(100).optional(),
+  field_name: z.string().trim().max(160).nullable().optional(),
+  expected_value: z.string().trim().max(1000).nullable().optional(),
+  actual_value: z.string().trim().max(1000).nullable().optional(),
+  reproduction_steps: z.array(z.string().trim().max(1000)).max(20).optional(),
+  query_period: z.string().trim().max(160).nullable().optional(),
+  source_reference: z.string().trim().max(500).nullable().optional(),
+  detail: z.string().trim().max(4000).nullable().optional(),
+}).strict()
+
+export const PmoEventInputSchema = z.object({
+  ...PmoEventBaseShape,
+  evidence: PmoToolEvidenceSchema.default({}),
+}).strict()
+
+const PmoEventStorageSchema = z.object({
+  ...PmoEventBaseShape,
+  evidence: z.record(z.string(), z.unknown()).default({}),
 })
 
-export type PmoEventInput = z.infer<typeof PmoEventInputSchema>
+export type PmoEventInput = z.infer<typeof PmoEventStorageSchema>
 
 export type PmoEventContext = {
   supabase: SupabaseClient
@@ -57,7 +81,7 @@ function eventFingerprint(input: PmoEventInput, context: PmoEventContext) {
 }
 
 export async function reportPmoEvent(context: PmoEventContext, raw: unknown) {
-  const input = PmoEventInputSchema.parse(raw)
+  const input = PmoEventStorageSchema.parse(raw)
   const fingerprint = eventFingerprint(input, context)
   const now = new Date().toISOString()
   const page = context.page || {}
