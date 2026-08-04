@@ -6,7 +6,9 @@ on:
       - 'src/lib/moni/agent/**'
       - 'src/lib/moni/agent-v2.ts'
       - 'src/app/api/moni/agent-runtime/**'
+      - 'src/app/api/moni/pmo-events/**'
       - 'src/middleware.ts'
+      - 'supabase/migrations/*moni_agent*'
       - 'evals/**'
       - 'tests/moni-agent-*.test.mjs'
       - 'scripts/eval-moni-agent-*.mjs'
@@ -34,6 +36,7 @@ jobs:
       ALLOWANCE_ENCRYPTION_KEY: build-only-allowance-encryption-key-32
       OPENAI_API_KEY: sk-build-only-not-a-real-secret
       OPENAI_MONI_MODEL: gpt-5
+      OPENAI_MONI_MEMORY_MODEL: gpt-5
       MONI_BUSINESS_ID: '20220523011'
       MONI_AGENT_V2_DISABLED: 'false'
       OPENAI_AGENTS_DISABLE_TRACING: '1'
