@@ -2,7 +2,9 @@
 
 - 결정일: 2026-08-04
 - 승인 주체: GPT(PMO)
-- 상태: Preview 검증 중
+- 상태: Production 적용 완료 · 운영 수용검사 진행
+- 운영 커밋: `311e75dd0772bbebb70727869b28ff2934b50850`
+- 운영 배포: `dpl_EEwujd5yaEsd5kHjQP4sA6radehd`
 - 적용 원칙: 기존 MONI 업무 데이터와 사용자 화면 보존
 
 ## 1. 문제 정의
@@ -21,6 +23,7 @@ MONI Agent 기반을 다음 구조로 전환한다.
 6. 모든 Agent 변경은 자동 테스트·회귀평가·보안평가·Production build를 통과해야 한다.
 7. prebuild는 소스코드를 변경하지 않고 검증만 수행한다.
 8. V2 기반은 READ ONLY를 유지한다.
+9. 레거시 `/api/moni/agent-v2` 우회 경로와 소스 변형 패치 파일을 제거한다.
 
 ## 3. 이번 단계 구현 범위
 
@@ -35,6 +38,7 @@ MONI Agent 기반을 다음 구조로 전환한다.
 - Agent 전용 회귀평가 세트
 - Agent 품질 GitHub Actions 게이트
 - 실제 `src/middleware.ts`를 통한 공식 런타임 라우팅
+- 레거시 Agent API와 빌드 패치 체계 제거
 
 ## 4. 기존 기능 보호
 
@@ -51,24 +55,26 @@ MONI Agent 기반을 다음 구조로 전환한다.
 
 ## 5. 전환 구조
 
-현재 단계에서는 기존 `agent-v2.ts`의 검증된 DB 조회 함수를 재사용하고, 새로운 SDK Runtime이 입력검증·권한·감사·근거·응답검증을 담당한다.
+현재 단계에서는 기존 `agent-v2.ts` 라이브러리의 검증된 DB 조회 함수를 재사용하고, 새로운 SDK Runtime이 입력검증·권한·감사·근거·응답검증을 담당한다.
 
-이는 업무 조회 로직을 동시에 전면 재작성해 발생할 회귀 위험을 막기 위한 과도기 구조다. Preview와 운영 안정화 후 도구 구현을 생산·재고·판매·재무·문서·PMO 모듈로 순차 분리한다.
+이는 업무 조회 로직을 동시에 전면 재작성해 발생할 회귀 위험을 막기 위한 과도기 구조다. 운영 안정화 후 도구 구현을 생산·재고·판매·재무·문서·PMO 모듈로 순차 분리한다.
 
-## 6. 품질 게이트
+## 6. 품질 게이트 결과
 
-PR 병합 전 다음을 모두 통과해야 한다.
+다음을 통과했다.
 
 1. immutable source verification
-2. Agent contract tests
-3. Agent regression evaluation
-4. Agent security evaluation
+2. Agent contract tests 6/6
+3. Agent regression evaluation 15 cases
+4. Agent security evaluation 10 checks
 5. Next.js Production build
-6. Preview 미로그인 401
-7. 기존 favicon 200
-8. 운영 반영 후 Agent 실행기록 생성
-9. 구조화 답변 검증 통과 기록
-10. Runtime 500 오류 없음
+6. MONI Performance CI
+7. Preview 미로그인 401
+8. Production 미로그인 401
+9. `/api/moni/agent-chat`의 실제 매칭 경로 `/api/moni/agent-runtime` 확인
+10. 배포 직후 Production 5xx 없음
+
+로그인 상태의 실제 모델·도구 실행, 구조화 답변 검증 통과 기록은 운영 수용검사의 마지막 항목으로 남긴다.
 
 ## 7. 금지 사항
 
@@ -79,6 +85,7 @@ PR 병합 전 다음을 모두 통과해야 한다.
 - 도구 결과에 없는 수치 생성
 - 실행하지 않은 도구를 근거로 표시
 - 실제 접수되지 않은 PMO 이벤트 ID 표시
+- 제거된 레거시 Agent 경로 재도입
 
 ## 8. 후속 단계
 
@@ -92,4 +99,4 @@ PR 병합 전 다음을 모두 통과해야 한다.
 
 ## 9. 롤백
 
-운영 이상 시 `src/middleware.ts`에서 `/api/moni/agent-chat`의 `/api/moni/agent-runtime` rewrite만 제거하면 기존 레거시 경로로 복귀할 수 있다. 업무 데이터와 DB 스키마는 이번 단계에서 변경하지 않으므로 데이터 롤백은 필요하지 않다.
+운영 이상 시 운영 커밋 `311e75dd0772bbebb70727869b28ff2934b50850`을 Git revert하고 이전 Production 배포 `dpl_8VTcLrFAbX7P8KUhQFofJAMPNECr`로 롤백한다. 레거시 우회 API를 상시 유지하는 방식은 사용하지 않는다. 업무 데이터와 DB 스키마는 이번 단계에서 변경하지 않았으므로 데이터 롤백은 필요하지 않다.

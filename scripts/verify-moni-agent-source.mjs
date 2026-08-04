@@ -1,15 +1,22 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
 const prebuild = String(packageJson.scripts?.prebuild || '')
 const middleware = readFileSync('src/middleware.ts', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
 const runtime = readFileSync('src/lib/moni/agent/sdk-runtime.ts', 'utf8')
+const scripts = readdirSync('scripts')
 
 const failures = []
 
 if (/patch-.*\.mjs/.test(prebuild)) {
   failures.push('prebuild must not mutate TypeScript source through patch scripts')
+}
+if (scripts.some((name) => /^patch-.*\.mjs$/.test(name))) {
+  failures.push('obsolete source-mutating patch scripts must not remain in the repository')
+}
+if (existsSync('src/app/api/moni/agent-v2/route.ts')) {
+  failures.push('the bypassable legacy /api/moni/agent-v2 route must not exist')
 }
 if (!prebuild.includes('verify-moni-agent-source.mjs')) {
   failures.push('prebuild must run immutable source verification')
