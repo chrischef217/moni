@@ -158,8 +158,7 @@ export async function PATCH(request: NextRequest) {
     if (key in input) update[key] = input[key]
   }
   if (input.validation_status === 'VERIFIED') update.validated_at = now
-  if (input.status === 'RESOLVED') update.resolved_at = now
-  else if (input.status && input.status !== 'RESOLVED') update.resolved_at = null
+  if (input.status) update.resolved_at = input.status === 'RESOLVED' ? now : null
 
   const { data, error } = await supabase
     .from('moni_ai_pmo_events')
