@@ -12,6 +12,7 @@ const memory = readFileSync('src/lib/moni/agent/memory.ts', 'utf8')
 const session = readFileSync('src/lib/moni/agent/supabase-session.ts', 'utf8')
 const guardrails = readFileSync('src/lib/moni/agent/guardrails.ts', 'utf8')
 const telemetry = readFileSync('src/lib/moni/agent/telemetry.ts', 'utf8')
+const pmo = readFileSync('src/lib/moni/agent/pmo.ts', 'utf8')
 const pmoRoute = readFileSync('src/app/api/moni/pmo-events/route.ts', 'utf8')
 const liveEvalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
 const canaryRoute = readFileSync('src/app/api/moni/agent-evals/canary/route.ts', 'utf8')
@@ -74,6 +75,17 @@ test('tool security guardrails are attached', () => {
   assert.match(guardrails, /defineToolOutputGuardrail/)
   assert.match(registry, /inputGuardrails: \[moniToolInputGuardrail\]/)
   assert.match(registry, /outputGuardrails: \[moniToolOutputGuardrail\]/)
+})
+
+test('PMO tool evidence is strict while internal evidence remains flexible', () => {
+  const toolSchema = pmo.match(/export const PmoEventInputSchema[\s\S]*?\.strict\(\)/)?.[0] || ''
+  assert.match(pmo, /export const PmoToolEvidenceSchema/)
+  assert.match(pmo, /PmoToolEvidenceSchema[\s\S]*?\.strict\(\)/)
+  assert.match(toolSchema, /evidence: PmoToolEvidenceSchema/)
+  assert.doesNotMatch(toolSchema, /z\.record\(/)
+  assert.match(pmo, /const PmoEventStorageSchema/)
+  assert.match(pmo, /PmoEventStorageSchema[\s\S]*?evidence: z\.record\(/)
+  assert.match(pmo, /PmoEventStorageSchema\.parse\(raw\)/)
 })
 
 test('usage latency and validation telemetry are persisted', () => {
