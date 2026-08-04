@@ -23,6 +23,8 @@ type AgentResponse = {
   provider?: string
   thread_id?: string
   pmo_handoff_status?: string
+  code?: string
+  retryable?: boolean
 }
 type HistoryResponse = {
   ok: boolean
@@ -134,6 +136,7 @@ export default function GlobalMoniAgent() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const threadIdRef = useRef('')
+  const sendingRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -304,10 +307,12 @@ export default function GlobalMoniAgent() {
 
   async function sendMessage(value: string) {
     const question = value.trim()
-    if ((!question && !readyAttachments.length) || sending || uploading) return
+    if ((!question && !readyAttachments.length) || sendingRef.current || uploading) return
     const prior = messages.slice(-12)
     const attachmentSummary = readyAttachments.map((item) => ({ name: item.file.name, mimeType: item.file.type }))
     const visibleQuestion = question || '첨부한 자료를 분석해 주세요.'
+    const clientRequestId = crypto.randomUUID()
+    sendingRef.current = true
     setMessages((current) => [...current, { role: 'user', content: visibleQuestion, attachments: attachmentSummary }])
     setInput('')
     setError('')
@@ -317,9 +322,19 @@ export default function GlobalMoniAgent() {
     try {
       const response = await fetch('/api/moni/agent-chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: question, messages: prior, page: pageContext(), thread_id: threadIdRef.current, attachment_ids: readyAttachments.map((item) => item.attachmentId) }),
+        body: JSON.stringify({ message: question, messages: prior, page: pageContext(), thread_id: threadIdRef.current, attachment_ids: readyAttachments.map((item) => item.attachmentId), client_request_id: clientRequestId }),
       })
       const payload = await response.json() as AgentResponse
+      if (response.status === 409 && (payload.code === 'THREAD_BUSY' || payload.code === 'REQUEST_ALREADY_FAILED')) {
+        setMessages((current) => {
+          const next = [...current]
+          const last = next[next.length - 1]
+          if (last?.role === 'user' && last.content === visibleQuestion) next.pop()
+          return next
+        })
+        setError(payload.error || '이전 요청을 처리 중입니다.')
+        return
+      }
       if (!response.ok || !payload.ok || !payload.text) throw new Error(payload.error || 'MONI 응답을 불러오지 못했습니다.')
       rememberThread(payload.thread_id || threadIdRef.current)
       setModel(payload.model || '')
@@ -331,7 +346,7 @@ export default function GlobalMoniAgent() {
       const message = sendError instanceof Error ? sendError.message : 'MONI 응답을 불러오지 못했습니다.'
       setError(message)
       setMessages((current) => [...current, { role: 'assistant', content: `지금은 답변을 생성하지 못했습니다.\n\n${message}` }])
-    } finally { setSending(false) }
+    } finally { sendingRef.current = false; setSending(false) }
   }
 
   async function handoffConversation() {
