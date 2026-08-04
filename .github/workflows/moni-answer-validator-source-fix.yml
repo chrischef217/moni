@@ -1,0 +1,116 @@
+name: MONI Answer Validator Source Fix
+
+on:
+  push:
+    branches:
+      - fix/moni-answer-validator-negation
+    paths:
+      - '.github/workflows/moni-answer-validator-source-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-source-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: fix/moni-answer-validator-negation
+          fetch-depth: 0
+
+      - name: Apply exact source changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/lib/moni/agent/sdk-runtime.ts')
+          source = path.read_text()
+
+          marker = 'function validateAnswer(answer: MoniAnswer, context: MoniRuntimeContext) {'
+          helper = '''function hasUnsafeUnaccountedGapInterpretation(answer: MoniAnswer) {
+            const segments = [
+              answer.conclusion,
+              ...answer.metrics.map((metric) => `${metric.label} ${metric.source_field} ${metric.interpretation}`),
+              ...answer.sections.flatMap((section) => [section.title, ...section.bullets]),
+              ...answer.warnings,
+              ...answer.sources.map((source) => source.criteria),
+            ]
+            const safeNegation = /(?:아니|아님|않|금지|오해|단정하지|표현하지|사용하지|해석하지|의미하지|해당하지|구분)/i
+            return segments.some((segment) => {
+              if (!/unaccounted_gap_g/i.test(segment) || !/(?:미완료|로스)/.test(segment)) return false
+              return !safeNegation.test(segment)
+            })
+          }
+
+          '''
+          if 'function hasUnsafeUnaccountedGapInterpretation' not in source:
+            if marker not in source:
+              raise SystemExit('validateAnswer marker not found')
+            source = source.replace(marker, helper + marker, 1)
+
+          old_check = '''  if (/unaccounted_gap_g.{0,20}(?:미완료|로스)|(?:미완료|로스).{0,20}unaccounted_gap_g/i.test(serialized)) {
+            errors.push('unaccounted_gap_g를 미완료 또는 로스로 잘못 해석함')
+          }'''
+          new_check = '''  if (hasUnsafeUnaccountedGapInterpretation(answer)) {
+            errors.push('unaccounted_gap_g를 미완료 또는 로스로 잘못 해석함')
+          }'''
+          if old_check in source:
+            source = source.replace(old_check, new_check, 1)
+          elif new_check not in source:
+            raise SystemExit('unaccounted gap validation marker not found')
+
+          old_init = '''  const supervisor = new Agent<MoniRuntimeContext, typeof MoniAnswerSchema>({
+            name: 'MONI Supervisor',
+            model,
+            instructions: buildInstructions(runtimeContext),
+            tools: createMoniTools(context.session.role),
+            outputType: MoniAnswerSchema,
+          })
+          const session = new SupabaseMoniSession({
+            supabase: context.supabase,
+            businessId: context.businessId,
+            threadId: context.threadId,
+            excludeBootstrapMessageId: context.messageId,
+            bootstrapLimit: SESSION_HISTORY_LIMIT,
+          })
+          const currentInput = [{ role: 'user', content: currentContent }] as Record<string, unknown>[]
+
+          try {
+            const result = await run(supervisor, currentInput as any, {'''
+          new_init = '''  try {
+            const supervisor = new Agent<MoniRuntimeContext, typeof MoniAnswerSchema>({
+              name: 'MONI Supervisor',
+              model,
+              instructions: buildInstructions(runtimeContext),
+              tools: createMoniTools(context.session.role),
+              outputType: MoniAnswerSchema,
+            })
+            const session = new SupabaseMoniSession({
+              supabase: context.supabase,
+              businessId: context.businessId,
+              threadId: context.threadId,
+              excludeBootstrapMessageId: context.messageId,
+              bootstrapLimit: SESSION_HISTORY_LIMIT,
+            })
+            const currentInput = [{ role: 'user', content: currentContent }] as Record<string, unknown>[]
+            const result = await run(supervisor, currentInput as any, {'''
+          if old_init in source:
+            source = source.replace(old_init, new_init, 1)
+          elif new_init not in source:
+            raise SystemExit('agent initialization marker not found')
+
+          path.write_text(source)
+          PY
+
+      - name: Remove one-time workflow
+        run: rm .github/workflows/moni-answer-validator-source-fix.yml
+
+      - name: Commit source fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/lib/moni/agent/sdk-runtime.ts .github/workflows/moni-answer-validator-source-fix.yml
+          git commit -m 'fix: distinguish safe unaccounted gap negation'
+          git push origin HEAD:fix/moni-answer-validator-negation
