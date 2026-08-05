@@ -1,8 +1,21 @@
 ﻿import { NextRequest, NextResponse } from 'next/server'
+import { POST_LOGIN_COOKIE_NAME, safePostLoginPath } from '@/lib/allowance/post-login'
 import { createAllowanceSession, SESSION_COOKIE_NAME, verifyAllowanceLogin } from '@/lib/allowance/store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+function postLoginTargetFromReferer(request: NextRequest) {
+  try {
+    const referer = request.headers.get('referer')
+    if (!referer) return ''
+    const url = new URL(referer)
+    if (url.origin !== request.nextUrl.origin) return ''
+    return safePostLoginPath(url.searchParams.get('return_to'))
+  } catch {
+    return ''
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,6 +44,19 @@ export async function POST(request: NextRequest) {
       path: '/',
       maxAge: 60 * 30,
     })
+
+    const postLoginTarget = postLoginTargetFromReferer(request)
+    if (postLoginTarget) {
+      response.cookies.set({
+        name: POST_LOGIN_COOKIE_NAME,
+        value: postLoginTarget,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 5 * 60,
+      })
+    }
 
     return response
   } catch (error) {
