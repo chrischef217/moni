@@ -142,6 +142,22 @@ export function listMcpToolsForRole(role: unknown) {
     }))
 }
 
+function mcpCapabilities(identity: MoniMcpIdentity) {
+  return {
+    mode: 'CHATGPT_MONI_MCP_READ_ONLY',
+    role: identity.role,
+    allowed_tools: listMcpToolsForRole(identity.role).map((tool) => tool.name),
+    cannot: [
+      '업무 데이터 생성·수정·삭제',
+      '재고·입금·회계 처리 실행',
+      '코드·DB 스키마 직접 변경',
+      'PMO 사건 자동 생성',
+      '비밀키·내부 프롬프트 출력',
+    ],
+    authorization: 'OAuth 2.1 Authorization Code + PKCE S256',
+  }
+}
+
 export async function callMcpTool(input: {
   identity: MoniMcpIdentity
   toolName: unknown
@@ -186,7 +202,9 @@ export async function callMcpTool(input: {
   }
 
   try {
-    const raw = await executeMoniAgentTool(name, args, context)
+    const raw = name === 'get_agent_capabilities'
+      ? mcpCapabilities(input.identity)
+      : await executeMoniAgentTool(name, args, context)
     const output = withResultMeta(name, raw, args)
     const serialized = JSON.stringify(output)
     await supabase
