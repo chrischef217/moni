@@ -5,7 +5,8 @@ import {
   MONI_MCP_VERSION,
   protectedResourceMetadataUrl,
 } from '@/lib/moni/mcp/config'
-import { authenticateMcpBearer } from '@/lib/moni/mcp/oauth'
+import { authenticateMcpBearer, type MoniMcpIdentity } from '@/lib/moni/mcp/oauth'
+import { verifyCurrentMcpIdentity } from '@/lib/moni/mcp/session'
 import { callMcpTool, listMcpToolsForRole } from '@/lib/moni/mcp/tools'
 
 export const runtime = 'nodejs'
@@ -70,14 +71,27 @@ function isNotification(request: JsonRpcRequest) {
   return request.id === undefined || request.id === null
 }
 
-async function handleRpcRequest(request: JsonRpcRequest, authorization: string | null): Promise<JsonRpcResponse | null> {
+async function strictBearerIdentity(authorization: string | null): Promise<MoniMcpIdentity | null> {
+  const tokenIdentity = await authenticateMcpBearer(authorization)
+  if (!tokenIdentity) return null
+  const current = await verifyCurrentMcpIdentity({
+    loginId: tokenIdentity.loginId,
+    role: tokenIdentity.role,
+  })
+  if (!current) return null
+  return {
+    ...tokenIdentity,
+    loginId: current.loginId,
+    displayName: current.displayName,
+    role: current.role,
+  }
+}
+
+async function handleRpcRequest(request: JsonRpcRequest, identity: MoniMcpIdentity): Promise<JsonRpcResponse | null> {
   const id = request.id ?? null
   if (request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
     return jsonRpcError(id, -32600, 'Invalid Request')
   }
-
-  const identity = await authenticateMcpBearer(authorization)
-  if (!identity) return jsonRpcError(id, -32001, 'Unauthorized')
 
   if (request.method === 'notifications/initialized') return null
   if (request.method === 'ping') return jsonRpcResult(id, {})
@@ -152,7 +166,7 @@ export async function OPTIONS() {
 
 export async function GET(request: NextRequest) {
   if (!isMoniMcpEnabled()) return disabled()
-  const identity = await authenticateMcpBearer(request.headers.get('authorization'))
+  const identity = await strictBearerIdentity(request.headers.get('authorization'))
   if (!identity) return unauthorized()
   return NextResponse.json({
     ok: true,
@@ -168,8 +182,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!isMoniMcpEnabled()) return disabled()
-  const authorization = request.headers.get('authorization')
-  if (!authorization) return unauthorized()
+  const identity = await strictBearerIdentity(request.headers.get('authorization'))
+  if (!identity) return unauthorized()
 
   let payload: unknown
   try {
@@ -194,7 +208,7 @@ export async function POST(request: NextRequest) {
     const current = item && typeof item === 'object' && !Array.isArray(item)
       ? item as JsonRpcRequest
       : { jsonrpc: undefined, id: null, method: undefined }
-    const response = await handleRpcRequest(current, authorization)
+    const response = await handleRpcRequest(current, identity)
     if (response) responses.push(response)
   }
 
