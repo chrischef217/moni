@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { MONI_BUSINESS_ID } from '@/lib/moni/mcp/config'
 import { getStrictMcpSessionFromRequest } from '@/lib/moni/mcp/session'
 
 export const runtime = 'nodejs'
@@ -20,6 +21,12 @@ const ActionSchema = z.discriminatedUnion('action', [
     client_id: z.string().trim().min(8).max(200),
   }),
 ])
+
+type AdminSession = {
+  loginId: string
+  displayName: string
+  role: string
+}
 
 async function requireAdmin(request: NextRequest) {
   const session = await getStrictMcpSessionFromRequest(request)
@@ -46,6 +53,43 @@ function publicToken(row: Record<string, unknown>) {
     revoked_at: row.revoked_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
+  }
+}
+
+async function auditManagementAction(input: {
+  supabase: ReturnType<typeof createMoniServiceRoleClient>
+  session: AdminSession
+  clientId: string
+  action: string
+  targetId?: string
+}) {
+  const now = new Date().toISOString()
+  const { error } = await input.supabase.from('moni_mcp_tool_runs').insert({
+    business_id: MONI_BUSINESS_ID,
+    oauth_token_id: null,
+    oauth_client_id: input.clientId,
+    user_login_id: input.session.loginId,
+    user_role: input.session.role,
+    tool_name: `admin_${input.action}`,
+    tool_arguments: {
+      target_id: input.targetId || null,
+      actor_display_name: input.session.displayName,
+    },
+    status: 'COMPLETED',
+    duration_ms: 0,
+    output_bytes: 0,
+    output_preview: '관리자 연결관리 화면에서 수행한 접근 폐기 작업',
+    output_truncated: false,
+    started_at: now,
+    finished_at: now,
+  })
+  if (error) {
+    console.error('[MONI_MCP_MANAGEMENT_AUDIT_ERROR]', {
+      message: error.message,
+      action: input.action,
+      client_id: input.clientId,
+      actor: input.session.loginId,
+    })
   }
 }
 
@@ -101,16 +145,39 @@ export async function PATCH(request: NextRequest) {
   const input = parsed.data
 
   if (input.action === 'revoke_token') {
+    const { data: current, error: readError } = await supabase
+      .from('moni_mcp_oauth_tokens')
+      .select('id,client_id,user_login_id,revoked_at')
+      .eq('id', input.token_id)
+      .maybeSingle()
+    if (readError) return NextResponse.json({ ok: false, error: readError.message }, { status: 500 })
+    if (!current) return NextResponse.json({ ok: false, error: '연결을 찾을 수 없습니다.' }, { status: 404 })
+
     const { data, error } = await supabase
       .from('moni_mcp_oauth_tokens')
-      .update({ revoked_at: now, updated_at: now })
+      .update({ revoked_at: current.revoked_at || now, updated_at: now })
       .eq('id', input.token_id)
-      .is('revoked_at', null)
       .select('id,client_id,user_login_id,revoked_at')
-      .maybeSingle()
+      .single()
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+    await auditManagementAction({
+      supabase,
+      session: auth.session,
+      clientId: current.client_id,
+      action: 'revoke_mcp_token',
+      targetId: input.token_id,
+    })
     return NextResponse.json({ ok: true, revoked: data, actor: auth.session.loginId })
   }
+
+  const { data: client, error: clientReadError } = await supabase
+    .from('moni_mcp_oauth_clients')
+    .select('client_id,is_active')
+    .eq('client_id', input.client_id)
+    .maybeSingle()
+  if (clientReadError) return NextResponse.json({ ok: false, error: clientReadError.message }, { status: 500 })
+  if (!client) return NextResponse.json({ ok: false, error: 'OAuth 클라이언트를 찾을 수 없습니다.' }, { status: 404 })
 
   const { error: tokenError } = await supabase
     .from('moni_mcp_oauth_tokens')
@@ -126,6 +193,13 @@ export async function PATCH(request: NextRequest) {
       .eq('client_id', input.client_id)
     if (clientError) return NextResponse.json({ ok: false, error: clientError.message }, { status: 500 })
   }
+
+  await auditManagementAction({
+    supabase,
+    session: auth.session,
+    clientId: input.client_id,
+    action: input.action === 'disable_client' ? 'disable_mcp_client' : 'revoke_mcp_client_tokens',
+  })
 
   return NextResponse.json({
     ok: true,
