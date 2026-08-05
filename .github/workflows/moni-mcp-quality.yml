@@ -7,6 +7,8 @@ on:
       - 'src/app/mcp/**'
       - 'src/app/oauth/**'
       - 'src/app/.well-known/**'
+      - 'src/app/api/moni/mcp-connections/**'
+      - 'src/components/MoniMcpConnectionsClient.tsx'
       - 'src/lib/allowance/post-login.ts'
       - 'src/app/api/allowance/auth/login/route.ts'
       - 'src/app/api/allowance/auth/post-login/**'
