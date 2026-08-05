@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '@/lib/allowance/session'
+import { isMoniMcpEnabled } from '@/lib/moni/mcp/config'
 import {
   createAuthorizationCode,
   validateAuthorizationRequest,
@@ -17,6 +18,13 @@ function redirectWithParams(base: string, values: Record<string, string>) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isMoniMcpEnabled()) {
+    return NextResponse.json({
+      error: 'temporarily_unavailable',
+      error_description: 'MONI ChatGPT 연결은 보안 수용검사 전까지 비활성 상태입니다.',
+    }, { status: 503, headers: { 'Cache-Control': 'no-store' } })
+  }
+
   const form = await request.formData()
   const raw = Object.fromEntries(Array.from(form.entries()).map(([key, value]) => [key, String(value)]))
 
