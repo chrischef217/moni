@@ -111,6 +111,111 @@ const staleAssetRecoveryScript = String.raw`
 })()
 `
 
+const loginCriticalStyle = String.raw`
+html, body {
+  min-height: 100%;
+  margin: 0;
+}
+
+[data-moni-login] {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 24px;
+  box-sizing: border-box;
+  color: #173b52;
+  background:
+    radial-gradient(circle at 84% 0%, rgb(134 207 255 / 0.24), transparent 30%),
+    radial-gradient(circle at 9% 100%, rgb(171 216 246 / 0.22), transparent 34%),
+    linear-gradient(145deg, rgb(246 251 255), rgb(231 242 252));
+  font-family: Pretendard, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+[data-moni-login] *,
+[data-moni-login] *::before,
+[data-moni-login] *::after {
+  box-sizing: border-box;
+}
+
+[data-moni-login] .moni-login-card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 440px);
+  border: 1px solid rgb(171 199 217 / 0.62);
+  border-radius: 32px;
+  background: rgb(255 255 255 / 0.88);
+  padding: 40px 38px 36px;
+  box-shadow: 0 26px 70px rgb(15 35 55 / 0.14);
+}
+
+[data-moni-login] .moni-login-character {
+  width: 82px;
+  height: 82px;
+  margin: 0 auto 24px;
+  border-radius: 28px;
+  background: #0c2337;
+}
+
+[data-moni-login] .moni-login-title {
+  margin: 0;
+  color: #173b52;
+  font-size: clamp(24px, 5vw, 29px);
+  font-weight: 800;
+  line-height: 1.28;
+  letter-spacing: -0.035em;
+  text-align: center;
+}
+
+[data-moni-login] .moni-login-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+[data-moni-login] .moni-login-field {
+  display: grid;
+  gap: 8px;
+  color: #526f7e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+[data-moni-login] .moni-login-field input {
+  width: 100%;
+  height: 50px;
+  border: 1px solid rgb(171 199 217 / 0.72);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.94);
+  padding: 0 15px;
+  color: #173b52;
+  font: inherit;
+}
+
+[data-moni-login] .moni-login-submit {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 24px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #2f80c9, #1769aa);
+  color: white;
+  font: inherit;
+  font-weight: 800;
+}
+
+@media (max-width: 520px) {
+  [data-moni-login] { padding: 16px; }
+  [data-moni-login] .moni-login-card {
+    border-radius: 26px;
+    padding: 34px 22px 28px;
+  }
+}
+`
+
 export default async function RootLayout({
   children,
 }: {
@@ -122,6 +227,7 @@ export default async function RootLayout({
   return (
     <html lang="ko">
       <head>
+        <style data-moni-login-critical dangerouslySetInnerHTML={{ __html: loginCriticalStyle }} />
         <script dangerouslySetInnerHTML={{ __html: staleAssetRecoveryScript }} />
       </head>
       <body className="antialiased">
