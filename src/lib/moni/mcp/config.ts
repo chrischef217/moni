@@ -5,6 +5,10 @@ export const MONI_BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523
 export const MONI_MCP_SCOPES = ['moni:read', 'offline_access'] as const
 export type MoniMcpScope = typeof MONI_MCP_SCOPES[number]
 
+export function isMoniMcpEnabled() {
+  return String(process.env.MONI_MCP_ENABLED || '').trim().toLowerCase() === 'true'
+}
+
 export function moniPublicBaseUrl() {
   const configured = String(process.env.MONI_PUBLIC_BASE_URL || '').trim().replace(/\/$/, '')
   if (configured) return configured
