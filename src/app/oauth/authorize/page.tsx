@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getSessionFromCookies } from '@/lib/allowance/session'
+import { isMoniMcpEnabled } from '@/lib/moni/mcp/config'
 import { validateAuthorizationRequest } from '@/lib/moni/mcp/oauth'
 
 export const dynamic = 'force-dynamic'
@@ -20,6 +21,17 @@ function queryString(searchParams: SearchParams) {
 }
 
 export default async function MoniOAuthAuthorizePage({ searchParams = {} }: { searchParams?: SearchParams }) {
+  if (!isMoniMcpEnabled()) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-800">
+        <section className="w-full max-w-lg rounded-3xl border border-amber-200 bg-white p-8 shadow-xl">
+          <h1 className="text-xl font-black text-amber-800">MONI ChatGPT 연결 준비 중</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">보안 수용검사와 계정 플랜 확인이 끝날 때까지 OAuth 연결을 비활성 상태로 유지합니다.</p>
+        </section>
+      </main>
+    )
+  }
+
   let authorization
   try {
     authorization = await validateAuthorizationRequest({
@@ -83,7 +95,7 @@ export default async function MoniOAuthAuthorizePage({ searchParams = {} }: { se
             취소
           </button>
         </form>
-        <p className="mt-5 text-xs leading-5 text-slate-500">연결은 언제든 MONI 관리 기능에서 취소할 수 있도록 후속 관리 화면을 추가할 예정입니다.</p>
+        <p className="mt-5 text-xs leading-5 text-slate-500">연결 취소 및 토큰 폐기는 MONI 연결관리 화면에서 제공합니다.</p>
       </section>
     </main>
   )
