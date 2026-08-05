@@ -9,6 +9,10 @@ const mcpRoute = readFileSync('src/app/mcp/route.ts', 'utf8')
 const mcpSession = readFileSync('src/lib/moni/mcp/session.ts', 'utf8')
 const authorizePage = readFileSync('src/app/oauth/authorize/page.tsx', 'utf8')
 const authorizeComplete = readFileSync('src/app/oauth/authorize/complete/route.ts', 'utf8')
+const revokeRoute = readFileSync('src/app/oauth/revoke/route.ts', 'utf8')
+const connectionApi = readFileSync('src/app/api/moni/mcp-connections/route.ts', 'utf8')
+const connectionPage = readFileSync('src/app/mcp/connections/page.tsx', 'utf8')
+const connectionClient = readFileSync('src/components/MoniMcpConnectionsClient.tsx', 'utf8')
 const authMetadata = readFileSync('src/app/.well-known/oauth-authorization-server/route.ts', 'utf8')
 const resourceMetadata = readFileSync('src/app/.well-known/oauth-protected-resource/route.ts', 'utf8')
 const migration = readFileSync('supabase/migrations/202608050001_moni_mcp_readonly_oauth.sql', 'utf8')
@@ -21,6 +25,7 @@ test('MCP remains disabled until PMO explicitly enables it', () => {
   assert.match(config, /MONI_MCP_ENABLED/)
   assert.match(config, /=== 'true'/)
   assert.match(mcpRoute, /if \(!isMoniMcpEnabled\(\)\) return disabled\(\)/)
+  assert.match(revokeRoute, /if \(!isMoniMcpEnabled\(\)\)/)
 })
 
 test('OAuth uses PKCE S256 and ChatGPT callback restriction', () => {
@@ -88,4 +93,29 @@ test('every MCP bearer request revalidates the current MONI identity before JSON
   assert.match(mcpRoute, /const identity = await strictBearerIdentity/)
   assert.match(mcpRoute, /if \(!identity\) return unauthorized\(\)/)
   assert.doesNotMatch(mcpRoute, /handleRpcRequest\(current, authorization\)/)
+})
+
+test('OAuth metadata advertises a no-secret token revocation endpoint', () => {
+  assert.match(authMetadata, /revocation_endpoint:/)
+  assert.match(authMetadata, /revocation_endpoint_auth_methods_supported: \['none'\]/)
+  assert.match(revokeRoute, /access_token_hash\.eq/)
+  assert.match(revokeRoute, /refresh_token_hash\.eq/)
+  assert.match(revokeRoute, /must not reveal whether a token existed/)
+})
+
+test('connection management is strict-admin only and never selects token hashes', () => {
+  assert.match(connectionApi, /getStrictMcpSessionFromRequest/)
+  assert.match(connectionApi, /session\.role !== 'admin'/)
+  assert.doesNotMatch(connectionApi, /select\([^)]*access_token_hash/)
+  assert.doesNotMatch(connectionApi, /select\([^)]*refresh_token_hash/)
+  assert.match(connectionApi, /action: z\.literal\('revoke_token'\)/)
+  assert.match(connectionApi, /action: z\.literal\('disable_client'\)/)
+})
+
+test('admin connection page can revoke one or all ChatGPT connections', () => {
+  assert.match(connectionPage, /getStrictMcpSessionFromCookies/)
+  assert.match(connectionClient, /action: 'revoke_token'/)
+  assert.match(connectionClient, /action: 'revoke_client'/)
+  assert.match(connectionClient, /action: 'disable_client'/)
+  assert.match(connectionClient, /토큰 원문과 해시는 화면에 표시하지 않습니다/)
 })
