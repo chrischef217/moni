@@ -19,7 +19,7 @@ export default function MoniMcpDocsPage() {
             <li>모든 도구는 조회 전용입니다.</li>
             <li>생산·재고·판매·회계 데이터 생성·수정·삭제 도구는 제공하지 않습니다.</li>
             <li>사용자 역할에 따라 조회 가능한 업무영역을 제한합니다.</li>
-            <li>각 도구 실행은 MONI 감사 테이블에 기록합니다.</li>
+            <li>각 도구 실행과 관리자 폐기 작업은 MONI 감사 테이블에 기록합니다.</li>
             <li>OAuth 2.1, PKCE, 짧은 수명의 접근 토큰을 사용합니다.</li>
           </ul>
         </section>
@@ -45,6 +45,15 @@ export default function MoniMcpDocsPage() {
             기존 MONI 내부 AI는 수용검사 완료 전까지 유지합니다.
           </p>
         </section>
+
+        <div className="mt-8 flex flex-wrap gap-3">
+          <a href="/mcp/connections" className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
+            관리자 연결관리 열기
+          </a>
+          <a href="/" className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+            MONI로 돌아가기
+          </a>
+        </div>
       </article>
     </main>
   )
