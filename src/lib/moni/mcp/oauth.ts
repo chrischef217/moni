@@ -20,6 +20,7 @@ type SupabaseClient = ReturnType<typeof createMoniServiceRoleClient>
 const ACCESS_TOKEN_SECONDS = 60 * 60
 const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60
 const AUTH_CODE_SECONDS = 5 * 60
+const MAX_ACTIVE_OAUTH_CLIENTS = 50
 
 function nowIso() {
   return new Date().toISOString()
@@ -48,6 +49,12 @@ export function verifyPkceS256(verifier: string, challenge: string) {
   return safeEqual(sha256(verifier), challenge)
 }
 
+function stringScopes(value: unknown, fallback: string[] = ['moni:read']) {
+  if (!Array.isArray(value)) return [...fallback]
+  const scopes = value.map((item) => String(item || '').trim()).filter(Boolean)
+  return scopes.length ? Array.from(new Set(scopes)) : [...fallback]
+}
+
 export async function registerMcpOAuthClient(input: {
   redirectUris: string[]
   clientName?: string
@@ -67,6 +74,15 @@ export async function registerMcpOAuthClient(input: {
     .maybeSingle()
   if (existingError) throw new Error(existingError.message)
   if (existing) return existing
+
+  const { count, error: countError } = await supabase
+    .from('moni_mcp_oauth_clients')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_active', true)
+  if (countError) throw new Error(countError.message)
+  if (Number(count || 0) >= MAX_ACTIVE_OAUTH_CLIENTS) {
+    throw new Error('OAuth client 등록 한도에 도달했습니다. PMO 검토가 필요합니다.')
+  }
 
   const row = {
     client_id: `moni_${randomOAuthValue(24)}`,
@@ -121,7 +137,7 @@ export async function validateAuthorizationRequest(raw: Record<string, unknown>)
     .eq('is_active', true)
     .maybeSingle()
   if (error) throw new Error(error.message)
-  const redirectUris = Array.isArray(client?.redirect_uris) ? client.redirect_uris : []
+  const redirectUris = stringScopes(client?.redirect_uris, [])
   if (!client || !redirectUris.includes(redirectUri)) throw new Error('등록되지 않은 OAuth client 또는 redirect_uri입니다.')
 
   return {
@@ -245,7 +261,7 @@ export async function exchangeAuthorizationCode(input: {
     supabase,
     clientId: row.client_id,
     resource: row.resource,
-    scopes: Array.isArray(row.scopes) ? row.scopes : ['moni:read'],
+    scopes: stringScopes(row.scopes),
     loginId: row.user_login_id,
     displayName: row.user_display_name || row.user_login_id,
     role: row.user_role,
@@ -270,9 +286,9 @@ export async function refreshAccessToken(input: {
   if (error) throw new Error(error.message)
   if (!row || Date.parse(row.refresh_expires_at) <= Date.now()) throw new Error('invalid_grant')
 
-  const originalScopes = Array.isArray(row.scopes) ? row.scopes : ['moni:read']
-  const requestedScopes = input.requestedScope ? parseScopes(input.requestedScope) : originalScopes
-  if (requestedScopes.some((scope) => !originalScopes.includes(scope))) throw new Error('invalid_scope')
+  const originalScopes: string[] = stringScopes(row.scopes)
+  const requestedScopes: string[] = input.requestedScope ? parseScopes(input.requestedScope) : originalScopes
+  if (requestedScopes.some((scope: string) => !originalScopes.includes(scope))) throw new Error('invalid_scope')
 
   return issueTokenPair({
     supabase,
@@ -299,7 +315,7 @@ export async function authenticateMcpBearer(authorization: string | null): Promi
     .maybeSingle()
   if (error) throw new Error(error.message)
   if (!row || Date.parse(row.access_expires_at) <= Date.now()) return null
-  const scopes = Array.isArray(row.scopes) ? row.scopes : []
+  const scopes: string[] = stringScopes(row.scopes, [])
   if (!scopes.includes('moni:read')) return null
 
   await supabase
