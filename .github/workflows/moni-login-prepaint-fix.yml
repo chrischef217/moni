@@ -1,0 +1,129 @@
+name: MONI Login Prepaint Fix
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/moni-login-prepaint-fix.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/moni-login-prepaint
+          fetch-depth: 0
+
+      - name: Move login styles to first-paint CSS
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          component_path = Path('src/components/AllowanceLogin.tsx')
+          component = component_path.read_text()
+          start_marker = "      <style jsx global>{`"
+          end_marker = "      `}</style>"
+          start = component.find(start_marker)
+          end = component.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit('AllowanceLogin styled-jsx block was not found')
+
+          css_start = start + len(start_marker)
+          css = dedent(component[css_start:end]).strip() + '\n'
+          if '.moni-login-card {' not in css:
+              raise SystemExit('login card CSS selector was not found')
+          css = css.replace(
+              '.moni-login-card {',
+              '.moni-login-card {\n  visibility: visible !important;',
+              1,
+          )
+          Path('src/app/moni-login.css').write_text(
+              '/* Login styles must be available before client hydration to prevent raw-text flash. */\n' + css,
+          )
+
+          component = component[:start] + component[end + len(end_marker):]
+          main_old = '<main data-moni-login className="moni-login-root">'
+          main_new = '''<main
+      data-moni-login
+      className="moni-login-root"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        minHeight: '100dvh',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        padding: 24,
+        background: 'linear-gradient(145deg, rgb(246 251 255), rgb(231 242 252))',
+      }}
+    >'''
+          if main_old not in component:
+              raise SystemExit('login root marker was not found')
+          component = component.replace(main_old, main_new, 1)
+
+          card_old = '<section className="moni-login-card" aria-labelledby="moni-login-title">'
+          card_new = '''<section
+        className="moni-login-card"
+        aria-labelledby="moni-login-title"
+        style={{ visibility: 'hidden' }}
+      >'''
+          if card_old not in component:
+              raise SystemExit('login card marker was not found')
+          component = component.replace(card_old, card_new, 1)
+          component_path.write_text(component)
+
+          layout_path = Path('src/app/layout.tsx')
+          layout = layout_path.read_text()
+          import_marker = "import './globals.css'"
+          import_line = "import './moni-login.css'"
+          if import_line not in layout:
+              if import_marker not in layout:
+                  raise SystemExit('globals.css import marker was not found')
+              layout = layout.replace(import_marker, import_marker + '\n' + import_line, 1)
+          layout_path.write_text(layout)
+
+          test = r'''import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+const login = readFileSync('src/components/AllowanceLogin.tsx', 'utf8')
+const layout = readFileSync('src/app/layout.tsx', 'utf8')
+const css = readFileSync('src/app/moni-login.css', 'utf8')
+
+test('login styles are server-linked instead of hydration-injected', () => {
+  assert.doesNotMatch(login, /<style jsx global>/)
+  assert.match(layout, /import '\.\/moni-login\.css'/)
+  assert.match(css, /\.moni-login-root\s*\{/)
+  assert.match(css, /\.moni-login-card\s*\{[\s\S]*visibility:\s*visible !important/)
+})
+
+test('login raw content remains hidden until static CSS is ready', () => {
+  assert.match(login, /data-moni-login/)
+  assert.match(login, /position: 'fixed'/)
+  assert.match(login, /background: 'linear-gradient/)
+  assert.match(login, /style=\{\{ visibility: 'hidden' \}\}/)
+})
+'''
+          Path('tests/moni-login-prepaint.test.mjs').write_text(test)
+          PY
+
+      - name: Remove one-time workflow
+        run: rm .github/workflows/moni-login-prepaint-fix.yml
+
+      - name: Verify focused change
+        run: |
+          node --test tests/moni-login-prepaint.test.mjs
+          git diff --check
+
+      - name: Commit source fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/AllowanceLogin.tsx src/app/layout.tsx src/app/moni-login.css tests/moni-login-prepaint.test.mjs .github/workflows/moni-login-prepaint-fix.yml
+          git commit -m 'fix: prevent MONI login raw-text flash'
+          git push origin HEAD:fix/moni-login-prepaint
