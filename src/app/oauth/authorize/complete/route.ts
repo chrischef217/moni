@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionFromRequest } from '@/lib/allowance/session'
 import { isMoniMcpEnabled } from '@/lib/moni/mcp/config'
 import {
   createAuthorizationCode,
   validateAuthorizationRequest,
 } from '@/lib/moni/mcp/oauth'
+import { getStrictMcpSessionFromRequest } from '@/lib/moni/mcp/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -45,9 +45,12 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const session = await getSessionFromRequest(request)
+  const session = await getStrictMcpSessionFromRequest(request)
   if (!session) {
-    return NextResponse.json({ error: 'login_required', error_description: 'MONI 로그인이 필요합니다.' }, { status: 401 })
+    return NextResponse.json({
+      error: 'login_required',
+      error_description: 'DB에 등록된 MONI 사용자 로그인이 필요합니다. fallback 세션은 ChatGPT 연결에 사용할 수 없습니다.',
+    }, { status: 401, headers: { 'Cache-Control': 'no-store' } })
   }
 
   try {

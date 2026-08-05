@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
-import { getSessionFromCookies } from '@/lib/allowance/session'
 import { isMoniMcpEnabled } from '@/lib/moni/mcp/config'
 import { validateAuthorizationRequest } from '@/lib/moni/mcp/oauth'
+import { getStrictMcpSessionFromCookies } from '@/lib/moni/mcp/session'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +55,7 @@ export default async function MoniOAuthAuthorizePage({ searchParams = {} }: { se
     )
   }
 
-  const session = await getSessionFromCookies()
+  const session = await getStrictMcpSessionFromCookies()
   if (!session) {
     const returnTo = `/oauth/authorize?${queryString(searchParams)}`
     redirect(`/?return_to=${encodeURIComponent(returnTo)}`)
