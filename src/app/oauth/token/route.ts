@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { moniMcpResource } from '@/lib/moni/mcp/config'
+import { isMoniMcpEnabled, moniMcpResource } from '@/lib/moni/mcp/config'
 import {
   exchangeAuthorizationCode,
   refreshAccessToken,
@@ -19,6 +19,10 @@ function oauthError(error: string, description: string, status = 400) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isMoniMcpEnabled()) {
+    return oauthError('temporarily_unavailable', 'MONI ChatGPT 연결은 보안 수용검사 전까지 비활성 상태입니다.', 503)
+  }
+
   const form = await request.formData().catch(() => null)
   if (!form) return oauthError('invalid_request', '폼 요청을 읽을 수 없습니다.')
   const grantType = String(form.get('grant_type') || '')
