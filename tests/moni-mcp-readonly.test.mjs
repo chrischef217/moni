@@ -33,7 +33,8 @@ test('MCP challenges unauthenticated calls with protected resource metadata', ()
   assert.match(mcpRoute, /WWW-Authenticate/)
   assert.match(mcpRoute, /resource_metadata=/)
   assert.match(resourceMetadata, /authorization_servers/)
-  assert.match(resourceMetadata, /moni:read/)
+  assert.match(resourceMetadata, /scopes_supported: MONI_MCP_SCOPES/)
+  assert.match(config, /'moni:read'/)
 })
 
 test('MCP exposes only role-filtered read-only tools', () => {
