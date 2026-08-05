@@ -6,8 +6,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function MoniMcpConnectionsPage() {
   const session = await getStrictMcpSessionFromCookies()
-  if (!session) redirect('/?return_to=%2Fmcp%2Fconnections')
-  if (session.role !== 'admin') redirect('/')
+  if (!session || session.role !== 'admin') redirect('/')
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-800 md:px-8 md:py-12">
