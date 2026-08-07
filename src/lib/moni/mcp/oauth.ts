@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import {
   isAllowedChatGptRedirectUri,
+  MONI_MCP_SCOPES,
   moniMcpResource,
   parseScopes,
 } from '@/lib/moni/mcp/config'
@@ -53,6 +54,19 @@ function stringScopes(value: unknown, fallback: string[] = ['moni:read']) {
   if (!Array.isArray(value)) return [...fallback]
   const scopes = value.map((item) => String(item || '').trim()).filter(Boolean)
   return scopes.length ? Array.from(new Set(scopes)) : [...fallback]
+}
+
+function strictRequestedScopes(value: unknown) {
+  const raw = String(value || '').trim()
+  const requested = raw
+    ? raw.split(/\s+/).map((item) => item.trim()).filter(Boolean)
+    : []
+  const allowed = new Set<string>(MONI_MCP_SCOPES)
+  if (requested.some((scope) => !allowed.has(scope))) throw new Error('invalid_scope')
+
+  const scopes = parseScopes(raw)
+  if (!scopes.includes('moni:read')) scopes.unshift('moni:read')
+  return Array.from(new Set(scopes))
 }
 
 export async function registerMcpOAuthClient(input: {
@@ -121,7 +135,7 @@ export async function validateAuthorizationRequest(raw: Record<string, unknown>)
   const codeChallenge = String(raw.code_challenge || '').trim()
   const codeChallengeMethod = String(raw.code_challenge_method || '').trim()
   const resource = String(raw.resource || '').trim()
-  const scopes = parseScopes(raw.scope)
+  const scopes = strictRequestedScopes(raw.scope)
 
   if (!clientId || responseType !== 'code' || !state || !codeChallenge || codeChallengeMethod !== 'S256') {
     throw new Error('OAuth authorization 요청이 올바르지 않습니다.')
@@ -184,6 +198,7 @@ async function issueTokenPair(input: {
   displayName: string
   role: string
   replaceTokenId?: string
+  expectedRefreshTokenHash?: string
 }) {
   const accessToken = `moni_at_${randomOAuthValue(36)}`
   const refreshToken = `moni_rt_${randomOAuthValue(40)}`
@@ -203,12 +218,19 @@ async function issueTokenPair(input: {
   }
 
   if (input.replaceTokenId) {
-    const { error } = await input.supabase
+    let update = input.supabase
       .from('moni_mcp_oauth_tokens')
       .update({ ...row, updated_at: nowIso() })
       .eq('id', input.replaceTokenId)
       .is('revoked_at', null)
+    if (input.expectedRefreshTokenHash) {
+      update = update.eq('refresh_token_hash', input.expectedRefreshTokenHash)
+    }
+    const { data: replaced, error } = await update
+      .select('id')
+      .maybeSingle()
     if (error) throw new Error(error.message)
+    if (!replaced) throw new Error('invalid_grant')
   } else {
     const { error } = await input.supabase.from('moni_mcp_oauth_tokens').insert(row)
     if (error) throw new Error(error.message)
@@ -275,10 +297,11 @@ export async function refreshAccessToken(input: {
   requestedScope?: string
 }) {
   const supabase = createMoniServiceRoleClient()
+  const expectedRefreshTokenHash = sha256(input.refreshToken)
   const { data: row, error } = await supabase
     .from('moni_mcp_oauth_tokens')
     .select('*')
-    .eq('refresh_token_hash', sha256(input.refreshToken))
+    .eq('refresh_token_hash', expectedRefreshTokenHash)
     .eq('client_id', input.clientId)
     .eq('resource', input.resource)
     .is('revoked_at', null)
@@ -287,7 +310,7 @@ export async function refreshAccessToken(input: {
   if (!row || Date.parse(row.refresh_expires_at) <= Date.now()) throw new Error('invalid_grant')
 
   const originalScopes: string[] = stringScopes(row.scopes)
-  const requestedScopes: string[] = input.requestedScope ? parseScopes(input.requestedScope) : originalScopes
+  const requestedScopes: string[] = input.requestedScope ? strictRequestedScopes(input.requestedScope) : originalScopes
   if (requestedScopes.some((scope: string) => !originalScopes.includes(scope))) throw new Error('invalid_scope')
 
   return issueTokenPair({
@@ -299,6 +322,7 @@ export async function refreshAccessToken(input: {
     displayName: row.user_display_name || row.user_login_id,
     role: row.user_role,
     replaceTokenId: row.id,
+    expectedRefreshTokenHash,
   })
 }
 

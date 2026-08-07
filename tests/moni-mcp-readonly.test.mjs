@@ -37,6 +37,14 @@ test('OAuth uses PKCE S256 and ChatGPT callback restriction', () => {
   assert.match(authMetadata, /token_endpoint_auth_methods_supported: \['none'\]/)
 })
 
+test('OAuth rejects unknown scopes and always includes MONI read access', () => {
+  assert.match(oauth, /function strictRequestedScopes/)
+  assert.match(oauth, /requested\.some\(\(scope\) => !allowed\.has\(scope\)\)/)
+  assert.match(oauth, /throw new Error\('invalid_scope'\)/)
+  assert.match(oauth, /if \(!scopes\.includes\('moni:read'\)\) scopes\.unshift\('moni:read'\)/)
+  assert.match(oauth, /const scopes = strictRequestedScopes\(raw\.scope\)/)
+})
+
 test('MCP challenges unauthenticated calls with protected resource metadata', () => {
   assert.match(mcpRoute, /WWW-Authenticate/)
   assert.match(mcpRoute, /resource_metadata=/)
@@ -68,6 +76,14 @@ test('OAuth database stores hashes, never raw access or refresh tokens', () => {
   assert.doesNotMatch(migration, /\n\s*refresh_token\s+text/)
   assert.match(migration, /enable row level security/g)
   assert.match(migration, /revoke all .* from anon, authenticated/g)
+})
+
+test('OAuth refresh rotation consumes the exact presented refresh token once', () => {
+  assert.match(oauth, /const expectedRefreshTokenHash = sha256\(input\.refreshToken\)/)
+  assert.match(oauth, /\.eq\('refresh_token_hash', expectedRefreshTokenHash\)/)
+  assert.match(oauth, /expectedRefreshTokenHash,/)
+  assert.match(oauth, /update = update\.eq\('refresh_token_hash', input\.expectedRefreshTokenHash\)/)
+  assert.match(oauth, /if \(!replaced\) throw new Error\('invalid_grant'\)/)
 })
 
 test('OAuth login return is a one-time internal consent path', () => {
