@@ -6,6 +6,7 @@ on:
       - 'src/app/audit/lib/storage.ts'
       - 'src/lib/moni/db.ts'
       - 'scripts/audit-legacy-supabase-access.mjs'
+      - 'scripts/audit-supabase-table-callsites.mjs'
       - 'tests/audit-storage-security.test.mjs'
       - '.github/workflows/moni-audit-storage-security.yml'
   workflow_dispatch:
@@ -39,6 +40,8 @@ jobs:
         run: npm run prebuild
       - name: Verify public DB access boundary
         run: node scripts/audit-legacy-supabase-access.mjs
+      - name: Inventory Supabase table callsites
+        run: node scripts/audit-supabase-table-callsites.mjs
       - name: Audit storage security tests
         run: node --test tests/audit-storage-security.test.mjs
       - name: Production build
