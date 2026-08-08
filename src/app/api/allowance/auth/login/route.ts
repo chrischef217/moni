@@ -1,6 +1,11 @@
-﻿import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { POST_LOGIN_COOKIE_NAME, safePostLoginPath } from '@/lib/allowance/post-login'
-import { createAllowanceSession, SESSION_COOKIE_NAME, verifyAllowanceLogin } from '@/lib/allowance/store'
+import {
+  AllowanceAuthStorageError,
+  createSecureAllowanceSession,
+  SESSION_COOKIE_NAME,
+  verifySecureAllowanceLogin,
+} from '@/lib/allowance/secure-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,18 +26,18 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => null)) as { loginId?: string; password?: string } | null
     const loginId = body?.loginId?.trim() ?? ''
-    const password = body?.password?.trim() ?? ''
+    const password = body?.password ?? ''
 
     if (!loginId || !password) {
       return NextResponse.json({ ok: false, error: '아이디와 비밀번호를 입력해 주세요.' }, { status: 400 })
     }
 
-    const user = await verifyAllowanceLogin(loginId, password)
+    const user = await verifySecureAllowanceLogin(loginId, password)
     if (!user) {
       return NextResponse.json({ ok: false, error: '로그인 정보가 올바르지 않습니다.' }, { status: 401 })
     }
 
-    const token = await createAllowanceSession(user)
+    const token = await createSecureAllowanceSession(user)
     const response = NextResponse.json({ ok: true, user }, { status: 200 })
 
     response.cookies.set({
@@ -60,7 +65,12 @@ export async function POST(request: NextRequest) {
 
     return response
   } catch (error) {
-    const message = error instanceof Error ? error.message : '로그인 처리 중 오류가 발생했습니다.'
-    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+    const storageUnavailable = error instanceof AllowanceAuthStorageError
+    return NextResponse.json({
+      ok: false,
+      error: storageUnavailable
+        ? '로그인 시스템에 일시적으로 연결할 수 없습니다.'
+        : '로그인 처리 중 오류가 발생했습니다.',
+    }, { status: storageUnavailable ? 503 : 500 })
   }
 }
