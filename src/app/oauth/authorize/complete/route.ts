@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isMoniMcpEnabled } from '@/lib/moni/mcp/config'
+import { isMoniMcpRuntimeEnabled } from '@/lib/moni/mcp/activation'
 import {
   createAuthorizationCode,
   validateAuthorizationRequest,
@@ -18,10 +18,10 @@ function redirectWithParams(base: string, values: Record<string, string>) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isMoniMcpEnabled()) {
+  if (!(await isMoniMcpRuntimeEnabled())) {
     return NextResponse.json({
       error: 'temporarily_unavailable',
-      error_description: 'MONI ChatGPT 연결은 보안 수용검사 전까지 비활성 상태입니다.',
+      error_description: 'MONI ChatGPT 연결은 비활성 상태입니다. 승인된 수용검사 창 또는 영구 운영 플래그가 필요합니다.',
     }, { status: 503, headers: { 'Cache-Control': 'no-store' } })
   }
 
