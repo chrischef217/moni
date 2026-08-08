@@ -1,0 +1,47 @@
+name: MONI Legacy RLS Security Gate
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*legacy_actions_rls*'
+      - 'scripts/audit-legacy-supabase-access.mjs'
+      - 'src/lib/supabase.ts'
+      - 'src/lib/moni/browser-db.ts'
+      - 'src/lib/moni/db.ts'
+      - 'tests/legacy-rls-security.test.mjs'
+      - '.github/workflows/moni-legacy-rls-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rls-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: build-only-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: build-only-service-role-key
+      ALLOWANCE_ENCRYPTION_KEY: build-only-allowance-encryption-key-32
+      OPENAI_API_KEY: sk-build-only-not-a-real-secret
+      OPENAI_MONI_MODEL: gpt-5
+      MONI_BUSINESS_ID: '20220523011'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify immutable source
+        run: npm run prebuild
+      - name: Verify zero public DB consumers
+        run: node scripts/audit-legacy-supabase-access.mjs
+      - name: RLS security contract tests
+        run: node --test tests/legacy-rls-security.test.mjs
+      - name: Production build
+        run: npm run build
