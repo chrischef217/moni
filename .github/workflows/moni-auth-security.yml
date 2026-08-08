@@ -9,6 +9,7 @@ on:
       - 'src/lib/moni/mcp/session.ts'
       - 'src/lib/supabase.ts'
       - 'src/lib/migrate_doobae.ts'
+      - 'src/app/api/chat/**'
       - 'src/app/api/migrate/**'
       - 'src/app/api/migrate-bom/**'
       - 'src/app/api/allowance/auth/**'
