@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const secureAuth = readFileSync('src/lib/allowance/secure-auth.ts', 'utf8')
 const loginRoute = readFileSync('src/app/api/allowance/auth/login/route.ts', 'utf8')
@@ -8,7 +8,8 @@ const logoutRoute = readFileSync('src/app/api/allowance/auth/logout/route.ts', '
 const sessionHelper = readFileSync('src/lib/allowance/session.ts', 'utf8')
 const mcpSession = readFileSync('src/lib/moni/mcp/session.ts', 'utf8')
 const moniDb = readFileSync('src/lib/moni/db.ts', 'utf8')
-const browserSupabase = readFileSync('src/lib/supabase.ts', 'utf8')
+const sharedSupabasePath = 'src/lib/supabase.ts'
+const browserSupabase = existsSync(sharedSupabasePath) ? readFileSync(sharedSupabasePath, 'utf8') : ''
 const migrateRoute = readFileSync('src/app/api/migrate/route.ts', 'utf8')
 const migrateBomRoute = readFileSync('src/app/api/migrate-bom/route.ts', 'utf8')
 const migrateDoobae = readFileSync('src/lib/migrate_doobae.ts', 'utf8')
@@ -84,7 +85,11 @@ test('MONI admin database access is server-only and never falls back to anon', (
   assert.doesNotMatch(moniDb, /SUPABASE_SERVICE_ROLE_KEY'\) \|\| supabaseAnonKey/)
 })
 
-test('shared browser supabase module exposes no privileged admin client', () => {
+test('shared browser Supabase module is removed or never privileged', () => {
+  if (!existsSync(sharedSupabasePath)) {
+    assert.equal(browserSupabase, '')
+    return
+  }
   assert.doesNotMatch(browserSupabase, /SUPABASE_SERVICE_ROLE_KEY/)
   assert.doesNotMatch(browserSupabase, /supabaseAdmin/)
   assert.match(browserSupabase, /export const supabase = createClient\(supabaseUrl, supabaseAnonKey/)
