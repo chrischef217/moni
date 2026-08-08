@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
-import { isMoniMcpEnabled, moniMcpResource } from '@/lib/moni/mcp/config'
+import { moniMcpResource } from '@/lib/moni/mcp/config'
 import { sha256 } from '@/lib/moni/mcp/oauth'
 
 export const runtime = 'nodejs'
@@ -12,13 +12,8 @@ const NO_STORE = {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isMoniMcpEnabled()) {
-    return NextResponse.json({
-      error: 'temporarily_unavailable',
-      error_description: 'MONI ChatGPT 연결은 아직 비활성 상태입니다.',
-    }, { status: 503, headers: NO_STORE })
-  }
-
+  // Revocation remains available even while MCP execution is disabled.
+  // This endpoint can only reduce access and must not reveal token existence.
   const form = await request.formData().catch(() => null)
   if (!form) return NextResponse.json({}, { status: 200, headers: NO_STORE })
 
