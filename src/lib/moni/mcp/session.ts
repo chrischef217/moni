@@ -1,13 +1,13 @@
 import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
 import {
-  readAllowanceSession,
+  readSecureAllowanceSession,
   SESSION_COOKIE_NAME,
-} from '@/lib/allowance/store'
+} from '@/lib/allowance/secure-auth'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import type { AllowanceSessionUser } from '@/types/allowance'
 
-function isFallbackSessionToken(token: string) {
+function isLegacyFallbackSessionToken(token: string) {
   return token.startsWith('fallback.')
 }
 
@@ -29,8 +29,8 @@ async function currentRegisteredUser(user: AllowanceSessionUser) {
 }
 
 async function readStrictMcpSession(token: string) {
-  if (!token || isFallbackSessionToken(token)) return null
-  const session = await readAllowanceSession(token)
+  if (!token || isLegacyFallbackSessionToken(token)) return null
+  const session = await readSecureAllowanceSession(token)
   if (!session) return null
   return currentRegisteredUser(session)
 }
