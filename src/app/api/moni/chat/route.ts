@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
 
   const forwardedHeaders = new Headers(request.headers)
   forwardedHeaders.set('content-type', 'application/json')
+  forwardedHeaders.delete('content-length')
   const forwarded = new NextRequest(new URL('/api/moni/agent-runtime', request.nextUrl.origin), {
     method: 'POST',
     headers: forwardedHeaders,
