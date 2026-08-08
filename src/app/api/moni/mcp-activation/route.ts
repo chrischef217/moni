@@ -9,6 +9,7 @@ import {
   assertRecentPassingMcpPreflight,
   getMcpPreflightGateStatus,
 } from '@/lib/moni/mcp/preflight'
+import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import { getStrictMcpSessionFromRequest } from '@/lib/moni/mcp/session'
 
 export const runtime = 'nodejs'
@@ -54,8 +55,24 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
+    let validatedPreflight: {
+      id: string
+      admin_tool_catalog_hash: string
+      freelancer_tool_catalog_hash: string
+    } | null = null
+
     if (parsed.data.action === 'open_acceptance_window') {
-      await assertRecentPassingMcpPreflight()
+      const gate = await assertRecentPassingMcpPreflight()
+      if (!gate.latest_run_id) throw new Error('검증된 Preflight run ID가 없습니다.')
+      const supabase = createMoniServiceRoleClient()
+      const { data, error } = await supabase
+        .from('moni_mcp_preflight_runs')
+        .select('id,admin_tool_catalog_hash,freelancer_tool_catalog_hash')
+        .eq('id', gate.latest_run_id)
+        .eq('status', 'PASS')
+        .single()
+      if (error || !data) throw new Error(error?.message || '검증된 Preflight 결과를 찾을 수 없습니다.')
+      validatedPreflight = data
     }
 
     const state = parsed.data.action === 'open_acceptance_window'
@@ -64,6 +81,9 @@ export async function PATCH(request: NextRequest) {
           displayName: auth.session.displayName,
           reason: parsed.data.reason,
           durationMinutes: parsed.data.duration_minutes,
+          preflightRunId: validatedPreflight!.id,
+          adminToolCatalogHash: validatedPreflight!.admin_tool_catalog_hash,
+          freelancerToolCatalogHash: validatedPreflight!.freelancer_tool_catalog_hash,
         })
       : await closeMoniMcpAcceptanceWindow({ loginId: auth.session.loginId })
     const preflight = await getMcpPreflightGateStatus()

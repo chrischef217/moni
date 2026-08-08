@@ -10,6 +10,9 @@ export type MoniMcpActivationState = {
   enabledByLoginId: string | null
   enabledByDisplayName: string | null
   reason: string | null
+  preflightRunId: string | null
+  adminToolCatalogHash: string | null
+  freelancerToolCatalogHash: string | null
 }
 
 function disabledState(): MoniMcpActivationState {
@@ -22,6 +25,9 @@ function disabledState(): MoniMcpActivationState {
     enabledByLoginId: null,
     enabledByDisplayName: null,
     reason: null,
+    preflightRunId: null,
+    adminToolCatalogHash: null,
+    freelancerToolCatalogHash: null,
   }
 }
 
@@ -36,6 +42,9 @@ export async function getMoniMcpActivationState(): Promise<MoniMcpActivationStat
       enabledByLoginId: null,
       enabledByDisplayName: null,
       reason: 'MONI_MCP_ENABLED=true',
+      preflightRunId: null,
+      adminToolCatalogHash: null,
+      freelancerToolCatalogHash: null,
     }
   }
 
@@ -43,7 +52,7 @@ export async function getMoniMcpActivationState(): Promise<MoniMcpActivationStat
   const now = new Date().toISOString()
   const { data, error } = await supabase
     .from('moni_mcp_acceptance_windows')
-    .select('id,enabled_at,enabled_by_login_id,enabled_by_display_name,reason,enabled_until,revoked_at')
+    .select('id,enabled_at,enabled_by_login_id,enabled_by_display_name,reason,enabled_until,revoked_at,preflight_run_id,admin_tool_catalog_hash,freelancer_tool_catalog_hash')
     .is('revoked_at', null)
     .gt('enabled_until', now)
     .order('enabled_until', { ascending: false })
@@ -65,6 +74,9 @@ export async function getMoniMcpActivationState(): Promise<MoniMcpActivationStat
     enabledByLoginId: data.enabled_by_login_id,
     enabledByDisplayName: data.enabled_by_display_name,
     reason: data.reason,
+    preflightRunId: data.preflight_run_id,
+    adminToolCatalogHash: data.admin_tool_catalog_hash,
+    freelancerToolCatalogHash: data.freelancer_tool_catalog_hash,
   }
 }
 
@@ -108,12 +120,18 @@ export async function openMoniMcpAcceptanceWindow(input: {
   displayName: string
   reason: string
   durationMinutes?: number
+  preflightRunId: string
+  adminToolCatalogHash: string
+  freelancerToolCatalogHash: string
 }) {
   if (isMoniMcpEnabled()) return getMoniMcpActivationState()
 
   const durationMinutes = Math.max(5, Math.min(30, Math.trunc(Number(input.durationMinutes || 15))))
   const reason = String(input.reason || '').trim().slice(0, 500)
   if (reason.length < 3) throw new Error('수용검사 사유를 3자 이상 입력해야 합니다.')
+  if (!input.preflightRunId || !input.adminToolCatalogHash || !input.freelancerToolCatalogHash) {
+    throw new Error('수용검사 창에는 검증된 Preflight와 도구 해시가 필요합니다.')
+  }
 
   const supabase = createMoniServiceRoleClient()
   const now = new Date()
@@ -145,8 +163,11 @@ export async function openMoniMcpAcceptanceWindow(input: {
       enabled_by_display_name: input.displayName,
       reason,
       enabled_until: enabledUntil,
+      preflight_run_id: input.preflightRunId,
+      admin_tool_catalog_hash: input.adminToolCatalogHash,
+      freelancer_tool_catalog_hash: input.freelancerToolCatalogHash,
     })
-    .select('id,enabled_at,enabled_by_login_id,enabled_by_display_name,reason,enabled_until')
+    .select('id,enabled_at,enabled_by_login_id,enabled_by_display_name,reason,enabled_until,preflight_run_id,admin_tool_catalog_hash,freelancer_tool_catalog_hash')
     .single()
   if (error) throw new Error(error.message)
 
@@ -159,6 +180,9 @@ export async function openMoniMcpAcceptanceWindow(input: {
     enabledByLoginId: data.enabled_by_login_id,
     enabledByDisplayName: data.enabled_by_display_name,
     reason: data.reason,
+    preflightRunId: data.preflight_run_id,
+    adminToolCatalogHash: data.admin_tool_catalog_hash,
+    freelancerToolCatalogHash: data.freelancer_tool_catalog_hash,
   }
 }
 
