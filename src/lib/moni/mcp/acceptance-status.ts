@@ -28,6 +28,12 @@ const FREELANCER_FORBIDDEN_TOOLS = [
   'report_pmo_event',
 ] as const
 
+const ADMIN_REVOCATION_AUDIT_TOOLS = new Set([
+  'admin_revoke_mcp_token',
+  'admin_revoke_mcp_client_tokens',
+  'admin_disable_mcp_client',
+])
+
 function check(
   key: string,
   label: string,
@@ -66,7 +72,15 @@ export async function getMoniMcpAcceptanceStatus() {
       automated_ready: false,
       mcp_url: moniMcpResource(),
       window: null,
-      counts: { clients: 0, codes: 0, tokens: 0, tool_runs: 0, failed_tool_runs: 0 },
+      counts: {
+        clients: 0,
+        codes: 0,
+        tokens: 0,
+        tool_runs: 0,
+        failed_tool_runs: 0,
+        refresh_rotations: 0,
+        revocation_actions: 0,
+      },
       checks: [
         check('window', '수용검사 창', 'PENDING', 'Preflight PASS 후 수용검사 창을 열어야 합니다.'),
       ],
@@ -75,6 +89,7 @@ export async function getMoniMcpAcceptanceStatus() {
       manual_remaining: [
         'Freelancer가 ChatGPT UI에서 Admin 전용 도구를 보지 않는지 확인',
         'ChatGPT 도구 결과와 MONI 화면 수치를 교차검산',
+        'refresh token 실제 회전은 1시간 access token 만료 이후 운영 soak에서 확인',
       ],
     }
   }
@@ -103,7 +118,7 @@ export async function getMoniMcpAcceptanceStatus() {
       .order('created_at', { ascending: true }),
     supabase
       .from('moni_mcp_oauth_tokens')
-      .select('id,client_id,user_login_id,user_display_name,user_role,revoked_at,created_at,last_used_at')
+      .select('id,client_id,user_login_id,user_display_name,user_role,revoked_at,created_at,last_used_at,refresh_count,last_refreshed_at')
       .gte('created_at', start)
       .lte('created_at', end)
       .order('created_at', { ascending: true }),
@@ -133,6 +148,12 @@ export async function getMoniMcpAcceptanceStatus() {
   const failedRuns = toolRuns.filter((row) => row.status === 'FAILED')
   const adminTokenCount = tokens.filter((row) => row.user_role === 'admin').length
   const freelancerTokenCount = tokens.filter((row) => row.user_role === 'freelancer').length
+  const refreshRotations = tokens.reduce((sum, row) => sum + Math.max(0, Number(row.refresh_count || 0)), 0)
+  const revocationActions = toolRuns.filter((row) => (
+    row.user_role === 'admin'
+    && row.status === 'COMPLETED'
+    && ADMIN_REVOCATION_AUDIT_TOOLS.has(String(row.tool_name || ''))
+  ))
   const adminTools = toolNames(toolRuns, 'admin')
   const freelancerTools = toolNames(toolRuns, 'freelancer')
   const missingAdmin = missingTools(ADMIN_SMOKE_TOOLS, adminTools)
@@ -223,6 +244,22 @@ export async function getMoniMcpAcceptanceStatus() {
       failedRuns.length === 0 ? 'FAILED tool run이 없습니다.' : `${failedRuns.length}건 FAILED tool run이 있습니다.`,
     ),
     check(
+      'revocation_audit',
+      '관리자 연결 폐기',
+      revocationActions.length > 0 ? 'PASS' : 'PENDING',
+      revocationActions.length > 0
+        ? `${revocationActions.length}건의 token/client 폐기 감사기록이 확인됐습니다.`
+        : '핵심 조회가 끝난 뒤 관리자 연결관리에서 테스트 token 또는 client 접근을 폐기해야 합니다.',
+    ),
+    check(
+      'refresh_rotation',
+      'Refresh token 실제 회전',
+      refreshRotations > 0 ? 'PASS' : 'MANUAL',
+      refreshRotations > 0
+        ? `${refreshRotations}회 refresh-token 회전이 DB trigger 감사로 확인됐습니다.`
+        : 'access token 수명은 1시간이고 수용검사 창은 최대 30분이므로 강제 단축하지 않습니다. 실제 영구 운영 soak에서 자동 기록합니다.',
+    ),
+    check(
       'freelancer_ui_visibility',
       'Freelancer ChatGPT 도구 미노출',
       'MANUAL',
@@ -258,6 +295,8 @@ export async function getMoniMcpAcceptanceStatus() {
       failed_tool_runs: failedRuns.length,
       admin_tokens: adminTokenCount,
       freelancer_tokens: freelancerTokenCount,
+      refresh_rotations: refreshRotations,
+      revocation_actions: revocationActions.length,
     },
     checks,
     missing_admin_tools: missingAdmin,
