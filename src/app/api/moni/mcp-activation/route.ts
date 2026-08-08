@@ -5,6 +5,10 @@ import {
   getMoniMcpActivationState,
   openMoniMcpAcceptanceWindow,
 } from '@/lib/moni/mcp/activation'
+import {
+  assertRecentPassingMcpPreflight,
+  getMcpPreflightGateStatus,
+} from '@/lib/moni/mcp/preflight'
 import { getStrictMcpSessionFromRequest } from '@/lib/moni/mcp/session'
 
 export const runtime = 'nodejs'
@@ -33,8 +37,11 @@ async function requireAdmin(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request)
   if ('error' in auth) return auth.error
-  const state = await getMoniMcpActivationState()
-  return NextResponse.json({ ok: true, state }, { headers: { 'Cache-Control': 'no-store' } })
+  const [state, preflight] = await Promise.all([
+    getMoniMcpActivationState(),
+    getMcpPreflightGateStatus(),
+  ])
+  return NextResponse.json({ ok: true, state, preflight }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
 export async function PATCH(request: NextRequest) {
@@ -47,6 +54,10 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
+    if (parsed.data.action === 'open_acceptance_window') {
+      await assertRecentPassingMcpPreflight()
+    }
+
     const state = parsed.data.action === 'open_acceptance_window'
       ? await openMoniMcpAcceptanceWindow({
           loginId: auth.session.loginId,
@@ -55,16 +66,18 @@ export async function PATCH(request: NextRequest) {
           durationMinutes: parsed.data.duration_minutes,
         })
       : await closeMoniMcpAcceptanceWindow({ loginId: auth.session.loginId })
+    const preflight = await getMcpPreflightGateStatus()
 
     return NextResponse.json({
       ok: true,
       state,
+      preflight,
       actor: auth.session.loginId,
     }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     return NextResponse.json({
       ok: false,
       error: error instanceof Error ? error.message : 'MCP 활성화 상태 변경에 실패했습니다.',
-    }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
+    }, { status: 409, headers: { 'Cache-Control': 'no-store' } })
   }
 }
