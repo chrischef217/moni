@@ -7,6 +7,7 @@ const TARGETS = [
   '/api/cron/morning-check',
   '/api/export/excel',
   '/api/export/report',
+  '/api/export/word',
   '/api/migrate',
   '/api/migrate-bom',
 ]

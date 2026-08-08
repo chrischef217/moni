@@ -2,8 +2,11 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
 const ROOT = join(process.cwd(), 'src')
-const SUPABASE_IMPORT = /import\s+[^;\n]*\bfrom\s+['"]([^'"]*\/?supabase)['"]/g
+const SHARED_SUPABASE_IMPORT = /import\s+[^;\n]*\bfrom\s+['"]([^'"]*\/?supabase)['"]/g
 const TABLE_CALL = /\.from\(\s*['"]([^'"]+)['"]\s*\)/g
+const DIRECT_FACTORY_IMPORT = /from\s+['"]@supabase\/supabase-js['"]/g
+const CREATE_CLIENT_CALL = /\bcreateClient\s*\(/g
+const ENV_REF = /process\.env\.([A-Z0-9_]+)/g
 
 function walk(dir) {
   const out = []
@@ -26,17 +29,34 @@ function classify(file, source) {
   return 'SHARED_OR_UNKNOWN'
 }
 
+const files = walk(ROOT)
 const findings = []
-for (const file of walk(ROOT)) {
+const factories = []
+for (const file of files) {
   const source = readFileSync(file, 'utf8')
-  const imports = [...source.matchAll(SUPABASE_IMPORT)].map((match) => match[1])
+  const imports = [...source.matchAll(SHARED_SUPABASE_IMPORT)].map((match) => match[1])
   const directPublicImport = imports.some((value) => value === './supabase' || value === '@/lib/supabase' || value.endsWith('/lib/supabase'))
-  if (!directPublicImport) continue
   const tables = [...new Set([...source.matchAll(TABLE_CALL)].map((match) => match[1]))].sort()
-  findings.push({ file: normalize(file), execution: classify(file, source), tables })
+  if (directPublicImport) {
+    findings.push({ file: normalize(file), execution: classify(file, source), tables })
+  }
+
+  if (DIRECT_FACTORY_IMPORT.test(source) && CREATE_CLIENT_CALL.test(source)) {
+    factories.push({
+      file: normalize(file),
+      execution: classify(file, source),
+      create_client_calls: (source.match(CREATE_CLIENT_CALL) || []).length,
+      environment_refs: [...new Set([...source.matchAll(ENV_REF)].map((match) => match[1]))].sort(),
+      tables,
+      server_only: /^\s*import\s+['"]server-only['"]/m.test(source),
+    })
+  }
+  DIRECT_FACTORY_IMPORT.lastIndex = 0
+  CREATE_CLIENT_CALL.lastIndex = 0
 }
 
 findings.sort((a, b) => a.file.localeCompare(b.file))
+factories.sort((a, b) => a.file.localeCompare(b.file))
 const tableToFiles = {}
 for (const finding of findings) {
   for (const table of finding.tables) {
@@ -51,5 +71,7 @@ console.log(JSON.stringify({
   direct_public_supabase_importers: findings,
   table_count: Object.keys(tableToFiles).length,
   tables: Object.fromEntries(Object.entries(tableToFiles).sort(([a], [b]) => a.localeCompare(b))),
+  direct_create_client_file_count: factories.length,
+  direct_create_client_files: factories,
 }, null, 2))
 console.log('MONI_LEGACY_SUPABASE_AUDIT_END')
