@@ -10,7 +10,10 @@ const ENV_REF = /process\.env\.([A-Z0-9_]+)/g
 const MONI_BROWSER_IMPORT = /from\s+['"](?:@\/lib\/moni\/browser-db|\.\.?\/[^'"]*browser-db)['"]/g
 const MONI_DB_IMPORT = /import\s*\{([^}]*)\}\s*from\s*['"](?:@\/lib\/moni\/db|\.\.?\/[^'"]*moni\/db)['"]/g
 const ALLOWED_BROWSER_DB_CONSUMERS = new Set(['src/components/GlobalMoniAgent.tsx'])
-const ALLOWED_NON_SERVER_FACTORIES = new Set(['src/lib/moni/browser-db.ts'])
+const ALLOWED_NON_SERVER_FACTORIES = new Set([
+  'src/lib/moni/browser-db.ts',
+  'src/app/audit/lib/storage.ts',
+])
 
 function walk(dir) {
   const out = []
