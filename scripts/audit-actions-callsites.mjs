@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
 const ROOT = join(process.cwd(), 'src')
@@ -25,10 +25,11 @@ function classify(file, source) {
   return 'SHARED_OR_UNKNOWN'
 }
 
-const actionSource = readFileSync(ACTIONS_FILE, 'utf8')
+const actionSource = existsSync(ACTIONS_FILE) ? readFileSync(ACTIONS_FILE, 'utf8') : ''
 const exported = [...new Set([...actionSource.matchAll(/export\s+async\s+function\s+([A-Za-z0-9_]+)/g)].map((m) => m[1]))].sort()
 const callers = Object.fromEntries(exported.map((name) => [name, []]))
 const imports = []
+const danglingImports = []
 
 for (const file of walk(ROOT)) {
   if (file === ACTIONS_FILE) continue
@@ -37,7 +38,7 @@ for (const file of walk(ROOT)) {
   const execution = classify(file, source)
   const importRegex = /import\s*\{([^}]*)\}\s*from\s*['"](@\/lib\/actions|\.\.?\/[^'"]*\/actions|\.\.?\/actions)['"]/g
   for (const match of source.matchAll(importRegex)) {
-    const names = match[1]
+    const allNames = match[1]
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean)
@@ -45,7 +46,13 @@ for (const file of walk(ROOT)) {
         const parts = item.split(/\s+as\s+/)
         return { imported: parts[0].trim(), local: (parts[1] || parts[0]).trim() }
       })
-      .filter((item) => exported.includes(item.imported))
+
+    if (!existsSync(ACTIONS_FILE)) {
+      danglingImports.push({ file: path, execution, module: match[2], names: allNames })
+      continue
+    }
+
+    const names = allNames.filter((item) => exported.includes(item.imported))
     if (!names.length) continue
     imports.push({ file: path, execution, module: match[2], names })
     for (const item of names) {
@@ -58,9 +65,8 @@ for (const file of walk(ROOT)) {
 
 const used = Object.fromEntries(Object.entries(callers).filter(([, refs]) => refs.length > 0))
 const unused = exported.filter((name) => callers[name].length === 0)
-
-console.log('MONI_ACTIONS_CALLSITE_AUDIT_START')
-console.log(JSON.stringify({
+const result = {
+  actions_module_present: existsSync(ACTIONS_FILE),
   exported_count: exported.length,
   exported_functions: exported,
   imported_function_count: Object.keys(used).length,
@@ -69,5 +75,15 @@ console.log(JSON.stringify({
   unused_exports: unused,
   importer_count: imports.length,
   importers: imports,
-}, null, 2))
+  dangling_import_count: danglingImports.length,
+  dangling_imports: danglingImports,
+}
+
+console.log('MONI_ACTIONS_CALLSITE_AUDIT_START')
+console.log(JSON.stringify(result, null, 2))
 console.log('MONI_ACTIONS_CALLSITE_AUDIT_END')
+
+if (danglingImports.length > 0) {
+  console.error('Legacy actions module was removed but source imports still remain.')
+  process.exitCode = 1
+}
