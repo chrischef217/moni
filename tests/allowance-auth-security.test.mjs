@@ -7,6 +7,7 @@ const loginRoute = readFileSync('src/app/api/allowance/auth/login/route.ts', 'ut
 const logoutRoute = readFileSync('src/app/api/allowance/auth/logout/route.ts', 'utf8')
 const sessionHelper = readFileSync('src/lib/allowance/session.ts', 'utf8')
 const mcpSession = readFileSync('src/lib/moni/mcp/session.ts', 'utf8')
+const moniDb = readFileSync('src/lib/moni/db.ts', 'utf8')
 const sessionMigration = readFileSync('supabase/migrations/20260808161000_harden_allowance_session_storage.sql', 'utf8')
 
 test('active login path is DB-only and has no hard-coded fallback credential', () => {
@@ -68,4 +69,12 @@ test('allowance auth tables are defense-in-depth service-role only', () => {
   assert.match(sessionMigration, /revoke all on table public\.allowance_platform_sessions from anon, authenticated/)
   assert.match(sessionMigration, /revoke all on table public\.allowance_platform_state from anon, authenticated/)
   assert.match(sessionMigration, /grant all on table public\.allowance_platform_users to service_role/)
+})
+
+test('MONI admin database access is server-only and never falls back to anon', () => {
+  assert.match(moniDb, /import 'server-only'/)
+  assert.match(moniDb, /function requireServiceRoleKey\(\)/)
+  assert.match(moniDb, /throw new Error\('SUPABASE_SERVICE_ROLE_KEY environment variable is not configured\.'\)/)
+  assert.match(moniDb, /createClient\(supabaseUrl, requireServiceRoleKey\(\)/)
+  assert.doesNotMatch(moniDb, /SUPABASE_SERVICE_ROLE_KEY'\) \|\| supabaseAnonKey/)
 })
