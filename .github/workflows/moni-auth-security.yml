@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/lib/allowance/secure-auth.ts'
       - 'src/lib/allowance/session.ts'
+      - 'src/lib/moni/db.ts'
       - 'src/lib/moni/mcp/session.ts'
       - 'src/app/api/allowance/auth/**'
       - 'supabase/migrations/*allowance_session*'
