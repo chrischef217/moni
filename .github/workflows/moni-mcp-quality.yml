@@ -9,8 +9,10 @@ on:
       - 'src/app/.well-known/**'
       - 'src/app/api/moni/mcp-connections/**'
       - 'src/app/api/moni/mcp-activation/**'
+      - 'src/app/api/moni/mcp-preflight/**'
       - 'src/components/MoniMcpConnectionsClient.tsx'
       - 'src/components/MoniMcpActivationClient.tsx'
+      - 'src/components/MoniMcpPreflightClient.tsx'
       - 'src/lib/allowance/post-login.ts'
       - 'src/app/api/allowance/auth/login/route.ts'
       - 'src/app/api/allowance/auth/post-login/**'
@@ -58,7 +60,7 @@ jobs:
         run: npm run prebuild
 
       - name: MCP contract and security tests
-        run: node --test tests/moni-mcp-readonly.test.mjs
+        run: node --test tests/moni-mcp-*.test.mjs
 
       - name: Production build
         run: npm run build
