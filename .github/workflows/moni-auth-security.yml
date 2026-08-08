@@ -7,6 +7,7 @@ on:
       - 'src/lib/allowance/session.ts'
       - 'src/lib/moni/mcp/session.ts'
       - 'src/app/api/allowance/auth/**'
+      - 'supabase/migrations/*allowance_session*'
       - 'tests/allowance-auth-security.test.mjs'
       - '.github/workflows/moni-auth-security.yml'
   workflow_dispatch:
