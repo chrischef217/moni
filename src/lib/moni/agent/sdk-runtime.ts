@@ -128,11 +128,9 @@ function hasUnsafeUnaccountedGapInterpretation(answer: MoniAnswer) {
     ...answer.warnings,
     ...answer.sources.map((source) => source.criteria),
   ]
-  const safeNegation = /(?:아니|아님|아닙|않|금지|오해|단정하지|표현하지|사용하지|해석하지|의미하지|해당하지|구분)/i
-  return segments.some((segment) => {
-    if (!/unaccounted_gap_g/i.test(segment) || !/(?:미완료|로스)/.test(segment)) return false
-    return !safeNegation.test(segment)
-  })
+  const safeNegation = /(?:아니|아님|아닙|않|금지|오해|단정하지|표현하지|사용하지|해석하지|의미하지|해당하지|구분|방지|제외|별도|독립|not\b|isn't\b|is not\b)/i
+  const unsafeAssertion = /(?:unaccounted_gap_g\s*(?:=|:|은|는|이|가)?\s*(?:미완료|로스)|(?:미완료|로스)\s*(?:=|:|은|는|이|가)?\s*unaccounted_gap_g|unaccounted_gap_g.{0,80}(?:의미|뜻|해당|간주|본다|본 값).{0,80}(?:미완료|로스))/i
+  return segments.some((segment) => unsafeAssertion.test(segment) && !safeNegation.test(segment))
 }
 
 function validateAnswer(answer: MoniAnswer, context: MoniRuntimeContext) {
@@ -172,8 +170,8 @@ function validateAnswer(answer: MoniAnswer, context: MoniRuntimeContext) {
     errors.push('최종 답변에 민감정보 패턴이 포함됨')
   }
   if (hasUnsafeUnaccountedGapInterpretation(answer)) {
-  errors.push('unaccounted_gap_g를 미완료 또는 로스로 잘못 해석함')
-}
+    errors.push('unaccounted_gap_g를 미완료 또는 로스로 잘못 해석함')
+  }
   return errors
 }
 

@@ -4,6 +4,14 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['xlsx', 'docx'],
   },
+  async rewrites() {
+    return [
+      {
+        source: '/api/moni/agent-chat',
+        destination: '/api/moni/agent-runtime',
+      },
+    ]
+  },
 }
 
 export default nextConfig
