@@ -6,6 +6,8 @@ on:
       - 'src/app/api/cron/morning-check/**'
       - 'src/app/api/export/excel/**'
       - 'src/app/api/export/report/**'
+      - 'src/app/api/export/word/**'
+      - 'src/lib/actions.ts'
       - 'src/lib/stock_alert_engine.ts'
       - 'tests/legacy-route-security.test.mjs'
       - '.github/workflows/moni-legacy-route-security.yml'
