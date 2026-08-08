@@ -27,6 +27,15 @@ test('acceptance evidence includes refresh audit and requires admin revocation b
   assert.match(acceptance, /revocationActions\.length > 0 \? 'PASS' : 'PENDING'/)
 })
 
+test('revocation evidence gets a bounded post-window grace without widening normal tool evidence', () => {
+  assert.match(acceptance, /REVOCATION_GRACE_MINUTES = 15/)
+  assert.match(acceptance, /const revocationEnd =/)
+  assert.match(acceptance, /\.lte\('started_at', end\)/)
+  assert.match(acceptance, /\.in\('tool_name', \[\.\.\.ADMIN_REVOCATION_AUDIT_TOOLS\]\)/)
+  assert.match(acceptance, /\.lte\('started_at', revocationEnd\)/)
+  assert.match(acceptance, /창 종료 후 \$\{REVOCATION_GRACE_MINUTES\}분까지 폐기 감사만 인정/)
+})
+
 test('live refresh remains non-blocking during the bounded acceptance window', () => {
   assert.match(acceptance, /'refresh_rotation'/)
   assert.match(acceptance, /refreshRotations > 0 \? 'PASS' : 'MANUAL'/)
