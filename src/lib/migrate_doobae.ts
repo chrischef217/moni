@@ -1,9 +1,9 @@
 /**
  * DOOBAE 시스템 → Supabase 데이터 이전 로직
- * /api/migrate 에서 한 번 실행
- * INSERT ... ON CONFLICT DO NOTHING 으로 중복 방지
+ * Legacy one-time migration helper. Production HTTP execution is disabled by route policy.
  */
-import { supabaseAdmin as supabase } from './supabase'
+import 'server-only'
+import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import { DOOBAE_DATA } from './doobae_data'
 
 export interface MigrateResult {
@@ -15,6 +15,7 @@ export interface MigrateResult {
 }
 
 export async function migrateDoobaeData(): Promise<MigrateResult> {
+  const supabase = createMoniServiceRoleClient()
   const result: MigrateResult = {
     products: 0,
     raw_materials: 0,
@@ -23,7 +24,6 @@ export async function migrateDoobaeData(): Promise<MigrateResult> {
     errors: [],
   }
 
-  // ── 1. 제품 이전 ──────────────────────────────────────────
   try {
     const rows = DOOBAE_DATA.products.map((p) => ({
       id: p.id,
@@ -37,21 +37,13 @@ export async function migrateDoobaeData(): Promise<MigrateResult> {
       is_active: p.is_active,
       business_id: 'default',
     }))
-
-    const { error } = await supabase
-      .from('products')
-      .upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
-
-    if (error) {
-      result.errors.push(`products: ${error.message}`)
-    } else {
-      result.products = rows.length
-    }
+    const { error } = await supabase.from('products').upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
+    if (error) result.errors.push(`products: ${error.message}`)
+    else result.products = rows.length
   } catch (e) {
     result.errors.push(`products 예외: ${String(e)}`)
   }
 
-  // ── 2. 원료 이전 ──────────────────────────────────────────
   try {
     const rows = DOOBAE_DATA.raw_materials.map((m) => ({
       id: m.id,
@@ -63,21 +55,13 @@ export async function migrateDoobaeData(): Promise<MigrateResult> {
       is_active: m.is_active,
       business_id: 'default',
     }))
-
-    const { error } = await supabase
-      .from('raw_materials')
-      .upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
-
-    if (error) {
-      result.errors.push(`raw_materials: ${error.message}`)
-    } else {
-      result.raw_materials = rows.length
-    }
+    const { error } = await supabase.from('raw_materials').upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
+    if (error) result.errors.push(`raw_materials: ${error.message}`)
+    else result.raw_materials = rows.length
   } catch (e) {
     result.errors.push(`raw_materials 예외: ${String(e)}`)
   }
 
-  // ── 3. 생산 실적 이전 ─────────────────────────────────────
   try {
     const rows = DOOBAE_DATA.productions.map((p) => ({
       id: p.id,
@@ -94,21 +78,13 @@ export async function migrateDoobaeData(): Promise<MigrateResult> {
       status: p.status ?? 'completed',
       business_id: 'default',
     }))
-
-    const { error } = await supabase
-      .from('productions')
-      .upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
-
-    if (error) {
-      result.errors.push(`productions: ${error.message}`)
-    } else {
-      result.productions = rows.length
-    }
+    const { error } = await supabase.from('productions').upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
+    if (error) result.errors.push(`productions: ${error.message}`)
+    else result.productions = rows.length
   } catch (e) {
     result.errors.push(`productions 예외: ${String(e)}`)
   }
 
-  // ── 4. 포장재 이전 ────────────────────────────────────────
   try {
     const rows = DOOBAE_DATA.packaging_materials.map((m) => ({
       id: m.id,
@@ -122,16 +98,9 @@ export async function migrateDoobaeData(): Promise<MigrateResult> {
       is_active: m.is_active,
       business_id: 'default',
     }))
-
-    const { error } = await supabase
-      .from('packaging_materials')
-      .upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
-
-    if (error) {
-      result.errors.push(`packaging_materials: ${error.message}`)
-    } else {
-      result.packaging_materials = rows.length
-    }
+    const { error } = await supabase.from('packaging_materials').upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
+    if (error) result.errors.push(`packaging_materials: ${error.message}`)
+    else result.packaging_materials = rows.length
   } catch (e) {
     result.errors.push(`packaging_materials 예외: ${String(e)}`)
   }
