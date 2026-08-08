@@ -9,6 +9,8 @@ const CREATE_CLIENT_CALL = /\bcreateClient\s*\(/g
 const ENV_REF = /process\.env\.([A-Z0-9_]+)/g
 const MONI_BROWSER_IMPORT = /from\s+['"](?:@\/lib\/moni\/browser-db|\.\.?\/[^'"]*browser-db)['"]/g
 const MONI_DB_IMPORT = /import\s*\{([^}]*)\}\s*from\s*['"](?:@\/lib\/moni\/db|\.\.?\/[^'"]*moni\/db)['"]/g
+const ALLOWED_BROWSER_DB_CONSUMERS = new Set(['src/components/GlobalMoniAgent.tsx'])
+const ALLOWED_NON_SERVER_FACTORIES = new Set(['src/lib/moni/browser-db.ts'])
 
 function walk(dir) {
   const out = []
@@ -78,8 +80,9 @@ for (const finding of findings) {
   }
 }
 
-console.log('MONI_LEGACY_SUPABASE_AUDIT_START')
-console.log(JSON.stringify({
+const unexpectedBrowserConsumers = browserDbConsumers.filter((item) => !ALLOWED_BROWSER_DB_CONSUMERS.has(item.file) || item.tables.length > 0)
+const unexpectedNonServerFactories = factories.filter((item) => !item.server_only && !ALLOWED_NON_SERVER_FACTORIES.has(item.file))
+const result = {
   direct_public_supabase_importer_count: findings.length,
   direct_public_supabase_importers: findings,
   table_count: Object.keys(tableToFiles).length,
@@ -90,5 +93,15 @@ console.log(JSON.stringify({
   moni_db_anon_consumers: moniDbConsumers,
   direct_create_client_file_count: factories.length,
   direct_create_client_files: factories,
-}, null, 2))
+  unexpected_browser_consumer_count: unexpectedBrowserConsumers.length,
+  unexpected_non_server_factory_count: unexpectedNonServerFactories.length,
+}
+
+console.log('MONI_LEGACY_SUPABASE_AUDIT_START')
+console.log(JSON.stringify(result, null, 2))
 console.log('MONI_LEGACY_SUPABASE_AUDIT_END')
+
+if (findings.length || moniDbConsumers.length || unexpectedBrowserConsumers.length || unexpectedNonServerFactories.length) {
+  console.error('Public/anon MONI database access regression detected.')
+  process.exitCode = 1
+}
