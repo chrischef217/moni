@@ -7,6 +7,8 @@ const TABLE_CALL = /\.from\(\s*['"]([^'"]+)['"]\s*\)/g
 const DIRECT_FACTORY_IMPORT = /from\s+['"]@supabase\/supabase-js['"]/g
 const CREATE_CLIENT_CALL = /\bcreateClient\s*\(/g
 const ENV_REF = /process\.env\.([A-Z0-9_]+)/g
+const MONI_BROWSER_IMPORT = /from\s+['"](?:@\/lib\/moni\/browser-db|\.\.?\/[^'"]*browser-db)['"]/g
+const MONI_DB_IMPORT = /import\s*\{([^}]*)\}\s*from\s*['"](?:@\/lib\/moni\/db|\.\.?\/[^'"]*moni\/db)['"]/g
 
 function walk(dir) {
   const out = []
@@ -32,19 +34,28 @@ function classify(file, source) {
 const files = walk(ROOT)
 const findings = []
 const factories = []
+const browserDbConsumers = []
+const moniDbConsumers = []
 for (const file of files) {
   const source = readFileSync(file, 'utf8')
+  const path = normalize(file)
+  const execution = classify(file, source)
   const imports = [...source.matchAll(SHARED_SUPABASE_IMPORT)].map((match) => match[1])
   const directPublicImport = imports.some((value) => value === './supabase' || value === '@/lib/supabase' || value.endsWith('/lib/supabase'))
   const tables = [...new Set([...source.matchAll(TABLE_CALL)].map((match) => match[1]))].sort()
-  if (directPublicImport) {
-    findings.push({ file: normalize(file), execution: classify(file, source), tables })
+  if (directPublicImport) findings.push({ file: path, execution, tables })
+  if (MONI_BROWSER_IMPORT.test(source)) browserDbConsumers.push({ file: path, execution, tables })
+  MONI_BROWSER_IMPORT.lastIndex = 0
+
+  for (const match of source.matchAll(MONI_DB_IMPORT)) {
+    const names = match[1].split(',').map((value) => value.trim().split(/\s+as\s+/)[0]).filter(Boolean)
+    if (names.includes('moniDb')) moniDbConsumers.push({ file: path, execution, tables })
   }
 
   if (DIRECT_FACTORY_IMPORT.test(source) && CREATE_CLIENT_CALL.test(source)) {
     factories.push({
-      file: normalize(file),
-      execution: classify(file, source),
+      file: path,
+      execution,
       create_client_calls: (source.match(CREATE_CLIENT_CALL) || []).length,
       environment_refs: [...new Set([...source.matchAll(ENV_REF)].map((match) => match[1]))].sort(),
       tables,
@@ -57,6 +68,8 @@ for (const file of files) {
 
 findings.sort((a, b) => a.file.localeCompare(b.file))
 factories.sort((a, b) => a.file.localeCompare(b.file))
+browserDbConsumers.sort((a, b) => a.file.localeCompare(b.file))
+moniDbConsumers.sort((a, b) => a.file.localeCompare(b.file))
 const tableToFiles = {}
 for (const finding of findings) {
   for (const table of finding.tables) {
@@ -71,6 +84,10 @@ console.log(JSON.stringify({
   direct_public_supabase_importers: findings,
   table_count: Object.keys(tableToFiles).length,
   tables: Object.fromEntries(Object.entries(tableToFiles).sort(([a], [b]) => a.localeCompare(b))),
+  browser_db_consumer_count: browserDbConsumers.length,
+  browser_db_consumers: browserDbConsumers,
+  moni_db_anon_consumer_count: moniDbConsumers.length,
+  moni_db_anon_consumers: moniDbConsumers,
   direct_create_client_file_count: factories.length,
   direct_create_client_files: factories,
 }, null, 2))
