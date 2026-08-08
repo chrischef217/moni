@@ -1,0 +1,29 @@
+name: MONI Legacy Supabase Access Audit
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/audit-legacy-supabase-access.mjs'
+      - 'scripts/audit-legacy-route-references.mjs'
+      - '.github/workflows/moni-legacy-supabase-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Inventory direct public Supabase access
+        run: node scripts/audit-legacy-supabase-access.mjs
+      - name: Inventory legacy route references
+        run: node scripts/audit-legacy-route-references.mjs
