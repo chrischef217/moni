@@ -23,7 +23,9 @@ function readEnv(name: string) {
 function shouldUseSupabaseStorage() {
   if (process.env.AUDIT_STORAGE_BACKEND === 'local') return false
   if (process.env.AUDIT_STORAGE_BACKEND === 'supabase') return true
-  return Boolean(process.env.VERCEL && readEnv('NEXT_PUBLIC_SUPABASE_URL') && readEnv('SUPABASE_SERVICE_ROLE_KEY'))
+  // Vercel audit persistence must never silently downgrade to ephemeral /tmp just because
+  // the privileged key is missing. The central Service Role factory will fail closed.
+  return Boolean(process.env.VERCEL && readEnv('NEXT_PUBLIC_SUPABASE_URL'))
 }
 
 function getSupabaseStorageClient() {
