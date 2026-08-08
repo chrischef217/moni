@@ -1,7 +1,9 @@
+import 'server-only'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import type { AuditRecord } from './types'
 
 const STORAGE_ROOT =
@@ -26,18 +28,7 @@ function shouldUseSupabaseStorage() {
 
 function getSupabaseStorageClient() {
   if (supabaseStorageClient) return supabaseStorageClient
-
-  const supabaseUrl = readEnv('NEXT_PUBLIC_SUPABASE_URL')
-  const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY')
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Supabase 감사 저장소를 사용하려면 NEXT_PUBLIC_SUPABASE_URL과 SUPABASE_SERVICE_ROLE_KEY가 필요합니다.')
-  }
-
-  supabaseStorageClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  })
-
+  supabaseStorageClient = createMoniServiceRoleClient()
   return supabaseStorageClient
 }
 
