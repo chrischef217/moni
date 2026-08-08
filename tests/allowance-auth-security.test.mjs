@@ -8,6 +8,10 @@ const logoutRoute = readFileSync('src/app/api/allowance/auth/logout/route.ts', '
 const sessionHelper = readFileSync('src/lib/allowance/session.ts', 'utf8')
 const mcpSession = readFileSync('src/lib/moni/mcp/session.ts', 'utf8')
 const moniDb = readFileSync('src/lib/moni/db.ts', 'utf8')
+const browserSupabase = readFileSync('src/lib/supabase.ts', 'utf8')
+const migrateRoute = readFileSync('src/app/api/migrate/route.ts', 'utf8')
+const migrateBomRoute = readFileSync('src/app/api/migrate-bom/route.ts', 'utf8')
+const migrateDoobae = readFileSync('src/lib/migrate_doobae.ts', 'utf8')
 const sessionMigration = readFileSync('supabase/migrations/20260808161000_harden_allowance_session_storage.sql', 'utf8')
 
 test('active login path is DB-only and has no hard-coded fallback credential', () => {
@@ -77,4 +81,30 @@ test('MONI admin database access is server-only and never falls back to anon', (
   assert.match(moniDb, /throw new Error\('SUPABASE_SERVICE_ROLE_KEY environment variable is not configured\.'\)/)
   assert.match(moniDb, /createClient\(supabaseUrl, requireServiceRoleKey\(\)/)
   assert.doesNotMatch(moniDb, /SUPABASE_SERVICE_ROLE_KEY'\) \|\| supabaseAnonKey/)
+})
+
+test('shared browser supabase module exposes no privileged admin client', () => {
+  assert.doesNotMatch(browserSupabase, /SUPABASE_SERVICE_ROLE_KEY/)
+  assert.doesNotMatch(browserSupabase, /supabaseAdmin/)
+  assert.match(browserSupabase, /export const supabase = createClient\(supabaseUrl, supabaseAnonKey/)
+})
+
+test('legacy migration helpers use strict server service-role access', () => {
+  assert.match(migrateDoobae, /import 'server-only'/)
+  assert.match(migrateDoobae, /createMoniServiceRoleClient/)
+  assert.doesNotMatch(migrateDoobae, /supabaseAdmin/)
+  assert.match(migrateBomRoute, /createMoniServiceRoleClient/)
+  assert.doesNotMatch(migrateBomRoute, /supabaseAdmin/)
+})
+
+test('legacy migration HTTP routes are non-GET, admin-only, and production-disabled', () => {
+  for (const source of [migrateRoute, migrateBomRoute]) {
+    assert.match(source, /export async function GET\(\)/)
+    assert.match(source, /status: 405/)
+    assert.match(source, /export async function POST\(request: NextRequest\)/)
+    assert.match(source, /process\.env\.VERCEL_ENV === 'production'/)
+    assert.match(source, /status: 410/)
+    assert.match(source, /getSessionFromRequest\(request\)/)
+    assert.match(source, /session\.role !== 'admin'/)
+  }
 })
