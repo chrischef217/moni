@@ -12,6 +12,7 @@ const browserSupabase = readFileSync('src/lib/supabase.ts', 'utf8')
 const migrateRoute = readFileSync('src/app/api/migrate/route.ts', 'utf8')
 const migrateBomRoute = readFileSync('src/app/api/migrate-bom/route.ts', 'utf8')
 const migrateDoobae = readFileSync('src/lib/migrate_doobae.ts', 'utf8')
+const legacyChatRoute = readFileSync('src/app/api/chat/route.ts', 'utf8')
 const sessionMigration = readFileSync('supabase/migrations/20260808161000_harden_allowance_session_storage.sql', 'utf8')
 
 test('active login path is DB-only and has no hard-coded fallback credential', () => {
@@ -107,4 +108,12 @@ test('legacy migration HTTP routes are non-GET, admin-only, and production-disab
     assert.match(source, /getSessionFromRequest\(request\)/)
     assert.match(source, /session\.role !== 'admin'/)
   }
+})
+
+test('legacy unauthenticated Ollama chat route stays permanently retired', () => {
+  assert.match(legacyChatRoute, /status: 410/)
+  assert.match(legacyChatRoute, /\/api\/moni\/agent-chat/)
+  assert.doesNotMatch(legacyChatRoute, /parseAndExecuteActions/)
+  assert.doesNotMatch(legacyChatRoute, /from\('transactions'\)/)
+  assert.doesNotMatch(legacyChatRoute, /OLLAMA_URL/)
 })
