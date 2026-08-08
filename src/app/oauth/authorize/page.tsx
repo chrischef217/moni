@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { isMoniMcpEnabled } from '@/lib/moni/mcp/config'
+import { getMoniMcpActivationState } from '@/lib/moni/mcp/activation'
 import { validateAuthorizationRequest } from '@/lib/moni/mcp/oauth'
 import { getStrictMcpSessionFromCookies } from '@/lib/moni/mcp/session'
 
@@ -21,12 +21,13 @@ function queryString(searchParams: SearchParams) {
 }
 
 export default async function MoniOAuthAuthorizePage({ searchParams = {} }: { searchParams?: SearchParams }) {
-  if (!isMoniMcpEnabled()) {
+  const activation = await getMoniMcpActivationState()
+  if (!activation.enabled) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-800">
         <section className="w-full max-w-lg rounded-3xl border border-amber-200 bg-white p-8 shadow-xl">
-          <h1 className="text-xl font-black text-amber-800">MONI ChatGPT 연결 준비 중</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-600">보안 수용검사와 계정 플랜 확인이 끝날 때까지 OAuth 연결을 비활성 상태로 유지합니다.</p>
+          <h1 className="text-xl font-black text-amber-800">MONI ChatGPT 연결 비활성</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">승인된 수용검사 창 또는 영구 운영 플래그가 필요합니다.</p>
         </section>
       </main>
     )
@@ -71,6 +72,13 @@ export default async function MoniOAuthAuthorizePage({ searchParams = {} }: { se
             <h1 className="text-xl font-black">MONI 읽기 전용 데이터 접근 승인</h1>
           </div>
         </div>
+
+        {activation.mode === 'ACCEPTANCE_WINDOW' && (
+          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-black">수용검사 전용 연결</p>
+            <p className="mt-1">이 승인과 토큰은 현재 테스트 창에서만 유효합니다. 창이 끝나면 자동으로 사용할 수 없습니다.</p>
+          </div>
+        )}
 
         <div className="space-y-3 rounded-2xl bg-slate-50 p-5 text-sm leading-6">
           <p><strong>로그인 사용자:</strong> {session.displayName} ({session.loginId})</p>

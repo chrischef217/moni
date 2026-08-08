@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import MoniMcpActivationClient from '@/components/MoniMcpActivationClient'
 import MoniMcpConnectionsClient from '@/components/MoniMcpConnectionsClient'
 import { getStrictMcpSessionFromCookies } from '@/lib/moni/mcp/session'
 
@@ -16,7 +17,7 @@ export default async function MoniMcpConnectionsPage() {
             <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">MONI × ChatGPT</p>
             <h1 className="mt-2 text-3xl font-black text-slate-950">ChatGPT 연결 관리</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-              MONI 데이터에 접근하도록 승인된 ChatGPT 연결을 확인하고 즉시 폐기합니다. 연결 폐기는 생산·재고·판매 등 업무 데이터를 변경하지 않습니다.
+              MONI 데이터에 접근하도록 승인된 ChatGPT 연결을 확인하고 폐기합니다. 실제 연결 수용검사는 최대 30분의 자동 만료 창에서만 열 수 있습니다.
             </p>
           </div>
           <a href="/mcp/docs" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
@@ -24,10 +25,7 @@ export default async function MoniMcpConnectionsPage() {
           </a>
         </div>
 
-        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-900">
-          현재 MCP 운영 연결은 기능 플래그로 비활성 상태입니다. 이 화면과 폐기 기능은 실제 연결을 열기 전에 관리·복구 경로를 준비하기 위한 것입니다.
-        </div>
-
+        <MoniMcpActivationClient />
         <MoniMcpConnectionsClient />
       </div>
     </main>

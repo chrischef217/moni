@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isMoniMcpRuntimeEnabled } from '@/lib/moni/mcp/activation'
 import {
-  isMoniMcpEnabled,
   MONI_MCP_PROTOCOL_VERSION,
   MONI_MCP_VERSION,
   protectedResourceMetadataUrl,
@@ -60,7 +60,7 @@ function unauthorized() {
 function disabled() {
   return NextResponse.json({
     error: 'service_unavailable',
-    error_description: 'MONI ChatGPT 연결은 보안 수용검사 전까지 비활성 상태입니다.',
+    error_description: 'MONI ChatGPT 연결은 비활성 상태입니다. 승인된 수용검사 창 또는 영구 운영 플래그가 필요합니다.',
   }, {
     status: 503,
     headers: NO_STORE_HEADERS,
@@ -165,7 +165,7 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  if (!isMoniMcpEnabled()) return disabled()
+  if (!(await isMoniMcpRuntimeEnabled())) return disabled()
   const identity = await strictBearerIdentity(request.headers.get('authorization'))
   if (!identity) return unauthorized()
   return NextResponse.json({
@@ -181,7 +181,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isMoniMcpEnabled()) return disabled()
+  if (!(await isMoniMcpRuntimeEnabled())) return disabled()
   const identity = await strictBearerIdentity(request.headers.get('authorization'))
   if (!identity) return unauthorized()
 

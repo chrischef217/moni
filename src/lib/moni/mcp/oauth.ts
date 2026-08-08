@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { isMoniMcpCredentialCreatedAtAllowed } from '@/lib/moni/mcp/activation'
 import {
   isAllowedChatGptRedirectUri,
   MONI_MCP_SCOPES,
@@ -262,6 +263,7 @@ export async function exchangeAuthorizationCode(input: {
     .maybeSingle()
   if (error) throw new Error(error.message)
   if (!row || Date.parse(row.expires_at) <= Date.now()) throw new Error('invalid_grant')
+  if (!(await isMoniMcpCredentialCreatedAtAllowed(row.created_at))) throw new Error('invalid_grant')
   if (
     row.client_id !== input.clientId
     || row.redirect_uri !== input.redirectUri
@@ -308,6 +310,7 @@ export async function refreshAccessToken(input: {
     .maybeSingle()
   if (error) throw new Error(error.message)
   if (!row || Date.parse(row.refresh_expires_at) <= Date.now()) throw new Error('invalid_grant')
+  if (!(await isMoniMcpCredentialCreatedAtAllowed(row.created_at))) throw new Error('invalid_grant')
 
   const originalScopes: string[] = stringScopes(row.scopes)
   const requestedScopes: string[] = input.requestedScope ? strictRequestedScopes(input.requestedScope) : originalScopes
@@ -332,13 +335,14 @@ export async function authenticateMcpBearer(authorization: string | null): Promi
   const supabase = createMoniServiceRoleClient()
   const { data: row, error } = await supabase
     .from('moni_mcp_oauth_tokens')
-    .select('id,client_id,resource,scopes,user_login_id,user_display_name,user_role,access_expires_at,revoked_at')
+    .select('id,client_id,resource,scopes,user_login_id,user_display_name,user_role,access_expires_at,revoked_at,created_at')
     .eq('access_token_hash', sha256(match[1]))
     .eq('resource', moniMcpResource())
     .is('revoked_at', null)
     .maybeSingle()
   if (error) throw new Error(error.message)
   if (!row || Date.parse(row.access_expires_at) <= Date.now()) return null
+  if (!(await isMoniMcpCredentialCreatedAtAllowed(row.created_at))) return null
   const scopes: string[] = stringScopes(row.scopes, [])
   if (!scopes.includes('moni:read')) return null
 
