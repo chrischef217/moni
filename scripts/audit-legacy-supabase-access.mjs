@@ -7,6 +7,7 @@ const TABLE_CALL = /\.from\(\s*['"]([^'"]+)['"]\s*\)/g
 const DIRECT_FACTORY_IMPORT = /from\s+['"]@supabase\/supabase-js['"]/g
 const CREATE_CLIENT_CALL = /\bcreateClient\s*\(/g
 const ENV_REF = /process\.env\.([A-Z0-9_]+)/g
+const MONI_BROWSER_IMPORT = /from\s+['"](?:@\/lib\/moni\/browser-db|\.\.?\/[^'"]*browser-db)['"]/g
 
 function walk(dir) {
   const out = []
@@ -32,14 +33,15 @@ function classify(file, source) {
 const files = walk(ROOT)
 const findings = []
 const factories = []
+const browserDbConsumers = []
 for (const file of files) {
   const source = readFileSync(file, 'utf8')
   const imports = [...source.matchAll(SHARED_SUPABASE_IMPORT)].map((match) => match[1])
   const directPublicImport = imports.some((value) => value === './supabase' || value === '@/lib/supabase' || value.endsWith('/lib/supabase'))
   const tables = [...new Set([...source.matchAll(TABLE_CALL)].map((match) => match[1]))].sort()
-  if (directPublicImport) {
-    findings.push({ file: normalize(file), execution: classify(file, source), tables })
-  }
+  if (directPublicImport) findings.push({ file: normalize(file), execution: classify(file, source), tables })
+  if (MONI_BROWSER_IMPORT.test(source)) browserDbConsumers.push({ file: normalize(file), execution: classify(file, source), tables })
+  MONI_BROWSER_IMPORT.lastIndex = 0
 
   if (DIRECT_FACTORY_IMPORT.test(source) && CREATE_CLIENT_CALL.test(source)) {
     factories.push({
@@ -57,6 +59,7 @@ for (const file of files) {
 
 findings.sort((a, b) => a.file.localeCompare(b.file))
 factories.sort((a, b) => a.file.localeCompare(b.file))
+browserDbConsumers.sort((a, b) => a.file.localeCompare(b.file))
 const tableToFiles = {}
 for (const finding of findings) {
   for (const table of finding.tables) {
@@ -71,6 +74,8 @@ console.log(JSON.stringify({
   direct_public_supabase_importers: findings,
   table_count: Object.keys(tableToFiles).length,
   tables: Object.fromEntries(Object.entries(tableToFiles).sort(([a], [b]) => a.localeCompare(b))),
+  browser_db_consumer_count: browserDbConsumers.length,
+  browser_db_consumers: browserDbConsumers,
   direct_create_client_file_count: factories.length,
   direct_create_client_files: factories,
 }, null, 2))
