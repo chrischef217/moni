@@ -7,6 +7,10 @@ import {
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import type { AllowanceSessionUser } from '@/types/allowance'
 
+function isLegacyFallbackSessionToken(token: string) {
+  return token.startsWith('fallback.')
+}
+
 async function currentRegisteredUser(user: AllowanceSessionUser) {
   const supabase = createMoniServiceRoleClient()
   const { data, error } = await supabase
@@ -25,7 +29,7 @@ async function currentRegisteredUser(user: AllowanceSessionUser) {
 }
 
 async function readStrictMcpSession(token: string) {
-  if (!token) return null
+  if (!token || isLegacyFallbackSessionToken(token)) return null
   const session = await readSecureAllowanceSession(token)
   if (!session) return null
   return currentRegisteredUser(session)
