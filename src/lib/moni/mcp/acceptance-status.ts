@@ -28,11 +28,13 @@ const FREELANCER_FORBIDDEN_TOOLS = [
   'report_pmo_event',
 ] as const
 
-const ADMIN_REVOCATION_AUDIT_TOOLS = new Set([
+const ADMIN_REVOCATION_AUDIT_TOOLS = [
   'admin_revoke_mcp_token',
   'admin_revoke_mcp_client_tokens',
   'admin_disable_mcp_client',
-])
+] as const
+
+const REVOCATION_GRACE_MINUTES = 15
 
 function check(
   key: string,
@@ -96,7 +98,12 @@ export async function getMoniMcpAcceptanceStatus() {
 
   const start = window.enabled_at
   const end = window.enabled_until
-  const [preflightResult, clientsResult, codesResult, tokensResult, toolRunsResult] = await Promise.all([
+  const parsedEnd = Date.parse(end)
+  const revocationEnd = Number.isFinite(parsedEnd)
+    ? new Date(parsedEnd + REVOCATION_GRACE_MINUTES * 60_000).toISOString()
+    : end
+
+  const [preflightResult, clientsResult, codesResult, tokensResult, toolRunsResult, managementRunsResult] = await Promise.all([
     window.preflight_run_id
       ? supabase
           .from('moni_mcp_preflight_runs')
@@ -129,6 +136,15 @@ export async function getMoniMcpAcceptanceStatus() {
       .gte('started_at', start)
       .lte('started_at', end)
       .order('started_at', { ascending: true }),
+    supabase
+      .from('moni_mcp_tool_runs')
+      .select('id,oauth_client_id,user_login_id,user_role,tool_name,status,error_message,started_at,finished_at')
+      .eq('business_id', MONI_BUSINESS_ID)
+      .eq('user_role', 'admin')
+      .in('tool_name', [...ADMIN_REVOCATION_AUDIT_TOOLS])
+      .gte('started_at', start)
+      .lte('started_at', revocationEnd)
+      .order('started_at', { ascending: true }),
   ])
 
   const firstError = [
@@ -137,6 +153,7 @@ export async function getMoniMcpAcceptanceStatus() {
     codesResult.error,
     tokensResult.error,
     toolRunsResult.error,
+    managementRunsResult.error,
   ].find(Boolean)
   if (firstError) throw new Error(firstError.message)
 
@@ -145,15 +162,12 @@ export async function getMoniMcpAcceptanceStatus() {
   const codes = codesResult.data || []
   const tokens = tokensResult.data || []
   const toolRuns = (toolRunsResult.data || []) as Array<Record<string, unknown>>
+  const managementRuns = (managementRunsResult.data || []) as Array<Record<string, unknown>>
   const failedRuns = toolRuns.filter((row) => row.status === 'FAILED')
   const adminTokenCount = tokens.filter((row) => row.user_role === 'admin').length
   const freelancerTokenCount = tokens.filter((row) => row.user_role === 'freelancer').length
   const refreshRotations = tokens.reduce((sum, row) => sum + Math.max(0, Number(row.refresh_count || 0)), 0)
-  const revocationActions = toolRuns.filter((row) => (
-    row.user_role === 'admin'
-    && row.status === 'COMPLETED'
-    && ADMIN_REVOCATION_AUDIT_TOOLS.has(String(row.tool_name || ''))
-  ))
+  const revocationActions = managementRuns.filter((row) => row.status === 'COMPLETED')
   const adminTools = toolNames(toolRuns, 'admin')
   const freelancerTools = toolNames(toolRuns, 'freelancer')
   const missingAdmin = missingTools(ADMIN_SMOKE_TOOLS, adminTools)
@@ -249,7 +263,7 @@ export async function getMoniMcpAcceptanceStatus() {
       revocationActions.length > 0 ? 'PASS' : 'PENDING',
       revocationActions.length > 0
         ? `${revocationActions.length}건의 token/client 폐기 감사기록이 확인됐습니다.`
-        : '핵심 조회가 끝난 뒤 관리자 연결관리에서 테스트 token 또는 client 접근을 폐기해야 합니다.',
+        : `핵심 조회가 끝난 뒤 관리자 연결관리에서 테스트 token 또는 client 접근을 폐기해야 합니다. 창 종료 후 ${REVOCATION_GRACE_MINUTES}분까지 폐기 감사만 인정합니다.`,
     ),
     check(
       'refresh_rotation',
