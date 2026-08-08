@@ -35,7 +35,7 @@ for (const file of walk(ROOT)) {
   const source = readFileSync(file, 'utf8')
   const path = normalize(file)
   const execution = classify(file, source)
-  const importRegex = /import\s*\{([\s\S]*?)\}\s*from\s*['"](?:@\/lib\/actions|\.\.?\/[^'"]*actions)['"]/g
+  const importRegex = /import\s*\{([^}]*)\}\s*from\s*['"](@\/lib\/actions|\.\.?\/[^'"]*\/actions|\.\.?\/actions)['"]/g
   for (const match of source.matchAll(importRegex)) {
     const names = match[1]
       .split(',')
@@ -45,9 +45,10 @@ for (const file of walk(ROOT)) {
         const parts = item.split(/\s+as\s+/)
         return { imported: parts[0].trim(), local: (parts[1] || parts[0]).trim() }
       })
-    imports.push({ file: path, execution, names })
+      .filter((item) => exported.includes(item.imported))
+    if (!names.length) continue
+    imports.push({ file: path, execution, module: match[2], names })
     for (const item of names) {
-      if (!callers[item.imported]) continue
       const escaped = item.local.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const usageCount = (source.match(new RegExp(`\\b${escaped}\\s*\\(`, 'g')) || []).length
       callers[item.imported].push({ file: path, execution, local_name: item.local, usage_count: usageCount })
