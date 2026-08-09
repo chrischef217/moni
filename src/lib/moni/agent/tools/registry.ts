@@ -19,6 +19,7 @@ function normalizeProductionResult(raw: unknown, args: Record<string, unknown>) 
   let openWorkOrderCount = 0
   let openPlannedQuantity = 0
   let completedRecordCount = 0
+  let completedPlannedQuantity = 0
   let completedActualQuantity = 0
   let completedPlanGap = 0
 
@@ -36,6 +37,7 @@ function normalizeProductionResult(raw: unknown, args: Record<string, unknown>) 
     }
     if (completed) {
       completedRecordCount += 1
+      completedPlannedQuantity += planned
       completedActualQuantity += actual
       completedPlanGap += Math.max(0, planned - actual - defect - sample)
     }
@@ -44,10 +46,17 @@ function normalizeProductionResult(raw: unknown, args: Record<string, unknown>) 
   summary.open_work_order_count = openWorkOrderCount
   summary.open_planned_quantity_g = openPlannedQuantity
   summary.completed_record_count = completedRecordCount
+  summary.completed_planned_quantity_g = completedPlannedQuantity
   summary.completed_actual_quantity_g = completedActualQuantity
   summary.completed_plan_gap_g = completedPlanGap
+  summary.completed_achievement_rate_percent = completedPlannedQuantity > 0
+    ? (completedActualQuantity / completedPlannedQuantity) * 100
+    : 0
   summary.terminology = {
     open_planned_quantity_g: '아직 완료실적이 없는 열린 작업지시의 계획량 합계',
+    completed_planned_quantity_g: '완료 처리된 작업지시의 계획량 합계',
+    completed_actual_quantity_g: '완료 처리된 작업지시의 실제 생산량 합계',
+    completed_achievement_rate_percent: '완료 처리된 작업지시의 계획량 대비 실제 생산량 비율(%)',
     completed_plan_gap_g: '완료 처리된 기록의 계획량 대비 실제·불량·샘플 차이',
     unaccounted_gap_g: '전체 계획량에서 실제·불량·샘플을 뺀 단순 차이로 미완료 생산량이나 확정 로스가 아님',
   }
