@@ -101,9 +101,13 @@ test('legacy tenant alias and critical business semantics are preserved in extra
   assert.match(backend, /supplier_statement_balances는 거래처 명세서 잔액이며 실제 입고·매입 행으로 간주하지 않습니다/)
 })
 
-test('legacy agent-v2 remains compatibility code only during phased deletion', () => {
-  assert.match(legacy, /export async function executeMoniAgentTool/)
-  assert.match(legacy, /export async function runMoniAgent/)
-  assert.doesNotMatch(registry, /runMoniAgent/)
-  assert.doesNotMatch(mcp, /runMoniAgent/)
+test('legacy agent-v2 is a type-only compatibility shim with no runtime resurrection path', () => {
+  assert.match(legacy, /Legacy import-compatibility shim/)
+  assert.match(legacy, /export type \{/)
+  assert.doesNotMatch(legacy, /executeMoniAgentTool/)
+  assert.doesNotMatch(legacy, /runMoniAgent/)
+  assert.doesNotMatch(legacy, /MONI_AGENT_TOOLS/)
+  assert.doesNotMatch(legacy, /\.from\(/)
+  assert.doesNotMatch(legacy, /api\.openai\.com/)
+  assert.doesNotMatch(legacy, /createMoniServiceRoleClient/)
 })
