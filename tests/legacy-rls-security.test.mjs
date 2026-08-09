@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 
 const migration = readFileSync('supabase/migrations/20260808172000_harden_legacy_actions_rls.sql', 'utf8')
+const batch2 = readFileSync('supabase/migrations/20260809043000_harden_remaining_legacy_actions_rls.sql', 'utf8')
 const audit = readFileSync('scripts/audit-legacy-supabase-access.mjs', 'utf8')
 
 const TABLES = [
@@ -32,10 +33,31 @@ test('legacy inventory view is no longer readable by public roles', () => {
   assert.match(migration, /grant select on table public\.inventory_summary to service_role;/)
 })
 
+test('remaining MONI business tables are hardened as an explicit 58-table batch', () => {
+  const tables = [...batch2.matchAll(/alter table public\.([a-zA-Z0-9_]+) enable row level security;/g)].map((match) => match[1])
+  assert.equal(tables.length, 58)
+  assert.equal(new Set(tables).size, 58)
+
+  for (const table of tables) {
+    assert.match(batch2, new RegExp(`revoke all on table public\\.${table} from anon, authenticated;`))
+    assert.match(batch2, new RegExp(`grant all on table public\\.${table} to service_role;`))
+  }
+
+  assert.ok(tables.includes('products'))
+  assert.ok(tables.includes('production_records'))
+  assert.ok(tables.includes('purchases'))
+  assert.ok(tables.includes('sales_orders'))
+  assert.ok(tables.includes('moni_ai_threads'))
+  assert.ok(tables.includes('recipe_material_mapping_history'))
+  assert.ok(!tables.includes('ug_sales_runtime_state'))
+})
+
 test('RLS hardening does not mutate business data or business identifiers', () => {
-  assert.doesNotMatch(migration, /\b(update|insert|delete)\b/i)
-  assert.doesNotMatch(migration, /business_id\s*=/i)
-  assert.doesNotMatch(migration, /create\s+policy/i)
+  for (const source of [migration, batch2]) {
+    assert.doesNotMatch(source, /\b(update|insert|delete)\b/i)
+    assert.doesNotMatch(source, /business_id\s*=/i)
+    assert.doesNotMatch(source, /create\s+policy/i)
+  }
 })
 
 test('public DB access audit is now an enforcement gate', () => {
