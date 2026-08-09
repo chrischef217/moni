@@ -5,19 +5,9 @@ import { allowedToolNamesForRole, assertToolAllowedForRole, type MoniToolName } 
 import { reportPmoEvent } from '@/lib/moni/agent/pmo'
 import type { MoniRuntimeContext } from '@/lib/moni/agent/runtime-types'
 import { executeMoniReadOnlyTool } from '@/lib/moni/agent/tool-backend'
-import { commercialToolDefinitions } from '@/lib/moni/agent/tools/commercial'
-import { inventoryToolDefinitions } from '@/lib/moni/agent/tools/inventory'
-import { productionToolDefinitions } from '@/lib/moni/agent/tools/production'
-import { systemToolDefinitions } from '@/lib/moni/agent/tools/system'
-import type { MoniToolDefinition } from '@/lib/moni/agent/tools/types'
+import { moniToolDefinitions } from '@/lib/moni/agent/tools/catalog'
 
 const DEFAULT_TOOL_TIMEOUT_MS = 20_000
-const allDefinitions: MoniToolDefinition[] = [
-  ...systemToolDefinitions,
-  ...productionToolDefinitions,
-  ...inventoryToolDefinitions,
-  ...commercialToolDefinitions,
-]
 
 const text = (value: unknown, max = 500) => String(value ?? '').trim().slice(0, max)
 
@@ -187,7 +177,7 @@ async function runAuditedTool(name: MoniToolName, args: Record<string, unknown>,
 
 export function createMoniTools(role: unknown) {
   const allowed = new Set(allowedToolNamesForRole(role))
-  return allDefinitions
+  return moniToolDefinitions
     .filter((definition) => allowed.has(definition.name))
     .map((definition) => tool({
       name: definition.name,
