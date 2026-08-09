@@ -1,7 +1,79 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-export function middleware(request: NextRequest) {
+const MONI_API_PREFIX = '/api/moni/'
+const SESSION_CHECK_PATH = '/api/allowance/auth/session'
+
+// The live-eval canary is authenticated by its own short-lived, one-time capability token.
+// Keep this exception exact so ordinary Agent/admin/business endpoints never bypass MONI login.
+const SESSION_EXEMPT_PATHS = new Set([
+  '/api/moni/agent-evals/canary',
+])
+
+function requiresMoniSession(pathname: string) {
+  return pathname.startsWith(MONI_API_PREFIX) && !SESSION_EXEMPT_PATHS.has(pathname)
+}
+
+async function verifyMoniSession(request: NextRequest) {
+  const sessionUrl = request.nextUrl.clone()
+  sessionUrl.pathname = SESSION_CHECK_PATH
+  sessionUrl.search = ''
+
+  try {
+    const response = await fetch(sessionUrl, {
+      method: 'GET',
+      headers: {
+        cookie: request.headers.get('cookie') || '',
+      },
+      cache: 'no-store',
+      redirect: 'manual',
+    })
+
+    if (response.ok) return null
+
+    if (response.status === 401 || response.status === 403) {
+      return NextResponse.json(
+        { ok: false, error: 'MONI 로그인이 필요합니다.' },
+        {
+          status: 401,
+          headers: {
+            'Cache-Control': 'no-store',
+            'X-MONI-Auth': 'required',
+          },
+        },
+      )
+    }
+
+    return NextResponse.json(
+      { ok: false, error: 'MONI 인증 상태를 확인할 수 없습니다.' },
+      {
+        status: 503,
+        headers: {
+          'Cache-Control': 'no-store',
+          'X-MONI-Auth': 'unavailable',
+        },
+      },
+    )
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: 'MONI 인증 상태를 확인할 수 없습니다.' },
+      {
+        status: 503,
+        headers: {
+          'Cache-Control': 'no-store',
+          'X-MONI-Auth': 'unavailable',
+        },
+      },
+    )
+  }
+}
+
+export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+
+  if (requiresMoniSession(pathname)) {
+    const denied = await verifyMoniSession(request)
+    if (denied) return denied
+  }
 
   if (pathname === '/api/moni/agent-chat') {
     const rewritten = request.nextUrl.clone()
@@ -9,18 +81,21 @@ export function middleware(request: NextRequest) {
     return NextResponse.rewrite(rewritten)
   }
 
-  if (request.nextUrl.searchParams.get('format') === 'json') {
-    return NextResponse.next()
+  if (/^\/api\/moni\/production-records\/[^/]+\/pdf$/.test(pathname)) {
+    if (request.nextUrl.searchParams.get('format') === 'json') {
+      return NextResponse.next()
+    }
+
+    const rewritten = request.nextUrl.clone()
+    rewritten.pathname = rewritten.pathname.replace(/\/pdf$/, '/print-pdf')
+    return NextResponse.rewrite(rewritten)
   }
 
-  const rewritten = request.nextUrl.clone()
-  rewritten.pathname = rewritten.pathname.replace(/\/pdf$/, '/print-pdf')
-  return NextResponse.rewrite(rewritten)
+  return NextResponse.next()
 }
 
 export const config = {
   matcher: [
-    '/api/moni/agent-chat',
-    '/api/moni/production-records/:id/pdf',
+    '/api/moni/:path*',
   ],
 }
