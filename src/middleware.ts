@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const MONI_API_PREFIX = '/api/moni/'
 const SESSION_CHECK_PATH = '/api/allowance/auth/session'
+const MONI_BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
+const LEGACY_BUSINESS_ID = 'default'
 
 // The live-eval canary is authenticated by its own short-lived, one-time capability token.
 // Keep this exception exact so ordinary Agent/admin/business endpoints never bypass MONI login.
@@ -11,6 +13,27 @@ const SESSION_EXEMPT_PATHS = new Set([
 
 function requiresMoniSession(pathname: string) {
   return pathname.startsWith(MONI_API_PREFIX) && !SESSION_EXEMPT_PATHS.has(pathname)
+}
+
+function hasForeignTenantQuery(request: NextRequest) {
+  const values = request.nextUrl.searchParams.getAll('business_id')
+  return values.some((value) => {
+    const businessId = value.trim()
+    return businessId !== '' && businessId !== MONI_BUSINESS_ID && businessId !== LEGACY_BUSINESS_ID
+  })
+}
+
+function foreignTenantResponse() {
+  return NextResponse.json(
+    { ok: false, error: '허용되지 않은 사업자 범위입니다.' },
+    {
+      status: 403,
+      headers: {
+        'Cache-Control': 'no-store',
+        'X-MONI-Tenant': 'rejected',
+      },
+    },
+  )
 }
 
 async function verifyMoniSession(request: NextRequest) {
@@ -73,6 +96,8 @@ export async function middleware(request: NextRequest) {
   if (requiresMoniSession(pathname)) {
     const denied = await verifyMoniSession(request)
     if (denied) return denied
+
+    if (hasForeignTenantQuery(request)) return foreignTenantResponse()
   }
 
   if (pathname === '/api/moni/agent-chat') {
