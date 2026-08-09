@@ -1,10 +1,10 @@
 import { Buffer } from 'node:buffer'
 import { tool, type RunContext } from '@openai/agents'
-import { executeMoniAgentTool } from '@/lib/moni/agent-v2'
 import { moniToolInputGuardrail, moniToolOutputGuardrail } from '@/lib/moni/agent/guardrails'
 import { allowedToolNamesForRole, assertToolAllowedForRole, type MoniToolName } from '@/lib/moni/agent/policies'
 import { reportPmoEvent } from '@/lib/moni/agent/pmo'
 import type { MoniRuntimeContext } from '@/lib/moni/agent/runtime-types'
+import { executeMoniReadOnlyTool } from '@/lib/moni/agent/tool-backend'
 import { commercialToolDefinitions } from '@/lib/moni/agent/tools/commercial'
 import { inventoryToolDefinitions } from '@/lib/moni/agent/tools/inventory'
 import { productionToolDefinitions } from '@/lib/moni/agent/tools/production'
@@ -108,7 +108,7 @@ async function executeRegisteredTool(name: MoniToolName, args: Record<string, un
       max_agent_turns: 8,
     }
   }
-  return executeMoniAgentTool(name, args, context)
+  return executeMoniReadOnlyTool(name, args, context)
 }
 
 async function runAuditedTool(name: MoniToolName, args: Record<string, unknown>, runContext: RunContext<MoniRuntimeContext>) {

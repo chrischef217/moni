@@ -1,4 +1,4 @@
-import type { MoniAgentToolContext } from '@/lib/moni/agent-v2'
+import type { MoniAgentToolContext } from '@/lib/moni/agent/context-types'
 import type { ThreadMemory, PinnedProjectContext } from '@/lib/moni/agent/memory'
 
 export type MoniRuntimeContext = MoniAgentToolContext & {
