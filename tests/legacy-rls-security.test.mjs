@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const migration = readFileSync('supabase/migrations/20260808172000_harden_legacy_actions_rls.sql', 'utf8')
 const batch2 = readFileSync('supabase/migrations/20260809043000_harden_remaining_legacy_actions_rls.sql', 'utf8')
+const ugSales = readFileSync('supabase/migrations/20260809052000_harden_ug_sales_runtime_grants.sql', 'utf8')
 const audit = readFileSync('scripts/audit-legacy-supabase-access.mjs', 'utf8')
 
 const TABLES = [
@@ -52,8 +53,15 @@ test('remaining MONI business tables are hardened as an explicit 58-table batch'
   assert.ok(!tables.includes('ug_sales_runtime_state'))
 })
 
+test('UG Sales runtime public grants are removed without altering service-role access', () => {
+  assert.match(ugSales, /revoke all on table public\.ug_sales_runtime_state from anon, authenticated;/)
+  assert.match(ugSales, /grant all on table public\.ug_sales_runtime_state to service_role;/)
+  assert.doesNotMatch(ugSales, /\b(update|insert|delete)\b/i)
+  assert.doesNotMatch(ugSales, /alter table/i)
+})
+
 test('RLS hardening does not mutate business data or business identifiers', () => {
-  for (const source of [migration, batch2]) {
+  for (const source of [migration, batch2, ugSales]) {
     assert.doesNotMatch(source, /\b(update|insert|delete)\b/i)
     assert.doesNotMatch(source, /business_id\s*=/i)
     assert.doesNotMatch(source, /create\s+policy/i)
