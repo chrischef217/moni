@@ -99,13 +99,26 @@ function normalizeAnswerToolReferences(answer: MoniAnswer): MoniAnswer {
   }
 }
 
-function getPath(value: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((current, key) => {
-    if (current && typeof current === 'object' && key in (current as Record<string, unknown>)) {
-      return (current as Record<string, unknown>)[key]
+function getPathValues(value: unknown, path: string): unknown[] {
+  const keys = path.split('.').filter(Boolean)
+  let current: unknown[] = [value]
+  for (const rawKey of keys) {
+    const arrayKey = rawKey.endsWith('[]')
+    const key = arrayKey ? rawKey.slice(0, -2) : rawKey
+    const next: unknown[] = []
+    for (const item of current) {
+      if (!item || typeof item !== 'object' || !(key in (item as Record<string, unknown>))) continue
+      const found = (item as Record<string, unknown>)[key]
+      if (arrayKey) {
+        if (Array.isArray(found)) next.push(...found)
+      } else {
+        next.push(found)
+      }
     }
-    return undefined
-  }, value)
+    current = next
+    if (!current.length) break
+  }
+  return current
 }
 
 function collectRanges(context: MoniRuntimeContext) {
@@ -147,8 +160,12 @@ function validateAnswer(answer: MoniAnswer, context: MoniRuntimeContext) {
       errors.push(`수치 출처 도구 결과 없음: ${sourceTool}`)
       continue
     }
+    if (/^derived\s*:/i.test(metric.source_field)) {
+      errors.push(`계산식 출처 금지: ${metric.label}=${metric.value}, ${metric.source_tool}.${metric.source_field}`)
+      continue
+    }
     const candidates = outputs
-      .map((output) => getPath(output, metric.source_field))
+      .flatMap((output) => getPathValues(output, metric.source_field))
       .map(numberValue)
       .filter((value): value is number => value !== null)
     if (!candidates.some((value) => Math.abs(value - metric.value) <= Math.max(0.0001, Math.abs(value) * 0.000001))) {
@@ -246,7 +263,8 @@ ${memoryContext ? `${memoryContext}\n` : ''}
 19. 원재료 unit_price_per_kg 컬럼은 PMO 확정 기준상 kg당 단가가 아니라 기준 포장 1EA 가격입니다. 이 규칙을 질문받으면 get_company_context를 호출해 확인하고 반드시 '기준 포장 1EA'라고 명시합니다.
 20. 사용자가 MONI가 할 수 있는 일, 못 하는 일, 지원 기능, 실행 제한 또는 권한 범위를 물으면 반드시 get_agent_capabilities를 호출한 뒤 답합니다.
 21. 생산 현황·생산 완료·미완료·작업지시를 묻는 요청은 반드시 search_production_records를 호출합니다. 특정 월이 명시되면 그 달의 시작일과 마지막일을 start_date/end_date로 정확히 전달하고, 지정되지 않은 선택 인자는 임의로 채우지 않습니다. 월간 생산계획 자체와 실적 비교를 요구할 때만 search_production_plans를 추가 호출합니다.
-22. 모든 도구 인자는 스키마에 맞는 유효한 JSON 객체로 보냅니다. 도구 호출에서 Invalid JSON input 오류가 발생하면 즉시 같은 도구를 올바른 JSON으로 한 번 다시 호출하고, 재시도 전에는 report_pmo_event를 호출하지 않습니다. 실제 유효한 재시도도 실패한 경우에만 도구 장애로 PMO에 접수합니다.`
+22. 모든 도구 인자는 스키마에 맞는 유효한 JSON 객체로 보냅니다. 도구 호출에서 Invalid JSON input 오류가 발생하면 즉시 같은 도구를 올바른 JSON으로 한 번 다시 호출하고, 재시도 전에는 report_pmo_event를 호출하지 않습니다. 실제 유효한 재시도도 실패한 경우에만 도구 장애로 PMO에 접수합니다.
+23. metrics.source_field에는 도구가 실제 반환한 숫자 필드 경로만 사용합니다. 'derived:' 계산식이나 임의 수식은 절대 사용하지 않습니다. 생산 완료 계획량은 summary.completed_planned_quantity_g, 완료 실적은 summary.completed_actual_quantity_g, 완료 달성률은 summary.completed_achievement_rate_percent를 사용합니다. 배열 안의 실제 값은 materials[].current_stock_g 같은 [] 경로를 사용할 수 있습니다.`
 }
 
 export async function runMoniSdkAgent(input: RunMoniSdkAgentInput): Promise<RunMoniSdkAgentResult> {
