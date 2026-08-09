@@ -3,6 +3,7 @@ name: MONI Auth Security Gate
 on:
   pull_request:
     paths:
+      - 'src/middleware.ts'
       - 'src/lib/allowance/secure-auth.ts'
       - 'src/lib/allowance/session.ts'
       - 'src/lib/moni/db.ts'
@@ -13,8 +14,10 @@ on:
       - 'src/app/api/migrate/**'
       - 'src/app/api/migrate-bom/**'
       - 'src/app/api/allowance/auth/**'
+      - 'src/app/api/moni/**'
       - 'supabase/migrations/*allowance_session*'
       - 'tests/allowance-auth-security.test.mjs'
+      - 'tests/moni-api-session-boundary.test.mjs'
       - '.github/workflows/moni-auth-security.yml'
   workflow_dispatch:
 
@@ -56,7 +59,7 @@ jobs:
         run: npm run prebuild
 
       - name: Auth security contract tests
-        run: node --test tests/allowance-auth-security.test.mjs
+        run: node --test tests/allowance-auth-security.test.mjs tests/moni-api-session-boundary.test.mjs
 
       - name: Production build
         run: npm run build
