@@ -15,6 +15,7 @@ on:
       - 'src/app/api/migrate-bom/**'
       - 'src/app/api/allowance/auth/**'
       - 'src/app/api/moni/**'
+      - 'scripts/audit-business-id-inputs.mjs'
       - 'supabase/migrations/*allowance_session*'
       - 'tests/allowance-auth-security.test.mjs'
       - 'tests/moni-api-session-boundary.test.mjs'
@@ -57,6 +58,9 @@ jobs:
 
       - name: Verify immutable source
         run: npm run prebuild
+
+      - name: Inventory business ID inputs
+        run: node scripts/audit-business-id-inputs.mjs
 
       - name: Auth security contract tests
         run: node --test tests/allowance-auth-security.test.mjs tests/moni-api-session-boundary.test.mjs

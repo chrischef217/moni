@@ -33,6 +33,27 @@ test('only the one-time live-eval canary bypasses ordinary MONI login', () => {
   assert.doesNotMatch(middleware, /SESSION_EXEMPT_PATHS[\s\S]*'\/api\/moni\/agent-evals'/)
 })
 
+test('authenticated MONI APIs reject foreign business_id query scopes', () => {
+  assert.match(middleware, /MONI_BUSINESS_ID = String\(process\.env\.MONI_BUSINESS_ID \|\| '20220523011'\)/)
+  assert.match(middleware, /LEGACY_BUSINESS_ID = 'default'/)
+  assert.match(middleware, /searchParams\.getAll\('business_id'\)/)
+  assert.match(middleware, /businessId === MONI_BUSINESS_ID \|\| businessId === LEGACY_BUSINESS_ID/)
+  assert.match(middleware, /X-MONI-Tenant': 'rejected'/)
+  const authIndex = middleware.indexOf('verifyMoniSession(request)')
+  const tenantIndex = middleware.indexOf('hasForeignTenantQuery(request)')
+  assert.ok(tenantIndex > authIndex)
+})
+
+test('authenticated MONI JSON writes reject foreign top-level business_id values', () => {
+  assert.match(middleware, /request\.clone\(\)\.json\(\)/)
+  assert.match(middleware, /Object\.prototype\.hasOwnProperty\.call\(payload, 'business_id'\)/)
+  assert.match(middleware, /return !isAllowedBusinessId\(\(payload as Record<string, unknown>\)\.business_id\)/)
+  assert.match(middleware, /hasForeignTenantQuery\(request\) \|\| \(await hasForeignTenantBody\(request\)\)/)
+  assert.doesNotMatch(middleware, /BODY_TENANT_GUARD_EXEMPT_PATHS[\s\S]*'\/api\/moni\/products'/)
+  assert.doesNotMatch(middleware, /BODY_TENANT_GUARD_EXEMPT_PATHS[\s\S]*'\/api\/moni\/production-records'/)
+  assert.doesNotMatch(middleware, /BODY_TENANT_GUARD_EXEMPT_PATHS[\s\S]*'\/api\/moni\/raw-materials'/)
+})
+
 test('agent-chat rewrite and production PDF rewrite remain behind authentication', () => {
   const authIndex = middleware.indexOf('verifyMoniSession(request)')
   const chatIndex = middleware.indexOf("pathname === '/api/moni/agent-chat'")
