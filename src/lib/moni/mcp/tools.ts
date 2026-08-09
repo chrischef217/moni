@@ -1,8 +1,9 @@
 import { Buffer } from 'node:buffer'
+import { z } from 'zod'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
-import { MONI_AGENT_TOOLS } from '@/lib/moni/agent-v2'
 import type { MoniAgentToolContext } from '@/lib/moni/agent/context-types'
 import { executeMoniReadOnlyTool } from '@/lib/moni/agent/tool-backend'
+import { moniToolDefinitions } from '@/lib/moni/agent/tools/catalog'
 import {
   allowedToolNamesForRole,
   assertToolAllowedForRole,
@@ -29,6 +30,12 @@ const text = (value: unknown, max = 500) => String(value ?? '').trim().slice(0, 
 function normalizedToolName(name: unknown): MoniToolName | null {
   const value = text(name, 100) as MoniToolName
   return READ_ONLY_MCP_TOOLS.has(value) ? value : null
+}
+
+function mcpInputSchema(schema: z.ZodType) {
+  const converted = z.toJSONSchema(schema) as Record<string, unknown>
+  const { $schema: _ignored, ...inputSchema } = converted
+  return inputSchema
 }
 
 function normalizeArguments(raw: unknown) {
@@ -120,11 +127,11 @@ function withResultMeta(name: MoniToolName, raw: unknown, args: Record<string, u
 
 export function listMcpToolsForRole(role: unknown) {
   const allowed = new Set(allowedToolNamesForRole(role))
-  return MONI_AGENT_TOOLS
+  return moniToolDefinitions
     .map((item) => ({
       name: normalizedToolName(item.name),
       description: text(item.description, 1200),
-      inputSchema: item.parameters,
+      inputSchema: mcpInputSchema(item.parameters),
     }))
     .filter((item): item is { name: MoniToolName; description: string; inputSchema: Record<string, unknown> } => Boolean(item.name && allowed.has(item.name)))
     .map((item) => ({
