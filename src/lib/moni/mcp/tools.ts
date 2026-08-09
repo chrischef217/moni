@@ -1,10 +1,8 @@
 import { Buffer } from 'node:buffer'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
-import {
-  executeMoniAgentTool,
-  MONI_AGENT_TOOLS,
-  type MoniAgentToolContext,
-} from '@/lib/moni/agent-v2'
+import { MONI_AGENT_TOOLS } from '@/lib/moni/agent-v2'
+import type { MoniAgentToolContext } from '@/lib/moni/agent/context-types'
+import { executeMoniReadOnlyTool } from '@/lib/moni/agent/tool-backend'
 import {
   allowedToolNamesForRole,
   assertToolAllowedForRole,
@@ -204,7 +202,7 @@ export async function callMcpTool(input: {
   try {
     const raw = name === 'get_agent_capabilities'
       ? mcpCapabilities(input.identity)
-      : await executeMoniAgentTool(name, args, context)
+      : await executeMoniReadOnlyTool(name, args, context)
     const output = withResultMeta(name, raw, args)
     const serialized = JSON.stringify(output)
     await supabase
