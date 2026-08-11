@@ -4,6 +4,12 @@ import { listMcpToolsForRole } from '@/lib/moni/mcp/tools'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// Vercel team aliases are protected by Vercel Authentication in this workspace.
+// This immutable production deployment URL is public and contains the same
+// read-only ChatGPT Action handlers. Keep the GPT Action server independent
+// from the legacy moni-sigma alias, which may point at an older deployment.
+const CHATGPT_ACTION_PUBLIC_ORIGIN = 'https://moni-a7ij2s1xq-chris-projects-67f0dd96.vercel.app'
+
 const ACTION_TOOLS = new Set([
   'get_business_clock',
   'get_company_context',
@@ -69,7 +75,7 @@ export async function GET() {
       version: '1.0.0',
       description: 'ChatGPT 제품 자체가 지능·대화·판단을 담당하고 MONI는 두배식품의 실제 생산·재고·판매·수금·매입·회사 문맥 데이터만 읽기 전용으로 제공하는 GPT Actions API입니다.',
     },
-    servers: [{ url: 'https://moni-sigma.vercel.app' }],
+    servers: [{ url: CHATGPT_ACTION_PUBLIC_ORIGIN }],
     paths,
     components: {
       securitySchemes: {
