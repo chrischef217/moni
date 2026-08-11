@@ -4,11 +4,9 @@ import { listMcpToolsForRole } from '@/lib/moni/mcp/tools'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Vercel team aliases are protected by Vercel Authentication in this workspace.
-// This immutable production deployment URL is public and contains the same
-// read-only ChatGPT Action handlers. Keep the GPT Action server independent
-// from the legacy moni-sigma alias, which may point at an older deployment.
-const CHATGPT_ACTION_PUBLIC_ORIGIN = 'https://moni-a7ij2s1xq-chris-projects-67f0dd96.vercel.app'
+// Stable public production origin. Verified from outside Vercel Authentication
+// with an authenticated read-only Action request.
+const CHATGPT_ACTION_PUBLIC_ORIGIN = 'https://moni-sigma.vercel.app'
 
 const ACTION_TOOLS = new Set([
   'get_business_clock',
