@@ -8,7 +8,11 @@ const nextConfig = {
     return [
       {
         source: '/api/moni/agent-chat',
-        destination: '/api/moni/agent-runtime',
+        destination: '/api/moni/chatgpt-only',
+      },
+      {
+        source: '/api/moni/agent-runtime',
+        destination: '/api/moni/chatgpt-only',
       },
     ]
   },
