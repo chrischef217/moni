@@ -25,7 +25,9 @@ export async function getChatGptActionIdentity(): Promise<MoniMcpIdentity | null
   const current = await verifyCurrentMcpIdentity({ loginId: 'admin', role: 'admin' })
   if (!current) return null
   return {
-    tokenId: null,
+    // GPT Actions use a dedicated bearer key instead of an MCP OAuth token.
+    // Runtime value is null so the existing nullable audit FK remains empty.
+    tokenId: null as unknown as string,
     clientId: CHATGPT_ACTION_CLIENT_ID,
     loginId: current.loginId,
     displayName: current.displayName,
