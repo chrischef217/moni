@@ -4,8 +4,6 @@ import { listMcpToolsForRole } from '@/lib/moni/mcp/tools'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Stable public production origin. Verified from outside Vercel Authentication
-// with an authenticated read-only Action request.
 const CHATGPT_ACTION_PUBLIC_ORIGIN = 'https://moni-sigma.vercel.app'
 
 const ACTION_TOOLS = new Set([
@@ -29,7 +27,6 @@ export async function GET() {
         operationId: tool.name,
         summary: tool.title,
         description: `${tool.description} MONI 서버는 모델 추론을 하지 않으며 실제 회사 데이터만 읽기 전용으로 반환합니다.`,
-        security: [{ moniActionKey: [] }],
         requestBody: {
           required: true,
           content: {
@@ -58,9 +55,9 @@ export async function GET() {
               },
             },
           },
+          '400': { description: '조회 인자 또는 데이터 조회 실패' },
           '401': { description: 'MONI GPT Action 인증 실패' },
           '403': { description: '현재 역할에서 허용되지 않은 조회' },
-          '400': { description: '조회 인자 또는 데이터 조회 실패' },
         },
       },
     },
@@ -69,20 +66,14 @@ export async function GET() {
   return NextResponse.json({
     openapi: '3.1.0',
     info: {
-      title: 'MONI Read-Only Business Data Actions',
-      version: '1.0.0',
-      description: 'ChatGPT 제품 자체가 지능·대화·판단을 담당하고 MONI는 두배식품의 실제 생산·재고·판매·수금·매입·회사 문맥 데이터만 읽기 전용으로 제공하는 GPT Actions API입니다.',
+      title: 'MONI Business Data Actions',
+      version: '1.0.1',
+      description: 'ChatGPT 제품 자체가 지능·대화·판단을 담당하고 MONI는 두배의 실제 생산·재고·판매·수금·매입·회사 문맥 데이터를 제공하는 GPT Actions API입니다.',
     },
     servers: [{ url: CHATGPT_ACTION_PUBLIC_ORIGIN }],
     paths,
     components: {
-      securitySchemes: {
-        moniActionKey: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'MONI-GPT-ACTION-KEY',
-        },
-      },
+      schemas: {},
     },
   }, {
     headers: {
