@@ -26,6 +26,29 @@ function unauthorized() {
   })
 }
 
+function normalizeProductionStatus(value: unknown) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  const normalized = raw.toLowerCase()
+  if (['planned', 'plan', 'scheduled', '예정'].includes(normalized)) return 'planned'
+  if (['cancelled', 'canceled', 'cancel', '취소'].includes(normalized)) return 'cancelled'
+  if (['completed', 'complete', 'done'].includes(normalized)) return 'completed'
+  if (normalized === '완료') return '완료'
+  if (['confirmed', 'confirm', '확정'].includes(normalized)) return 'confirmed'
+  return normalized
+}
+
+function normalizeActionArguments(toolName: string, raw: unknown) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const args = { ...(raw as Record<string, unknown>) }
+  if (toolName === 'search_production_records' && 'status' in args) {
+    const status = normalizeProductionStatus(args.status)
+    if (status) args.status = status
+    else delete args.status
+  }
+  return args
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
@@ -53,7 +76,8 @@ export async function POST(request: NextRequest, { params }: { params: { tool: s
     return NextResponse.json({ ok: false, error: 'tool_not_allowed_for_current_role' }, { status: 403, headers: NO_STORE })
   }
 
-  const args = await request.json().catch(() => ({}))
+  const rawArgs = await request.json().catch(() => ({}))
+  const args = normalizeActionArguments(toolName, rawArgs)
   try {
     const result = await callMcpTool({ identity, toolName, arguments: args })
     return NextResponse.json({
