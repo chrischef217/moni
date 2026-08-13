@@ -6,17 +6,18 @@ MONI는 두배의 실제 경영·생산·재고·판매 데이터를 관리하�
 
 MONI 서버는 자체 AI 모델을 실행하지 않습니다.
 
-- 지능·대화·판단: ChatGPT 제품의 MONI Custom GPT
+- 지능·대화·판단 목표: ChatGPT 제품의 MONI Custom GPT
 - 회사 데이터 조회: MONI ChatGPT Actions
 - 승인된 업무 실행: MONI ChatGPT Write Actions
 - DB: Supabase PostgreSQL
 - 업무 UI/API: Next.js + Vercel
 - MONI 서버 모델 추론: 비활성화
 
-MONI Custom GPT:
-https://chatgpt.com/g/g-6a7af9094b08819183be32a5dc97ef7b-moni
+MONI 캐릭터와 자체 채팅 UI는 MONI 웹앱 안에 유지합니다. 캐릭터를 눌렀을 때 외부 Custom GPT 페이지로 자동 이동시키지 않습니다.
 
-기존 `/api/moni/chat`, `/api/moni/agent-chat`, `/api/moni/agent-runtime` 경로는 AI 모델을 호출하지 않으며 ChatGPT-only 안내 응답만 반환합니다. MONI 웹 UI의 대화 버튼은 위 Custom GPT를 엽니다.
+OpenAI의 현재 제품 제약상 Custom GPT 자체를 외부 웹사이트 안에 직접 임베드할 수 없으므로, MONI 내부 채팅 UI에서 실제 ChatGPT 답변을 제공하는 연결 방식은 별도 설계가 필요합니다. 서버 모델 API를 임의로 다시 켜지 않습니다.
+
+기존 `/api/moni/chat`, `/api/moni/agent-chat`, `/api/moni/agent-runtime` 경로는 AI 모델을 호출하지 않으며 비활성 상태를 유지합니다.
 
 ## 필수 환경변수
 
@@ -41,7 +42,7 @@ npm install
 npm run dev
 ```
 
-`npm run build` 전에 ChatGPT-only 구조 검증이 자동 실행됩니다. 운영 채팅 경로가 서버 모델 호출 코드로 다시 연결되거나 웹 UI가 레거시 채팅 API를 호출하면 빌드가 실패하도록 유지합니다.
+`npm run build` 전에 구조 검증이 자동 실행됩니다. 운영 채팅 경로가 서버 모델 호출 코드로 다시 연결되거나 MONI 캐릭터가 외부 GPT 링크로 다시 바뀌면 빌드가 실패하도록 유지합니다.
 
 ## 로그인 동작
 
