@@ -1,14 +1,20 @@
-name: MONI Agent Quality Gate
+name: MONI ChatGPT Integration Quality Gate
 
 on:
   pull_request:
     paths:
       - 'src/lib/moni/agent/**'
       - 'src/lib/moni/agent-v2.ts'
+      - 'src/lib/moni/chatgpt-actions.ts'
+      - 'src/lib/moni/chatgpt-production-actions.ts'
       - 'src/app/api/moni/agent-runtime/**'
+      - 'src/app/api/moni/agent-chat/**'
+      - 'src/app/api/moni/chat/**'
+      - 'src/app/api/moni/chatgpt-only/**'
       - 'src/app/api/moni/agent-evals/**'
       - 'src/app/api/moni/pmo-events/**'
-      - 'src/components/MoniAgentQualityPanel.tsx'
+      - 'src/app/chatgpt-actions/**'
+      - 'src/components/GlobalMoniAgent.tsx'
       - 'src/app/intelligence/page.tsx'
       - 'src/middleware.ts'
       - 'supabase/migrations/*moni_agent*'
@@ -16,6 +22,8 @@ on:
       - 'tests/moni-agent-*.test.mjs'
       - 'scripts/eval-moni-agent-*.mjs'
       - 'scripts/verify-moni-agent-source.mjs'
+      - '.env.example'
+      - 'README.md'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/moni-agent-quality.yml'
@@ -25,11 +33,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: moni-agent-quality-${{ github.event.pull_request.number || github.ref }}
+  group: moni-chatgpt-quality-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  agent-quality:
+  chatgpt-integration-quality:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -37,12 +45,9 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: build-only-anon-key
       SUPABASE_SERVICE_ROLE_KEY: build-only-service-role-key
       ALLOWANCE_ENCRYPTION_KEY: build-only-allowance-encryption-key-32
-      OPENAI_API_KEY: sk-build-only-not-a-real-secret
-      OPENAI_MONI_MODEL: gpt-5
-      OPENAI_MONI_MEMORY_MODEL: gpt-5
       MONI_BUSINESS_ID: '20220523011'
-      MONI_AGENT_V2_DISABLED: 'false'
-      OPENAI_AGENTS_DISABLE_TRACING: '1'
+      MONI_MCP_ENABLED: 'false'
+      MONI_PUBLIC_BASE_URL: https://moni-sigma.vercel.app
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,7 +61,7 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Verify immutable source
+      - name: Verify ChatGPT-only architecture
         run: npm run prebuild
 
       - name: Agent contract tests
