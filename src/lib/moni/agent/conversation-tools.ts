@@ -10,6 +10,10 @@ import type { MoniMcpIdentity } from '@/lib/moni/mcp/oauth'
 import type { MoniConversationRuntimeContext } from '@/lib/moni/agent/conversation-runtime-types'
 
 const text = (value: unknown, max = 1000) => String(value ?? '').trim().slice(0, max)
+const num = (value: unknown) => {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
 
 function explicitApproval(value: string) {
   const message = String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
@@ -135,6 +139,38 @@ function monthRange(year: number, month: number) {
   return { start, end }
 }
 
+function canonicalProductionSummary(productionRecords: any) {
+  const rows = Array.isArray(productionRecords?.records) ? productionRecords.records : []
+  const statusCounts: Record<string, number> = {}
+  let completedRecordCount = 0
+  let openWorkOrderCount = 0
+  let openPlannedQuantityG = 0
+
+  for (const row of rows) {
+    const status = text(row?.status, 80) || 'UNKNOWN'
+    statusCounts[status] = (statusCounts[status] || 0) + 1
+    const normalized = status.toLowerCase()
+    if (status === '완료' || normalized === 'completed' || normalized === 'confirmed') completedRecordCount += 1
+    if (normalized === 'planned') {
+      openWorkOrderCount += 1
+      openPlannedQuantityG += num(row?.planned_quantity_g)
+    }
+  }
+
+  return {
+    record_count: rows.length,
+    completed_record_count: completedRecordCount,
+    open_work_order_count: openWorkOrderCount,
+    open_planned_quantity_g: openPlannedQuantityG,
+    status_counts: statusCounts,
+    planned_quantity_g: num(productionRecords?.summary?.planned_quantity_g),
+    actual_quantity_g: num(productionRecords?.summary?.actual_quantity_g),
+    defect_quantity_g: num(productionRecords?.summary?.defect_quantity_g),
+    sample_quantity_g: num(productionRecords?.summary?.sample_quantity_g),
+    unaccounted_gap_g: num(productionRecords?.summary?.unaccounted_gap_g),
+  }
+}
+
 function createMonthlyManagementSnapshotTool(role: string) {
   if (String(role || '').toLowerCase() !== 'admin') return []
   return [tool({
@@ -155,16 +191,26 @@ function createMonthlyManagementSnapshotTool(role: string) {
         const purchases = await executeMoniReadOnlyTool('search_purchases_and_payables', common, context)
         const productionRecords = await executeMoniReadOnlyTool('search_production_records', common, context)
         const productionPlans = await executeMoniReadOnlyTool('search_production_plans', common, context)
+        const productionCanonical = canonicalProductionSummary(productionRecords)
         return {
           period: { year, month, start_date: start, end_date: end, time_zone: 'Asia/Seoul' },
+          canonical_summary: {
+            sales_and_receivables: (sales as any)?.summary ?? null,
+            actual_purchases: (purchases as any)?.actual_purchases_summary ?? null,
+            production: productionCanonical,
+            production_plans: (productionPlans as any)?.summary ?? null,
+          },
           sales_and_receivables: sales,
           purchases_and_payables: purchases,
           production_records: productionRecords,
           production_plans: productionPlans,
           interpretation_contract: [
-            '각 영역의 summary 수치를 우선 사용합니다.',
+            '건수와 합계는 직접 행을 세거나 더하지 말고 canonical_summary를 그대로 사용합니다.',
             '생산의 unaccounted_gap_g는 미완료량 또는 확정 로스로 해석하지 않습니다.',
-            '열린 작업지시는 production_records.summary.open_work_order_count와 open_planned_quantity_g를 사용합니다.',
+            '열린 작업지시는 canonical_summary.production.open_work_order_count와 open_planned_quantity_g를 사용합니다.',
+            '월간 생산계획(monthly_production_plans)과 생산 작업지시(production_records)는 서로 다른 업무 단계입니다.',
+            '같은 제품·날짜·수량이 생산계획과 작업지시에 함께 존재하는 것만으로 중복 데이터라고 판단하거나 하나를 삭제·통합하라고 권고하지 않습니다.',
+            '실제 중복이라고 말하려면 동일 업무단계 내부의 중복 ID/LOT/작업지시 등 별도 근거가 있어야 합니다.',
             '조회 한도에 도달한 배열은 전체 원장이라고 단정하지 않습니다.',
           ],
         }
