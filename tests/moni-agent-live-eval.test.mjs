@@ -6,6 +6,7 @@ const runner = readFileSync('src/lib/moni/agent/live-eval.ts', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
 const panel = readFileSync('src/components/MoniAgentQualityPanel.tsx', 'utf8')
 const page = readFileSync('src/app/intelligence/page.tsx', 'utf8')
+const cases = JSON.parse(readFileSync('evals/moni-agent-cases.json', 'utf8'))
 
 test('live evaluation API is admin-only and bounded', () => {
   assert.match(route, /requireAdmin/)
@@ -29,6 +30,13 @@ test('live evaluation executes the real read-only runtime and grades traces', ()
   assert.match(runner, /required_tool:/)
   assert.match(runner, /forbidden_tool:/)
   assert.match(runner, /required_argument:/)
+})
+
+test('monthly production live case follows the current snapshot tool contract', () => {
+  const evalCase = cases.find((item) => item.id === 'production-month-summary')
+  assert.deepEqual(evalCase.required_tools, ['get_monthly_management_snapshot'])
+  assert.deepEqual(evalCase.required_arguments, { year: 2026, month: 7 })
+  assert.ok(evalCase.forbidden_tools.includes('execute_production_operation'))
 })
 
 test('live evaluation persists run and case result', () => {
