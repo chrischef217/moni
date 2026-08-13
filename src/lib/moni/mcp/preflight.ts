@@ -199,7 +199,7 @@ export async function runMoniMcpPreflight(input: {
   try {
     const [clients, codes, tokens, toolRuns, windows] = await Promise.all([
       supabase.from('moni_mcp_oauth_clients').select('client_id', { count: 'exact', head: true }),
-      supabase.from('moni_mcp_oauth_codes').select('id', { count: 'exact', head: true }),
+      supabase.from('moni_mcp_oauth_codes').select('code_hash', { count: 'exact', head: true }),
       supabase.from('moni_mcp_oauth_tokens').select('id', { count: 'exact', head: true }),
       supabase.from('moni_mcp_tool_runs').select('id', { count: 'exact', head: true }),
       supabase.from('moni_mcp_acceptance_windows').select('id', { count: 'exact', head: true }),
