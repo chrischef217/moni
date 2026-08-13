@@ -118,10 +118,16 @@ function createReadTools(role: string) {
     }))
 }
 
-const MonthlyManagementSnapshotSchema = z.object({
-  year: z.number().int().min(2020).max(2100),
-  month: z.number().int().min(1).max(12),
-})
+const MonthlyManagementSnapshotSchema = z.object({})
+
+function parseRequestedYearMonth(message: string) {
+  const normalized = String(message || '').replace(/\s+/g, ' ')
+  const korean = normalized.match(/(20\d{2})\s*년\s*(1[0-2]|0?[1-9])\s*월/)
+  const compact = normalized.match(/(20\d{2})[-/.](1[0-2]|0?[1-9])(?:\b|월)/)
+  const match = korean || compact
+  if (!match) throw new Error('월간 종합 조회에는 사용자 요청에 연도와 월이 필요합니다. 예: 2026년 7월')
+  return { year: Number(match[1]), month: Number(match[2]) }
+}
 
 function monthRange(year: number, month: number) {
   const start = `${year}-${String(month).padStart(2, '0')}-01`
@@ -133,24 +139,24 @@ function createMonthlyManagementSnapshotTool(role: string) {
   if (String(role || '').toLowerCase() !== 'admin') return []
   return [tool({
     name: 'get_monthly_management_snapshot',
-    description: '특정 연월의 경영+생산 종합분석용 공식 스냅샷을 한 번에 조회합니다. 월간 경영 데이터, 판매·수금, 매입·지급, 생산실적, 생산계획을 종합해 달라는 요청에는 개별 도구 여러 개 대신 이 도구를 우선 사용하세요.',
+    description: '사용자의 현재 문장에 적힌 연월을 서버가 직접 읽어 해당 월의 경영+생산 공식 스냅샷을 한 번에 조회합니다. 월간 경영 데이터와 생산 데이터를 종합 분석해 달라는 요청에는 이 도구를 사용하세요. 인자는 반드시 빈 JSON 객체 {} 입니다.',
     parameters: MonthlyManagementSnapshotSchema,
     timeoutMs: 30_000,
     timeoutBehavior: 'raise_exception',
     errorFunction: readToolError as any,
-    execute: async (rawArgs, rawContext) => {
-      const args = rawArgs as z.infer<typeof MonthlyManagementSnapshotSchema>
+    execute: async (_rawArgs, rawContext) => {
       const runContext = rawContext as RunContext<MoniConversationRuntimeContext>
       const context = runContext.context
-      return auditedTool('get_monthly_management_snapshot', args, runContext, async () => {
-        const { start, end } = monthRange(args.year, args.month)
+      const { year, month } = parseRequestedYearMonth(context.currentUserText)
+      return auditedTool('get_monthly_management_snapshot', { year, month }, runContext, async () => {
+        const { start, end } = monthRange(year, month)
         const common = { start_date: start, end_date: end, limit: 100 }
         const sales = await executeMoniReadOnlyTool('search_sales_and_receivables', common, context)
         const purchases = await executeMoniReadOnlyTool('search_purchases_and_payables', common, context)
         const productionRecords = await executeMoniReadOnlyTool('search_production_records', common, context)
         const productionPlans = await executeMoniReadOnlyTool('search_production_plans', common, context)
         return {
-          period: { year: args.year, month: args.month, start_date: start, end_date: end, time_zone: 'Asia/Seoul' },
+          period: { year, month, start_date: start, end_date: end, time_zone: 'Asia/Seoul' },
           sales_and_receivables: sales,
           purchases_and_payables: purchases,
           production_records: productionRecords,
