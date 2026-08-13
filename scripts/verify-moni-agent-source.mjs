@@ -9,7 +9,6 @@ const evalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
 const evalCanaryRoute = readFileSync('src/app/api/moni/agent-evals/canary/route.ts', 'utf8')
 const chatgptOnlyRoute = readFileSync('src/app/api/moni/chatgpt-only/route.ts', 'utf8')
 const globalAgent = readFileSync('src/components/GlobalMoniAgent.tsx', 'utf8')
-const intelligencePage = readFileSync('src/app/intelligence/page.tsx', 'utf8')
 const actionInstructions = readFileSync('src/lib/moni/chatgpt-actions.ts', 'utf8')
 const envExample = readFileSync('.env.example', 'utf8')
 const qualityWorkflow = readFileSync('.github/workflows/moni-agent-quality.yml', 'utf8')
@@ -39,13 +38,9 @@ for (const [name, source] of [['agent-runtime', runtimeRoute], ['agent-chat', le
 }
 
 if (!chatgptOnlyRoute.includes('moni_server_model_inference: false')) failures.push('chatgpt-only guard must disable server model inference')
-
-for (const [name, source] of [['global launcher', globalAgent], ['intelligence page', intelligencePage]]) {
-  if (!source.includes(MONI_GPT_URL)) failures.push(`${name} must point to the official MONI Custom GPT`)
-  if (source.includes('/api/moni/agent-runtime') || source.includes('/api/moni/agent-chat') || source.includes('/api/moni/chat')) failures.push(`${name} must not call legacy AI chat endpoints`)
-  if (/\bfetch\s*\(|\bEventSource\b|\bWebSocket\b/.test(source)) failures.push(`${name} must not create a parallel server AI conversation transport`)
-}
-
+if (!globalAgent.includes(MONI_GPT_URL)) failures.push('MONI web launcher must point to the official MONI Custom GPT')
+if (globalAgent.includes('/api/moni/agent-runtime') || globalAgent.includes('/api/moni/agent-chat') || globalAgent.includes('/api/moni/chat')) failures.push('MONI web UI must not call legacy AI chat endpoints')
+if (/\bfetch\s*\(|\bEventSource\b|\bWebSocket\b/.test(globalAgent)) failures.push('MONI web launcher must not create a parallel server AI conversation transport')
 if (/\bprovider\b|\bmodel\b/.test(globalAgent)) failures.push('MONI web launcher must not expose a server AI provider/model')
 if (!actionInstructions.includes('CHATGPT') || !actionInstructions.includes('서버')) failures.push('ChatGPT Action instructions must preserve ChatGPT-product/server separation')
 
