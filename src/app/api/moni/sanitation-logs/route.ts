@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
       water_note: text(body.water_note) || null,
       overall_result: text(body.overall_result) || '적합',
       action_taken: text(body.action_taken) || null,
-      business_id: text(body.business_id) || 'default',
+      business_id: CANONICAL_MONI_BUSINESS_ID,
     }
 
     const supabase = createMoniServiceRoleClient()

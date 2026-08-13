@@ -109,7 +109,9 @@ function usageOf(result: any) {
 
 function isConversationError(error: unknown) {
   const message = String((error as any)?.message || '').toLowerCase()
-  return /conversation/.test(message) && /(not found|invalid|expired|does not exist)/.test(message)
+  const invalidConversation = /conversation/.test(message) && /(not found|invalid|expired|does not exist)/.test(message)
+  const incompleteReasoningChain = /reasoning item/.test(message) && /(missing|required|without)/.test(message)
+  return invalidConversation || incompleteReasoningChain
 }
 
 async function pendingBeforeRun(input: Input) {
@@ -187,6 +189,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         context: runtimeContext,
         maxTurns: MAX_AGENT_TURNS,
         conversationId,
+        reasoningItemIdPolicy: 'preserve',
       })
     } catch (error) {
       if (!isConversationError(error)) throw error
@@ -196,6 +199,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         context: runtimeContext,
         maxTurns: MAX_AGENT_TURNS,
         conversationId,
+        reasoningItemIdPolicy: 'preserve',
       })
     }
 

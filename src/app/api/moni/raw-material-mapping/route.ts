@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -391,7 +392,7 @@ export async function POST(request: NextRequest) {
     if (action === 'undo_last_mapping') {
       let latestHistory: Record<string, unknown> | null = null
       try {
-        latestHistory = await getLatestHistoryRow(toText(body?.business_id) || undefined)
+        latestHistory = await getLatestHistoryRow(CANONICAL_MONI_BUSINESS_ID)
       } catch (error) {
         const message = error instanceof Error ? error.message : '최근 이력을 불러오지 못했습니다.'
         if (isMissingTableError(message)) {
@@ -416,12 +417,12 @@ export async function POST(request: NextRequest) {
         : []
 
       if (newMappingId) {
-        const { error: demoteError } = await supabase.from('raw_material_mapping').update({ is_default: false }).eq('id', newMappingId)
+        const { error: demoteError } = await supabase.from('raw_material_mapping').update({ is_default: false }).eq('id', newMappingId).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         if (demoteError) throw new Error(demoteError.message || '최근 연결 기본값 해제에 실패했습니다.')
       }
 
       if (previousIds.length > 0) {
-        const { error: restoreError } = await supabase.from('raw_material_mapping').update({ is_default: true }).in('id', previousIds)
+        const { error: restoreError } = await supabase.from('raw_material_mapping').update({ is_default: true }).in('id', previousIds).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         if (restoreError) throw new Error(restoreError.message || '이전 기본값 복원에 실패했습니다.')
       }
 
@@ -433,10 +434,11 @@ export async function POST(request: NextRequest) {
           undone_by: toText(body?.actor_id) || null,
         })
         .eq('id', toText(latestHistory.id))
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
 
       if (markUndoneError) throw new Error(markUndoneError.message || '되돌리기 이력 상태 업데이트에 실패했습니다.')
 
-      const nextHistory = await getLatestHistoryRow(toText(body?.business_id) || undefined)
+      const nextHistory = await getLatestHistoryRow(CANONICAL_MONI_BUSINESS_ID)
       return NextResponse.json({ ok: true, nextHistory }, { status: 200 })
     }
 
@@ -447,7 +449,7 @@ export async function POST(request: NextRequest) {
     const recipeId = toText(body?.recipe_id) || null
     let productId = toText(body?.product_id) || null
     let productName = toText(body?.product_name) || null
-    const businessId = toText(body?.business_id) || 'default'
+    const businessId = CANONICAL_MONI_BUSINESS_ID
 
     if (!foodTypeId || (!rawMaterialRefId && !rawMaterialName)) {
       return NextResponse.json({ ok: false, error: '식품유형과 원재료명을 입력해 주세요.' }, { status: 400 })
@@ -463,7 +465,7 @@ export async function POST(request: NextRequest) {
       .from('raw_materials')
       .select('id, item_name, is_active')
       .eq('is_active', true)
-      .or(businessScopeFilter(businessId))
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     activeMaterialQuery = rawMaterialRefId ? activeMaterialQuery.eq('id', rawMaterialRefId) : activeMaterialQuery.eq('item_name', rawMaterialName)
     const { data: activeMaterial, error: activeMaterialError } = await activeMaterialQuery.maybeSingle()
     if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')
@@ -481,6 +483,7 @@ export async function POST(request: NextRequest) {
         .from('recipes')
         .select('product_id, product_name')
         .eq('id', recipeId)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         .maybeSingle()
       if (recipeError) throw new Error(recipeError.message || '레시피 정보 조회에 실패했습니다.')
       productId = productId || toText(recipeRow?.product_id) || null
@@ -590,7 +593,7 @@ export async function PATCH(request: NextRequest) {
       .from('raw_materials')
       .select('id, item_name')
       .eq('is_active', true)
-      .or(businessScopeFilter(normalizeBusinessId(body?.business_id)))
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     activeMaterialQuery = rawMaterialRefId ? activeMaterialQuery.eq('id', rawMaterialRefId) : activeMaterialQuery.eq('item_name', rawMaterialName)
     const { data: activeMaterial, error: activeMaterialError } = await activeMaterialQuery.maybeSingle()
     if (activeMaterialError) throw new Error(activeMaterialError.message || '원재료 검증에 실패했습니다.')
@@ -616,11 +619,11 @@ export async function PATCH(request: NextRequest) {
       is_default: body?.is_default === false ? false : true,
     }
 
-    let updateResult = await supabase.from('raw_material_mapping').update(updatePayload).eq('id', id).select('*').single()
+    let updateResult = await supabase.from('raw_material_mapping').update(updatePayload).eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID).select('*').single()
     if (updateResult.error && isMissingColumnError(updateResult.error.message, 'raw_material_ref_id')) {
       const legacyPayload: Record<string, unknown> = { ...updatePayload }
       delete legacyPayload.raw_material_ref_id
-      updateResult = await supabase.from('raw_material_mapping').update(legacyPayload).eq('id', id).select('*').single()
+      updateResult = await supabase.from('raw_material_mapping').update(legacyPayload).eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID).select('*').single()
     }
     const { data, error } = updateResult
     if (error) throw new Error(error.message || '원재료 매핑 수정에 실패했습니다.')
@@ -640,7 +643,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const supabase = createMoniServiceRoleClient()
-    const { error } = await supabase.from('raw_material_mapping').delete().eq('id', id)
+    const { error } = await supabase.from('raw_material_mapping').delete().eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (error) throw new Error(error.message || '원재료 매핑 삭제에 실패했습니다.')
 
     return NextResponse.json({ ok: true }, { status: 200 })

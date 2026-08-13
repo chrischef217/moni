@@ -8,18 +8,17 @@ import { prepareProductionPlanChange, executeProductionPlanChange } from '@/lib/
 import { prepareProductionOperation, executeProductionOperation } from '@/lib/moni/chatgpt-production-actions'
 import type { MoniMcpIdentity } from '@/lib/moni/mcp/oauth'
 import type { MoniConversationRuntimeContext } from '@/lib/moni/agent/conversation-runtime-types'
+import {
+  hasProductionMutationIntent,
+  isExplicitApproval,
+  monthRange,
+  parseRequestedYearMonth,
+} from '@/lib/moni/v1-contracts'
 
 const text = (value: unknown, max = 1000) => String(value ?? '').trim().slice(0, max)
 const num = (value: unknown) => {
   const parsed = Number(value ?? 0)
   return Number.isFinite(parsed) ? parsed : 0
-}
-
-function explicitApproval(value: string) {
-  const message = String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
-  if (!message) return false
-  if (/(취소|보류|멈춰|하지\s*마|하지마|실행하지|진행하지|아니야|아니요)/.test(message)) return false
-  return /(^|\s)(확인|승인|동의)(\.|!|\s|$)|그대로\s*(실행|진행|처리)|(?:실행|진행|처리)해(?:줘|주세요|라|요)?|위\s*(?:미리보기|내용).*(?:실행|진행|처리)|^(네|예|응|좋아)[.!]?$/i.test(message)
 }
 
 function identity(context: MoniConversationRuntimeContext): MoniMcpIdentity {
@@ -123,21 +122,6 @@ function createReadTools(role: string) {
 }
 
 const MonthlyManagementSnapshotSchema = z.object({})
-
-function parseRequestedYearMonth(message: string) {
-  const normalized = String(message || '').replace(/\s+/g, ' ')
-  const korean = normalized.match(/(20\d{2})\s*년\s*(1[0-2]|0?[1-9])\s*월/)
-  const compact = normalized.match(/(20\d{2})[-/.](1[0-2]|0?[1-9])(?:\b|월)/)
-  const match = korean || compact
-  if (!match) throw new Error('월간 종합 조회에는 사용자 요청에 연도와 월이 필요합니다. 예: 2026년 7월')
-  return { year: Number(match[1]), month: Number(match[2]) }
-}
-
-function monthRange(year: number, month: number) {
-  const start = `${year}-${String(month).padStart(2, '0')}-01`
-  const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
-  return { start, end }
-}
 
 function canonicalProductionSummary(productionRecords: any) {
   const rows = Array.isArray(productionRecords?.records) ? productionRecords.records : []
@@ -257,7 +241,12 @@ function createWriteTools(role: string) {
       execute: async (rawArgs, rawContext) => {
         const args = rawArgs as Record<string, unknown>
         const runContext = rawContext as RunContext<MoniConversationRuntimeContext>
-        return auditedTool('prepare_production_plan_change', args, runContext, () => prepareProductionPlanChange(args, identity(runContext.context)))
+        return auditedTool('prepare_production_plan_change', args, runContext, () => {
+          if (!hasProductionMutationIntent(runContext.context.currentUserText)) {
+            throw new Error('조회·분석 질문에서는 write prepare 도구를 호출할 수 없습니다.')
+          }
+          return prepareProductionPlanChange(args, identity(runContext.context))
+        })
       },
     }),
     tool({
@@ -270,7 +259,7 @@ function createWriteTools(role: string) {
         const context = runContext.context
         return auditedTool('execute_production_plan_change', args, runContext, async () => {
           if (!context.preexistingPendingConfirmationIds.has(args.confirmation_id)) throw new Error('같은 턴의 prepare→execute는 금지됩니다. 이 승인 건은 현재 사용자 메시지 이전부터 PENDING 상태여야 합니다.')
-          if (!explicitApproval(context.currentUserText)) throw new Error('현재 사용자 메시지에서 명시적인 실행 승인을 확인할 수 없습니다.')
+          if (!isExplicitApproval(context.currentUserText)) throw new Error('현재 사용자 메시지에서 명시적인 실행 승인을 확인할 수 없습니다.')
           return executeProductionPlanChange({ confirmation_id: args.confirmation_id, user_confirmation_text: context.currentUserText }, identity(context))
         })
       },
@@ -282,7 +271,12 @@ function createWriteTools(role: string) {
       execute: async (rawArgs, rawContext) => {
         const args = rawArgs as Record<string, unknown>
         const runContext = rawContext as RunContext<MoniConversationRuntimeContext>
-        return auditedTool('prepare_production_operation', args, runContext, () => prepareProductionOperation(args, identity(runContext.context)))
+        return auditedTool('prepare_production_operation', args, runContext, () => {
+          if (!hasProductionMutationIntent(runContext.context.currentUserText)) {
+            throw new Error('조회·분석 질문에서는 write prepare 도구를 호출할 수 없습니다.')
+          }
+          return prepareProductionOperation(args, identity(runContext.context))
+        })
       },
     }),
     tool({
@@ -295,7 +289,7 @@ function createWriteTools(role: string) {
         const context = runContext.context
         return auditedTool('execute_production_operation', args, runContext, async () => {
           if (!context.preexistingPendingConfirmationIds.has(args.confirmation_id)) throw new Error('같은 턴의 prepare→execute는 금지됩니다. 이 승인 건은 현재 사용자 메시지 이전부터 PENDING 상태여야 합니다.')
-          if (!explicitApproval(context.currentUserText)) throw new Error('현재 사용자 메시지에서 명시적인 실행 승인을 확인할 수 없습니다.')
+          if (!isExplicitApproval(context.currentUserText)) throw new Error('현재 사용자 메시지에서 명시적인 실행 승인을 확인할 수 없습니다.')
           return executeProductionOperation({ confirmation_id: args.confirmation_id, user_confirmation_text: context.currentUserText }, identity(context))
         })
       },

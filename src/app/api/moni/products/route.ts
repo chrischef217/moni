@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -85,6 +86,7 @@ export async function GET(request: NextRequest) {
           'created_at',
         ].join(', '),
       )
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .order('product_name', { ascending: true })
       .limit(1000)
     if (error) throw new Error(error.message || '제품 목록 조회에 실패했습니다.')
@@ -155,7 +157,7 @@ export async function POST(request: NextRequest) {
       packaging_material: text(body.packaging_material) || null,
       lot_rule: text(body.lot_rule) || null,
       allergens: text(body.allergens) || null,
-      business_id: text(body.business_id) || '20220523011',
+      business_id: CANONICAL_MONI_BUSINESS_ID,
       is_active: boolValue(body.is_active, true),
     }
 

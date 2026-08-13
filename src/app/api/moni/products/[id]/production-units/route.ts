@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const unitWeightG = numberValue(body.unit_weight_g)
     const isDefault = typeof body.is_default === 'boolean' ? body.is_default : false
     const sortOrder = numberValue(body.sort_order) ?? 0
-    const businessId = text(body.business_id) || '20220523011'
+    const businessId = CANONICAL_MONI_BUSINESS_ID
 
     if (!unitName) {
       return NextResponse.json({ ok: false, error: 'unit_name을 입력해 주세요.' }, { status: 400 })
@@ -107,6 +108,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         .from('product_production_units')
         .update({ is_default: false, updated_at: new Date().toISOString() })
         .eq('product_id', productId)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
 
       if (clearDefaultResult.error && !isMissingUnitsTableError(clearDefaultResult.error.message || '')) {
         throw new Error(clearDefaultResult.error.message || '기본 생산단위 초기화에 실패했습니다.')

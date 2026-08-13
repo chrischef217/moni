@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -106,7 +107,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     const supabase = createMoniServiceRoleClient()
-    const { data, error } = await supabase.from('products').update(payload).eq('id', id).select('*').maybeSingle()
+    const { data, error } = await supabase.from('products').update(payload).eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID).select('*').maybeSingle()
     if (error) throw new Error(error.message || '제품 수정에 실패했습니다.')
     if (!data) {
       return NextResponse.json({ ok: false, error: '제품을 찾을 수 없습니다.' }, { status: 404 })

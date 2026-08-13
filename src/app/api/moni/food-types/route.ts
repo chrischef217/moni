@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,6 +15,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('food_type_master')
       .select('*')
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .order('type_name', { ascending: true })
 
     if (error) throw new Error(error.message || '식품유형 조회 실패')
@@ -38,7 +40,7 @@ export async function POST(request: NextRequest) {
       type_name: typeName,
       category: toText(body?.category) || null,
       unit: toText(body?.unit) || 'g',
-      business_id: toText(body?.business_id) || 'default',
+      business_id: CANONICAL_MONI_BUSINESS_ID,
     }
 
     const { data, error } = await supabase.from('food_type_master').insert(payload).select('*').single()

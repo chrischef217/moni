@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs'
 
 const cases = JSON.parse(readFileSync('evals/moni-agent-cases.json', 'utf8'))
-const runtime = readFileSync('src/lib/moni/agent/sdk-runtime.ts', 'utf8')
+const runtime = readFileSync('src/lib/moni/agent/conversation-runtime.ts', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
 const registry = readFileSync('src/lib/moni/agent/tools/registry.ts', 'utf8')
+const conversationTools = readFileSync('src/lib/moni/agent/conversation-tools.ts', 'utf8')
+const productionActions = readFileSync('src/lib/moni/chatgpt-production-actions.ts', 'utf8')
+const atomicMigration = readFileSync('supabase/migrations/20260813153000_atomic_production_record_actions.sql', 'utf8')
 const policies = readFileSync('src/lib/moni/agent/policies.ts', 'utf8')
 const memory = readFileSync('src/lib/moni/agent/memory.ts', 'utf8')
 const telemetry = readFileSync('src/lib/moni/agent/telemetry.ts', 'utf8')
@@ -33,18 +36,23 @@ for (const [index, item] of cases.entries()) {
 }
 
 const markerChecks = [
-  [runtime, 'MONI_AGENT_SDK_V2', 'runtime'],
-  [runtime, 'outputType: MoniAnswerSchema', 'runtime'],
+  [runtime, 'startOpenAIConversationsSession', 'runtime'],
+  [runtime, 'conversationId', 'runtime'],
   [runtime, 'maxTurns: MAX_AGENT_TURNS', 'runtime'],
-  [runtime, 'SupabaseMoniSession', 'runtime'],
-  [runtime, 'validateAnswer(answer, runtimeContext)', 'runtime'],
+  [runtime, "reasoningItemIdPolicy: 'preserve'", 'runtime'],
+  [runtime, 'incompleteReasoningChain', 'runtime'],
   [registry, 'open_planned_quantity_g', 'registry'],
   [registry, 'completed_plan_gap_g', 'registry'],
-  [registry, 'result_meta', 'registry'],
-  [registry, 'inputGuardrails: [moniToolInputGuardrail]', 'registry'],
+  [conversationTools, 'get_monthly_management_snapshot', 'conversation-tools'],
+  [conversationTools, 'preexistingPendingConfirmationIds', 'conversation-tools'],
+  [conversationTools, 'hasProductionMutationIntent', 'conversation-tools'],
+  [conversationTools, '유효한 JSON 객체', 'conversation-tools'],
+  [productionActions, "rpc('moni_execute_production_record_action'", 'production-actions'],
+  [atomicMigration, 'uq_moni_action_audit_log_confirmation', 'atomic-migration'],
+  [atomicMigration, "v_business_id constant text := '20220523011'", 'atomic-migration'],
   [policies, 'FREELANCER_TOOLS', 'policies'],
   [memory, 'MONI Memory Curator', 'memory'],
-  [telemetry, 'total_tokens', 'telemetry'],
+  [runtime, 'totalTokens', 'runtime'],
   [pmoRoute, 'PREVIEW_TESTING', 'pmo-control-plane'],
 ]
 for (const [source, marker, label] of markerChecks) {

@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit --incremental false",
     "test": "node --test tests/**/*.test.mjs",
     "test:agent": "node --test tests/moni-agent-*.test.mjs",
     "eval:agent": "node scripts/eval-moni-agent-static.mjs",

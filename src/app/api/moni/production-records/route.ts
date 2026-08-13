@@ -1,5 +1,7 @@
 ﻿import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
+import { buildCanonicalProductionDeductionPreview } from '@/lib/moni/production-deduction-preview'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -262,6 +264,7 @@ async function fetchProducts() {
   const { data, error } = await supabase
     .from('products')
     .select('id, product_name')
+    .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     .order('product_name', { ascending: true })
     .limit(500)
 
@@ -278,6 +281,7 @@ async function generateLotNumber(workDate: string) {
   const { data, error } = await supabase
     .from('production_records')
     .select('lot_number')
+    .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     .eq('work_date', workDate)
     .like('lot_number', `${prefix}-%`)
     .order('lot_number', { ascending: false })
@@ -296,7 +300,7 @@ async function generateLotNumber(workDate: string) {
 
 async function ensureLotNumberAvailable(lotNumber: string, exceptRecordId?: string) {
   const supabase = createMoniServiceRoleClient()
-  let query = supabase.from('production_records').select('id').eq('lot_number', lotNumber).limit(1)
+  let query = supabase.from('production_records').select('id').eq('business_id', CANONICAL_MONI_BUSINESS_ID).eq('lot_number', lotNumber).limit(1)
   if (exceptRecordId) query = query.neq('id', exceptRecordId)
   const { data, error } = await query
   if (error) throw new ApiError(500, error.message || 'LOT 중복 확인에 실패했습니다.', 'validation.lot.lookup')
@@ -307,7 +311,7 @@ async function ensureLotNumberAvailable(lotNumber: string, exceptRecordId?: stri
 
 async function fetchRecordById(id: string) {
   const supabase = createMoniServiceRoleClient()
-  const { data, error } = await supabase.from('production_records').select('*').eq('id', id).maybeSingle()
+  const { data, error } = await supabase.from('production_records').select('*').eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID).maybeSingle()
   if (error) throw new ApiError(500, error.message || '?앹궛湲곕줉 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.record')
   if (!data) throw new ApiError(404, '????앹궛湲곕줉??李얠쓣 ???놁뒿?덈떎.', 'query.record')
   return data as Record<string, unknown>
@@ -533,6 +537,7 @@ async function resolveRecipes(record: Record<string, unknown>) {
       .from('recipes')
       .select('*')
       .eq('product_id', productId)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
     if (byId.error) {
@@ -565,6 +570,7 @@ async function resolveExpandedRecipes(record: Record<string, unknown>) {
         .from('recipes')
         .select('*')
         .eq('product_id', productId)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
       if (byId.error) throw new ApiError(500, byId.error.message || '레시피 조회에 실패했습니다.', 'validation.recipes.query')
@@ -667,8 +673,8 @@ async function buildDeductionPreview(record: Record<string, unknown>): Promise<D
 
   const expandedRecipes = await resolveExpandedRecipes(record)
   const recipes = expandedRecipes.filter((entry) => isRawIngredient(entry.recipe.ingredient_type))
-  const businessId = toText(record.business_id) || '20220523011'
-  const materialBusinessScope = `business_id.eq.${businessId},business_id.eq.default,business_id.is.null`
+  const businessId = CANONICAL_MONI_BUSINESS_ID
+  const materialBusinessScope = `business_id.eq.${businessId}`
   if (recipes.length === 0) {
     throw new ApiError(422, '?먯옱猷??덉떆?쇨? ?놁뼱 ?앹궛 ?뺤젙??吏꾪뻾?????놁뒿?덈떎.', 'validation.recipes.empty')
   }
@@ -840,6 +846,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('production_records')
       .select('*')
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -922,6 +929,7 @@ export async function POST(request: NextRequest) {
         .from('products')
         .select('product_name')
         .eq('id', productId)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         .maybeSingle()
       if (productError) throw new ApiError(500, productError.message || '?쒗뭹 議고쉶???ㅽ뙣?덉뒿?덈떎.', 'query.product')
       productName = toText((productData as { product_name?: unknown } | null)?.product_name)
@@ -980,7 +988,7 @@ export async function POST(request: NextRequest) {
       sanitation_check: typeof body.sanitation_check === 'boolean' ? body.sanitation_check : true,
       note: toText(body.note) || null,
       status,
-      business_id: toText(body.business_id) || 'default',
+      business_id: CANONICAL_MONI_BUSINESS_ID,
       updated_at: new Date().toISOString(),
     }
 
@@ -1369,16 +1377,9 @@ export async function PATCH(request: NextRequest) {
         )
       }
 
-      const cancelled = await (async () => {
-        const supabase = createMoniServiceRoleClient()
-        const { error: deleteError } = await supabase.from('production_records').delete().eq('id', recordId)
-        if (deleteError) {
-          throw new ApiError(500, deleteError.message || '작업지시서 삭제에 실패했습니다.', 'mutate.record.delete')
-        }
-        return record
-      })()
+      const cancelled = await updateRecordWithResilientColumns(recordId, { status: 'cancelled' })
       return NextResponse.json(
-        { ok: true, record: toRecordRow(cancelled), message: '작업지시서가 삭제되었습니다.' },
+        { ok: true, record: toRecordRow(cancelled), message: '작업지시서를 삭제하지 않고 cancelled 상태로 보존했습니다.' },
         { status: 200 },
       )
     }
@@ -1401,7 +1402,8 @@ export async function PATCH(request: NextRequest) {
       if (recordStatus === 'confirmed') {
         const txQuery = await supabase
           .from('raw_material_transactions')
-          .select('id, raw_material_id, quantity_g, note')
+          .select('id, item_code, quantity_g, note')
+          .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
           .eq('txn_type', 'OUTBOUND')
           .or(`note.ilike.%production_record_id=${recordId}%,note.ilike.%lot_number=${lotNumber}%`)
 
@@ -1411,14 +1413,14 @@ export async function PATCH(request: NextRequest) {
 
         const txRows = (txQuery.data ?? []) as Array<{
           id?: string | null
-          raw_material_id?: string | null
+          item_code?: string | null
           quantity_g?: number | string | null
         }>
 
         const rollbackStocks: Array<{ id: string; previous: number }> = []
         try {
           for (const tx of txRows) {
-            const materialId = toText(tx.raw_material_id)
+            const materialId = toText(tx.item_code)
             if (!materialId) continue
             const qtyG = parseNumber(tx.quantity_g) ?? 0
             if (qtyG <= 0) continue
@@ -1477,7 +1479,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (action === 'preview_confirm') {
-      const preview = await buildDeductionPreview(record)
+      const preview = await buildCanonicalProductionDeductionPreview(record)
       return NextResponse.json(
         {
           ok: true,
@@ -1507,7 +1509,7 @@ export async function PATCH(request: NextRequest) {
       const lotNumber = toText(record.lot_number) || recordId
       await ensureNoExistingOutboundConfirm(recordId, lotNumber)
 
-      const preview = await buildDeductionPreview(record)
+      const preview = await buildCanonicalProductionDeductionPreview(record)
       if (preview.hasMissingMapping) {
         return NextResponse.json(
           { ok: false, error: '?먯옱猷?誘몃ℓ????ぉ???덉뼱 ?뺤젙?????놁뒿?덈떎.', preview },
@@ -1541,7 +1543,7 @@ export async function PATCH(request: NextRequest) {
         }
       })
 
-      const transactionSourceRows = preview.breakdown.length > 0 ? preview.breakdown : preview.materials
+      const transactionSourceRows = preview.materials
       const transactionRows = transactionSourceRows
         .filter((item) => !!item.material_id)
         .map((item, index) => {
@@ -1558,10 +1560,10 @@ export async function PATCH(request: NextRequest) {
             supplier: null,
             note: sourceNote,
             txn_date: txDate,
-            raw_material_id: materialId,
             raw_material_name: materialName,
             food_type_name: item.food_type_name || null,
-            total_quantity_g: item.required_g,
+            total_weight_g: item.required_g,
+            production_record_id: recordId,
             business_id: businessId,
           }
         })

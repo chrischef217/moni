@@ -11,7 +11,8 @@ test('admin dashboard compatibility route delegates to official Agent runtime', 
   assert.match(adapter, /\/api\/moni\/agent-runtime/)
   assert.match(adapter, /const response = await agentRuntimePOST\(forwarded\)/)
   assert.match(adapter, /reply: text\(payload\.text/)
-  assert.match(adapter, /read_only: true/)
+  assert.match(adapter, /approval_gated_writes: true/)
+  assert.match(adapter, /read_only: false/)
 })
 
 test('adapter preserves request cookies but replaces content framing for new JSON body', () => {

@@ -24,7 +24,7 @@ test('live evaluation only exposes explicit safe cases', () => {
 })
 
 test('live evaluation executes the real read-only runtime and grades traces', () => {
-  assert.match(runner, /runMoniSdkAgent/)
+  assert.match(runner, /runMoniConversationAgent/)
   assert.match(runner, /gradeCase/)
   assert.match(runner, /required_tool:/)
   assert.match(runner, /forbidden_tool:/)

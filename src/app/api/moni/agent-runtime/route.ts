@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '@/lib/allowance/session'
 import { assertSafeUserRequest } from '@/lib/moni/agent/guardrails'
-import { loadPinnedProjectContext, loadThreadMemory } from '@/lib/moni/agent/memory'
+import { loadPinnedProjectContext, loadThreadMemory, maybeRefreshThreadMemory } from '@/lib/moni/agent/memory'
 import { runMoniConversationAgent } from '@/lib/moni/agent/conversation-runtime'
 import type { MoniAgentPageContext } from '@/lib/moni/agent/context-types'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
@@ -118,6 +118,18 @@ export async function POST(request: NextRequest) {
     }).eq('id', thread.id)
     if (threadUpdateError) throw new Error(threadUpdateError.message)
 
+    // Conversations API keeps the exact short-term thread. This compact DB
+    // memory is refreshed asynchronously as a durable fallback for long-lived
+    // conversations and provider-side conversation rebuilds.
+    void maybeRefreshThreadMemory({
+      supabase, businessId: BUSINESS_ID, threadId: thread.id, model, existingMemory: threadMemory,
+    }).catch((memoryError) => {
+      console.error('[MONI_MEMORY_REFRESH_ERROR]', {
+        thread_id: thread.id,
+        message: memoryError instanceof Error ? memoryError.message : 'memory refresh failed',
+      })
+    })
+
     return NextResponse.json({
       ok: true, text: result.text, provider: 'openai', model, thread_id: thread.id,
       agent_runtime: 'MONI_OPENAI_CONVERSATIONS_V1', conversation_state: 'SERVER_MANAGED',
@@ -126,7 +138,7 @@ export async function POST(request: NextRequest) {
     }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'MONI 응답 생성 중 오류가 발생했습니다.'
-    console.error('[MONI_CONVERSATION_ROUTE_ERROR]', { message, occurred_at: new Date().toISOString() })
+    console.error('[MONI_AGENT_SDK_ROUTE][MONI_CONVERSATION_ROUTE_ERROR]', { message, occurred_at: new Date().toISOString() })
     return NextResponse.json({ ok: false, error: message }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
   }
 }

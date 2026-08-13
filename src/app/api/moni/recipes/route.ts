@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,8 +21,8 @@ function toNumber(value: unknown): number | null {
 async function fetchProductAndMaterialOptions() {
   const supabase = createMoniServiceRoleClient()
   const [productsResult, rawMaterialsResult] = await Promise.all([
-    supabase.from('products').select('*').order('product_name', { ascending: true }),
-    supabase.from('raw_materials').select('*').order('item_name', { ascending: true }),
+    supabase.from('products').select('*').eq('business_id', CANONICAL_MONI_BUSINESS_ID).order('product_name', { ascending: true }),
+    supabase.from('raw_materials').select('*').eq('business_id', CANONICAL_MONI_BUSINESS_ID).order('item_name', { ascending: true }),
   ])
 
   if (productsResult.error) throw new Error(productsResult.error.message || '제품 목록 조회 실패')
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('recipes')
       .select('*')
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true })
@@ -59,6 +61,7 @@ export async function GET(request: NextRequest) {
       const mappingResult = await supabase
         .from('raw_material_mapping')
         .select('*')
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         .in('food_type_id', foodTypeIds)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: false })
@@ -98,7 +101,7 @@ export async function POST(request: NextRequest) {
       ratio_percent: ratioPercent,
       sort_order: toNumber(body?.sort_order) ?? 0,
       is_active: typeof body?.is_active === 'boolean' ? body.is_active : true,
-      business_id: toText(body?.business_id) || 'default',
+      business_id: CANONICAL_MONI_BUSINESS_ID,
     }
 
     const { data, error } = await supabase.from('recipes').insert(payload).select('*').single()
@@ -116,7 +119,7 @@ export async function PUT(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     const productId = toText(body?.product_id)
     const productName = toText(body?.product_name)
-    const businessId = toText(body?.business_id) || '20220523011'
+    const businessId = CANONICAL_MONI_BUSINESS_ID
     const rows = Array.isArray(body?.recipes) ? (body.recipes as Array<Record<string, unknown>>) : []
 
     if (!productId || !productName) {
@@ -153,7 +156,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const supabase = createMoniServiceRoleClient()
-    const existingResult = await supabase.from('recipes').select('id').eq('product_id', productId)
+    const existingResult = await supabase.from('recipes').select('id').eq('product_id', productId).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (existingResult.error) throw new Error(existingResult.error.message || '기존 레시피 조회 실패')
 
     const existingIdList = (existingResult.data ?? []).map((item) => String(item.id))
@@ -167,6 +170,7 @@ export async function PUT(request: NextRequest) {
           .from('food_type_master')
           .select('id, type_name')
           .eq('type_name', row.food_type_name)
+          .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
           .maybeSingle()
         if (found.error) throw new Error(found.error.message || '식품유형 조회 실패')
 
@@ -206,6 +210,7 @@ export async function PUT(request: NextRequest) {
           .update(payload)
           .eq('id', row.id)
           .eq('product_id', productId)
+          .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
           .select('id')
           .single()
         if (updated.error) throw new Error(updated.error.message || '레시피 수정 실패')
@@ -223,9 +228,10 @@ export async function PUT(request: NextRequest) {
         .from('raw_material_mapping')
         .delete()
         .eq('recipe_id', id)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       if (mappingDelete.error) throw new Error(mappingDelete.error.message || '연결된 원재료 매핑 삭제 실패')
 
-      const deleted = await supabase.from('recipes').delete().eq('id', id).eq('product_id', productId)
+      const deleted = await supabase.from('recipes').delete().eq('id', id).eq('product_id', productId).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       if (deleted.error) throw new Error(deleted.error.message || '레시피 삭제 실패')
     }
 
@@ -233,6 +239,7 @@ export async function PUT(request: NextRequest) {
       .from('recipes')
       .select('*')
       .eq('product_id', productId)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true })
@@ -257,9 +264,10 @@ export async function DELETE(request: NextRequest) {
       .from('raw_material_mapping')
       .delete()
       .eq('recipe_id', id)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (mappingDelete.error) throw new Error(mappingDelete.error.message || '연결된 원재료 매핑 삭제 실패')
 
-    const { error } = await supabase.from('recipes').delete().eq('id', id)
+    const { error } = await supabase.from('recipes').delete().eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (error) throw new Error(error.message || '레시피 삭제 실패')
 
     return NextResponse.json({ ok: true }, { status: 200 })
