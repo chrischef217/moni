@@ -14,7 +14,6 @@ const envExample = readFileSync('.env.example', 'utf8')
 const qualityWorkflow = readFileSync('.github/workflows/moni-agent-quality.yml', 'utf8')
 const readme = readFileSync('README.md', 'utf8')
 
-const MONI_GPT_URL = 'https://chatgpt.com/g/g-6a7af9094b08819183be32a5dc97ef7b-moni'
 const failures = []
 const blockedRoutes = [
   ['agent-runtime', runtimeRoute],
@@ -38,10 +37,11 @@ for (const [name, source] of [['agent-runtime', runtimeRoute], ['agent-chat', le
 }
 
 if (!chatgptOnlyRoute.includes('moni_server_model_inference: false')) failures.push('chatgpt-only guard must disable server model inference')
-if (!globalAgent.includes(MONI_GPT_URL)) failures.push('MONI web launcher must point to the official MONI Custom GPT')
-if (globalAgent.includes('/api/moni/agent-runtime') || globalAgent.includes('/api/moni/agent-chat') || globalAgent.includes('/api/moni/chat')) failures.push('MONI web UI must not call legacy AI chat endpoints')
-if (/\bfetch\s*\(|\bEventSource\b|\bWebSocket\b/.test(globalAgent)) failures.push('MONI web launcher must not create a parallel server AI conversation transport')
-if (/\bprovider\b|\bmodel\b/.test(globalAgent)) failures.push('MONI web launcher must not expose a server AI provider/model')
+if (!globalAgent.includes('moni-agent-character')) failures.push('MONI web UI must keep the MONI character launcher')
+if (!globalAgent.includes('MONI 자체 채팅 화면')) failures.push('MONI web UI must keep an internal MONI chat shell')
+if (globalAgent.includes('chatgpt.com/g/')) failures.push('MONI web UI must not redirect the character launcher to an external Custom GPT')
+if (globalAgent.includes('/api/moni/agent-runtime') || globalAgent.includes('/api/moni/agent-chat') || globalAgent.includes('/api/moni/chat')) failures.push('MONI web UI must not call disabled legacy AI chat endpoints')
+if (/\bprovider\b|\bmodel\b/.test(globalAgent)) failures.push('MONI web UI must not expose a server AI provider/model')
 if (!actionInstructions.includes('CHATGPT') || !actionInstructions.includes('서버')) failures.push('ChatGPT Action instructions must preserve ChatGPT-product/server separation')
 
 const forbiddenEnvKeys = [
@@ -59,8 +59,9 @@ for (const key of forbiddenEnvKeys) {
   if (new RegExp(`^\\s*${key}:`, 'm').test(qualityWorkflow)) failures.push(`CI must not inject legacy MONI model config: ${key}`)
 }
 
-if (!readme.includes('ChatGPT Only') || !readme.includes(MONI_GPT_URL)) failures.push('README must document the ChatGPT-only MONI architecture')
+if (!readme.includes('ChatGPT Only')) failures.push('README must document the ChatGPT-only MONI architecture')
 if (/MONI 지능을 위해[^\n]*(?:OPENAI_API_KEY|GOOGLE_AI_API_KEY)/.test(readme) === false) failures.push('README must explicitly state that MONI intelligence does not require model API keys')
+if (!readme.includes('MONI 캐릭터와 자체 채팅 UI')) failures.push('README must preserve the MONI character and internal chat UI requirement')
 
 if (failures.length) {
   console.error('MONI ChatGPT-only source verification failed:')
