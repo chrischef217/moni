@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import MoniInternalChat from '@/components/MoniInternalChat'
 
 export default function GlobalMoniAgent() {
   const [open, setOpen] = useState(false)
@@ -60,6 +61,10 @@ export default function GlobalMoniAgent() {
             </div>
             <div className="mt-2 px-1 text-[10px] text-[#78909d]">외부 GPT 자동 이동 없음 · 서버 모델 API 비활성</div>
           </footer>
+
+          <div className="absolute inset-x-0 bottom-0 top-[73px] z-20 flex flex-col bg-[#f7fcfb]">
+            <MoniInternalChat />
+          </div>
         </section>
       )}
 
