@@ -1,83 +1,47 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
 const prebuild = String(packageJson.scripts?.prebuild || '')
-const middleware = readFileSync('src/middleware.ts', 'utf8')
-const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
-const runtime = readFileSync('src/lib/moni/agent/sdk-runtime.ts', 'utf8')
-const policies = readFileSync('src/lib/moni/agent/policies.ts', 'utf8')
-const memory = readFileSync('src/lib/moni/agent/memory.ts', 'utf8')
-const session = readFileSync('src/lib/moni/agent/supabase-session.ts', 'utf8')
-const guardrails = readFileSync('src/lib/moni/agent/guardrails.ts', 'utf8')
-const telemetry = readFileSync('src/lib/moni/agent/telemetry.ts', 'utf8')
-const pmo = readFileSync('src/lib/moni/agent/pmo.ts', 'utf8')
-const pmoRoute = readFileSync('src/app/api/moni/pmo-events/route.ts', 'utf8')
-const liveEval = readFileSync('src/lib/moni/agent/live-eval.ts', 'utf8')
-const liveEvalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
-const liveEvalCanaryRoute = readFileSync('src/app/api/moni/agent-evals/canary/route.ts', 'utf8')
-const liveEvalCanaryMigration = readFileSync('supabase/migrations/20260804070000_add_moni_agent_eval_canary_requests.sql', 'utf8')
-const liveEvalPanel = readFileSync('src/components/MoniAgentQualityPanel.tsx', 'utf8')
-const intelligencePage = readFileSync('src/app/intelligence/page.tsx', 'utf8')
-const scripts = readdirSync('scripts')
+const runtimeRoute = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const legacyChatRoute = readFileSync('src/app/api/moni/agent-chat/route.ts', 'utf8')
+const chatRoute = readFileSync('src/app/api/moni/chat/route.ts', 'utf8')
+const evalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
+const evalCanaryRoute = readFileSync('src/app/api/moni/agent-evals/canary/route.ts', 'utf8')
+const chatgptOnlyRoute = readFileSync('src/app/api/moni/chatgpt-only/route.ts', 'utf8')
+const globalAgent = readFileSync('src/components/GlobalMoniAgent.tsx', 'utf8')
+const actionInstructions = readFileSync('src/lib/moni/chatgpt-actions.ts', 'utf8')
 
 const failures = []
+const blockedRoutes = [
+  ['agent-runtime', runtimeRoute],
+  ['agent-chat', legacyChatRoute],
+  ['chat', chatRoute],
+  ['agent-evals', evalRoute],
+  ['agent-evals-canary', evalCanaryRoute],
+]
 
-if (/patch-.*\.mjs/.test(prebuild)) failures.push('prebuild must not mutate TypeScript source through patch scripts')
-if (scripts.some((name) => /^patch-.*\.mjs$/.test(name))) failures.push('obsolete source-mutating patch scripts must not remain in the repository')
-if (existsSync('src/app/api/moni/agent-v2/route.ts')) failures.push('the bypassable legacy /api/moni/agent-v2 route must not exist')
-if (!prebuild.includes('verify-moni-agent-source.mjs')) failures.push('prebuild must run immutable source verification')
-if (!middleware.includes("'/api/moni/agent-chat'")) failures.push('src/middleware.ts must route the public MONI chat endpoint')
-if (!middleware.includes("'/api/moni/agent-runtime'")) failures.push('src/middleware.ts must route MONI chat to the production agent runtime')
-if (!route.includes("@/lib/moni/agent/sdk-runtime")) failures.push('agent runtime API must import the SDK runtime directly')
-if (!route.includes('loadThreadMemory') || !route.includes('loadPinnedProjectContext')) failures.push('agent route must load layered memory')
-if (!route.includes('maybeRefreshThreadMemory')) failures.push('agent route must refresh thread memory')
-if (!runtime.includes("from '@openai/agents'")) failures.push('MONI runtime must use the official OpenAI Agents SDK')
-if (!runtime.includes('outputType: MoniAnswerSchema')) failures.push('MONI runtime must use a structured final output schema')
-if (!runtime.includes('function canonicalToolName') || !runtime.includes('normalizeAnswerToolReferences(MoniAnswerSchema.parse')) failures.push('tool source namespace normalization is missing')
-if (!runtime.includes('context.toolsUsed.map(canonicalToolName)')) failures.push('used tool validation is not canonicalized')
-if (!liveEval.includes("'relative-date-clock'")) failures.push('relative-date production canary is not in the safe allowlist')
-if (!runtime.includes('maxTurns: MAX_AGENT_TURNS')) failures.push('MONI runtime must enforce a bounded agent loop')
-if (!runtime.includes('SupabaseMoniSession')) failures.push('MONI runtime must use persistent SDK sessions')
-if (!runtime.includes('createMoniTools(context.session.role)')) failures.push('MONI runtime must expose tools by role')
-if (!runtime.includes('markAgentRunCompleted')) failures.push('MONI runtime must persist usage and latency telemetry')
-if (!runtime.includes('function hasUnsafeUnaccountedGapInterpretation')) failures.push('gap safety interpretation validator is missing')
-if (!runtime.includes('safeNegation') || !runtime.includes('의미하지')) failures.push('gap validator does not recognize explicit safe negation')
-if (/unaccounted_gap_g\.\{0,20\}/.test(runtime)) failures.push('legacy proximity-only gap validation remains active')
-const initTry = runtime.indexOf('  try {\n    const supervisor = new Agent')
-const initCatch = runtime.indexOf('  } catch (error) {', initTry)
-if (initTry < 0 || initCatch < initTry) failures.push('Agent initialization is outside failure telemetry try/catch')
-if (!policies.includes('FREELANCER_TOOLS') || !policies.includes('search_sales_and_receivables')) failures.push('role policy must explicitly separate financial tools')
-if (!memory.includes('MONI Memory Curator') || !memory.includes('MEMORY_REFRESH_MESSAGE_DELTA')) failures.push('thread memory curator is missing')
-if (!session.includes('implements Session') || !session.includes('moni_ai_session_items')) failures.push('Supabase SDK session implementation is missing')
-if (!guardrails.includes('defineToolInputGuardrail') || !guardrails.includes('defineToolOutputGuardrail')) failures.push('tool input/output guardrails are missing')
-if (!telemetry.includes('input_tokens') || !telemetry.includes('latency_ms')) failures.push('usage and latency telemetry fields are missing')
-if (!pmoRoute.includes('allowed_transitions') || !pmoRoute.includes('requireAdmin')) failures.push('admin PMO control-plane transition API is missing')
+if (!prebuild.includes('verify-moni-agent-source.mjs')) failures.push('prebuild must run MONI source verification')
 
-const pmoToolSchema = pmo.match(/export const PmoEventInputSchema[\s\S]*?\.strict\(\)/)?.[0] || ''
-if (!pmo.includes('export const PmoToolEvidenceSchema')) failures.push('strict PMO tool evidence schema is missing')
-if (!/PmoToolEvidenceSchema[\s\S]*?\.strict\(\)/.test(pmo)) failures.push('PMO tool evidence schema must be closed')
-if (!pmoToolSchema.includes('evidence: PmoToolEvidenceSchema')) failures.push('PMO tool input must use the strict evidence schema')
-if (/z\.record\(/.test(pmoToolSchema)) failures.push('PMO tool input must not expose an open evidence record')
-if (!pmo.includes('const PmoEventStorageSchema') || !pmo.includes('PmoEventStorageSchema.parse(raw)')) {
-  failures.push('internal PMO storage schema separation is missing')
+for (const [name, source] of blockedRoutes) {
+  if (!source.includes('moni_server_model_inference: false')) failures.push(`${name} must explicitly disable MONI server model inference`)
+  if (source.includes('OPENAI_API_KEY') || source.includes('runMoniSdkAgent') || source.includes('runLiveEvalCase') || source.includes("from '@openai/agents'")) failures.push(`${name} must not call a server-side AI model`)
 }
 
-if (!liveEval.includes('runMoniSdkAgent') || !liveEval.includes('gradeCase')) failures.push('live model evaluation runner is missing')
-if (!liveEval.includes('live-single-case-v2') || !liveEval.includes('moni_ai_eval_case_results')) failures.push('live evaluation result persistence is missing')
-if (!liveEvalRoute.includes('requireAdmin') || !liveEvalRoute.includes('maxDuration = 60')) failures.push('admin bounded live evaluation API is missing')
-if (!liveEvalCanaryRoute.includes("createHash('sha256')")) failures.push('live evaluation canary must hash one-time tokens')
-if (!liveEvalCanaryRoute.includes(".eq('status', 'PENDING')")) failures.push('live evaluation canary must atomically claim pending requests')
-if (!liveEvalCanaryRoute.includes('runLiveEvalCase') || !liveEvalCanaryRoute.includes('maxDuration = 60')) failures.push('bounded live evaluation canary runner is missing')
-if (!liveEvalCanaryMigration.includes('token_hash text not null')) failures.push('canary request store must persist token hashes only')
-if (!liveEvalCanaryMigration.includes('alter table public.moni_ai_eval_canary_requests enable row level security')) failures.push('canary request store RLS is missing')
-if (!liveEvalCanaryMigration.includes('revoke all on table public.moni_ai_eval_canary_requests from anon, authenticated')) failures.push('canary request store public access is not revoked')
-if (!liveEvalPanel.includes('실모델 평가 실행')) failures.push('admin live evaluation panel is missing')
-if (!intelligencePage.includes('MoniAgentQualityPanel')) failures.push('intelligence page does not expose the live evaluation panel')
+for (const [name, source] of [['agent-runtime', runtimeRoute], ['agent-chat', legacyChatRoute], ['chat', chatRoute]]) {
+  if (!source.includes("integration: 'CHATGPT_CUSTOM_GPT_ACTIONS'")) failures.push(`${name} must identify ChatGPT Custom GPT Actions`)
+  if (!source.includes("intelligence_runtime: 'CHATGPT_PRODUCT'")) failures.push(`${name} must identify ChatGPT product intelligence`)
+}
+
+if (!chatgptOnlyRoute.includes('moni_server_model_inference: false')) failures.push('chatgpt-only guard must disable server model inference')
+if (!globalAgent.includes('https://chatgpt.com/g/g-6a7af9094b08819183be32a5dc97ef7b-moni')) failures.push('MONI web launcher must point to the official MONI Custom GPT')
+if (globalAgent.includes('/api/moni/agent-runtime') || globalAgent.includes('/api/moni/agent-chat') || globalAgent.includes('/api/moni/chat')) failures.push('MONI web UI must not call legacy AI chat endpoints')
+if (/\bprovider\b|\bmodel\b/.test(globalAgent)) failures.push('MONI web launcher must not expose a server AI provider/model')
+if (!actionInstructions.includes('CHATGPT') || !actionInstructions.includes('서버')) failures.push('ChatGPT Action instructions must preserve ChatGPT-product/server separation')
 
 if (failures.length) {
-  console.error('MONI Agent source verification failed:')
+  console.error('MONI ChatGPT-only source verification failed:')
   for (const failure of failures) console.error(`- ${failure}`)
   process.exit(1)
 }
 
-console.log('MONI Agent source verification passed.')
+console.log('MONI ChatGPT-only source verification passed.')
