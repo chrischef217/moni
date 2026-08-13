@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -579,7 +580,7 @@ export async function POST(request) {
       product_name: text(body.product_name),
       planned_quantity_g: quantity,
       note: text(body.note) || null,
-      business_id: text(body.business_id) || 'default',
+      business_id: CANONICAL_MONI_BUSINESS_ID,
     }).select('*').single()
 
     if (result.error) throw new Error(result.error.message)
@@ -604,7 +605,7 @@ export async function PATCH(request) {
       planned_quantity_g: Math.round(num(body.planned_quantity_g)),
       note: text(body.note) || null,
       updated_at: new Date().toISOString(),
-    }).eq('id', text(body.id)).select('*').single()
+    }).eq('id', text(body.id)).eq('business_id', CANONICAL_MONI_BUSINESS_ID).select('*').single()
 
     if (result.error) throw new Error(result.error.message)
     return NextResponse.json({ ok: true, plan: result.data })
@@ -621,7 +622,7 @@ export async function DELETE(request) {
     const id = text(request.nextUrl.searchParams.get('id'))
     if (!id) return NextResponse.json({ ok: false, error: '계획 ID가 필요합니다.' }, { status: 400 })
 
-    const result = await createMoniServiceRoleClient().from('monthly_production_plans').delete().eq('id', id)
+    const result = await createMoniServiceRoleClient().from('monthly_production_plans').delete().eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (result.error) throw new Error(result.error.message)
     return NextResponse.json({ ok: true })
   } catch (error) {

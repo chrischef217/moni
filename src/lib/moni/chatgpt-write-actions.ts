@@ -1,6 +1,7 @@
 import type { MoniMcpIdentity } from '@/lib/moni/mcp/oauth'
 import { MONI_BUSINESS_ID } from '@/lib/moni/mcp/config'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { kgToGrams } from '@/lib/moni/v1-contracts'
 
 export type ProductionPlanActionType = 'CREATE' | 'UPDATE' | 'DELETE'
 
@@ -150,7 +151,7 @@ export async function prepareProductionPlanChange(input: PrepareProductionPlanIn
       warnings.push(`통상 생산량보다 큰 계획입니다. 입력 ${new Intl.NumberFormat('ko-KR').format(quantityKg)}kg / 안전 참고치 ${new Intl.NumberFormat('ko-KR').format(Math.round(guard.warning_limit_kg))}kg`)
     }
 
-    const plannedQuantityG = Math.round(quantityKg * 1000)
+    const plannedQuantityG = kgToGrams(quantityKg)
     if (!Number.isSafeInteger(plannedQuantityG) || plannedQuantityG <= 0) throw new Error('생산량 단위 변환 결과가 안전하지 않습니다.')
 
     let duplicateQuery = supabase

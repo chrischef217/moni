@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -88,6 +89,7 @@ export async function POST(request: NextRequest) {
         .from('raw_materials')
         .select('*')
         .eq('item_name', rawMaterialName)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         .limit(1)
       if (findError) throw new Error(findError.message || '원재료 조회 실패')
 
@@ -102,7 +104,7 @@ export async function POST(request: NextRequest) {
         packing_weight_g: packingWeightG,
         current_stock_g: currentStock + totalQuantityG,
         is_active: true,
-        business_id: 'default',
+        business_id: CANONICAL_MONI_BUSINESS_ID,
       }
 
       const materialResult = existing
@@ -118,18 +120,17 @@ export async function POST(request: NextRequest) {
         quantity_g: totalQuantityG,
         unit_price: unitPriceWon,
         txn_date: receivedDate,
-        received_date: receivedDate,
-        raw_material_id: rawMaterialId,
+        transaction_date: receivedDate,
         raw_material_name: rawMaterialName,
         food_type_name: foodTypeName || null,
         supplier: supplier || null,
-        received_pack_quantity: packQuantity,
+        quantity_packs: packQuantity,
         packing_unit: packingUnit || null,
         packing_weight_g: packingWeightG,
-        total_quantity_g: totalQuantityG,
-        unit_price_won: unitPriceWon,
+        total_weight_g: totalQuantityG,
+        total_price: unitPriceWon === null ? null : packQuantity * unitPriceWon,
         note: note || null,
-        business_id: 'default',
+        business_id: CANONICAL_MONI_BUSINESS_ID,
       }
       const transactionResult = await supabase.from('raw_material_transactions').insert(transactionPayload)
       if (transactionResult.error) throw new Error(transactionResult.error.message || '입고 기록 저장 실패')

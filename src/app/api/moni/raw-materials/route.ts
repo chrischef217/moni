@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,8 +30,7 @@ function makeRawMaterialId() {
 }
 
 function normalizeBusinessId(value: unknown): string {
-  const raw = text(value)
-  return raw || '20220523011'
+  return CANONICAL_MONI_BUSINESS_ID
 }
 
 function isScopedBusinessId(value: unknown, businessId: string): boolean {
@@ -60,6 +60,7 @@ async function validateLinkedSemifinishedProductId(
     .from('products')
     .select('id, product_type')
     .eq('id', linkedProductId)
+    .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     .maybeSingle()
   if (error) throw new Error(error.message || '연결 반제품 검증에 실패했습니다.')
   if (!data) throw new Error('선택한 연결 반제품을 찾을 수 없습니다.')

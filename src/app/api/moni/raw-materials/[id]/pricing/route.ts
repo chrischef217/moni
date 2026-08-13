@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,6 +32,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       .from('raw_materials')
       .update({ unit_price_per_kg: unitPrice })
       .eq('id', id)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .select('id, item_name, packing_weight_g, unit_price_per_kg')
       .maybeSingle()
 

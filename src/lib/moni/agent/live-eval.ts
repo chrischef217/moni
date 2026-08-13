@@ -1,7 +1,7 @@
 import casesJson from '../../../../evals/moni-agent-cases.json'
 import { loadPinnedProjectContext } from '@/lib/moni/agent/memory'
 import { reportPmoEvent } from '@/lib/moni/agent/pmo'
-import { runMoniSdkAgent } from '@/lib/moni/agent/sdk-runtime'
+import { runMoniConversationAgent } from '@/lib/moni/agent/conversation-runtime'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
@@ -165,9 +165,12 @@ export async function runLiveEvalCase(args: {
     if (messageError) throw new Error(messageError.message)
 
     const pinnedProjectContext = await loadPinnedProjectContext(supabase, BUSINESS_ID)
-    const result = await runMoniSdkAgent({
+    const result = await runMoniConversationAgent({
       model: args.model,
       currentContent: [{ type: 'input_text', text: evalCase.prompt }],
+      currentUserText: evalCase.prompt,
+      conversationId: null,
+      recentHistory: [],
       threadMemory: {
         summary: '',
         salientFacts: [],
@@ -220,7 +223,7 @@ export async function runLiveEvalCase(args: {
     const grade = gradeCase({
       evalCase,
       answerText: result.text,
-      answer: result.answer,
+      answer: result.text,
       toolsUsed: result.toolsUsed,
       toolRuns: (toolRuns ?? []) as Array<{
         tool_name: string
@@ -245,7 +248,7 @@ export async function runLiveEvalCase(args: {
           usage: result.usage,
           duration_ms: durationMs,
           checks: grade.checks,
-          answer: result.answer,
+          answer: result.text,
         },
       })
     if (caseInsertError) throw new Error(caseInsertError.message)

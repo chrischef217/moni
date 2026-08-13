@@ -1,6 +1,12 @@
 import type { MoniMcpIdentity } from '@/lib/moni/mcp/oauth'
 import { MONI_BUSINESS_ID } from '@/lib/moni/mcp/config'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { kgToGrams, normalizeProductionStatus } from '@/lib/moni/v1-contracts'
+import {
+  assertNoExistingProductionOutbound,
+  buildCanonicalProductionDeductionPreview,
+  type ProductionDeductionPreview,
+} from '@/lib/moni/production-deduction-preview'
 
 export type ProductionOperationAction =
   | 'CREATE_WORK_ORDER'
@@ -32,10 +38,6 @@ type ExecuteInput = {
   user_confirmation_text?: unknown
 }
 
-const PRODUCTION_API_ORIGIN = 'https://moni-sigma.vercel.app'
-const WRITER_NAME = '윤대열'
-const REVIEWER_NAME = '배순애'
-
 const text = (value: unknown, max = 1000) => String(value ?? '').trim().slice(0, max)
 const numeric = (value: unknown) => {
   if (value === null || value === undefined || value === '') return null
@@ -56,16 +58,6 @@ function normalizeAction(value: unknown): ProductionOperationAction | null {
     action === 'CONFIRM_PRODUCTION'
   ) return action
   return null
-}
-
-function statusKey(value: unknown) {
-  const raw = text(value, 80).toLowerCase()
-  if (['planned', 'plan', 'scheduled'].includes(raw)) return 'planned'
-  if (['completed', 'complete', 'done', '완료'].includes(raw)) return 'completed'
-  if (['confirmed', 'confirm', '확정'].includes(raw)) return 'confirmed'
-  if (['cancelled', 'canceled', '취소'].includes(raw)) return 'cancelled'
-  if (raw === 'confirming') return 'confirming'
-  return raw
 }
 
 function publicRecord(row: any) {
@@ -223,16 +215,17 @@ async function quantityGuard(productId: string, quantityKg: number) {
     : null
 }
 
-async function callProductionApi(body: Record<string, unknown>) {
-  const response = await fetch(`${PRODUCTION_API_ORIGIN}/api/moni/production-records`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  })
-  const value = await response.json().catch(() => ({})) as any
-  if (!response.ok || !value?.ok) throw new Error(text(value?.error, 2000) || `생산 처리 API 실패 (${response.status})`)
-  return value
+function publicDeductionPreview(preview: ProductionDeductionPreview) {
+  return {
+    materials: preview.materials,
+    total_required_g: preview.totalRequiredG,
+    has_insufficient: preview.hasInsufficient,
+    has_missing_mapping: preview.hasMissingMapping,
+    deduction_basis_g: preview.deductionBasisG,
+    entered_quantity_g: preview.enteredQuantityG,
+    loss_quantity_g: preview.lossQuantityG,
+    planned_quantity_g: preview.plannedQuantityG,
+  }
 }
 
 async function createConfirmation(input: {
@@ -296,7 +289,7 @@ export async function prepareProductionOperation(input: PrepareInput, identity: 
     const largeWarning = await quantityGuard(productId, quantityKg)
     if (largeWarning) warnings.push(largeWarning)
     const unit = await fetchDefaultProductionUnit(productId, product.weight_g)
-    const plannedG = Math.round(quantityKg * 1000)
+    const plannedG = kgToGrams(quantityKg)
     if (!Number.isSafeInteger(plannedG) || plannedG <= 0) throw new Error('생산량 단위 변환 결과가 안전하지 않습니다.')
     const requestedLot = text(input.lot_number, 100).toUpperCase()
     const lotNumber = requestedLot || await generateLotNumber(workDate)
@@ -327,14 +320,14 @@ export async function prepareProductionOperation(input: PrepareInput, identity: 
   }
 
   if (action === 'UPDATE_WORK_ORDER') {
-    if (statusKey(before.status) !== 'planned') throw new Error('예정(planned) 상태의 작업지시만 수정할 수 있습니다.')
+    if (normalizeProductionStatus(before.status) !== 'planned') throw new Error('예정(planned) 상태의 작업지시만 수정할 수 있습니다.')
     const workDate = validDate(input.work_date) || text(before.work_date, 10)
     const quantityKg = input.planned_quantity_kg === undefined ? Number(before.planned_quantity_g || 0) / 1000 : numeric(input.planned_quantity_kg)
     if (quantityKg === null || quantityKg <= 0) throw new Error('planned_quantity_kg는 0보다 커야 합니다.')
     const productId = text(before.product_id, 100)
     const largeWarning = await quantityGuard(productId, quantityKg)
     if (largeWarning) warnings.push(largeWarning)
-    const plannedG = Math.round(quantityKg * 1000)
+    const plannedG = kgToGrams(quantityKg)
     const requestedLot = text(input.lot_number, 100).toUpperCase()
     let lotNumber = requestedLot || text(before.lot_number, 100)
     if (workDate !== text(before.work_date, 10) && !requestedLot) lotNumber = await generateLotNumber(workDate)
@@ -368,21 +361,21 @@ export async function prepareProductionOperation(input: PrepareInput, identity: 
   }
 
   if (action === 'CANCEL_WORK_ORDER') {
-    if (statusKey(before.status) !== 'planned') throw new Error('예정(planned) 상태의 작업지시만 취소할 수 있습니다. 완료·확정 기록은 이력 보호를 위해 직접 취소하지 않습니다.')
+    if (normalizeProductionStatus(before.status) !== 'planned') throw new Error('예정(planned) 상태의 작업지시만 취소할 수 있습니다. 완료·확정 기록은 이력 보호를 위해 직접 취소하지 않습니다.')
     proposed = { ...publicRecord(before), status: 'cancelled' }
     payload = { status: 'cancelled', reason: text(input.reason, 1000) || null }
     previewText = `[작업지시 취소] ${before.work_date} / ${before.product_name} / ${kgText(before.planned_quantity_g)} / ${before.lot_number} — 행은 삭제하지 않고 cancelled 상태로 보존`
   }
 
   if (action === 'COMPLETE_PRODUCTION') {
-    if (statusKey(before.status) !== 'planned') throw new Error('예정(planned) 상태의 작업지시만 생산완료 입력할 수 있습니다.')
+    if (normalizeProductionStatus(before.status) !== 'planned') throw new Error('예정(planned) 상태의 작업지시만 생산완료 입력할 수 있습니다.')
     const actualKg = numeric(input.actual_quantity_kg)
     const defectKg = numeric(input.defect_quantity_kg) ?? 0
     const sampleKg = numeric(input.sample_quantity_kg) ?? 0
     if (actualKg === null || actualKg < 0 || defectKg < 0 || sampleKg < 0) throw new Error('완료·불량·샘플 수량은 0 이상이어야 합니다.')
-    const actualG = Math.round(actualKg * 1000)
-    const defectG = Math.round(defectKg * 1000)
-    const sampleG = Math.round(sampleKg * 1000)
+    const actualG = kgToGrams(actualKg)
+    const defectG = kgToGrams(defectKg)
+    const sampleG = kgToGrams(sampleKg)
     const plannedG = Number(before.planned_quantity_g || 0)
     if (actualG + defectG + sampleG <= 0) throw new Error('완료·불량·샘플 합계가 0보다 커야 합니다.')
     if (plannedG <= 0) throw new Error('작업지시의 계획량이 없어 완료 처리할 수 없습니다.')
@@ -421,9 +414,9 @@ export async function prepareProductionOperation(input: PrepareInput, identity: 
   }
 
   if (action === 'CONFIRM_PRODUCTION') {
-    if (statusKey(before.status) !== 'completed') throw new Error('생산완료(completed/완료) 상태만 원재료 차감 확정을 할 수 있습니다.')
-    const apiPreview = await callProductionApi({ action: 'preview_confirm', record_id: recordId })
-    const deduction = apiPreview.preview || {}
+    if (normalizeProductionStatus(before.status) !== 'completed') throw new Error('생산완료(completed/완료) 상태만 원재료 차감 확정을 할 수 있습니다.')
+    await assertNoExistingProductionOutbound(before)
+    const deduction = publicDeductionPreview(await buildCanonicalProductionDeductionPreview(before))
     const materials = Array.isArray(deduction.materials) ? deduction.materials : []
     const missing = Boolean(deduction.has_missing_mapping)
     const insufficient = Boolean(deduction.has_insufficient)
@@ -472,308 +465,106 @@ export async function prepareProductionOperation(input: PrepareInput, identity: 
   }
 }
 
-async function claimConfirmation(confirmationId: string, userConfirmationText: string, identity: MoniMcpIdentity) {
-  const supabase = createMoniServiceRoleClient()
-  const now = new Date().toISOString()
-  const { data, error } = await supabase
-    .from('moni_action_confirmations')
-    .update({ status: 'EXECUTING', user_confirmation_text: userConfirmationText, error_message: null })
-    .eq('id', confirmationId)
-    .eq('business_id', MONI_BUSINESS_ID)
-    .eq('action_domain', 'production_record')
-    .eq('status', 'PENDING')
-    .eq('source_client_id', identity.clientId)
-    .eq('requested_by_login_id', identity.loginId)
-    .gt('expires_at', now)
-    .select('*')
-    .maybeSingle()
-  if (error) throw new Error(`승인 건 잠금 실패: ${error.message}`)
-  if (data) return data
-
-  const lookup = await supabase.from('moni_action_confirmations').select('status,expires_at').eq('id', confirmationId).maybeSingle()
-  if (lookup.error) throw new Error(`승인 건 상태 확인 실패: ${lookup.error.message}`)
-  if (!lookup.data) throw new Error('승인 건을 찾을 수 없습니다.')
-  if (new Date(String(lookup.data.expires_at)).getTime() <= Date.now()) throw new Error('승인 건이 만료되었습니다. 다시 미리보기를 생성해 주세요.')
-  throw new Error(`이미 처리되었거나 실행할 수 없는 승인 건입니다. 현재 상태: ${lookup.data.status}`)
-}
-
-async function markFailed(confirmationId: string, message: string) {
-  const supabase = createMoniServiceRoleClient()
-  await supabase
-    .from('moni_action_confirmations')
-    .update({ status: 'FAILED', error_message: message.slice(0, 2000) })
-    .eq('id', confirmationId)
-    .eq('status', 'EXECUTING')
-}
-
-async function finishExecution(input: {
-  confirmation: any
-  before: any
-  after: any
-  result: Record<string, unknown>
-  identity: MoniMcpIdentity
-  userConfirmationText: string
-}) {
-  const supabase = createMoniServiceRoleClient()
-  const targetId = text(input.after?.id || input.confirmation.target_id, 60) || null
-  const { error: auditError } = await supabase.from('moni_action_audit_log').insert({
-    confirmation_id: input.confirmation.id,
-    business_id: MONI_BUSINESS_ID,
-    action_domain: 'production_record',
-    action_type: input.confirmation.action_type,
-    target_table: 'production_records',
-    target_id: targetId,
-    before_snapshot: input.before || null,
-    after_snapshot: input.after || null,
-    actor_login_id: input.identity.loginId,
-    actor_role: input.identity.role,
-    source_client_id: input.identity.clientId,
-    user_confirmation_text: input.userConfirmationText,
-  })
-  if (auditError) throw new Error(`감사로그 저장 실패: ${auditError.message}`)
-
-  const executedAt = new Date().toISOString()
-  const { error: finishError } = await supabase
-    .from('moni_action_confirmations')
-    .update({
-      status: 'EXECUTED',
-      result_snapshot: input.result,
-      executed_at: executedAt,
-      error_message: null,
-    })
-    .eq('id', input.confirmation.id)
-    .eq('status', 'EXECUTING')
-  if (finishError) throw new Error(`실행 결과 저장 실패: ${finishError.message}`)
-  return executedAt
-}
-
 export async function executeProductionOperation(input: ExecuteInput, identity: MoniMcpIdentity) {
   const confirmationId = text(input.confirmation_id, 60)
   const userConfirmationText = text(input.user_confirmation_text, 500)
   if (!uuidLike(confirmationId)) throw new Error('유효한 confirmation_id가 필요합니다.')
   if (!userConfirmationText) throw new Error('사용자의 명시적 승인 문구가 필요합니다.')
 
-  const confirmation = await claimConfirmation(confirmationId, userConfirmationText, identity)
-  const action = normalizeAction(confirmation.action_type)
-  if (!action) {
-    await markFailed(confirmationId, '지원하지 않는 생산 action')
-    throw new Error('지원하지 않는 생산 action입니다.')
+  const supabase = createMoniServiceRoleClient()
+  const { data: confirmation, error: confirmationError } = await supabase
+    .from('moni_action_confirmations')
+    .select('id,business_id,action_domain,action_type,target_id,status,source_client_id,requested_by_login_id,expires_at')
+    .eq('id', confirmationId)
+    .eq('business_id', MONI_BUSINESS_ID)
+    .maybeSingle()
+  if (confirmationError) throw new Error(`승인 건 조회 실패: ${confirmationError.message}`)
+  if (!confirmation) throw new Error('승인 건을 찾을 수 없습니다.')
+  if (confirmation.action_domain !== 'production_record') throw new Error('생산 작업 승인 건이 아닙니다.')
+  if (confirmation.source_client_id !== identity.clientId || confirmation.requested_by_login_id !== identity.loginId) {
+    throw new Error('승인 건의 요청 주체가 현재 실행 주체와 일치하지 않습니다.')
   }
 
-  const payload = (confirmation.payload && typeof confirmation.payload === 'object') ? confirmation.payload as Record<string, any> : {}
-  const before = confirmation.before_snapshot || null
-  const supabase = createMoniServiceRoleClient()
-  let after: any = null
-  let verification: Record<string, unknown> = {}
-  let result: Record<string, unknown> = {}
+  const action = normalizeAction(confirmation.action_type)
+  if (!action) throw new Error('지원하지 않는 생산 action입니다.')
 
-  try {
-    if (action === 'CREATE_WORK_ORDER') {
-      const lotNumber = text(payload.lot_number, 100)
-      await ensureLotAvailable(lotNumber)
-      const row = {
-        lot_number: lotNumber,
-        work_date: payload.work_date,
-        product_id: payload.product_id,
-        product_name: payload.product_name,
-        production_unit_id: payload.production_unit_id || null,
-        production_unit_name: payload.production_unit_name || null,
-        production_unit_weight_g: payload.production_unit_weight_g || null,
-        planned_quantity_ea: payload.planned_quantity_ea ?? null,
-        planned_remainder_g: payload.planned_remainder_g ?? 0,
-        actual_quantity_ea: null,
-        planned_quantity_g: payload.planned_quantity_g,
-        actual_quantity_g: null,
-        defect_quantity_g: 0,
-        sample_quantity_g: 0,
-        worker_name: payload.worker_name || null,
-        inspection_result: '적합',
-        sanitation_check: true,
-        note: payload.note || null,
-        status: 'planned',
-        business_id: MONI_BUSINESS_ID,
-        updated_at: new Date().toISOString(),
-      }
-      const inserted = await supabase.from('production_records').insert(row).select('*').single()
-      if (inserted.error) throw new Error(`작업지시 등록 실패: ${inserted.error.message}`)
-      after = inserted.data
+  let deductionPreview: Record<string, unknown> | null = null
+  if (action === 'CONFIRM_PRODUCTION') {
+    const freshRecord = await fetchRecord(text(confirmation.target_id, 60))
+    await assertNoExistingProductionOutbound(freshRecord)
+    deductionPreview = publicDeductionPreview(await buildCanonicalProductionDeductionPreview(freshRecord))
+    if (!deductionPreview || deductionPreview.has_missing_mapping || deductionPreview.has_insufficient) {
+      throw new Error('최신 원재료 차감 미리보기가 실행 가능하지 않습니다.')
     }
+  }
 
-    if (action === 'UPDATE_WORK_ORDER') {
-      const recordId = text(confirmation.target_id, 60)
-      const current = await fetchRecord(recordId)
-      if (statusKey(current.status) !== 'planned') throw new Error('작업지시 상태가 변경되어 수정할 수 없습니다.')
-      await ensureLotAvailable(text(payload.lot_number, 100), recordId)
-      const updated = await supabase
-        .from('production_records')
-        .update({
-          work_date: payload.work_date,
-          lot_number: payload.lot_number,
-          planned_quantity_g: payload.planned_quantity_g,
-          planned_quantity_ea: payload.planned_quantity_ea ?? null,
-          planned_remainder_g: payload.planned_remainder_g ?? 0,
-          note: payload.note ?? null,
-          worker_name: payload.worker_name ?? null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', recordId)
-        .eq('business_id', MONI_BUSINESS_ID)
-        .eq('status', current.status)
-        .select('*')
-        .single()
-      if (updated.error) throw new Error(`작업지시 수정 실패: ${updated.error.message}`)
-      after = updated.data
+  const { data, error } = await supabase.rpc('moni_execute_production_record_action', {
+    p_confirmation_id: confirmationId,
+    p_user_confirmation_text: userConfirmationText,
+    p_actor_login_id: identity.loginId,
+    p_source_client_id: identity.clientId,
+    p_deduction_preview: deductionPreview,
+  })
+  if (error) throw new Error(`생산 업무 트랜잭션 실행 실패: ${error.message}`)
+  const result = data as any
+  if (!result?.ok) {
+    const statusHint = result?.status ? ` (현재 상태: ${result.status})` : ''
+    throw new Error(`${result?.message || result?.error || '생산 업무 실행에 실패했습니다.'}${statusHint}`)
+  }
+
+  const targetId = text(result.target_id, 60)
+  const [recordResult, confirmationResult, auditResult] = await Promise.all([
+    supabase.from('production_records').select('*').eq('id', targetId).eq('business_id', MONI_BUSINESS_ID).maybeSingle(),
+    supabase.from('moni_action_confirmations').select('status,executed_at').eq('id', confirmationId).maybeSingle(),
+    supabase.from('moni_action_audit_log').select('id').eq('confirmation_id', confirmationId),
+  ])
+  if (recordResult.error) throw new Error(`생산기록 검증 실패: ${recordResult.error.message}`)
+  if (confirmationResult.error) throw new Error(`승인 상태 검증 실패: ${confirmationResult.error.message}`)
+  if (auditResult.error) throw new Error(`감사로그 검증 실패: ${auditResult.error.message}`)
+
+  const savedRecord = recordResult.data
+  const auditRows = auditResult.data ?? []
+  const confirmationExecuted = confirmationResult.data?.status === 'EXECUTED'
+  if (!savedRecord || !confirmationExecuted || auditRows.length !== 1) {
+    throw new Error('트랜잭션 실행 후 생산기록·승인·감사로그 검증에 실패했습니다.')
+  }
+
+  let outboundVerification: Record<string, unknown> = {}
+  if (action === 'CONFIRM_PRODUCTION') {
+    const tx = await supabase
+      .from('raw_material_transactions')
+      .select('id,item_code,item_name,quantity_g,production_record_id')
+      .eq('business_id', MONI_BUSINESS_ID)
+      .eq('txn_type', 'OUTBOUND')
+      .eq('production_record_id', targetId)
+    if (tx.error) throw new Error(`원재료 차감 결과 검증 실패: ${tx.error.message}`)
+    const rows = tx.data ?? []
+    const totalG = rows.reduce((sum: number, row: any) => sum + Number(row.quantity_g || 0), 0)
+    if (rows.length !== Number(result.outbound_count || 0) || totalG !== Number(result.outbound_total_g || 0)) {
+      throw new Error('생산확정 OUTBOUND 원장 검증 값이 트랜잭션 결과와 일치하지 않습니다.')
     }
-
-    if (action === 'CANCEL_WORK_ORDER') {
-      const recordId = text(confirmation.target_id, 60)
-      const current = await fetchRecord(recordId)
-      if (statusKey(current.status) !== 'planned') throw new Error('작업지시 상태가 변경되어 취소할 수 없습니다.')
-      const updated = await supabase
-        .from('production_records')
-        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-        .eq('id', recordId)
-        .eq('business_id', MONI_BUSINESS_ID)
-        .eq('status', current.status)
-        .select('*')
-        .single()
-      if (updated.error) throw new Error(`작업지시 취소 실패: ${updated.error.message}`)
-      after = updated.data
+    outboundVerification = {
+      raw_material_transaction_count: rows.length,
+      raw_material_total_deducted_g: totalG,
+      raw_material_transactions_verified: rows.length > 0,
     }
+  }
 
-    if (action === 'COMPLETE_PRODUCTION') {
-      const recordId = text(confirmation.target_id, 60)
-      const current = await fetchRecord(recordId)
-      if (statusKey(current.status) !== 'planned') throw new Error('작업지시 상태가 변경되어 완료 처리할 수 없습니다.')
-      const updated = await supabase
-        .from('production_records')
-        .update({
-          actual_quantity_g: payload.actual_quantity_g,
-          actual_quantity_ea: payload.actual_quantity_ea ?? null,
-          defect_quantity_g: payload.defect_quantity_g,
-          sample_quantity_g: payload.sample_quantity_g,
-          worker_name: payload.worker_name ?? null,
-          inspection_result: payload.inspection_result || '적합',
-          inspection_note: payload.inspection_note ?? null,
-          sanitation_check: typeof payload.sanitation_check === 'boolean' ? payload.sanitation_check : true,
-          status: 'completed',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', recordId)
-        .eq('business_id', MONI_BUSINESS_ID)
-        .eq('status', current.status)
-        .select('*')
-        .single()
-      if (updated.error) throw new Error(`생산완료 저장 실패: ${updated.error.message}`)
-      after = updated.data
-
-      const metadata = await supabase
-        .from('production_completion_metadata')
-        .upsert({
-          production_record_id: recordId,
-          writer_name: WRITER_NAME,
-          reviewer_name: REVIEWER_NAME,
-          actual_input_unit: 'kg',
-          actual_input_value: payload.actual_input_kg,
-          defect_input_unit: 'kg',
-          defect_input_value: payload.defect_input_kg,
-          sample_entries: Number(payload.sample_input_kg || 0) > 0
-            ? [{ label: '샘플 1', value: payload.sample_input_kg, unit: 'kg', grams: payload.sample_quantity_g }]
-            : [],
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'production_record_id' })
-      if (metadata.error) {
-        result.metadata_warning = `생산완료 메타데이터 저장 실패: ${metadata.error.message}`
-      }
-    }
-
-    if (action === 'CONFIRM_PRODUCTION') {
-      const recordId = text(confirmation.target_id, 60)
-      const current = await fetchRecord(recordId)
-      if (statusKey(current.status) !== 'completed') throw new Error('작업지시 상태가 변경되어 원재료 차감 확정을 할 수 없습니다.')
-
-      const lock = await supabase
-        .from('production_records')
-        .update({ status: 'confirming', updated_at: new Date().toISOString() })
-        .eq('id', recordId)
-        .eq('business_id', MONI_BUSINESS_ID)
-        .eq('status', current.status)
-        .select('id,status')
-        .maybeSingle()
-      if (lock.error) throw new Error(`생산확정 잠금 실패: ${lock.error.message}`)
-      if (!lock.data) throw new Error('다른 실행이 먼저 진행되어 생산확정을 시작할 수 없습니다.')
-
-      try {
-        await callProductionApi({ action: 'confirm', record_id: recordId })
-      } catch (error) {
-        const check = await fetchRecord(recordId)
-        if (statusKey(check.status) !== 'confirmed') {
-          await supabase
-            .from('production_records')
-            .update({ status: current.status, updated_at: new Date().toISOString() })
-            .eq('id', recordId)
-            .eq('business_id', MONI_BUSINESS_ID)
-            .eq('status', 'confirming')
-          throw error
-        }
-      }
-      after = await fetchRecord(recordId)
-      if (statusKey(after.status) !== 'confirmed') throw new Error('생산확정 API 호출 후 상태가 confirmed로 확인되지 않았습니다.')
-    }
-
-    if (!after) throw new Error('실행 후 생산기록을 확인할 수 없습니다.')
-
-    verification = {
+  return {
+    confirmation_id: confirmationId,
+    action_type: action,
+    target_id: targetId,
+    before: publicRecord(result.before),
+    after: publicRecord(savedRecord),
+    verification: {
       verified: true,
-      saved_record: publicRecord(after),
-    }
-
-    if (action === 'CONFIRM_PRODUCTION') {
-      const recordId = text(after.id, 60)
-      const tx = await supabase
-        .from('raw_material_transactions')
-        .select('id,quantity_g,raw_material_id,item_name')
-        .eq('business_id', MONI_BUSINESS_ID)
-        .eq('txn_type', 'OUTBOUND')
-        .or(`production_record_id.eq.${recordId},note.ilike.%production_record_id=${recordId}%`)
-      if (tx.error) throw new Error(`원재료 차감 결과 검증 실패: ${tx.error.message}`)
-      const rows = tx.data ?? []
-      verification = {
-        ...verification,
-        raw_material_transaction_count: rows.length,
-        raw_material_total_deducted_g: rows.reduce((sum: number, row: any) => sum + Number(row.quantity_g || 0), 0),
-        raw_material_transactions_verified: rows.length > 0,
-      }
-      if (!rows.length) throw new Error('생산확정 후 원재료 OUTBOUND 원장을 확인할 수 없습니다.')
-    }
-
-    result = {
-      ...result,
-      action_type: action,
-      target_id: text(after.id, 60),
-      before: publicRecord(before),
-      after: publicRecord(after),
-      verification,
-      audit_logged: true,
-    }
-
-    const executedAt = await finishExecution({
-      confirmation,
-      before,
-      after,
-      result,
-      identity,
-      userConfirmationText,
-    })
-    return {
-      confirmation_id: confirmationId,
-      ...result,
-      executed_at: executedAt,
-      user_confirmation_text: userConfirmationText,
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '생산 업무 실행에 실패했습니다.'
-    await markFailed(confirmationId, message)
-    throw error
+      saved_record: publicRecord(savedRecord),
+      confirmation_executed: confirmationExecuted,
+      audit_row_count: auditRows.length,
+      ...outboundVerification,
+    },
+    audit_logged: auditRows.length === 1,
+    executed_at: confirmationResult.data?.executed_at || result.executed_at,
+    user_confirmation_text: userConfirmationText,
   }
 }

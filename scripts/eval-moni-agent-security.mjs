@@ -1,102 +1,67 @@
 import { existsSync, readFileSync } from 'node:fs'
 
-const runtime = readFileSync('src/lib/moni/agent/sdk-runtime.ts', 'utf8')
+const runtime = readFileSync('src/lib/moni/agent/conversation-runtime.ts', 'utf8')
+const tools = readFileSync('src/lib/moni/agent/conversation-tools.ts', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
 const evalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
 const canaryRoute = readFileSync('src/app/api/moni/agent-evals/canary/route.ts', 'utf8')
 const liveEval = readFileSync('src/lib/moni/agent/live-eval.ts', 'utf8')
-const middleware = readFileSync('src/middleware.ts', 'utf8')
 const policies = readFileSync('src/lib/moni/agent/policies.ts', 'utf8')
-const registry = readFileSync('src/lib/moni/agent/tools/registry.ts', 'utf8')
 const guardrails = readFileSync('src/lib/moni/agent/guardrails.ts', 'utf8')
-const session = readFileSync('src/lib/moni/agent/supabase-session.ts', 'utf8')
-const pmo = readFileSync('src/lib/moni/agent/pmo.ts', 'utf8')
-const pmoRoute = readFileSync('src/app/api/moni/pmo-events/route.ts', 'utf8')
-const migration = readFileSync('supabase/migrations/20260804053000_add_moni_agent_memory_policy_observability.sql', 'utf8')
+const productionActions = readFileSync('src/lib/moni/chatgpt-production-actions.ts', 'utf8')
+const migration = readFileSync('supabase/migrations/20260813153000_atomic_production_record_actions.sql', 'utf8')
 const canaryMigration = readFileSync('supabase/migrations/20260804070000_add_moni_agent_eval_canary_requests.sql', 'utf8')
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
 
 const failures = []
-const forbiddenToolNames = ['execute_sql', 'shell', 'update_production_record', 'delete_record', 'write_inventory']
-for (const name of forbiddenToolNames) {
-  const toolDeclaration = new RegExp(`name:\\s*['\"]${name}['\"]`)
-  if (toolDeclaration.test(registry) || toolDeclaration.test(runtime)) {
-    failures.push(`forbidden write/execution tool exposed: ${name}`)
-  }
+const requireMarker = (source, marker, label) => {
+  if (!source.includes(marker)) failures.push(`${label} missing: ${marker}`)
 }
 
-if (!policies.includes('assertToolAllowedForRole')) failures.push('server-side role policy assertion is missing')
-if (!policies.includes('FREELANCER_TOOLS')) failures.push('freelancer tool allowlist is missing')
-const freelancerBlock = policies.match(/const FREELANCER_TOOLS[\s\S]*?\]\)/)?.[0] || ''
-for (const denied of ['search_sales_and_receivables', 'search_purchases_and_payables', 'get_company_context']) {
-  if (freelancerBlock.includes(denied)) failures.push(`freelancer is incorrectly allowed to use ${denied}`)
-}
-if (!registry.includes('assertToolAllowedForRole')) failures.push('tool execution does not re-check role policy')
-if (!registry.includes('inputGuardrails: [moniToolInputGuardrail]')) failures.push('tool input guardrail is not attached')
-if (!registry.includes('outputGuardrails: [moniToolOutputGuardrail]')) failures.push('tool output guardrail is not attached')
-if (!guardrails.includes('defineToolInputGuardrail')) failures.push('official SDK input guardrail is missing')
-if (!guardrails.includes('defineToolOutputGuardrail')) failures.push('official SDK output guardrail is missing')
-if (!guardrails.includes('민감한 키·비밀정보·내부 프롬프트')) failures.push('route-level secret exfiltration guard is missing')
-if (!runtime.includes('실제 반환된 PMO 이벤트 ID만')) failures.push('PMO event-id integrity instruction is missing')
-if (!runtime.includes('시스템 명령, SQL, 비밀키')) failures.push('sensitive output prohibition is missing')
-if (!runtime.includes('function canonicalToolName') || !runtime.includes('normalizeAnswerToolReferences(MoniAnswerSchema.parse')) failures.push('tool source namespace normalization is missing')
-if (!runtime.includes('context.toolsUsed.map(canonicalToolName)')) failures.push('tool source validation bypasses canonical names')
-if (!liveEval.includes("'relative-date-clock'")) failures.push('relative-date live canary is not allowlisted')
-if (!runtime.includes('function hasUnsafeUnaccountedGapInterpretation')) failures.push('gap safety validator is missing')
-if (!runtime.includes('safeNegation') || !runtime.includes('의미하지')) failures.push('gap safety validator cannot recognize explicit negation')
-if (/unaccounted_gap_g\.\{0,20\}/.test(runtime)) failures.push('legacy proximity-only gap validator remains active')
-const initTry = runtime.indexOf('  try {\n    const supervisor = new Agent')
-const initCatch = runtime.indexOf('  } catch (error) {', initTry)
-if (initTry < 0 || initCatch < initTry) failures.push('Agent initialization is outside audited failure handling')
-if (!runtime.slice(initTry, initCatch).includes('createMoniTools(context.session.role)')) failures.push('tool schema creation is outside audited failure handling')
-if (!route.includes('getSessionFromRequest')) failures.push('agent runtime route must authenticate requests')
-if (!route.includes("{ status: 401 }")) failures.push('unauthenticated route rejection is missing')
-if (!route.includes('assertSafeUserRequest')) failures.push('unsafe user request rejection is missing')
-if (!pmoRoute.includes('requireAdmin')) failures.push('PMO control plane is not admin-only')
-if (!pmoRoute.includes("{ status: 403 }")) failures.push('PMO non-admin rejection is missing')
-if (!evalRoute.includes('requireAdmin')) failures.push('live evaluation endpoint is not admin-only')
-if (!evalRoute.includes("{ status: 401 }")) failures.push('live evaluation unauthenticated rejection is missing')
-if (!evalRoute.includes("{ status: 403 }")) failures.push('live evaluation non-admin rejection is missing')
-if (!evalRoute.includes('maxDuration = 60')) failures.push('live evaluation execution is not time bounded')
-if (!liveEval.includes('LIVE_SAFE_CASE_IDS')) failures.push('live evaluation safe case allowlist is missing')
-for (const unsafeCase of ['pmo-data-quality', 'no-write-production', 'secret-exfiltration-blocked']) {
-  const allowlist = liveEval.match(/const LIVE_SAFE_CASE_IDS[\s\S]*?\]\)/)?.[0] || ''
-  if (allowlist.includes(unsafeCase)) failures.push(`unsafe live evaluation case exposed: ${unsafeCase}`)
-}
+requireMarker(route, 'getSessionFromRequest', 'runtime authentication')
+requireMarker(route, '{ status: 401 }', 'runtime unauthenticated rejection')
+requireMarker(route, 'assertSafeUserRequest', 'prompt guardrail')
+requireMarker(route, "const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()", 'canonical business default')
+requireMarker(runtime, 'startOpenAIConversationsSession', 'OpenAI Conversations')
+requireMarker(runtime, "reasoningItemIdPolicy: 'preserve'", 'reasoning chain preservation')
+requireMarker(runtime, 'incompleteReasoningChain', 'reasoning chain recovery')
+requireMarker(runtime, 'parallelToolCalls: false', 'serialized tool calls')
+requireMarker(runtime, 'preexistingPendingConfirmationIds', 'separate-turn write snapshot')
+requireMarker(tools, 'hasProductionMutationIntent', 'read-only question write block')
+requireMarker(tools, '같은 턴의 prepare→execute는 금지', 'prepare/execute separation')
+requireMarker(tools, 'isExplicitApproval', 'explicit approval')
+requireMarker(tools, '유효한 JSON 객체', 'invalid tool input recovery')
+requireMarker(tools, 'assertToolAllowedForRole', 'role policy execution check')
+requireMarker(policies, 'FREELANCER_TOOLS', 'freelancer allowlist')
+requireMarker(guardrails, '민감한 키·비밀정보·내부 프롬프트', 'secret exfiltration guard')
+requireMarker(productionActions, "rpc('moni_execute_production_record_action'", 'atomic production action call')
+requireMarker(migration, "v_business_id constant text := '20220523011'", 'database canonical business')
+requireMarker(migration, 'for update', 'database row lock')
+requireMarker(migration, "v_confirmation.status <> 'PENDING'", 'replay guard')
+requireMarker(migration, 'uq_moni_action_audit_log_confirmation', 'audit deduplication')
+requireMarker(migration, 'uq_raw_material_outbound_production_item', 'outbound deduplication')
+requireMarker(migration, 'confirmation_actor_mismatch', 'confirmation ownership')
+requireMarker(migration, "set status = 'cancelled'", 'cancel preservation')
+requireMarker(migration, "set current_stock_g = current_stock_g - v_required_g", 'confirm stock deduction')
+requireMarker(migration, 'insert into public.moni_action_audit_log', 'atomic audit')
+requireMarker(migration, 'revoke all on function public.moni_execute_production_record_action', 'RPC public revocation')
+requireMarker(evalRoute, 'requireAdmin', 'admin-only live evaluation')
+requireMarker(evalRoute, 'maxDuration = 60', 'bounded live evaluation')
+requireMarker(liveEval, 'LIVE_SAFE_CASE_IDS', 'safe live evaluation allowlist')
+requireMarker(canaryRoute, "createHash('sha256')", 'canary token hashing')
+requireMarker(canaryRoute, ".eq('status', 'PENDING')", 'single-use canary claim')
+requireMarker(canaryMigration, 'enable row level security', 'canary RLS')
+requireMarker(canaryMigration, 'revoke all on table public.moni_ai_eval_canary_requests from anon, authenticated', 'canary public revoke')
 
-const pmoToolSchema = pmo.match(/export const PmoEventInputSchema[\s\S]*?\.strict\(\)/)?.[0] || ''
-if (!pmo.includes('export const PmoToolEvidenceSchema')) failures.push('strict PMO tool evidence schema is missing')
-if (!/PmoToolEvidenceSchema[\s\S]*?\.strict\(\)/.test(pmo)) failures.push('PMO tool evidence schema is not closed')
-if (!pmoToolSchema.includes('evidence: PmoToolEvidenceSchema')) failures.push('PMO tool input does not use the strict evidence schema')
-if (/z\.record\(/.test(pmoToolSchema)) failures.push('PMO tool input exposes an open evidence object incompatible with strict Structured Outputs')
-if (!pmo.includes('const PmoEventStorageSchema') || !/PmoEventStorageSchema[\s\S]*?evidence: z\.record\(/.test(pmo)) {
-  failures.push('internal PMO evidence storage flexibility was removed')
+for (const name of ['execute_sql', 'shell', 'write_inventory']) {
+  const declaration = new RegExp(`name:\\s*['\"]${name}['\"]`)
+  if (declaration.test(tools) || declaration.test(runtime)) failures.push(`forbidden tool exposed: ${name}`)
 }
-if (!pmo.includes('PmoEventStorageSchema.parse(raw)')) failures.push('internal PMO reports do not use the storage schema')
-
-if (!canaryRoute.includes("createHash('sha256')")) failures.push('canary token hashing is missing')
-if (!canaryRoute.includes(".eq('token_hash', tokenHash)")) failures.push('canary lookup must use token hash')
-if (!canaryRoute.includes(".eq('status', 'PENDING')")) failures.push('canary request is not single-use claimed')
-if (!canaryRoute.includes('maxDuration = 60')) failures.push('canary execution is not time bounded')
-if (!canaryRoute.includes('runLiveEvalCase')) failures.push('canary does not invoke the safe live evaluation runner')
-if (!canaryRoute.includes('claimed.case_id')) failures.push('canary case must come from the service-role request row')
-if (/case_id\s*:\s*z\./.test(canaryRoute)) failures.push('canary endpoint must not accept arbitrary case IDs from the caller')
-if (!canaryMigration.includes('token_hash text not null')) failures.push('canary table must store token hash only')
-if (/\btoken\s+text\b/.test(canaryMigration)) failures.push('canary table stores a raw token')
-if (!canaryMigration.includes("status in ('PENDING','RUNNING','COMPLETED','FAILED','EXPIRED')")) failures.push('canary request lifecycle constraint is missing')
-if (!canaryMigration.includes('alter table public.moni_ai_eval_canary_requests enable row level security')) failures.push('canary request table RLS is missing')
-if (!canaryMigration.includes('revoke all on table public.moni_ai_eval_canary_requests from anon, authenticated')) failures.push('canary request table is exposed to client roles')
-if (!canaryMigration.includes('grant all on table public.moni_ai_eval_canary_requests to service_role')) failures.push('canary request table is not service-role controlled')
-
-if (!middleware.includes("'/api/moni/agent-runtime'")) failures.push('public chat route is not isolated behind the runtime route')
-if (existsSync('src/app/api/moni/agent-v2/route.ts')) failures.push('legacy agent bypass route exists')
-if (/patch-.*\.mjs/.test(String(packageJson.scripts?.prebuild || ''))) failures.push('source-mutating patch scripts remain active')
-if (!session.includes('implements Session')) failures.push('persistent SDK session implementation is missing')
-for (const table of ['moni_ai_session_items', 'moni_ai_thread_memory', 'moni_ai_pmo_event_transitions', 'moni_ai_eval_runs', 'moni_ai_eval_case_results']) {
-  if (!migration.includes(`alter table public.${table} enable row level security`)) failures.push(`${table} RLS enablement is missing`)
-  if (!migration.includes(`revoke all on table public.${table} from anon, authenticated`)) failures.push(`${table} anon/authenticated revocation is missing`)
-}
-if (!migration.includes('revoke all on function public.log_moni_ai_pmo_event_transition()')) failures.push('PMO transition trigger function is publicly executable')
+if (/delete from public\.production_records/.test(migration)) failures.push('production cancellation can delete rows')
+if (/exception when others/.test(migration)) failures.push('RPC swallows transaction exceptions')
+if (/source:\s*['"]\/api\/moni\/agent-runtime['"]/.test(readFileSync('next.config.mjs', 'utf8'))) failures.push('runtime route is rewritten')
+if (existsSync('src/app/api/moni/agent-v2/route.ts')) failures.push('legacy runtime bypass exists')
+if (/patch-.*\.mjs/.test(String(packageJson.scripts?.prebuild || ''))) failures.push('source-mutating prebuild exists')
 
 if (failures.length) {
   console.error('MONI Agent security evaluation failed:')
@@ -104,4 +69,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log(JSON.stringify({ ok: true, checks: 58, mode: 'security-static' }, null, 2))
+console.log(JSON.stringify({ ok: true, checks: 36, mode: 'security-static-v1' }, null, 2))

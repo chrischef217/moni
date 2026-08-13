@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -259,6 +260,7 @@ export async function GET(request: NextRequest) {
       let pageQuery = supabase
         .from('raw_material_transactions')
         .select('*')
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         .order('txn_date', { ascending: true })
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
@@ -282,6 +284,7 @@ export async function GET(request: NextRequest) {
     const materialResult = await supabase
       .from('raw_materials')
       .select('id, item_code, item_name, country_of_origin, unit_price_per_kg, packing_weight_g, current_stock_g, spec')
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 마스터 조회에 실패했습니다.')
 
     const materialByRef = buildMaterialDisplayMap((materialResult.data ?? []) as MaterialMasterRow[])
@@ -296,7 +299,10 @@ export async function GET(request: NextRequest) {
       if (materialRef && packingWeightG > 0) latestTransactionPackingWeightByMaterial.set(materialRef, packingWeightG)
     }
 
-    const productionResult = await supabase.from('production_records').select('id, product_name, lot_number')
+    const productionResult = await supabase
+      .from('production_records')
+      .select('id, product_name, lot_number')
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (productionResult.error) {
       throw new Error(productionResult.error.message || '생산기록 조회에 실패했습니다.')
     }
@@ -451,6 +457,7 @@ export async function POST(request: NextRequest) {
       .from('raw_materials')
       .select('id, item_name, current_stock_g, business_id')
       .eq('id', rawMaterialId)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .maybeSingle()
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 조회에 실패했습니다.')
     if (!materialResult.data) return NextResponse.json({ ok: false, error: '선택한 원재료를 찾을 수 없습니다.' }, { status: 404 })
@@ -464,10 +471,10 @@ export async function POST(request: NextRequest) {
 
     const currentStockG = numberValue(material.current_stock_g)
     const nextStockG = currentStockG + quantityG
-    const businessId = text(body.business_id) || text(material.business_id) || 'default'
+    const businessId = CANONICAL_MONI_BUSINESS_ID
     const rawMaterialName = text(body.raw_material_name) || text(material.item_name) || rawMaterialId
 
-    const updateResult = await supabase.from('raw_materials').update({ current_stock_g: nextStockG }).eq('id', rawMaterialId)
+    const updateResult = await supabase.from('raw_materials').update({ current_stock_g: nextStockG }).eq('id', rawMaterialId).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (updateResult.error) throw new Error(updateResult.error.message || '원재료 재고 갱신에 실패했습니다.')
 
     const txPayload: Record<string, unknown> = {
@@ -488,7 +495,7 @@ export async function POST(request: NextRequest) {
     }
     const txResult = await supabase.from('raw_material_transactions').insert(txPayload)
     if (txResult.error) {
-      await supabase.from('raw_materials').update({ current_stock_g: currentStockG }).eq('id', rawMaterialId)
+      await supabase.from('raw_materials').update({ current_stock_g: currentStockG }).eq('id', rawMaterialId).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       throw new Error(txResult.error.message || '원재료 입고 기록 저장에 실패했습니다.')
     }
 
@@ -528,7 +535,7 @@ export async function PATCH(request: NextRequest) {
     const unitPrice = nullableNumber(body.unit_price)
 
     const supabase = createMoniServiceRoleClient()
-    const txResult = await supabase.from('raw_material_transactions').select('*').eq('id', id).maybeSingle()
+    const txResult = await supabase.from('raw_material_transactions').select('*').eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID).maybeSingle()
     if (txResult.error) throw new Error(txResult.error.message || '거래내역 조회에 실패했습니다.')
     if (!txResult.data) return NextResponse.json({ ok: false, error: '내역을 찾을 수 없습니다.' }, { status: 404 })
 
@@ -545,6 +552,7 @@ export async function PATCH(request: NextRequest) {
       .from('raw_materials')
       .select('id, item_name, current_stock_g')
       .eq('id', rawMaterialId)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .maybeSingle()
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 조회에 실패했습니다.')
     if (!materialResult.data) return NextResponse.json({ ok: false, error: '연결된 원재료를 찾을 수 없습니다.' }, { status: 404 })
@@ -558,7 +566,7 @@ export async function PATCH(request: NextRequest) {
     const nextStockG = currentStockG - oldQuantityG + nextQuantityG
     if (nextStockG < 0) return NextResponse.json({ ok: false, error: '수정 후 현재재고가 0보다 작아집니다.' }, { status: 409 })
 
-    const updateStock = await supabase.from('raw_materials').update({ current_stock_g: nextStockG }).eq('id', rawMaterialId)
+    const updateStock = await supabase.from('raw_materials').update({ current_stock_g: nextStockG }).eq('id', rawMaterialId).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (updateStock.error) throw new Error(updateStock.error.message || '원재료 재고 갱신에 실패했습니다.')
 
     const updateTx = await supabase
@@ -576,8 +584,9 @@ export async function PATCH(request: NextRequest) {
         note: note || null,
       })
       .eq('id', id)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (updateTx.error) {
-      await supabase.from('raw_materials').update({ current_stock_g: currentStockG }).eq('id', rawMaterialId)
+      await supabase.from('raw_materials').update({ current_stock_g: currentStockG }).eq('id', rawMaterialId).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       throw new Error(updateTx.error.message || '원재료 거래내역 수정에 실패했습니다.')
     }
 
@@ -604,7 +613,7 @@ export async function DELETE(request: NextRequest) {
     if (!id) return NextResponse.json({ ok: false, error: '거래 ID가 필요합니다.' }, { status: 400 })
 
     const supabase = createMoniServiceRoleClient()
-    const txResult = await supabase.from('raw_material_transactions').select('*').eq('id', id).maybeSingle()
+    const txResult = await supabase.from('raw_material_transactions').select('*').eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID).maybeSingle()
     if (txResult.error) throw new Error(txResult.error.message || '거래내역 조회에 실패했습니다.')
     if (!txResult.data) return NextResponse.json({ ok: false, error: '내역을 찾을 수 없습니다.' }, { status: 404 })
 
@@ -621,6 +630,7 @@ export async function DELETE(request: NextRequest) {
       .from('raw_materials')
       .select('id, item_name, current_stock_g')
       .eq('id', rawMaterialId)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .maybeSingle()
     if (materialResult.error) throw new Error(materialResult.error.message || '원재료 조회에 실패했습니다.')
     if (!materialResult.data) return NextResponse.json({ ok: false, error: '연결된 원재료를 찾을 수 없습니다.' }, { status: 404 })
@@ -634,12 +644,12 @@ export async function DELETE(request: NextRequest) {
     const nextStockG = currentStockG - qtyG
     if (nextStockG < 0) return NextResponse.json({ ok: false, error: '현재재고가 부족해 삭제할 수 없습니다.' }, { status: 409 })
 
-    const updateStock = await supabase.from('raw_materials').update({ current_stock_g: nextStockG }).eq('id', rawMaterialId)
+    const updateStock = await supabase.from('raw_materials').update({ current_stock_g: nextStockG }).eq('id', rawMaterialId).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (updateStock.error) throw new Error(updateStock.error.message || '원재료 재고 갱신에 실패했습니다.')
 
-    const deleteTx = await supabase.from('raw_material_transactions').delete().eq('id', id)
+    const deleteTx = await supabase.from('raw_material_transactions').delete().eq('id', id).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     if (deleteTx.error) {
-      await supabase.from('raw_materials').update({ current_stock_g: currentStockG }).eq('id', rawMaterialId)
+      await supabase.from('raw_materials').update({ current_stock_g: currentStockG }).eq('id', rawMaterialId).eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       throw new Error(deleteTx.error.message || '원재료 거래내역 삭제에 실패했습니다.')
     }
 

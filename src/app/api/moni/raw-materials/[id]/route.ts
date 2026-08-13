@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -50,6 +51,7 @@ async function validateLinkedSemifinishedProductId(
     .from('products')
     .select('id, product_type')
     .eq('id', linkedProductId)
+    .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
     .maybeSingle()
   if (error) throw new Error(error.message || '연결 반제품 검증에 실패했습니다.')
   if (!data) throw new Error('선택한 연결 반제품을 찾을 수 없습니다.')
@@ -121,12 +123,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       .from('raw_materials')
       .select('id, item_name, business_id, ingredient_type, linked_product_id')
       .eq('id', id)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .maybeSingle()
     if (beforeRowResult.error && isMissingColumnError(beforeRowResult.error.message, 'linked_product_id')) {
       beforeRowResult = await supabase
         .from('raw_materials')
         .select('id, item_name, business_id, ingredient_type')
         .eq('id', id)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         .maybeSingle()
     }
     const { data: beforeRow, error: beforeError } = beforeRowResult
@@ -154,13 +158,25 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     const oldName = text(beforeRow.item_name) ?? ''
-    const businessId = text(beforeRow.business_id)
+    const businessId = CANONICAL_MONI_BUSINESS_ID
 
-    let updateResult = await supabase.from('raw_materials').update(payload).eq('id', id).select('*').maybeSingle()
+    let updateResult = await supabase
+      .from('raw_materials')
+      .update(payload)
+      .eq('id', id)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
+      .select('*')
+      .maybeSingle()
     if (updateResult.error && isMissingColumnError(updateResult.error.message, 'linked_product_id')) {
       const fallbackPayload: Record<string, unknown> = { ...payload }
       delete fallbackPayload.linked_product_id
-      updateResult = await supabase.from('raw_materials').update(fallbackPayload).eq('id', id).select('*').maybeSingle()
+      updateResult = await supabase
+        .from('raw_materials')
+        .update(fallbackPayload)
+        .eq('id', id)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
+        .select('*')
+        .maybeSingle()
     }
     const { data, error } = updateResult
     if (error) throw new Error(error.message || '원재료 수정에 실패했습니다.')
@@ -178,33 +194,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         .from('raw_material_mapping')
         .update({ raw_material_name: newName })
         .eq('raw_material_ref_id', id)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       if (refMappingError && !isMissingColumnError(refMappingError.message, 'raw_material_ref_id')) {
         throw new Error(refMappingError.message || '원재료 연결명 동기화에 실패했습니다.')
       }
 
-      const candidates: MappingRow[] = []
-      if (businessId) {
-        const [sameBusinessResult, nullBusinessResult] = await Promise.all([
-          supabase
-            .from('raw_material_mapping')
-            .select('id, raw_material_name, business_id')
-            .eq('business_id', businessId),
-          supabase
-            .from('raw_material_mapping')
-            .select('id, raw_material_name, business_id')
-            .is('business_id', null),
-        ])
-        if (sameBusinessResult.error) throw new Error(sameBusinessResult.error.message || '원재료 연결 조회에 실패했습니다.')
-        if (nullBusinessResult.error) throw new Error(nullBusinessResult.error.message || '원재료 연결 조회에 실패했습니다.')
-        candidates.push(...((sameBusinessResult.data ?? []) as MappingRow[]), ...((nullBusinessResult.data ?? []) as MappingRow[]))
-      } else {
-        const { data: nullBusinessRows, error: nullBusinessError } = await supabase
-          .from('raw_material_mapping')
-          .select('id, raw_material_name, business_id')
-          .is('business_id', null)
-        if (nullBusinessError) throw new Error(nullBusinessError.message || '원재료 연결 조회에 실패했습니다.')
-        candidates.push(...((nullBusinessRows ?? []) as MappingRow[]))
-      }
+      const sameBusinessResult = await supabase
+        .from('raw_material_mapping')
+        .select('id, raw_material_name, business_id')
+        .eq('business_id', businessId)
+      if (sameBusinessResult.error) throw new Error(sameBusinessResult.error.message || '원재료 연결 조회에 실패했습니다.')
+      const candidates = (sameBusinessResult.data ?? []) as MappingRow[]
 
       const mappingIds = Array.from(
         new Set(
@@ -220,6 +220,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           .from('raw_material_mapping')
           .update({ raw_material_name: newName })
           .in('id', mappingIds)
+          .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         if (mappingError) throw new Error(mappingError.message || '원재료 연결명 갱신에 실패했습니다.')
       }
     }

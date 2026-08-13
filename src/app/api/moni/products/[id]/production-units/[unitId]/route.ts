@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { CANONICAL_MONI_BUSINESS_ID } from '@/lib/moni/v1-contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -85,6 +86,7 @@ export async function PATCH(
         .from('product_production_units')
         .update({ is_default: false, updated_at: new Date().toISOString() })
         .eq('product_id', productId)
+        .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
         .neq('id', unitId)
 
       if (clearDefaultResult.error && !isMissingUnitsTableError(clearDefaultResult.error.message || '')) {
@@ -97,6 +99,7 @@ export async function PATCH(
       .update(payload)
       .eq('id', unitId)
       .eq('product_id', productId)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .select('*')
       .maybeSingle()
 
@@ -139,6 +142,7 @@ export async function DELETE(
       .delete()
       .eq('id', unitId)
       .eq('product_id', productId)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
 
     if (error) {
       const message = error.message || ''
