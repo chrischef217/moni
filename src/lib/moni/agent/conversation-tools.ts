@@ -80,6 +80,10 @@ async function auditedTool(
   }
 }
 
+function readToolError(_context: RunContext<MoniConversationRuntimeContext>, error: Error) {
+  return `MONI 조회 도구 입력 또는 실행 오류: ${text(error.message, 500)}. 사용자에게 실패했다고 답하지 말고, 같은 도구를 스키마에 맞는 유효한 JSON 객체로 정확히 한 번 다시 호출하세요.`
+}
+
 function createReadTools(role: string) {
   const allowed = new Set(allowedToolNamesForRole(role))
   return moniToolDefinitions
@@ -90,6 +94,7 @@ function createReadTools(role: string) {
       parameters: definition.parameters as any,
       timeoutMs: 20_000,
       timeoutBehavior: 'raise_exception',
+      errorFunction: readToolError as any,
       execute: async (rawArgs, rawContext) => {
         const args = rawArgs as Record<string, unknown>
         const runContext = rawContext as RunContext<MoniConversationRuntimeContext>
@@ -111,6 +116,55 @@ function createReadTools(role: string) {
         })
       },
     }))
+}
+
+const MonthlyManagementSnapshotSchema = z.object({
+  year: z.number().int().min(2020).max(2100),
+  month: z.number().int().min(1).max(12),
+})
+
+function monthRange(year: number, month: number) {
+  const start = `${year}-${String(month).padStart(2, '0')}-01`
+  const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
+  return { start, end }
+}
+
+function createMonthlyManagementSnapshotTool(role: string) {
+  if (String(role || '').toLowerCase() !== 'admin') return []
+  return [tool({
+    name: 'get_monthly_management_snapshot',
+    description: '특정 연월의 경영+생산 종합분석용 공식 스냅샷을 한 번에 조회합니다. 월간 경영 데이터, 판매·수금, 매입·지급, 생산실적, 생산계획을 종합해 달라는 요청에는 개별 도구 여러 개 대신 이 도구를 우선 사용하세요.',
+    parameters: MonthlyManagementSnapshotSchema,
+    timeoutMs: 30_000,
+    timeoutBehavior: 'raise_exception',
+    errorFunction: readToolError as any,
+    execute: async (rawArgs, rawContext) => {
+      const args = rawArgs as z.infer<typeof MonthlyManagementSnapshotSchema>
+      const runContext = rawContext as RunContext<MoniConversationRuntimeContext>
+      const context = runContext.context
+      return auditedTool('get_monthly_management_snapshot', args, runContext, async () => {
+        const { start, end } = monthRange(args.year, args.month)
+        const common = { start_date: start, end_date: end, limit: 100 }
+        const sales = await executeMoniReadOnlyTool('search_sales_and_receivables', common, context)
+        const purchases = await executeMoniReadOnlyTool('search_purchases_and_payables', common, context)
+        const productionRecords = await executeMoniReadOnlyTool('search_production_records', common, context)
+        const productionPlans = await executeMoniReadOnlyTool('search_production_plans', common, context)
+        return {
+          period: { year: args.year, month: args.month, start_date: start, end_date: end, time_zone: 'Asia/Seoul' },
+          sales_and_receivables: sales,
+          purchases_and_payables: purchases,
+          production_records: productionRecords,
+          production_plans: productionPlans,
+          interpretation_contract: [
+            '각 영역의 summary 수치를 우선 사용합니다.',
+            '생산의 unaccounted_gap_g는 미완료량 또는 확정 로스로 해석하지 않습니다.',
+            '열린 작업지시는 production_records.summary.open_work_order_count와 open_planned_quantity_g를 사용합니다.',
+            '조회 한도에 도달한 배열은 전체 원장이라고 단정하지 않습니다.',
+          ],
+        }
+      })
+    },
+  })]
 }
 
 const ProductionPlanPrepareSchema = z.object({
@@ -198,5 +252,5 @@ function createWriteTools(role: string) {
 }
 
 export function createMoniConversationTools(role: string) {
-  return [...createReadTools(role), ...createWriteTools(role)]
+  return [...createMonthlyManagementSnapshotTool(role), ...createReadTools(role), ...createWriteTools(role)]
 }
