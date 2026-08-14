@@ -5,6 +5,7 @@ import type { PinnedProjectContext, ThreadMemory } from '@/lib/moni/agent/memory
 import { formatMemoryForInstructions } from '@/lib/moni/agent/memory'
 import { rolePolicySummary } from '@/lib/moni/agent/policies'
 import type { MoniConversationRuntimeContext } from '@/lib/moni/agent/conversation-runtime-types'
+import { hasProductionMutationIntent } from '@/lib/moni/v1-contracts'
 
 const MAX_AGENT_TURNS = 8
 const text = (value: unknown, max = 4000) => String(value ?? '').trim().slice(0, max)
@@ -46,13 +47,15 @@ function compactHistory(history: Input['recentHistory']) {
 
 function isMonthlyManagementAnalysisRequest(message: string, role: string) {
   if (String(role || '').toLowerCase() !== 'admin') return false
-  const normalized = String(message || '').replace(/\s+/g, ' ')
+  const normalized = String(message || '').replace(/\s+/g, ' ').trim()
+  if (hasProductionMutationIntent(normalized)) return false
   const hasMonth = /(20\d{2})\s*년\s*(1[0-2]|0?[1-9])\s*월/.test(normalized)
     || /(20\d{2})[-/.](1[0-2]|0?[1-9])(?:\b|월)/.test(normalized)
+    || /(이번\s*달|이번\s*월|금월|현재\s*월)/.test(normalized)
   const hasManagement = /(경영|매출|판매|수금|매입|지급|손익|현금흐름)/.test(normalized)
   const hasProduction = /(생산|작업지시|생산계획|생산실적)/.test(normalized)
-  const hasAnalysisIntent = /(분석|종합|요약|평가|현황|상황)/.test(normalized)
-  return hasMonth && hasManagement && hasProduction && hasAnalysisIntent
+  const hasAnalysisIntent = /(분석|종합|요약|평가|현황|상황|예측|보고)/.test(normalized)
+  return hasMonth && hasProduction && hasAnalysisIntent && (hasManagement || hasProduction)
 }
 
 function buildInstructions(input: Input) {
@@ -75,8 +78,8 @@ ${memory ? `${memory}\n` : ''}${history ? `[최근 MONI 대화 백업]\n${histor
 1. 이 대화는 연속된 한 대화입니다. 직전 질문·분석·사용자 정정·승인 미리보기를 후속 질문에서 이어서 사용합니다.
 2. 회사의 실제 생산·재고·제품·레시피·매출·수금·매입·지급 수치와 현황은 반드시 MONI 도구로 확인합니다. 숫자를 추측하지 않습니다.
 3. “그래서 잘한 거야 못한 거야?”, “내가 무엇부터 해야 해?” 같은 판단 질문에는 기존에 확보한 데이터와 경영 우선순위를 바탕으로 분명한 결론과 실행 우선순위를 답합니다.
-4. 특정 연월의 경영 데이터와 생산 데이터를 함께 종합 분석해 달라는 요청에는 get_monthly_management_snapshot을 우선 사용합니다. 이 도구는 인자를 반드시 빈 JSON 객체 {}로 호출하며, 연도와 월은 서버가 현재 사용자 문장에서 직접 읽습니다.
-5. 일반 조회에서 도구 입력 오류 또는 Invalid JSON input for tool 메시지를 받으면 사용자에게 실패를 보고하지 말고 같은 도구를 스키마에 맞는 유효한 JSON 객체로 정확히 한 번 다시 호출합니다.
+4. 특정 연월 또는 “이번 달”의 경영+생산 종합 분석, 월간 생산 분석·예측·보고 요청에는 get_monthly_management_snapshot을 우선 사용합니다. 이 도구는 인자를 반드시 빈 JSON 객체 {}로 호출하며 연월은 서버가 현재 사용자 문장에서 읽습니다. 이 스냅샷이 요청에 필요한 수치를 제공했다면 같은 답변을 위해 다른 월간 조회 도구를 연달아 호출하지 말고 바로 결론을 작성합니다.
+5. 일반 조회에서 도구 입력 오류 또는 Invalid JSON input for tool 메시지를 받으면 사용자에게 실패했다고 답하지 말고 같은 도구를 스키마에 맞는 유효한 JSON 객체로 정확히 한 번 다시 호출합니다.
 6. 한 질문에 필요한 데이터가 여러 영역이면 필요한 도구를 순차적으로 사용해 종합합니다. 조회 결과가 0건이면 다른 기간으로 몰래 대체하지 않습니다.
 7. 계획, 열린 작업지시, 완료실적, 생산확정, 불량, 샘플, 현재재고, 입출고를 서로 혼동하지 않습니다. unaccounted_gap_g를 미완료량이나 확정 로스로 단정하지 않습니다.
 8. 생산계획 또는 생산 작업의 생성·수정·취소·완료·확정 요청은 반드시 prepare_* 도구로 미리보기를 먼저 만듭니다. prepare를 호출한 같은 사용자 턴에서는 execute_*를 절대 실행하지 않습니다.
@@ -144,7 +147,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     model: input.model,
     status: 'RUNNING',
     validation_status: 'NOT_APPLICABLE',
-    prompt_version: 'MONI_CONVERSATIONS_V1_2',
+    prompt_version: 'MONI_CONVERSATIONS_V1_3',
     metadata: { state_mode: 'OPENAI_CONVERSATIONS_API', separate_turn_write_approval: true },
   }).select('id').single()
   if (runError) {
@@ -172,6 +175,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     if (!conversationId) conversationId = await startOpenAIConversationsSession()
 
     const forceMonthlySnapshot = isMonthlyManagementAnalysisRequest(input.currentUserText, input.context.session.role)
+    const runTurnLimit = forceMonthlySnapshot ? 4 : MAX_AGENT_TURNS
     const supervisor = new Agent<MoniConversationRuntimeContext>({
       name: 'MONI Business Agent',
       model: input.model,
@@ -187,7 +191,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     try {
       result = await run(supervisor, currentInput as any, {
         context: runtimeContext,
-        maxTurns: MAX_AGENT_TURNS,
+        maxTurns: runTurnLimit,
         conversationId,
         reasoningItemIdPolicy: 'preserve',
       })
@@ -197,7 +201,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
       retried = true
       result = await run(supervisor, currentInput as any, {
         context: runtimeContext,
-        maxTurns: MAX_AGENT_TURNS,
+        maxTurns: runTurnLimit,
         conversationId,
         reasoningItemIdPolicy: 'preserve',
       })
@@ -210,7 +214,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
 
     const usage = usageOf(result)
     const responseId = text(result.lastResponseId, 160)
-    const stepCount = Math.min(MAX_AGENT_TURNS, runtimeContext.toolCallCount + 1)
+    const stepCount = Math.min(runTurnLimit, runtimeContext.toolCallCount + 1)
     await input.context.supabase.from('moni_ai_agent_runs').update({
       status: 'COMPLETED',
       step_count: stepCount,
@@ -228,6 +232,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         conversation_id: conversationId,
         conversation_rebuilt: retried,
         forced_monthly_snapshot: forceMonthlySnapshot,
+        run_turn_limit: runTurnLimit,
         separate_turn_write_approval: true,
       },
     }).eq('id', runRow.id)
