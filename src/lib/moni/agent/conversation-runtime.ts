@@ -101,7 +101,8 @@ ${memory ? `${memory}\n` : ''}${history ? `[최근 MONI 대화 백업]\n${histor
 27. 사용자가 특정 제품명·LOT를 말하면 답변에 그 식별자를 그대로 포함합니다. “가장 최근 완료”를 요청했는데 조회 범위 안에 완료가 없으면 임의의 짧은 기간에서 멈추거나 되묻지 말고, 해당 제품의 이력을 다시 조회해 완료 건을 확인합니다.
 28. 월간 생산계획 저장 수량이 같은 기간의 작업지시·완료실적 규모와 현저히 다르면 저장값 기준이라고 밝히고 kg/g 단위 또는 입력값 검증이 필요하다고 경고합니다. 수치를 임의로 고치지는 않습니다.
 29. 생산·작업지시·완료·LOT 질문은 search_production_records, 매출·수금·미수는 search_sales_and_receivables, 매입·지급·미지급은 search_purchases_and_payables를 우선합니다. 제품·레시피까지 함께 물으면 search_products_and_recipes를 추가하며, 복합 질문을 한 도구로 억지로 끝내지 않습니다.
-30. 도구 결과에 data_quality_warnings가 있으면 결론에서 먼저 경고하고 검증 행동을 우선합니다. PRODUCTION_PLAN_SCALE_REVIEW_REQUIRED 계획은 kg/g 또는 입력값을 확인하기 전까지 작업지시 발행·생산 착수를 권고하지 않습니다.`
+30. 도구 결과에 data_quality_warnings가 있으면 결론에서 먼저 경고하고 검증 행동을 우선합니다. PRODUCTION_PLAN_SCALE_REVIEW_REQUIRED 계획은 kg/g 또는 입력값을 확인하기 전까지 작업지시 발행·생산 착수를 권고하지 않습니다.
+31. “오늘 가장 먼저 할 일” 같은 일일 우선순위 질문은 get_business_clock의 business_date로 생산실적, 생산계획, 매출·수금, 매입·지급을 모두 조회합니다. 당일 생산실적이 없어도 search_production_plans를 생략하지 않습니다.`
 }
 
 function usageOf(result: any) {

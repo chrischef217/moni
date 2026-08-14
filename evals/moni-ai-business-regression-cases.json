@@ -4,8 +4,8 @@
     "category": "오늘 가장 먼저 해야 하는 일",
     "role": "admin",
     "prompt": "오늘 공장과 돈 흐름을 같이 보고, 제가 가장 먼저 해야 할 일을 한 가지만 결론부터 알려줘.",
-    "required_tools": ["get_business_clock", "search_production_records", "search_sales_and_receivables"],
-    "required_tool_calls": [],
+    "required_tools": ["get_business_clock", "search_production_records", "search_production_plans", "search_sales_and_receivables"],
+    "required_tool_calls": [{"name": "search_production_plans", "arguments": {"start_date": "2026-08-14", "end_date": "2026-08-14"}}],
     "required_terms": [],
     "required_any_terms": [["먼저", "최우선"], ["입력", "확인", "데이터"], ["단위", "검증", "이상"]],
     "forbidden_terms": ["추측입니다", "즉시 발행"]
