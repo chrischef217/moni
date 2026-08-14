@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '@/lib/allowance/session'
 import { assertSafeUserRequest } from '@/lib/moni/agent/guardrails'
 import { loadPinnedProjectContext, loadThreadMemory, maybeRefreshThreadMemory } from '@/lib/moni/agent/memory'
+import { reportPmoEvent } from '@/lib/moni/agent/pmo'
 import { runMoniConversationAgent } from '@/lib/moni/agent/conversation-runtime'
 import type { MoniAgentPageContext } from '@/lib/moni/agent/context-types'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
@@ -16,6 +17,7 @@ const DEFAULT_MODEL = 'gpt-5'
 type AgentRequest = { message?: string; page?: MoniAgentPageContext; thread_id?: string }
 type SessionUser = NonNullable<Awaited<ReturnType<typeof getSessionFromRequest>>>
 type Supabase = ReturnType<typeof createMoniServiceRoleClient>
+type ThreadRow = Awaited<ReturnType<typeof ensureThread>>
 const text = (value: unknown, max = 500) => String(value ?? '').trim().slice(0, max)
 
 function modelName() { return text(process.env.OPENAI_MONI_MODEL, 100) || DEFAULT_MODEL }
@@ -24,6 +26,51 @@ function cleanPage(raw?: MoniAgentPageContext): MoniAgentPageContext {
     pathname: text(raw?.pathname, 300), search: text(raw?.search, 500), title: text(raw?.title, 160),
     headings: Array.isArray(raw?.headings) ? raw!.headings!.map((item) => text(item, 120)).filter(Boolean).slice(0, 6) : [],
   }
+}
+
+function isConversationChainError(value: unknown) {
+  const message = String(value || '').toLowerCase()
+  return /no tool output found for function call/.test(message)
+    || /no tool call found for function call output/.test(message)
+    || (/reasoning item/.test(message) && /(missing|required|without)/.test(message))
+    || (/conversation/.test(message) && /(not found|invalid|expired|does not exist)/.test(message))
+}
+
+function shouldDiscardPreviousConversation(value: unknown) {
+  const message = String(value || '').toLowerCase()
+  return isConversationChainError(message)
+    || /max turns \(\d+\) exceeded/.test(message)
+    || /조회 단계를 초과/.test(message)
+}
+
+async function clearConversationState(supabase: Supabase, threadId: string) {
+  const now = new Date().toISOString()
+  const { error } = await supabase.from('moni_ai_threads').update({
+    openai_conversation_id: null,
+    openai_conversation_updated_at: now,
+    updated_at: now,
+  }).eq('id', threadId).eq('business_id', BUSINESS_ID)
+  if (error) throw new Error(error.message)
+}
+
+async function conversationIdForRun(supabase: Supabase, thread: ThreadRow) {
+  const conversationId = text(thread.openai_conversation_id, 200)
+  if (!conversationId) return null
+
+  const { data: lastRun, error } = await supabase.from('moni_ai_agent_runs')
+    .select('status,error_message,started_at')
+    .eq('business_id', BUSINESS_ID)
+    .eq('thread_id', thread.id)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+
+  if (lastRun?.status === 'FAILED' && shouldDiscardPreviousConversation(lastRun.error_message)) {
+    await clearConversationState(supabase, thread.id)
+    return null
+  }
+  return conversationId
 }
 
 async function ensureThread(supabase: Supabase, session: SessionUser, threadId: string, page: MoniAgentPageContext) {
@@ -78,6 +125,8 @@ export async function POST(request: NextRequest) {
     const page = cleanPage(body.page)
     const supabase = createMoniServiceRoleClient()
     const thread = await ensureThread(supabase, session, text(body.thread_id, 80), page)
+    let conversationId = await conversationIdForRun(supabase, thread)
+
     const { data: userMessage, error: userError } = await supabase.from('moni_ai_messages').insert({
       business_id: BUSINESS_ID, thread_id: thread.id, role: 'user', content: message, page_context: page,
     }).select('id').single()
@@ -91,18 +140,57 @@ export async function POST(request: NextRequest) {
     ])
 
     const model = modelName()
-    const result = await runMoniConversationAgent({
+    const runInput = {
       model,
       currentContent: [{ type: 'input_text', text: message }],
       currentUserText: message,
-      conversationId: thread.openai_conversation_id || null,
       recentHistory: [...(recentRows ?? [])].reverse().map((row: any) => ({ role: String(row.role), content: String(row.content || '') })),
       threadMemory, pinnedProjectContext,
       context: {
         supabase, businessId: BUSINESS_ID, threadId: thread.id, messageId: userMessage.id, page,
         session: { loginId: session.loginId, displayName: session.displayName, role: session.role },
       },
-    })
+    }
+
+    let result
+    try {
+      result = await runMoniConversationAgent({ ...runInput, conversationId })
+    } catch (firstError) {
+      const raw = firstError instanceof Error ? firstError.message : String(firstError || '')
+      if (!conversationId || !isConversationChainError(raw)) throw firstError
+
+      await clearConversationState(supabase, thread.id)
+      await reportPmoEvent({
+        supabase,
+        businessId: BUSINESS_ID,
+        threadId: thread.id,
+        messageId: userMessage.id,
+        page,
+        session: { loginId: session.loginId, displayName: session.displayName, role: session.role },
+      }, {
+        event_type: 'BUG',
+        severity: 'HIGH',
+        title: 'OpenAI Conversation 도구 체인 자동복구',
+        summary: '이전 Conversation 상태의 tool call/output 체인이 불완전해 새 Conversation으로 자동 재구성했습니다.',
+        detection_source: 'SYSTEM_DETECTED',
+        confidence: 1,
+        validation_status: 'VERIFIED',
+        validator_name: 'MONI_RUNTIME_GUARD',
+        recommended_owner: 'GPT(PMO)',
+        evidence: {
+          error_code: 'OPENAI_CONVERSATION_CHAIN_BROKEN',
+          capability: 'conversation_state_recovery',
+          actual_value: text(raw, 1000),
+          expected_value: '도구 호출 체인이 완결된 Conversation 상태',
+          source_reference: '/api/moni/agent-runtime',
+        },
+      }).catch((reportError) => {
+        console.error('[MONI_CONVERSATION_RECOVERY_PMO_ERROR]', reportError)
+      })
+
+      conversationId = null
+      result = await runMoniConversationAgent({ ...runInput, conversationId: null })
+    }
 
     const { error: assistantError } = await supabase.from('moni_ai_messages').insert({
       business_id: BUSINESS_ID, thread_id: thread.id, role: 'assistant', content: result.text,
@@ -118,9 +206,6 @@ export async function POST(request: NextRequest) {
     }).eq('id', thread.id)
     if (threadUpdateError) throw new Error(threadUpdateError.message)
 
-    // Conversations API keeps the exact short-term thread. This compact DB
-    // memory is refreshed asynchronously as a durable fallback for long-lived
-    // conversations and provider-side conversation rebuilds.
     void maybeRefreshThreadMemory({
       supabase, businessId: BUSINESS_ID, threadId: thread.id, model, existingMemory: threadMemory,
     }).catch((memoryError) => {
@@ -137,8 +222,11 @@ export async function POST(request: NextRequest) {
       tools_used: result.toolsUsed, usage: result.usage, pmo_handoff_status: thread.pmo_handoff_status || 'NONE',
     }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'MONI 응답 생성 중 오류가 발생했습니다.'
-    console.error('[MONI_AGENT_SDK_ROUTE][MONI_CONVERSATION_ROUTE_ERROR]', { message, occurred_at: new Date().toISOString() })
+    const rawMessage = error instanceof Error ? error.message : 'MONI 응답 생성 중 오류가 발생했습니다.'
+    const message = isConversationChainError(rawMessage)
+      ? 'MONI 대화 연결 상태를 복구하지 못했습니다. 같은 오류가 반복되면 자동으로 PMO 점검 대상으로 분류됩니다.'
+      : rawMessage
+    console.error('[MONI_AGENT_SDK_ROUTE][MONI_CONVERSATION_ROUTE_ERROR]', { message: rawMessage, occurred_at: new Date().toISOString() })
     return NextResponse.json({ ok: false, error: message }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
   }
 }
