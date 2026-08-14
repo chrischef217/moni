@@ -8,6 +8,7 @@ import type { MoniConversationRuntimeContext } from '@/lib/moni/agent/conversati
 import { hasProductionMutationIntent } from '@/lib/moni/v1-contracts'
 
 const MAX_AGENT_TURNS = 8
+const DEFAULT_AGENT_RUN_OPTIONS = { maxTurns: MAX_AGENT_TURNS } as const
 const text = (value: unknown, max = 4000) => String(value ?? '').trim().slice(0, max)
 
 type Input = {
@@ -190,6 +191,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
 
     try {
       result = await run(supervisor, currentInput as any, {
+        ...DEFAULT_AGENT_RUN_OPTIONS,
         context: runtimeContext,
         maxTurns: runTurnLimit,
         conversationId,
@@ -200,6 +202,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
       conversationId = await startOpenAIConversationsSession()
       retried = true
       result = await run(supervisor, currentInput as any, {
+        ...DEFAULT_AGENT_RUN_OPTIONS,
         context: runtimeContext,
         maxTurns: runTurnLimit,
         conversationId,
