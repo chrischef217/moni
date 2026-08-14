@@ -34,12 +34,9 @@ type SpeechRecognitionLike = {
   abort: () => void
 }
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike
-
-declare global {
-  interface Window {
-    SpeechRecognition?: SpeechRecognitionConstructor
-    webkitSpeechRecognition?: SpeechRecognitionConstructor
-  }
+type SpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor
+  webkitSpeechRecognition?: SpeechRecognitionConstructor
 }
 
 const THREAD_KEY = 'moni-global-agent-thread-v11'
@@ -204,7 +201,8 @@ export default function MoniMobileChat() {
   async function startVoiceInput() {
     if (sending || listening) return
     setError('')
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    const speechWindow = window as SpeechWindow
+    const Recognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition
     if (!Recognition) {
       setError('이 브라우저에서는 음성 받아쓰기를 지원하지 않습니다. Android Chrome에서 다시 시도해 주세요.')
       return
@@ -237,7 +235,7 @@ export default function MoniMobileChat() {
         } else if (code !== 'aborted' && code !== 'no-speech') {
           setError(`음성 인식 오류가 발생했습니다. (${code})`)
         }
-        if (!voiceFinishing) finalizeVoiceDraft()
+        finalizeVoiceDraft()
       }
       recognition.onend = () => finalizeVoiceDraft()
       recognitionRef.current = recognition
