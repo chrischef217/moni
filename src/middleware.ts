@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server'
 const MONI_API_PREFIX = '/api/moni/'
 const SESSION_CHECK_PATH = '/api/allowance/auth/session'
 const MONI_BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
-const LEGACY_BUSINESS_ID = 'default'
 const BODY_TENANT_GUARD_EXEMPT_PATHS = new Set([
   '/api/moni/agent-chat',
   '/api/moni/agent-runtime',
@@ -22,7 +21,7 @@ function requiresMoniSession(pathname: string) {
 
 function isAllowedBusinessId(value: unknown) {
   const businessId = String(value ?? '').trim()
-  return businessId === '' || businessId === MONI_BUSINESS_ID || businessId === LEGACY_BUSINESS_ID
+  return businessId === '' || businessId === MONI_BUSINESS_ID
 }
 
 function hasForeignTenantQuery(request: NextRequest) {

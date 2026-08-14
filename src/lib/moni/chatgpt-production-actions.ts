@@ -228,6 +228,22 @@ function publicDeductionPreview(preview: ProductionDeductionPreview) {
   }
 }
 
+function deductionApprovalSignature(value: any) {
+  const materials = (Array.isArray(value?.materials) ? value.materials : [])
+    .map((row: any) => ({
+      material_id: text(row?.material_id, 100),
+      food_type_name: text(row?.food_type_name, 200),
+      required_g: Number(row?.required_g || 0),
+    }))
+    .sort((a: any, b: any) => `${a.material_id}:${a.food_type_name}`.localeCompare(`${b.material_id}:${b.food_type_name}`))
+  return JSON.stringify({
+    planned_quantity_g: Number(value?.planned_quantity_g || 0),
+    deduction_basis_g: Number(value?.deduction_basis_g || 0),
+    entered_quantity_g: Number(value?.entered_quantity_g || 0),
+    materials,
+  })
+}
+
 async function createConfirmation(input: {
   action: ProductionOperationAction
   targetId: string | null
@@ -474,7 +490,7 @@ export async function executeProductionOperation(input: ExecuteInput, identity: 
   const supabase = createMoniServiceRoleClient()
   const { data: confirmation, error: confirmationError } = await supabase
     .from('moni_action_confirmations')
-    .select('id,business_id,action_domain,action_type,target_id,status,source_client_id,requested_by_login_id,expires_at')
+    .select('id,business_id,action_domain,action_type,target_id,status,source_client_id,requested_by_login_id,expires_at,payload')
     .eq('id', confirmationId)
     .eq('business_id', MONI_BUSINESS_ID)
     .maybeSingle()
@@ -495,6 +511,10 @@ export async function executeProductionOperation(input: ExecuteInput, identity: 
     deductionPreview = publicDeductionPreview(await buildCanonicalProductionDeductionPreview(freshRecord))
     if (!deductionPreview || deductionPreview.has_missing_mapping || deductionPreview.has_insufficient) {
       throw new Error('최신 원재료 차감 미리보기가 실행 가능하지 않습니다.')
+    }
+    const approvedPreview = (confirmation.payload as any)?.deduction_preview
+    if (deductionApprovalSignature(approvedPreview) !== deductionApprovalSignature(deductionPreview)) {
+      throw new Error('승인 후 원재료 차감 내역이 변경되었습니다. 최신 미리보기로 다시 승인해 주세요.')
     }
   }
 

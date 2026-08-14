@@ -33,11 +33,12 @@ test('only the one-time live-eval canary bypasses ordinary MONI login', () => {
   assert.doesNotMatch(middleware, /SESSION_EXEMPT_PATHS[\s\S]*'\/api\/moni\/agent-evals'/)
 })
 
-test('authenticated MONI APIs reject foreign business_id query scopes', () => {
+test('authenticated MONI APIs accept only the canonical business_id query scope', () => {
   assert.match(middleware, /MONI_BUSINESS_ID = String\(process\.env\.MONI_BUSINESS_ID \|\| '20220523011'\)/)
-  assert.match(middleware, /LEGACY_BUSINESS_ID = 'default'/)
+  assert.doesNotMatch(middleware, /LEGACY_BUSINESS_ID/)
   assert.match(middleware, /searchParams\.getAll\('business_id'\)/)
-  assert.match(middleware, /businessId === MONI_BUSINESS_ID \|\| businessId === LEGACY_BUSINESS_ID/)
+  assert.match(middleware, /businessId === '' \|\| businessId === MONI_BUSINESS_ID/)
+  assert.doesNotMatch(middleware, /businessId === ['"]default['"]/)
   assert.match(middleware, /X-MONI-Tenant': 'rejected'/)
   const authIndex = middleware.indexOf('verifyMoniSession(request)')
   const tenantIndex = middleware.indexOf('hasForeignTenantQuery(request)')
