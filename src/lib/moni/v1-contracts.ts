@@ -1,12 +1,27 @@
 export const CANONICAL_MONI_BUSINESS_ID = '20220523011'
 
-export function parseRequestedYearMonth(message: string) {
-  const normalized = String(message || '').replace(/\s+/g, ' ')
+function yearMonthInSeoul(now: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: 'numeric',
+  }).formatToParts(now)
+  const year = Number(parts.find((part) => part.type === 'year')?.value || 0)
+  const month = Number(parts.find((part) => part.type === 'month')?.value || 0)
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    throw new Error('현재 공장 기준 연월을 확인할 수 없습니다.')
+  }
+  return { year, month }
+}
+
+export function parseRequestedYearMonth(message: string, now = new Date()) {
+  const normalized = String(message || '').replace(/\s+/g, ' ').trim()
   const korean = normalized.match(/(20\d{2})\s*년\s*(1[0-2]|0?[1-9])\s*월/)
   const compact = normalized.match(/(20\d{2})[-/.](1[0-2]|0?[1-9])(?:\b|월)/)
   const match = korean || compact
-  if (!match) throw new Error('월간 종합 조회에는 사용자 요청에 연도와 월이 필요합니다. 예: 2026년 7월')
-  return { year: Number(match[1]), month: Number(match[2]) }
+  if (match) return { year: Number(match[1]), month: Number(match[2]) }
+  if (/(이번\s*달|이번\s*월|금월|현재\s*월)/.test(normalized)) return yearMonthInSeoul(now)
+  throw new Error('월간 종합 조회에는 연월이 필요합니다. 예: 2026년 7월 또는 이번 달')
 }
 
 export function monthRange(year: number, month: number) {
