@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
+import {
+  AlignmentType,
+  Document,
+  HeadingLevel,
+  Packer,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  WidthType,
+} from 'docx'
 import { getSessionFromRequest } from '@/lib/allowance/session'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import { sanitizeMoniUserFacingText } from '@/lib/moni/agent/user-facing-text'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,9 +22,11 @@ const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
 const text = (value: unknown, max = 20000) => String(value ?? '').trim().slice(0, max)
 
 type ReportBody = { thread_id?: string; assistant_message_id?: string }
+type ReportBlock = Paragraph | Table
 
 function cleanInlineMarkdown(value: string) {
   return value
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/__(.*?)__/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
@@ -21,54 +35,101 @@ function cleanInlineMarkdown(value: string) {
     .trim()
 }
 
-function answerParagraphs(markdown: string) {
-  const paragraphs: Paragraph[] = []
+function parseTableLine(line: string) {
+  return line.trim().replace(/^\||\|$/g, '').split('|').map((cell) => cleanInlineMarkdown(cell.trim()))
+}
+
+function tableBlock(rows: string[][]) {
+  const cleanRows = rows.filter((row) => !row.every((cell) => /^:?-{3,}:?$/.test(cell)))
+  const columnCount = Math.max(1, ...cleanRows.map((row) => row.length))
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: cleanRows.map((row, rowIndex) => new TableRow({
+      tableHeader: rowIndex === 0,
+      children: Array.from({ length: columnCount }, (_, columnIndex) => new TableCell({
+        shading: rowIndex === 0 ? { fill: 'EAF3F1' } : undefined,
+        margins: { top: 80, bottom: 80, left: 90, right: 90 },
+        children: [new Paragraph({
+          children: [new TextRun({
+            text: row[columnIndex] || '',
+            bold: rowIndex === 0,
+            color: rowIndex === 0 ? '173B52' : '263F4D',
+            size: rowIndex === 0 ? 20 : 19,
+          })],
+          spacing: { after: 0 },
+        })],
+      })),
+    })),
+  })
+}
+
+function answerBlocks(markdown: string) {
+  const blocks: ReportBlock[] = []
   const lines = markdown.replace(/\r\n/g, '\n').split('\n')
-  for (const raw of lines) {
+  let index = 0
+  while (index < lines.length) {
+    const raw = lines[index]
     const line = raw.trim()
     if (!line) {
-      paragraphs.push(new Paragraph({ text: '' }))
+      blocks.push(new Paragraph({ text: '', spacing: { after: 20 } }))
+      index += 1
       continue
     }
+
+    if (/^\|.*\|$/.test(line)) {
+      const rows: string[][] = []
+      while (index < lines.length && /^\s*\|.*\|\s*$/.test(lines[index])) {
+        rows.push(parseTableLine(lines[index]))
+        index += 1
+      }
+      const filtered = rows.filter((row) => !row.every((cell) => /^:?-{3,}:?$/.test(cell)))
+      if (filtered.length) blocks.push(tableBlock(filtered))
+      blocks.push(new Paragraph({ text: '', spacing: { after: 70 } }))
+      continue
+    }
+
     const heading = line.match(/^(#{1,3})\s+(.+)$/)
     if (heading) {
-      paragraphs.push(new Paragraph({
+      blocks.push(new Paragraph({
         text: cleanInlineMarkdown(heading[2]),
         heading: heading[1].length === 1 ? HeadingLevel.HEADING_1 : heading[1].length === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3,
-        spacing: { before: 180, after: 80 },
+        spacing: { before: 220, after: 90 },
       }))
+      index += 1
       continue
     }
+
     const bullet = line.match(/^[-*]\s+(.+)$/)
     if (bullet) {
-      paragraphs.push(new Paragraph({
-        children: [new TextRun(cleanInlineMarkdown(bullet[1]))],
+      blocks.push(new Paragraph({
+        children: [new TextRun({ text: cleanInlineMarkdown(bullet[1]), size: 21, color: '263F4D' })],
         bullet: { level: 0 },
-        spacing: { after: 50 },
+        spacing: { after: 70 },
       }))
+      index += 1
       continue
     }
-    const numbered = line.match(/^\d+[.)]\s+(.+)$/)
+
+    const numbered = line.match(/^(\d+[.)])\s+(.+)$/)
     if (numbered) {
-      paragraphs.push(new Paragraph({
-        children: [new TextRun(cleanInlineMarkdown(line))],
-        spacing: { after: 50 },
+      blocks.push(new Paragraph({
+        children: [
+          new TextRun({ text: `${numbered[1]} `, bold: true, size: 21, color: '173B52' }),
+          new TextRun({ text: cleanInlineMarkdown(numbered[2]), size: 21, color: '263F4D' }),
+        ],
+        spacing: { after: 70 },
       }))
+      index += 1
       continue
     }
-    if (/^\|.*\|$/.test(line)) {
-      const cells = line.split('|').map((cell) => cleanInlineMarkdown(cell)).filter(Boolean)
-      if (cells.length && !cells.every((cell) => /^:?-{3,}:?$/.test(cell))) {
-        paragraphs.push(new Paragraph({ text: cells.join('  ·  '), spacing: { after: 45 } }))
-      }
-      continue
-    }
-    paragraphs.push(new Paragraph({
-      children: [new TextRun(cleanInlineMarkdown(line))],
-      spacing: { after: 70 },
+
+    blocks.push(new Paragraph({
+      children: [new TextRun({ text: cleanInlineMarkdown(line), size: 21, color: '263F4D' })],
+      spacing: { after: 90, line: 310 },
     }))
+    index += 1
   }
-  return paragraphs
+  return blocks
 }
 
 function seoulStamp(date = new Date()) {
@@ -113,32 +174,48 @@ export async function POST(request: NextRequest) {
 
     const stamp = seoulStamp()
     const questionText = text(question?.content || '질문 기록 없음', 6000)
-    const answerText = text(answer.content, 20000)
+    const answerText = sanitizeMoniUserFacingText(text(answer.content, 20000))
+      .replace(/\n*\[[^\]]*PDF[^\]]*\]\([^)]*\)\s*$/i, '')
+      .trim()
+
     const document = new Document({
+      styles: {
+        default: {
+          document: { run: { font: 'Arial', size: 21, color: '263F4D' } },
+        },
+      },
       sections: [{
         properties: {
-          page: { margin: { top: 1100, right: 1100, bottom: 1100, left: 1100 } },
+          page: { margin: { top: 950, right: 900, bottom: 900, left: 900 } },
         },
         children: [
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            spacing: { after: 180 },
-            children: [new TextRun({ text: 'MONI AI 업무 보고서', bold: true, size: 34 })],
+            spacing: { after: 150 },
+            children: [new TextRun({ text: 'MONI AI 업무 보고서', bold: true, size: 38, color: '173B52' })],
           }),
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            spacing: { after: 320 },
+            spacing: { after: 280 },
             children: [new TextRun({ text: `두배 · ${stamp.display}`, color: '64748B', size: 18 })],
           }),
-          new Paragraph({ text: '요청', heading: HeadingLevel.HEADING_1, spacing: { before: 120, after: 90 } }),
-          new Paragraph({
-            children: [new TextRun({ text: questionText, bold: true })],
-            spacing: { after: 260 },
+          new Paragraph({ text: '요청', heading: HeadingLevel.HEADING_1, spacing: { before: 100, after: 90 } }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [new TableRow({ children: [new TableCell({
+              shading: { fill: 'F0F8F6' },
+              margins: { top: 120, bottom: 120, left: 140, right: 140 },
+              children: [new Paragraph({
+                children: [new TextRun({ text: questionText, bold: true, color: '173B52', size: 21 })],
+                spacing: { after: 0, line: 300 },
+              })],
+            })] })],
           }),
-          new Paragraph({ text: 'MONI 분석 및 답변', heading: HeadingLevel.HEADING_1, spacing: { before: 120, after: 90 } }),
-          ...answerParagraphs(answerText),
+          new Paragraph({ text: '', spacing: { after: 100 } }),
+          new Paragraph({ text: 'MONI 분석 및 답변', heading: HeadingLevel.HEADING_1, spacing: { before: 140, after: 100 } }),
+          ...answerBlocks(answerText),
           new Paragraph({
-            spacing: { before: 320 },
+            spacing: { before: 340 },
             children: [new TextRun({ text: '본 문서는 MONI 대화에서 생성된 답변을 보고서 형식으로 정리한 자료입니다.', color: '64748B', size: 17 })],
           }),
         ],
