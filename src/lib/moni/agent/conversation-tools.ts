@@ -13,6 +13,7 @@ import {
   isExplicitApproval,
   monthRange,
   parseRequestedYearMonth,
+  parseRequestedYearMonths,
 } from '@/lib/moni/v1-contracts'
 
 const text = (value: unknown, max = 1000) => String(value ?? '').trim().slice(0, max)
@@ -121,7 +122,7 @@ function createReadTools(role: string) {
     }))
 }
 
-const MonthlyManagementSnapshotSchema = z.object({})
+const EmptyObjectSchema = z.object({})
 
 function canonicalProductionSummary(productionRecords: any) {
   const rows = Array.isArray(productionRecords?.records) ? productionRecords.records : []
@@ -155,12 +156,98 @@ function canonicalProductionSummary(productionRecords: any) {
   }
 }
 
+async function loadMonthlyManagementSnapshot(context: MoniConversationRuntimeContext, year: number, month: number) {
+  const { start, end } = monthRange(year, month)
+  const common = { start_date: start, end_date: end, limit: 100 }
+  const sales = await executeMoniReadOnlyTool('search_sales_and_receivables', common, context)
+  const purchases = await executeMoniReadOnlyTool('search_purchases_and_payables', common, context)
+  const productionRecords = await executeMoniReadOnlyTool('search_production_records', common, context)
+  const productionPlans = await executeMoniReadOnlyTool('search_production_plans', common, context)
+  const productionCanonical = canonicalProductionSummary(productionRecords)
+  return {
+    period: { year, month, start_date: start, end_date: end, time_zone: 'Asia/Seoul' },
+    canonical_summary: {
+      sales_and_receivables: (sales as any)?.summary ?? null,
+      actual_purchases: (purchases as any)?.actual_purchases_summary ?? null,
+      production: productionCanonical,
+      production_plans: (productionPlans as any)?.summary ?? null,
+    },
+    sales_and_receivables: sales,
+    purchases_and_payables: purchases,
+    production_records: productionRecords,
+    production_plans: productionPlans,
+  }
+}
+
+function interpretationContract() {
+  return [
+    '건수와 합계는 직접 행을 세거나 더하지 말고 canonical_summary를 그대로 사용합니다.',
+    '생산의 unaccounted_gap_g는 미완료량 또는 확정 로스로 해석하지 않습니다.',
+    '열린 작업지시는 canonical_summary.production.open_work_order_count와 open_planned_quantity_g를 사용합니다.',
+    '월간 생산계획(monthly_production_plans)과 생산 작업지시(production_records)는 서로 다른 업무 단계입니다.',
+    '같은 제품·날짜·수량이 생산계획과 작업지시에 함께 존재하는 것만으로 중복 데이터라고 판단하거나 하나를 삭제·통합하라고 권고하지 않습니다.',
+    '실제 중복이라고 말하려면 동일 업무단계 내부의 중복 ID/LOT/작업지시 등 별도 근거가 있어야 합니다.',
+    '조회 한도에 도달한 배열은 전체 원장이라고 단정하지 않습니다.',
+  ]
+}
+
+function compactComparisonMonth(snapshot: Awaited<ReturnType<typeof loadMonthlyManagementSnapshot>>) {
+  const records = snapshot.production_records as any
+  const plans = snapshot.production_plans as any
+  return {
+    period: snapshot.period,
+    canonical_summary: snapshot.canonical_summary,
+    production_by_product: Array.isArray(records?.by_product) ? records.by_product.slice(0, 30) : [],
+    production_plan_items: Array.isArray(plans?.plans)
+      ? plans.plans.slice(0, 30).map((item: any) => ({
+        plan_date: item.plan_date,
+        product_name: item.product_name,
+        planned_quantity_g: item.planned_quantity_g,
+      }))
+      : [],
+  }
+}
+
+function createMonthlyManagementComparisonTool(role: string) {
+  if (String(role || '').toLowerCase() !== 'admin') return []
+  return [tool({
+    name: 'get_monthly_management_comparison',
+    description: '사용자가 말한 두 개 월을 서버가 직접 해석해 두 달의 경영+생산 공식 요약을 한 번에 비교 조회합니다. 연도를 생략한 월은 공장 기준 현재 연도로 해석합니다. 인자는 반드시 빈 JSON 객체 {} 입니다.',
+    parameters: EmptyObjectSchema,
+    timeoutMs: 30_000,
+    timeoutBehavior: 'raise_exception',
+    errorFunction: readToolError as any,
+    execute: async (_rawArgs, rawContext) => {
+      const runContext = rawContext as RunContext<MoniConversationRuntimeContext>
+      const context = runContext.context
+      const periods = parseRequestedYearMonths(context.currentUserText).slice(0, 2)
+      if (periods.length < 2) throw new Error('비교할 두 개 월을 확인할 수 없습니다.')
+      return auditedTool('get_monthly_management_comparison', { periods }, runContext, async () => {
+        const months = []
+        for (const period of periods) {
+          const snapshot = await loadMonthlyManagementSnapshot(context, period.year, period.month)
+          months.push(compactComparisonMonth(snapshot))
+        }
+        return {
+          comparison_periods: periods,
+          months,
+          interpretation_contract: [
+            ...interpretationContract(),
+            '연도가 생략된 월은 다른 연도 단서가 없는 한 공장 기준 현재 연도로 해석하며 사용자에게 다시 확인하지 않습니다.',
+            '현재 진행 중인 월과 완료된 과거 월을 비교할 때는 현재 월이 부분기간이라는 점을 반드시 표시합니다.',
+          ],
+        }
+      })
+    },
+  })]
+}
+
 function createMonthlyManagementSnapshotTool(role: string) {
   if (String(role || '').toLowerCase() !== 'admin') return []
   return [tool({
     name: 'get_monthly_management_snapshot',
-    description: '사용자의 현재 문장에 적힌 연월을 서버가 직접 읽어 해당 월의 경영+생산 공식 스냅샷을 한 번에 조회합니다. 월간 경영 데이터와 생산 데이터를 종합 분석해 달라는 요청에는 이 도구를 사용하세요. 인자는 반드시 빈 JSON 객체 {} 입니다.',
-    parameters: MonthlyManagementSnapshotSchema,
+    description: '사용자의 현재 문장에 적힌 연월을 서버가 직접 읽어 해당 월의 경영+생산 공식 스냅샷을 한 번에 조회합니다. 연도를 생략한 월은 공장 기준 현재 연도로 해석합니다. 인자는 반드시 빈 JSON 객체 {} 입니다.',
+    parameters: EmptyObjectSchema,
     timeoutMs: 30_000,
     timeoutBehavior: 'raise_exception',
     errorFunction: readToolError as any,
@@ -168,37 +255,10 @@ function createMonthlyManagementSnapshotTool(role: string) {
       const runContext = rawContext as RunContext<MoniConversationRuntimeContext>
       const context = runContext.context
       const { year, month } = parseRequestedYearMonth(context.currentUserText)
-      return auditedTool('get_monthly_management_snapshot', { year, month }, runContext, async () => {
-        const { start, end } = monthRange(year, month)
-        const common = { start_date: start, end_date: end, limit: 100 }
-        const sales = await executeMoniReadOnlyTool('search_sales_and_receivables', common, context)
-        const purchases = await executeMoniReadOnlyTool('search_purchases_and_payables', common, context)
-        const productionRecords = await executeMoniReadOnlyTool('search_production_records', common, context)
-        const productionPlans = await executeMoniReadOnlyTool('search_production_plans', common, context)
-        const productionCanonical = canonicalProductionSummary(productionRecords)
-        return {
-          period: { year, month, start_date: start, end_date: end, time_zone: 'Asia/Seoul' },
-          canonical_summary: {
-            sales_and_receivables: (sales as any)?.summary ?? null,
-            actual_purchases: (purchases as any)?.actual_purchases_summary ?? null,
-            production: productionCanonical,
-            production_plans: (productionPlans as any)?.summary ?? null,
-          },
-          sales_and_receivables: sales,
-          purchases_and_payables: purchases,
-          production_records: productionRecords,
-          production_plans: productionPlans,
-          interpretation_contract: [
-            '건수와 합계는 직접 행을 세거나 더하지 말고 canonical_summary를 그대로 사용합니다.',
-            '생산의 unaccounted_gap_g는 미완료량 또는 확정 로스로 해석하지 않습니다.',
-            '열린 작업지시는 canonical_summary.production.open_work_order_count와 open_planned_quantity_g를 사용합니다.',
-            '월간 생산계획(monthly_production_plans)과 생산 작업지시(production_records)는 서로 다른 업무 단계입니다.',
-            '같은 제품·날짜·수량이 생산계획과 작업지시에 함께 존재하는 것만으로 중복 데이터라고 판단하거나 하나를 삭제·통합하라고 권고하지 않습니다.',
-            '실제 중복이라고 말하려면 동일 업무단계 내부의 중복 ID/LOT/작업지시 등 별도 근거가 있어야 합니다.',
-            '조회 한도에 도달한 배열은 전체 원장이라고 단정하지 않습니다.',
-          ],
-        }
-      })
+      return auditedTool('get_monthly_management_snapshot', { year, month }, runContext, async () => ({
+        ...(await loadMonthlyManagementSnapshot(context, year, month)),
+        interpretation_contract: interpretationContract(),
+      }))
     },
   })]
 }
@@ -298,5 +358,10 @@ function createWriteTools(role: string) {
 }
 
 export function createMoniConversationTools(role: string) {
-  return [...createMonthlyManagementSnapshotTool(role), ...createReadTools(role), ...createWriteTools(role)]
+  return [
+    ...createMonthlyManagementComparisonTool(role),
+    ...createMonthlyManagementSnapshotTool(role),
+    ...createReadTools(role),
+    ...createWriteTools(role),
+  ]
 }
