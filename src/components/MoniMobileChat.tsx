@@ -215,7 +215,7 @@ export default function MoniMobileChat() {
       setVoiceFinishing(false)
       setSpeechActive(false)
 
-      const recognition = new Recognition()
+      const recognition = new Recognition() as unknown as SpeechRecognitionLike
       recognition.continuous = true
       recognition.interimResults = true
       recognition.lang = 'ko-KR'
