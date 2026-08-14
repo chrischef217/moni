@@ -1,10 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import { usePathname } from 'next/navigation'
 import MoniInternalChat from '@/components/MoniInternalChat'
 
 export default function GlobalMoniAgent() {
   const [open, setOpen] = useState(false)
+  const pathname = usePathname()
+
+  // The floating MONI launcher and speech bubble belong to the PC product only.
+  // Mobile already renders MONI chat as the entire product surface.
+  if (pathname === '/mobile' || pathname.startsWith('/mobile/')) return null
 
   return (
     <div data-global-moni-agent className="pointer-events-none fixed bottom-4 right-4 z-[130] md:bottom-6 md:right-6">
