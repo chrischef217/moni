@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '@/lib/allowance/session'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import { buildMoniReportPdf } from '@/lib/moni/documents/simple-pdf'
+import { sanitizeMoniUserFacingText } from '@/lib/moni/agent/user-facing-text'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -64,10 +65,13 @@ export async function GET(request: NextRequest) {
     if (questionError) throw new Error(questionError.message)
 
     const stamp = seoulStamp()
+    const answerText = sanitizeMoniUserFacingText(text(answer.content, 20_000))
+      .replace(/\n*\[[^\]]*PDF[^\]]*\]\([^)]*\)\s*$/i, '')
+      .trim()
     const pdf = buildMoniReportPdf({
       title: text(thread.title, 120) || 'MONI AI 업무 보고서',
       question: text(question?.content || '질문 기록 없음', 6000),
-      answer: text(answer.content, 20_000),
+      answer: answerText,
       generatedAt: stamp.display,
     })
     const filename = `MONI_Report_${stamp.file}.pdf`
