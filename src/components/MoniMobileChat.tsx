@@ -104,6 +104,35 @@ function ThinkingIndicator({ seconds }: { seconds: number }) {
   )
 }
 
+function mergeTranscriptPieces(pieces: string[]) {
+  let merged = ''
+  for (const rawPiece of pieces) {
+    const piece = rawPiece.replace(/\s+/g, ' ').trim()
+    if (!piece) continue
+    if (!merged) {
+      merged = piece
+      continue
+    }
+    if (piece === merged || merged.startsWith(piece) || merged.endsWith(piece)) continue
+    if (piece.startsWith(merged)) {
+      merged = piece
+      continue
+    }
+
+    const left = merged.split(' ')
+    const right = piece.split(' ')
+    let overlap = Math.min(left.length, right.length)
+    while (overlap > 0) {
+      const leftTail = left.slice(left.length - overlap).join(' ')
+      const rightHead = right.slice(0, overlap).join(' ')
+      if (leftTail === rightHead) break
+      overlap -= 1
+    }
+    merged = [...left, ...right.slice(overlap)].join(' ')
+  }
+  return merged.replace(/\s+/g, ' ').trim()
+}
+
 export default function MoniMobileChat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [threadId, setThreadId] = useState('')
@@ -170,13 +199,16 @@ export default function MoniMobileChat() {
   }, [])
 
   function rebuildTranscript(event: SpeechRecognitionEventLike) {
-    const pieces: string[] = []
+    const finalPieces: string[] = []
+    let latestInterim = ''
     for (let index = 0; index < event.results.length; index += 1) {
       const result = event.results[index]
       const transcript = String(result[0]?.transcript || '').trim()
-      if (transcript) pieces.push(transcript)
+      if (!transcript) continue
+      if (result.isFinal) finalPieces.push(transcript)
+      else latestInterim = transcript
     }
-    return pieces.join(' ').replace(/\s+/g, ' ').trim()
+    return mergeTranscriptPieces([...finalPieces, latestInterim].filter(Boolean))
   }
 
   function finalizeVoiceDraft() {
