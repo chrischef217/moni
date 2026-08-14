@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import { Suspense } from 'react'
 import GlobalMoniSidebarRouteBoundary from '@/components/GlobalMoniSidebarRouteBoundary'
 import GlobalSidebarLayoutController from '@/components/GlobalSidebarLayoutController'
@@ -222,7 +223,8 @@ export default async function RootLayout({
   children: React.ReactNode
 }) {
   const session = await getSessionFromCookies()
-  const showAdminChrome = session?.role === 'admin'
+  const isMobileShell = headers().get('x-moni-mobile-shell') === '1'
+  const showAdminChrome = session?.role === 'admin' && !isMobileShell
 
   return (
     <html lang="ko">

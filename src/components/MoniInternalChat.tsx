@@ -103,7 +103,7 @@ export default function MoniInternalChat() {
 
   return (
     <>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="moni-chat-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <div className="space-y-3">
             <div className="mr-4 rounded-2xl border border-[#d8e8e4] bg-white px-4 py-3 text-sm leading-6 text-[#263f4d]">무엇이든 말씀하세요. 필요한 두배 데이터를 확인하고 답하겠습니다.</div>
@@ -121,7 +121,7 @@ export default function MoniInternalChat() {
           </div>
         )}
       </div>
-      <footer className="border-t border-[#d7e9e5] bg-white/90 p-3">
+      <footer className="moni-chat-composer shrink-0 border-t border-[#d7e9e5] bg-white/90 p-3">
         {error && <div className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</div>}
         <form onSubmit={submit} className="rounded-2xl border border-[#c9dfda] bg-[#f7fbfa] p-2">
           <div className="flex items-end gap-2">

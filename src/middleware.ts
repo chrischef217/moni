@@ -116,6 +116,12 @@ async function verifyMoniSession(request: NextRequest) {
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
+  if (pathname === '/mobile') {
+    const requestHeaders = new Headers(request.headers)
+    requestHeaders.set('x-moni-mobile-shell', '1')
+    return NextResponse.next({ request: { headers: requestHeaders } })
+  }
+
   // Mobile is an AI-first product surface, not a responsive copy of the PC dashboard.
   // Entering the root URL on a phone must land on the dedicated conversation shell.
   if (pathname === '/' && isMobileBrowser(request)) {
@@ -155,6 +161,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/',
+    '/mobile',
     '/api/moni/:path*',
   ],
 }
