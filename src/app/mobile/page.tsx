@@ -1,6 +1,7 @@
 import type { Viewport } from 'next'
 import { redirect } from 'next/navigation'
 import AllowanceLogin from '@/components/AllowanceLogin'
+import MoniMobileAnswerActions from '@/components/MoniMobileAnswerActions'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
 import { getSessionFromCookies } from '@/lib/allowance/session'
@@ -30,6 +31,7 @@ export default async function MoniMobilePage() {
       className="fixed inset-0 z-[1000] flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#f7fcfb] text-[#173b52]"
     >
       <MoniMobileRuntimeGuard />
+      <MoniMobileAnswerActions />
       <MoniMobileChat />
     </main>
   )
