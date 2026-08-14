@@ -46,13 +46,13 @@ test('zero-row answers must distinguish missing input from actual zero performan
   }
 })
 
-test('operational reads force the matching canonical tool without weakening write intent', () => {
-  assert.match(runtime, /function forcedReadTool/)
-  assert.match(runtime, /hasProductionMutationIntent\(message\)/)
-  assert.match(runtime, /return 'search_production_records'/)
-  assert.match(runtime, /return 'search_sales_and_receivables'/)
-  assert.match(runtime, /return 'search_purchases_and_payables'/)
-  assert.match(runtime, /toolChoice: forcedTool/)
+test('operational reads prefer domain tools without forcing a repeated tool loop', () => {
+  assert.doesNotMatch(runtime, /function forcedReadTool/)
+  assert.doesNotMatch(runtime, /forced_read_tool/)
+  assert.match(runtime, /생산·작업지시·완료·LOT 질문은 search_production_records/)
+  assert.match(runtime, /매출·수금·미수는 search_sales_and_receivables/)
+  assert.match(runtime, /매입·지급·미지급은 search_purchases_and_payables/)
+  assert.match(runtime, /forceMonthlySnapshot \? \{ toolChoice: 'get_monthly_management_snapshot' \}/)
 })
 
 test('agent instructions enforce one-time kg conversion and truncated-result disclosure', () => {

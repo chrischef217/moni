@@ -5,7 +5,6 @@ import type { PinnedProjectContext, ThreadMemory } from '@/lib/moni/agent/memory
 import { formatMemoryForInstructions } from '@/lib/moni/agent/memory'
 import { rolePolicySummary } from '@/lib/moni/agent/policies'
 import type { MoniConversationRuntimeContext } from '@/lib/moni/agent/conversation-runtime-types'
-import { hasProductionMutationIntent } from '@/lib/moni/v1-contracts'
 
 const MAX_AGENT_TURNS = 8
 const text = (value: unknown, max = 4000) => String(value ?? '').trim().slice(0, max)
@@ -56,19 +55,6 @@ function isMonthlyManagementAnalysisRequest(message: string, role: string) {
   return hasMonth && hasManagement && hasProduction && hasAnalysisIntent
 }
 
-function forcedReadTool(message: string, role: string) {
-  if (hasProductionMutationIntent(message)) return null
-  if (isMonthlyManagementAnalysisRequest(message, role)) return 'get_monthly_management_snapshot'
-  const normalized = String(message || '').replace(/\s+/g, ' ')
-  const production = /(생산|작업지시|생산계획|생산실적|LOT|로트)/.test(normalized)
-  const sales = /(매출|판매|수금|미수금?)/.test(normalized)
-  const purchases = /(매입|구매|지급|미지급|매입채무)/.test(normalized)
-  if (production && !sales && !purchases) return 'search_production_records'
-  if (sales && !production && !purchases) return 'search_sales_and_receivables'
-  if (purchases && !production && !sales) return 'search_purchases_and_payables'
-  return null
-}
-
 function buildInstructions(input: Input) {
   const memory = formatMemoryForInstructions(input.threadMemory, input.pinnedProjectContext)
   const history = compactHistory(input.recentHistory)
@@ -113,7 +99,8 @@ ${memory ? `${memory}\n` : ''}${history ? `[최근 MONI 대화 백업]\n${histor
 25. 이름이 *_g인 수량은 항상 g입니다. kg로 표시할 때만 1000으로 정확히 한 번 나누며, 이미 kg인 값을 다시 변환하지 않습니다.
 26. result_meta.may_be_truncated=true 또는 truncated=true이면 조회된 일부 행만 요약하고 전체 원장·전체 건수라고 단정하지 않습니다.
 27. 사용자가 특정 제품명·LOT를 말하면 답변에 그 식별자를 그대로 포함합니다. “가장 최근 완료”를 요청했는데 조회 범위 안에 완료가 없으면 임의의 짧은 기간에서 멈추거나 되묻지 말고, 해당 제품의 이력을 다시 조회해 완료 건을 확인합니다.
-28. 월간 생산계획 저장 수량이 같은 기간의 작업지시·완료실적 규모와 현저히 다르면 저장값 기준이라고 밝히고 kg/g 단위 또는 입력값 검증이 필요하다고 경고합니다. 수치를 임의로 고치지는 않습니다.`
+28. 월간 생산계획 저장 수량이 같은 기간의 작업지시·완료실적 규모와 현저히 다르면 저장값 기준이라고 밝히고 kg/g 단위 또는 입력값 검증이 필요하다고 경고합니다. 수치를 임의로 고치지는 않습니다.
+29. 생산·작업지시·완료·LOT 질문은 search_production_records, 매출·수금·미수는 search_sales_and_receivables, 매입·지급·미지급은 search_purchases_and_payables를 우선합니다. 제품·레시피까지 함께 물으면 search_products_and_recipes를 추가하며, 복합 질문을 한 도구로 억지로 끝내지 않습니다.`
 }
 
 function usageOf(result: any) {
@@ -191,13 +178,13 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
   try {
     if (!conversationId) conversationId = await startOpenAIConversationsSession()
 
-    const forcedTool = forcedReadTool(input.currentUserText, input.context.session.role)
+    const forceMonthlySnapshot = isMonthlyManagementAnalysisRequest(input.currentUserText, input.context.session.role)
     const supervisor = new Agent<MoniConversationRuntimeContext>({
       name: 'MONI Business Agent',
       model: input.model,
       modelSettings: {
         parallelToolCalls: false,
-        ...(forcedTool ? { toolChoice: forcedTool } : {}),
+        ...(forceMonthlySnapshot ? { toolChoice: 'get_monthly_management_snapshot' } : {}),
       },
       instructions: buildInstructions(input),
       tools: createMoniConversationTools(input.context.session.role),
@@ -247,8 +234,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         state_mode: 'OPENAI_CONVERSATIONS_API',
         conversation_id: conversationId,
         conversation_rebuilt: retried,
-        forced_monthly_snapshot: forcedTool === 'get_monthly_management_snapshot',
-        forced_read_tool: forcedTool,
+        forced_monthly_snapshot: forceMonthlySnapshot,
         separate_turn_write_approval: true,
       },
     }).eq('id', runRow.id)
