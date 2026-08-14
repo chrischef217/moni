@@ -146,8 +146,9 @@ export async function POST(request: NextRequest) {
     })
 
     const buffer = await Packer.toBuffer(document)
+    const bodyBytes = Uint8Array.from(buffer).buffer
     const filename = `MONI_Report_${stamp.file}.docx`
-    return new NextResponse(buffer, {
+    return new NextResponse(bodyBytes, {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
