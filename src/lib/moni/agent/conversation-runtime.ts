@@ -148,7 +148,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     model: input.model,
     status: 'RUNNING',
     validation_status: 'NOT_APPLICABLE',
-    prompt_version: 'MONI_CONVERSATIONS_V1_3',
+    prompt_version: 'MONI_CONVERSATIONS_V1_4',
     metadata: { state_mode: 'OPENAI_CONVERSATIONS_API', separate_turn_write_approval: true },
   }).select('id').single()
   if (runError) {
@@ -182,7 +182,12 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
       model: input.model,
       modelSettings: {
         parallelToolCalls: false,
-        ...(forceMonthlySnapshot ? { toolChoice: 'get_monthly_management_snapshot' } : {}),
+        ...(forceMonthlySnapshot ? {
+          toolChoice: 'get_monthly_management_snapshot',
+          reasoning: { effort: 'minimal' as const },
+          text: { verbosity: 'low' as const },
+          maxTokens: 1200,
+        } : {}),
       },
       instructions: buildInstructions(input),
       tools: createMoniConversationTools(input.context.session.role),
@@ -236,6 +241,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         conversation_rebuilt: retried,
         forced_monthly_snapshot: forceMonthlySnapshot,
         run_turn_limit: runTurnLimit,
+        monthly_reasoning_effort: forceMonthlySnapshot ? 'minimal' : null,
         separate_turn_write_approval: true,
       },
     }).eq('id', runRow.id)
