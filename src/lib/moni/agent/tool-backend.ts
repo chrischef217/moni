@@ -67,6 +67,7 @@ async function getCompanyContext(args: MoniToolJson, context: MoniAgentToolConte
 async function searchProductionRecords(args: MoniToolJson, context: MoniAgentToolContext) {
   const { startDate, endDate } = resolveRange(args)
   const product = text(args.product_query, 160)
+  const lot = text(args.lot_query, 160)
   const status = text(args.status, 80)
   let query = context.supabase
     .from('production_records')
@@ -77,6 +78,7 @@ async function searchProductionRecords(args: MoniToolJson, context: MoniAgentToo
     .order('work_date', { ascending: false })
     .limit(limit(args.limit, 100))
   if (product) query = query.or(`product_name.ilike.%${safeSearch(product)}%,product_id.ilike.%${safeSearch(product)}%`)
+  if (lot) query = query.ilike('lot_number', `%${safeSearch(lot)}%`)
   if (status) query = query.eq('status', status)
   const { data, error } = await query
   if (error) throw new Error(error.message)
@@ -109,7 +111,7 @@ async function searchProductionRecords(args: MoniToolJson, context: MoniAgentToo
   }
   return {
     range: { start_date: startDate, end_date: endDate, time_zone: 'Asia/Seoul' },
-    filters: { product_query: product || null, status: status || null },
+    filters: { product_query: product || null, lot_query: lot || null, status: status || null },
     summary: {
       record_count: rows.length,
       planned_quantity_g: planned,

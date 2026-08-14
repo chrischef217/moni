@@ -93,7 +93,7 @@
     "role": "admin",
     "prompt": "2026년 7월 15일 LOT20260715-3 생산 내용을 찾아 제품, 계획량, 실제 생산량, 상태를 알려줘.",
     "required_tools": ["search_production_records"],
-    "required_tool_calls": [{"name": "search_production_records", "arguments": {"start_date": "2026-07-15", "end_date": "2026-07-15"}}],
+    "required_tool_calls": [{"name": "search_production_records", "arguments": {"start_date": "2026-07-15", "end_date": "2026-07-15", "lot_query": "LOT20260715-3"}}],
     "required_terms": ["LOT20260715-3", "닭나무집 불닭볶음탕분말", "완료"],
     "required_any_terms": [["100kg", "100 kg", "100,000g"]],
     "forbidden_terms": []

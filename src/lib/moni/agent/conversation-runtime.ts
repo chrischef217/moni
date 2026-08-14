@@ -5,6 +5,7 @@ import type { PinnedProjectContext, ThreadMemory } from '@/lib/moni/agent/memory
 import { formatMemoryForInstructions } from '@/lib/moni/agent/memory'
 import { rolePolicySummary } from '@/lib/moni/agent/policies'
 import type { MoniConversationRuntimeContext } from '@/lib/moni/agent/conversation-runtime-types'
+import { hasProductionMutationIntent } from '@/lib/moni/v1-contracts'
 
 const MAX_AGENT_TURNS = 8
 const text = (value: unknown, max = 4000) => String(value ?? '').trim().slice(0, max)
@@ -53,6 +54,10 @@ function isMonthlyManagementAnalysisRequest(message: string, role: string) {
   const hasProduction = /(생산|작업지시|생산계획|생산실적)/.test(normalized)
   const hasAnalysisIntent = /(분석|종합|요약|평가|현황|상황)/.test(normalized)
   return hasMonth && hasManagement && hasProduction && hasAnalysisIntent
+}
+
+function isExplicitLotLookupRequest(message: string) {
+  return !hasProductionMutationIntent(message) && /\bLOT[0-9A-Z_-]+\b/i.test(String(message || ''))
 }
 
 function buildInstructions(input: Input) {
@@ -181,12 +186,17 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     if (!conversationId) conversationId = await startOpenAIConversationsSession()
 
     const forceMonthlySnapshot = isMonthlyManagementAnalysisRequest(input.currentUserText, input.context.session.role)
+    const forceLotLookup = isExplicitLotLookupRequest(input.currentUserText)
     const supervisor = new Agent<MoniConversationRuntimeContext>({
       name: 'MONI Business Agent',
       model: input.model,
       modelSettings: {
         parallelToolCalls: false,
-        ...(forceMonthlySnapshot ? { toolChoice: 'get_monthly_management_snapshot' } : {}),
+        ...(forceMonthlySnapshot
+          ? { toolChoice: 'get_monthly_management_snapshot' }
+          : forceLotLookup
+            ? { toolChoice: 'search_production_records' }
+            : {}),
       },
       instructions: buildInstructions(input),
       tools: createMoniConversationTools(input.context.session.role),
@@ -237,6 +247,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         conversation_id: conversationId,
         conversation_rebuilt: retried,
         forced_monthly_snapshot: forceMonthlySnapshot,
+        forced_lot_lookup: forceLotLookup,
         separate_turn_write_approval: true,
       },
     }).eq('id', runRow.id)

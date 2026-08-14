@@ -52,7 +52,7 @@ test('operational reads prefer domain tools without forcing a repeated tool loop
   assert.match(runtime, /생산·작업지시·완료·LOT 질문은 search_production_records/)
   assert.match(runtime, /매출·수금·미수는 search_sales_and_receivables/)
   assert.match(runtime, /매입·지급·미지급은 search_purchases_and_payables/)
-  assert.match(runtime, /forceMonthlySnapshot \? \{ toolChoice: 'get_monthly_management_snapshot' \}/)
+  assert.match(runtime, /forceMonthlySnapshot[\s\S]+toolChoice: 'get_monthly_management_snapshot'/)
 })
 
 test('agent instructions enforce one-time kg conversion and truncated-result disclosure', () => {
@@ -73,4 +73,14 @@ test('read tools expose truncation and production-plan scale warnings', () => {
   assert.ok(today.required_tools.includes('search_production_plans'))
   assert.ok(today.required_any_terms.some((terms) => terms.includes('단위') && terms.includes('이상')))
   assert.ok(today.forbidden_terms.includes('즉시 발행'))
+})
+
+test('exact LOT lookup has a validated filter and bounded first tool choice', () => {
+  assert.match(backend, /const lot = text\(args\.lot_query/)
+  assert.match(backend, /\.ilike\('lot_number'/)
+  assert.match(runtime, /function isExplicitLotLookupRequest/)
+  assert.match(runtime, /toolChoice: 'search_production_records'/)
+  assert.match(runtime, /forced_lot_lookup: forceLotLookup/)
+  const lot = cases.find((item) => item.id === 'business-lot-lookup')
+  assert.equal(lot.required_tool_calls[0].arguments.lot_query, 'LOT20260715-3')
 })

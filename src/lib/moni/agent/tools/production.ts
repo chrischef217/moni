@@ -14,6 +14,7 @@ export const productionToolDefinitions: MoniToolDefinition[] = [
       start_date: DateValue,
       end_date: DateValue,
       product_query: Query,
+      lot_query: Query,
       status: ProductionStatus,
       limit: Rows100,
     }),
