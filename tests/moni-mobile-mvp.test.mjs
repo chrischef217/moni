@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 
 const home = readFileSync('src/app/page.tsx', 'utf8')
 const mobile = readFileSync('src/app/mobile/page.tsx', 'utf8')
+const globalAgent = readFileSync('src/components/GlobalMoniAgent.tsx', 'utf8')
 const internalChat = readFileSync('src/components/MoniInternalChat.tsx', 'utf8')
 
 test('mobile entry is session protected and keeps freelancer boundary', () => {
@@ -13,8 +14,10 @@ test('mobile entry is session protected and keeps freelancer boundary', () => {
   assert.match(mobile, /redirect\('\/freelancer'\)/)
 })
 
-test('mobile admin entry renders the same internal MONI chat used by the PC character popup', () => {
-  assert.match(mobile, /MoniInternalChat/)
+test('PC character popup and mobile route render the exact same internal MONI chat component', () => {
+  assert.match(globalAgent, /import MoniInternalChat from '@\/components\/MoniInternalChat'/)
+  assert.match(globalAgent, /<MoniInternalChat \/>/)
+  assert.match(mobile, /import MoniInternalChat from '@\/components\/MoniInternalChat'/)
   assert.match(mobile, /<MoniInternalChat \/>/)
   assert.match(mobile, /MONI 자체 채팅 화면/)
   assert.doesNotMatch(mobile, /chatgpt\.com/)
