@@ -45,25 +45,29 @@ test('mobile header exposes animated MONI live, thinking, listening, and issue s
   assert.match(mobileChat, /moniMobileBlink/)
 })
 
-test('mobile composer provides speech recognition plus a real microphone level meter', () => {
+test('mobile voice uses one Web Speech microphone owner and speech-activity waveform', () => {
   assert.match(mobileChat, /SpeechRecognition/)
   assert.match(mobileChat, /webkitSpeechRecognition/)
-  assert.match(mobileChat, /getUserMedia/)
-  assert.match(mobileChat, /createAnalyser/)
-  assert.match(mobileChat, /getByteFrequencyData/)
-  assert.match(mobileChat, /voiceLevels/)
+  assert.match(mobileChat, /onspeechstart/)
+  assert.match(mobileChat, /onspeechend/)
+  assert.match(mobileChat, /speechActive/)
   assert.match(mobileChat, /음성으로 입력/)
+  assert.doesNotMatch(mobileChat, /getUserMedia/)
+  assert.doesNotMatch(mobileChat, /createAnalyser/)
+  assert.doesNotMatch(mobileChat, /AudioContext/)
 })
 
-test('voice confirmation commits the latest interim transcript into the composer without sending it', () => {
-  assert.match(mobileChat, /voiceInterimRef/)
-  assert.match(mobileChat, /function commitVoiceDraft\(\)/)
-  assert.match(mobileChat, /if \(draft\) setInput\(draft\)/)
-  assert.match(mobileChat, /function finishVoiceInput\(\)/)
-  assert.match(mobileChat, /commitVoiceDraft\(\)/)
+test('voice confirmation waits for recognition end and leaves transcript in composer without sending', () => {
+  assert.match(mobileChat, /function rebuildTranscript/)
+  assert.match(mobileChat, /voiceDraftRef/)
+  assert.match(mobileChat, /function finalizeVoiceDraft\(\)/)
+  assert.match(mobileChat, /setInput\(combined\)/)
+  assert.match(mobileChat, /function confirmVoiceInput\(\)/)
+  assert.match(mobileChat, /recognition\.stop\(\)/)
+  assert.match(mobileChat, /setTimeout\(\(\) => finalizeVoiceDraft\(\), 900\)/)
   assert.match(mobileChat, /확인/)
-  const finishBody = mobileChat.match(/function finishVoiceInput\(\) \{([\s\S]*?)\n  \}/)?.[1] || ''
-  assert.doesNotMatch(finishBody, /send\(/)
+  const confirmBody = mobileChat.match(/function confirmVoiceInput\(\) \{([\s\S]*?)\n  \}/)?.[1] || ''
+  assert.doesNotMatch(confirmBody, /send\(/)
 })
 
 test('mobile GPT-style composer is a single clean message surface', () => {
@@ -71,6 +75,12 @@ test('mobile GPT-style composer is a single clean message surface', () => {
   assert.match(mobileChat, /placeholder="MONI에게 메시지"/)
   assert.match(mobileChat, /aria-label="전송"/)
   assert.doesNotMatch(mobileChat, /모니에게 물어보세요/)
+})
+
+test('long responses expose elapsed thinking time instead of an endless generic spinner', () => {
+  assert.match(mobileChat, /thinkingSeconds/)
+  assert.match(mobileChat, /데이터 조회가 길어지고 있습니다/)
+  assert.match(mobileChat, /초째 처리 중입니다/)
 })
 
 test('mobile traffic on the main entry cannot land on the PC control tower by default', () => {
