@@ -22,21 +22,31 @@ const PDF_REFUSAL_PATTERNS = [
   /(?:인쇄|프린트)\s*>?\s*PDF로\s*저장[^\n.]*[.!]?/gi,
 ]
 
+function protectMarkdownDestinations(value: string) {
+  const destinations: string[] = []
+  const output = value.replace(/\]\(([^)]+)\)/g, (_match, destination: string) => {
+    const index = destinations.push(destination) - 1
+    return `](MONI_LINK_${index})`
+  })
+  return {
+    output,
+    restore: (sanitized: string) => sanitized.replace(/MONI_LINK_(\d+)/g, (_match, rawIndex: string) => destinations[Number(rawIndex)] || ''),
+  }
+}
+
 export function sanitizeMoniUserFacingText(value: unknown) {
-  let output = String(value ?? '').replace(/\r\n/g, '\n')
+  const protectedLinks = protectMarkdownDestinations(String(value ?? '').replace(/\r\n/g, '\n'))
+  let output = protectedLinks.output
   for (const [pattern, replacement] of INTERNAL_LABELS) output = output.replace(pattern, replacement)
 
   output = output
     .replace(/`([a-z][a-z0-9]*(?:_[a-z0-9]+){2,})`/g, '내부 지표')
-    .replace(/\b([a-z][a-z0-9]*(?:_[a-z0-9]+){3,})\b/g, (token) => {
-      if (/^(https?|mailto|data)_/i.test(token)) return token
-      return '내부 지표'
-    })
+    .replace(/\b([a-z][a-z0-9]*(?:_[a-z0-9]+){3,})\b/g, '내부 지표')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-  return output
+  return protectedLinks.restore(output)
 }
 
 export function removePdfCapabilityRefusal(value: unknown) {
