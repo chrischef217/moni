@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 const home = readFileSync('src/app/page.tsx', 'utf8')
 const mobile = readFileSync('src/app/mobile/page.tsx', 'utf8')
 const globalAgent = readFileSync('src/components/GlobalMoniAgent.tsx', 'utf8')
-const internalChat = readFileSync('src/components/MoniInternalChat.tsx', 'utf8')
+const mobileChat = readFileSync('src/components/MoniMobileChat.tsx', 'utf8')
 
 test('mobile entry is session protected and keeps freelancer boundary', () => {
   assert.match(mobile, /getSessionFromCookies/)
@@ -14,50 +14,63 @@ test('mobile entry is session protected and keeps freelancer boundary', () => {
   assert.match(mobile, /redirect\('\/freelancer'\)/)
 })
 
-test('PC character popup and mobile route share the internal MONI chat runtime', () => {
-  assert.match(globalAgent, /import MoniInternalChat from '@\/components\/MoniInternalChat'/)
-  assert.match(globalAgent, /<MoniInternalChat \/>/)
-  assert.match(mobile, /import MoniInternalChat from '@\/components\/MoniInternalChat'/)
-  assert.match(mobile, /<MoniInternalChat mobile \/>/)
+test('mobile route uses the dedicated internal MONI chat surface and never redirects to ChatGPT', () => {
+  assert.match(mobile, /import MoniMobileChat from '@\/components\/MoniMobileChat'/)
+  assert.match(mobile, /<MoniMobileChat \/>/)
   assert.doesNotMatch(mobile, /chatgpt\.com/)
   assert.doesNotMatch(mobile, /MONI_GPT_URL/)
 })
 
+test('PC floating MONI character and speech bubble are suppressed on the mobile route', () => {
+  assert.match(globalAgent, /usePathname/)
+  assert.match(globalAgent, /pathname === '\/mobile'/)
+  assert.match(globalAgent, /pathname\.startsWith\('\/mobile\/'\)/)
+  assert.match(globalAgent, /return null/)
+})
+
 test('mobile chat talks to the authenticated MONI agent runtime', () => {
-  assert.match(internalChat, /\/api\/moni\/agent-runtime/)
-  assert.match(internalChat, /thread_id/)
-  assert.match(internalChat, /변경 작업은 승인 절차 적용/)
+  assert.match(mobileChat, /\/api\/moni\/agent-runtime/)
+  assert.match(mobileChat, /thread_id/)
+  assert.match(mobileChat, /moni-global-agent-thread-v11/)
 })
 
 test('mobile header exposes animated MONI live, thinking, listening, and issue states', () => {
-  assert.match(internalChat, /MobileMoniCharacter/)
-  assert.match(internalChat, /MONI/)
-  assert.match(internalChat, /'LIVE'/)
-  assert.match(internalChat, /'THINKING'/)
-  assert.match(internalChat, /'LISTENING'/)
-  assert.match(internalChat, /'ISSUE'/)
-  assert.match(internalChat, /moniLivePulse/)
-  assert.match(internalChat, /moniMobileFloat/)
-  assert.match(internalChat, /moniMobileBlink/)
-  assert.doesNotMatch(internalChat, /MONI 자체 채팅 화면/)
+  assert.match(mobileChat, /MobileMoniCharacter/)
+  assert.match(mobileChat, /'LIVE'/)
+  assert.match(mobileChat, /'THINKING'/)
+  assert.match(mobileChat, /'LISTENING'/)
+  assert.match(mobileChat, /'ISSUE'/)
+  assert.match(mobileChat, /moniLivePulse/)
+  assert.match(mobileChat, /moniMobileFloat/)
+  assert.match(mobileChat, /moniMobileBlink/)
 })
 
-test('mobile composer provides browser speech recognition plus a live microphone level meter', () => {
-  assert.match(internalChat, /SpeechRecognition/)
-  assert.match(internalChat, /webkitSpeechRecognition/)
-  assert.match(internalChat, /getUserMedia/)
-  assert.match(internalChat, /createAnalyser/)
-  assert.match(internalChat, /getByteFrequencyData/)
-  assert.match(internalChat, /voiceLevels/)
-  assert.match(internalChat, /음성으로 입력/)
-  assert.match(internalChat, /듣고 있어요/)
+test('mobile composer provides speech recognition plus a real microphone level meter', () => {
+  assert.match(mobileChat, /SpeechRecognition/)
+  assert.match(mobileChat, /webkitSpeechRecognition/)
+  assert.match(mobileChat, /getUserMedia/)
+  assert.match(mobileChat, /createAnalyser/)
+  assert.match(mobileChat, /getByteFrequencyData/)
+  assert.match(mobileChat, /voiceLevels/)
+  assert.match(mobileChat, /음성으로 입력/)
+})
+
+test('voice confirmation commits the latest interim transcript into the composer without sending it', () => {
+  assert.match(mobileChat, /voiceInterimRef/)
+  assert.match(mobileChat, /function commitVoiceDraft\(\)/)
+  assert.match(mobileChat, /if \(draft\) setInput\(draft\)/)
+  assert.match(mobileChat, /function finishVoiceInput\(\)/)
+  assert.match(mobileChat, /commitVoiceDraft\(\)/)
+  assert.match(mobileChat, /확인/)
+  const finishBody = mobileChat.match(/function finishVoiceInput\(\) \{([\s\S]*?)\n  \}/)?.[1] || ''
+  assert.doesNotMatch(finishBody, /send\(/)
 })
 
 test('mobile GPT-style composer is a single clean message surface', () => {
-  assert.match(internalChat, /data-moni-mobile-composer/)
-  assert.match(internalChat, /placeholder="MONI에게 메시지"/)
-  assert.match(internalChat, /aria-label="전송"/)
-  assert.doesNotMatch(internalChat, /모니에게 물어보세요/)
+  assert.match(mobileChat, /data-moni-mobile-composer/)
+  assert.match(mobileChat, /placeholder="MONI에게 메시지"/)
+  assert.match(mobileChat, /aria-label="전송"/)
+  assert.doesNotMatch(mobileChat, /모니에게 물어보세요/)
 })
 
 test('mobile traffic on the main entry cannot land on the PC control tower by default', () => {
@@ -80,6 +93,6 @@ test('mobile chat fills the viewport and respects device safe areas', () => {
   assert.match(mobile, /width: 'device-width'/)
   assert.match(mobile, /viewportFit: 'cover'/)
   assert.match(mobile, /h-\[100dvh\]/)
-  assert.match(internalChat, /safe-area-inset-top/)
-  assert.match(internalChat, /safe-area-inset-bottom/)
+  assert.match(mobileChat, /safe-area-inset-top/)
+  assert.match(mobileChat, /safe-area-inset-bottom/)
 })
