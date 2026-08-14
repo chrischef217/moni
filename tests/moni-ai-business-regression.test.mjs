@@ -62,3 +62,13 @@ test('agent instructions enforce one-time kg conversion and truncated-result dis
   assert.match(runtime, /전체 원장·전체 건수라고 단정하지 않습니다/)
   assert.ok(cases.some((item) => item.id === 'business-august-plan-unit-anomaly'))
 })
+
+test('read tools expose truncation and production-plan scale warnings', () => {
+  assert.match(backend, /select\([^\n]+\{ count: 'exact' \}\)/)
+  assert.match(backend, /may_be_truncated:/)
+  assert.match(backend, /PRODUCTION_PLAN_SCALE_REVIEW_REQUIRED/)
+  assert.match(runtime, /작업지시 발행·생산 착수를 권고하지 않습니다/)
+  const today = cases.find((item) => item.id === 'business-today-priority')
+  assert.ok(today.required_any_terms.some((terms) => terms.includes('단위') && terms.includes('이상')))
+  assert.ok(today.forbidden_terms.includes('즉시 발행'))
+})
