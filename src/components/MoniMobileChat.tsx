@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 type Reply = { ok?: boolean; text?: string; error?: string; thread_id?: string }
+type RequestKind = 'monthly-comparison' | 'monthly-report' | 'general'
 type SpeechRecognitionAlternativeLike = { transcript: string }
 type SpeechRecognitionResultLike = {
   isFinal: boolean
@@ -37,10 +38,17 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike
 type SpeechWindow = Window & {
   SpeechRecognition?: SpeechRecognitionConstructor
   webkitSpeechRecognition?: SpeechRecognitionConstructor
+  webkitAudioContext?: typeof AudioContext
 }
 
 const THREAD_KEY = 'moni-global-agent-thread-v11'
+const ETA_KEY = 'moni-mobile-eta-v1'
 const BASE_WAVE = [7, 11, 16, 22, 29, 18, 25, 13, 31, 20, 15, 9, 6]
+const DEFAULT_ETA: Record<RequestKind, number> = {
+  'monthly-comparison': 20,
+  'monthly-report': 16,
+  general: 12,
+}
 
 function pageContext() {
   return {
@@ -52,6 +60,34 @@ function pageContext() {
       .filter(Boolean)
       .slice(0, 6),
   }
+}
+
+function requestKind(question: string): RequestKind {
+  const normalized = String(question || '').replace(/\s+/g, ' ')
+  const months = normalized.match(/(?:20\d{2}\s*년\s*)?(?:1[0-2]|0?[1-9])\s*월/g) || []
+  const comparison = /(비교|차이|대비|두\s*달|두\s*가지|각각)/.test(normalized)
+  if (months.length >= 2 && comparison) return 'monthly-comparison'
+  if (/(이번\s*달|금월|현재\s*월|(?:1[0-2]|0?[1-9])\s*월)/.test(normalized) && /(생산|경영|매출|매입)/.test(normalized)) return 'monthly-report'
+  return 'general'
+}
+
+function readEstimatedSeconds(kind: RequestKind) {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(ETA_KEY) || '{}') as Record<string, number>
+    const value = Number(stored[kind])
+    if (Number.isFinite(value) && value >= 5 && value <= 60) return Math.round(value)
+  } catch { /* use default */ }
+  return DEFAULT_ETA[kind]
+}
+
+function rememberDuration(kind: RequestKind, actualSeconds: number) {
+  if (!Number.isFinite(actualSeconds) || actualSeconds <= 0) return
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(ETA_KEY) || '{}') as Record<string, number>
+    const previous = Number(stored[kind]) || DEFAULT_ETA[kind]
+    stored[kind] = Math.max(5, Math.min(60, Math.round(previous * 0.65 + actualSeconds * 0.35)))
+    window.localStorage.setItem(ETA_KEY, JSON.stringify(stored))
+  } catch { /* ETA learning is UI-only */ }
 }
 
 function MicrophoneIcon() {
@@ -86,7 +122,8 @@ function MobileMoniCharacter({ status }: { status: 'live' | 'thinking' | 'listen
   )
 }
 
-function ThinkingIndicator({ seconds }: { seconds: number }) {
+function ThinkingIndicator({ seconds, estimatedSeconds }: { seconds: number; estimatedSeconds: number }) {
+  const remaining = Math.max(0, estimatedSeconds - seconds)
   return (
     <div role="status" aria-live="polite" className="mr-10 rounded-2xl border border-[#d8e8e4] bg-white px-4 py-3 text-[#607d8d] shadow-[0_5px_18px_rgba(23,59,82,0.04)]">
       <div className="flex items-center gap-2.5">
@@ -97,9 +134,10 @@ function ThinkingIndicator({ seconds }: { seconds: number }) {
           <span className="moni-thinking-dot h-1.5 w-1.5 rounded-full bg-[#3584e4] [animation-delay:320ms]" />
         </span>
       </div>
-      <div className="mt-1 text-[11px] leading-4 text-[#78909d]">
-        {seconds < 20 ? '필요한 데이터를 조회하고 답을 정리하고 있어요.' : `데이터 조회가 길어지고 있습니다. ${seconds}초째 처리 중입니다.`}
+      <div className="mt-1 text-[11px] font-semibold leading-4 text-[#5d7d8d]">
+        {remaining > 0 ? `예상 대기 시간 · 약 ${remaining}초 남음` : `예상 시간을 지나 마무리 중 · ${seconds - estimatedSeconds}초 추가`}
       </div>
+      <div className="mt-0.5 text-[10px] leading-4 text-[#8aa0aa]">실제 조회 범위와 데이터량에 따라 달라질 수 있습니다.</div>
     </div>
   )
 }
@@ -139,6 +177,7 @@ export default function MoniMobileChat() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [thinkingSeconds, setThinkingSeconds] = useState(0)
+  const [estimatedSeconds, setEstimatedSeconds] = useState(DEFAULT_ETA.general)
   const [error, setError] = useState('')
   const [listening, setListening] = useState(false)
   const [voiceFinishing, setVoiceFinishing] = useState(false)
@@ -151,9 +190,35 @@ export default function MoniMobileChat() {
   const voiceSeedRef = useRef('')
   const voiceDraftRef = useRef('')
   const finishTimerRef = useRef<number | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
 
   const status = error ? 'issue' : sending ? 'thinking' : listening ? 'listening' : 'live'
   const statusLabel = error ? 'ISSUE' : sending ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'
+
+  function playCue(kind: 'sent' | 'complete' | 'error') {
+    try {
+      const speechWindow = window as SpeechWindow
+      const AudioContextClass = window.AudioContext || speechWindow.webkitAudioContext
+      if (!AudioContextClass) return
+      const context = audioContextRef.current || new AudioContextClass()
+      audioContextRef.current = context
+      void context.resume()
+      const now = context.currentTime
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      oscillator.type = 'sine'
+      const base = kind === 'sent' ? 620 : kind === 'complete' ? 760 : 300
+      oscillator.frequency.setValueAtTime(base, now)
+      if (kind === 'complete') oscillator.frequency.exponentialRampToValueAtTime(1040, now + 0.11)
+      gain.gain.setValueAtTime(0.0001, now)
+      gain.gain.exponentialRampToValueAtTime(kind === 'error' ? 0.035 : 0.045, now + 0.012)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + (kind === 'complete' ? 0.22 : 0.12))
+      oscillator.connect(gain)
+      gain.connect(context.destination)
+      oscillator.start(now)
+      oscillator.stop(now + (kind === 'complete' ? 0.23 : 0.13))
+    } catch { /* sound is best-effort UX */ }
+  }
 
   useEffect(() => {
     const saved = window.localStorage.getItem(THREAD_KEY) || ''
@@ -196,6 +261,7 @@ export default function MoniMobileChat() {
   useEffect(() => () => {
     try { recognitionRef.current?.abort() } catch { /* no-op */ }
     if (finishTimerRef.current !== null) window.clearTimeout(finishTimerRef.current)
+    void audioContextRef.current?.close().catch(() => undefined)
   }, [])
 
   function rebuildTranscript(event: SpeechRecognitionEventLike) {
@@ -298,10 +364,15 @@ export default function MoniMobileChat() {
   async function send(raw: string) {
     const question = raw.trim()
     if (!question || sending || listening) return
+    const kind = requestKind(question)
+    const estimated = readEstimatedSeconds(kind)
+    const startedAt = Date.now()
+    setEstimatedSeconds(estimated)
     setSending(true)
     setError('')
     setInput('')
     setMessages((current) => [...current, { role: 'user', content: question }])
+    playCue('sent')
     try {
       const response = await fetch('/api/moni/agent-runtime', {
         method: 'POST',
@@ -315,8 +386,11 @@ export default function MoniMobileChat() {
         window.localStorage.setItem(THREAD_KEY, payload.thread_id)
       }
       setMessages((current) => [...current, { role: 'assistant', content: payload.text! }])
+      rememberDuration(kind, Math.max(1, Math.round((Date.now() - startedAt) / 1000)))
+      playCue('complete')
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'MONI 연결 오류')
+      playCue('error')
     } finally {
       setSending(false)
     }
@@ -353,7 +427,7 @@ export default function MoniMobileChat() {
             <div className="mx-auto max-w-[92%] rounded-2xl border border-[#d8e8e4] bg-white px-4 py-3 text-sm leading-6 text-[#263f4d] shadow-[0_5px_18px_rgba(23,59,82,0.035)]">
               무엇이든 말씀하세요. 필요한 두배 데이터를 확인하고 답하겠습니다.
             </div>
-            {sending ? <ThinkingIndicator seconds={thinkingSeconds} /> : null}
+            {sending ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}
           </div>
         ) : (
           <div className="space-y-4">
@@ -366,7 +440,7 @@ export default function MoniMobileChat() {
                   : message.content}
               </div>
             ))}
-            {sending ? <ThinkingIndicator seconds={thinkingSeconds} /> : null}
+            {sending ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}
           </div>
         )}
       </div>
