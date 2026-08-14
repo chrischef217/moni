@@ -53,6 +53,12 @@ function foreignTenantResponse() {
   )
 }
 
+function isMobileBrowser(request: NextRequest) {
+  if (request.headers.get('sec-ch-ua-mobile') === '?1') return true
+  const userAgent = request.headers.get('user-agent') || ''
+  return /Android|iPhone|iPod|Windows Phone|BlackBerry|Mobile/i.test(userAgent)
+}
+
 async function verifyMoniSession(request: NextRequest) {
   const sessionUrl = request.nextUrl.clone()
   sessionUrl.pathname = SESSION_CHECK_PATH
@@ -110,6 +116,14 @@ async function verifyMoniSession(request: NextRequest) {
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
+  // Mobile is an AI-first product surface, not a responsive copy of the PC dashboard.
+  // Entering the root URL on a phone must land on the dedicated conversation shell.
+  if (pathname === '/' && isMobileBrowser(request)) {
+    const mobileUrl = request.nextUrl.clone()
+    mobileUrl.pathname = '/mobile'
+    return NextResponse.redirect(mobileUrl)
+  }
+
   if (requiresMoniSession(pathname)) {
     const denied = await verifyMoniSession(request)
     if (denied) return denied
@@ -140,6 +154,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/',
     '/api/moni/:path*',
   ],
 }
