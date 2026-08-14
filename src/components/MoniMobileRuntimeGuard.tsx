@@ -3,7 +3,6 @@
 import { useLayoutEffect } from 'react'
 
 const THREAD_KEY = 'moni-global-agent-thread-v11'
-const MOBILE_SESSION_KEY = 'moni-mobile-chat-session-v1'
 
 type NativeAlternative = { transcript: string }
 type NativeResult = {
@@ -63,16 +62,15 @@ function syntheticFinalResult(transcript: string): NativeResult {
 
 export default function MoniMobileRuntimeGuard() {
   useLayoutEffect(() => {
-    // New mobile app/tab session = a clean visible chat.
-    // Reloading the same tab keeps the current thread so an accidental refresh
-    // does not erase the conversation the user is actively having.
+    // Fresh entry to /mobile starts a new visible chat. A plain reload keeps the
+    // active thread so an accidental refresh does not erase the current work.
     try {
-      if (!window.sessionStorage.getItem(MOBILE_SESSION_KEY)) {
-        window.localStorage.removeItem(THREAD_KEY)
-        window.sessionStorage.setItem(MOBILE_SESSION_KEY, `${Date.now()}`)
-      }
+      const navigation = window.performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+      const legacyPerformance = window.performance as Performance & { navigation?: { type?: number } }
+      const isReload = navigation?.type === 'reload' || legacyPerformance.navigation?.type === 1
+      if (!isReload) window.localStorage.removeItem(THREAD_KEY)
     } catch {
-      // Storage availability must never block the chat UI.
+      // Storage/navigation metadata must never block the chat UI.
     }
 
     const speechWindow = window as SpeechWindow
@@ -148,8 +146,8 @@ export default function MoniMobileRuntimeGuard() {
               this.syncSettings()
               this.inner.start()
             } catch {
-              // If Android Chrome is briefly still closing the prior recognition
-              // session, retry once instead of finalizing the user's dictation.
+              // Android Chrome may still be closing the prior recognition
+              // session for a moment. Retry once rather than finalizing early.
               this.restartTimer = window.setTimeout(() => {
                 this.restartTimer = null
                 if (!this.keepAlive || this.manualStop) return
