@@ -78,6 +78,7 @@ export default function MoniMobileRuntimeGuard() {
     const OriginalWebkitSpeechRecognition = speechWindow.webkitSpeechRecognition
     const Native = OriginalSpeechRecognition || OriginalWebkitSpeechRecognition
     if (!Native) return
+    const NativeRecognitionClass: NativeRecognitionConstructor = Native
 
     class StickySpeechRecognition implements NativeRecognition {
       private inner: NativeRecognition
@@ -98,7 +99,7 @@ export default function MoniMobileRuntimeGuard() {
       onspeechend: (() => void) | null = null
 
       constructor() {
-        this.inner = new Native()
+        this.inner = new NativeRecognitionClass()
         this.inner.onstart = () => this.onstart?.()
         this.inner.onspeechstart = () => this.onspeechstart?.()
         this.inner.onspeechend = () => this.onspeechend?.()
