@@ -6,6 +6,13 @@ import { reportPmoEvent } from '@/lib/moni/agent/pmo'
 import { runMoniConversationAgent } from '@/lib/moni/agent/conversation-runtime'
 import type { MoniAgentPageContext } from '@/lib/moni/agent/context-types'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
+import {
+  isPdfDocumentRequest,
+  isSalesStatementRequest,
+  removePdfCapabilityRefusal,
+  sanitizeMoniUserFacingText,
+} from '@/lib/moni/agent/user-facing-text'
+import { resolveSalesStatementArtifacts, salesStatementSelectionText } from '@/lib/moni/documents/sales-statement-resolver'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,6 +48,11 @@ function shouldDiscardPreviousConversation(value: unknown) {
   return isConversationChainError(message)
     || /max turns \(\d+\) exceeded/.test(message)
     || /조회 단계를 초과/.test(message)
+}
+
+function appendOnce(value: string, addition: string) {
+  if (!addition || value.includes(addition)) return value
+  return [value.trim(), addition.trim()].filter(Boolean).join('\n\n')
 }
 
 async function clearConversationState(supabase: Supabase, threadId: string) {
@@ -106,7 +118,10 @@ export async function GET(request: NextRequest) {
       .select('id,role,content,provider,model,created_at').eq('thread_id', threadId).eq('business_id', BUSINESS_ID)
       .in('role', ['user', 'assistant']).order('created_at', { ascending: true }).limit(100)
     if (messageError) throw new Error(messageError.message)
-    return NextResponse.json({ ok: true, thread, messages: messages ?? [] }, { headers: { 'Cache-Control': 'no-store' } })
+    const safeMessages = (messages ?? []).map((row: any) => row.role === 'assistant'
+      ? { ...row, content: sanitizeMoniUserFacingText(row.content) }
+      : row)
+    return NextResponse.json({ ok: true, thread, messages: safeMessages }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'MONI 대화를 불러오지 못했습니다.' }, { status: 500 })
   }
@@ -192,11 +207,52 @@ export async function POST(request: NextRequest) {
       result = await runMoniConversationAgent({ ...runInput, conversationId: null })
     }
 
-    const { error: assistantError } = await supabase.from('moni_ai_messages').insert({
-      business_id: BUSINESS_ID, thread_id: thread.id, role: 'assistant', content: result.text,
+    let finalText = sanitizeMoniUserFacingText(result.text)
+    const pdfRequested = isPdfDocumentRequest(message)
+    const statementRequested = isSalesStatementRequest(message)
+    let statementHandled = false
+
+    if (pdfRequested) {
+      finalText = sanitizeMoniUserFacingText(removePdfCapabilityRefusal(finalText))
+      if (!finalText) finalText = '요청하신 내용으로 PDF 파일을 준비했습니다.'
+    }
+
+    if (statementRequested && session.role === 'admin') {
+      const artifacts = await resolveSalesStatementArtifacts(supabase as any, BUSINESS_ID, message)
+      const exact = artifacts.matched
+      if (exact.length === 1) {
+        const artifact = exact[0]
+        const links = [
+          `[📄 거래명세표 PDF 다운로드](${artifact.pdf_url})`,
+          artifact.canonical_form_url ? `[🧾 MONI 거래명세표 양식 열기](${artifact.canonical_form_url})` : '',
+        ].filter(Boolean).join(' · ')
+        finalText = appendOnce(finalText, `**${artifact.sale_date} · ${artifact.client_name} · ${artifact.statement_number}**\n\n${links}`)
+        statementHandled = true
+      } else {
+        const choices = exact.length > 1 ? exact : artifacts.candidates
+        if (choices.length) {
+          finalText = `거래명세표를 만들 거래를 특정해야 합니다. 아래 최근 거래 중 하나를 말씀해 주세요.\n\n${salesStatementSelectionText(choices)}`
+          statementHandled = true
+        }
+      }
+    }
+
+    const { data: assistantMessage, error: assistantError } = await supabase.from('moni_ai_messages').insert({
+      business_id: BUSINESS_ID, thread_id: thread.id, role: 'assistant', content: finalText,
       page_context: page, provider: 'openai', model,
-    })
+    }).select('id').single()
     if (assistantError) throw new Error(assistantError.message)
+
+    if (pdfRequested && !statementHandled) {
+      const pdfUrl = `/api/moni/answer-pdf?thread_id=${encodeURIComponent(thread.id)}&assistant_message_id=${encodeURIComponent(assistantMessage.id)}`
+      finalText = appendOnce(finalText, `[📄 PDF 파일 다운로드](${pdfUrl})`)
+      const { error: pdfLinkError } = await supabase.from('moni_ai_messages')
+        .update({ content: finalText })
+        .eq('id', assistantMessage.id)
+        .eq('thread_id', thread.id)
+        .eq('business_id', BUSINESS_ID)
+      if (pdfLinkError) throw new Error(pdfLinkError.message)
+    }
 
     const now = new Date().toISOString()
     const { error: threadUpdateError } = await supabase.from('moni_ai_threads').update({
@@ -216,7 +272,8 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({
-      ok: true, text: result.text, provider: 'openai', model, thread_id: thread.id,
+      ok: true, text: finalText, provider: 'openai', model, thread_id: thread.id,
+      assistant_message_id: assistantMessage.id,
       agent_runtime: 'MONI_OPENAI_CONVERSATIONS_V1', conversation_state: 'SERVER_MANAGED',
       agent_run_id: result.agentRunId, agent_steps: result.stepCount, tool_call_count: result.toolCallCount,
       tools_used: result.toolsUsed, usage: result.usage, pmo_handoff_status: thread.pmo_handoff_status || 'NONE',
