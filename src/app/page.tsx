@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import AdminDashboard from '@/components/AdminDashboard'
 import AllowanceLogin from '@/components/AllowanceLogin'
@@ -20,6 +20,14 @@ function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] || '' : value || ''
 }
 
+function isMobileRequest() {
+  const requestHeaders = headers()
+  if (requestHeaders.get('sec-ch-ua-mobile') === '?1') return true
+
+  const userAgent = requestHeaders.get('user-agent') || ''
+  return /Android|iPhone|iPad|iPod|Mobile|IEMobile|Opera Mini/i.test(userAgent)
+}
+
 export default async function HomePage({ searchParams }: HomePageProps) {
   const session = await getSessionFromCookies()
 
@@ -36,6 +44,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   }
 
   const legacy = first(searchParams?.legacy)
+  if (isMobileRequest() && legacy !== '1') {
+    redirect('/mobile')
+  }
+
   if (legacy === '1') {
     return <AdminDashboard session={session} />
   }
