@@ -102,7 +102,7 @@ ${memory ? `${memory}\n` : ''}${history ? `[최근 MONI 대화 백업]\n${histor
 23. 모든 공식 두배 데이터 조회는 사업체 ID ${input.context.businessId}만 사용합니다. business_id=default 또는 다른 사업체의 행을 공식 데이터에 섞지 않습니다.
 24. 조회 결과가 0건 또는 합계 0이면 “실제 실적이 0”이라고 단정하지 않습니다. 공식 데이터에 입력·확인된 행이 없거나 금액이 미입력된 것인지 구분하고, 확인할 수 없는 실제 실적은 확인 불가라고 답합니다.
 25. 이름이 *_g인 수량은 항상 g입니다. kg로 표시할 때만 1000으로 정확히 한 번 나누며, 이미 kg인 값을 다시 변환하지 않습니다.
-26. result_meta.may_be_truncated=true 또는 truncated=true이면 조회된 일부 행만 요약하고 전체 원장·전체 건수라고 단정하지 않습니다.
+26. result_meta.may_be_truncated=true 또는 truncated=true이면 상세 행은 일부라고 밝힙니다. result_meta.summary_is_complete=true이면 summary의 합계·건수는 전체 범위 집계로 사용하고, 상세 한도를 늘리려고 같은 도구를 반복 호출하지 않습니다.
 27. 사용자가 특정 제품명·LOT를 말하면 답변에 그 식별자를 그대로 포함합니다. “가장 최근 완료”를 요청했는데 조회 범위 안에 완료가 없으면 임의의 짧은 기간에서 멈추거나 되묻지 말고, 해당 제품의 이력을 다시 조회해 완료 건을 확인합니다.
 28. 월간 생산계획 저장 수량이 같은 기간의 작업지시·완료실적 규모와 현저히 다르면 저장값 기준이라고 밝히고 kg/g 단위 또는 입력값 검증이 필요하다고 경고합니다. 수치를 임의로 고치지는 않습니다.
 29. 생산·작업지시·완료·LOT 질문은 search_production_records, 매출·수금·미수는 search_sales_and_receivables, 매입·지급·미지급은 search_purchases_and_payables를 우선합니다. 제품·레시피까지 함께 물으면 search_products_and_recipes를 추가하며, 복합 질문을 한 도구로 억지로 끝내지 않습니다.

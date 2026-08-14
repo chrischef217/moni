@@ -59,13 +59,16 @@ test('agent instructions enforce one-time kg conversion and truncated-result dis
   assert.match(runtime, /이름이 \*_g인 수량은 항상 g/)
   assert.match(runtime, /1000으로 정확히 한 번 나누며/)
   assert.match(runtime, /may_be_truncated=true/)
-  assert.match(runtime, /전체 원장·전체 건수라고 단정하지 않습니다/)
+  assert.match(runtime, /상세 행은 일부라고 밝힙니다/)
+  assert.match(runtime, /같은 도구를 반복 호출하지 않습니다/)
   assert.ok(cases.some((item) => item.id === 'business-august-plan-unit-anomaly'))
 })
 
 test('read tools expose truncation and production-plan scale warnings', () => {
   assert.match(backend, /select\([^\n]+\{ count: 'exact' \}\)/)
   assert.match(backend, /may_be_truncated:/)
+  assert.match(backend, /summary_is_complete:/)
+  assert.match(backend, /summaryRows\.push/)
   assert.match(backend, /PRODUCTION_PLAN_SCALE_REVIEW_REQUIRED/)
   assert.match(runtime, /작업지시 발행·생산 착수를 권고하지 않습니다/)
   assert.match(runtime, /당일 생산실적이 없어도 search_production_plans를 생략하지 않습니다/)

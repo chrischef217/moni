@@ -201,21 +201,44 @@ async function searchRawMaterialTransactions(args: MoniToolJson, context: MoniAg
   const material = text(args.material_query, 160)
   const txnType = text(args.transaction_type, 40).toUpperCase()
   const rowLimit = limit(args.limit, 100)
-  let query = context.supabase
+  const applyFilters = (builder: any) => {
+    let filtered = builder
+    if (material) filtered = filtered.or(`item_name.ilike.%${safeSearch(material)}%,raw_material_name.ilike.%${safeSearch(material)}%,item_code.ilike.%${safeSearch(material)}%`)
+    if (txnType === 'INBOUND' || txnType === 'OUTBOUND') filtered = filtered.eq('txn_type', txnType)
+    return filtered
+  }
+  let query = applyFilters(context.supabase
     .from('raw_material_transactions')
     .select('id,item_code,item_name,raw_material_name,txn_type,quantity_g,total_weight_g,unit_price,total_price,supplier,note,txn_date,transaction_date,production_record_id,source_purchase_id', { count: 'exact' })
     .eq('business_id', context.businessId)
     .gte('txn_date', startDate)
     .lte('txn_date', endDate)
     .order('txn_date', { ascending: false })
-    .limit(rowLimit)
-  if (material) query = query.or(`item_name.ilike.%${safeSearch(material)}%,raw_material_name.ilike.%${safeSearch(material)}%,item_code.ilike.%${safeSearch(material)}%`)
-  if (txnType === 'INBOUND' || txnType === 'OUTBOUND') query = query.eq('txn_type', txnType)
+    .limit(rowLimit))
   const { data, error, count } = await query
   if (error) throw new Error(error.message)
   const rows = data ?? []
+  const summaryRows: any[] = []
+  const summaryPageSize = 1000
+  let summaryOffset = 0
+  while (true) {
+    const summaryQuery = applyFilters(context.supabase
+      .from('raw_material_transactions')
+      .select('item_code,item_name,raw_material_name,txn_type,quantity_g,total_weight_g')
+      .eq('business_id', context.businessId)
+      .gte('txn_date', startDate)
+      .lte('txn_date', endDate)
+      .order('txn_date', { ascending: false })
+      .range(summaryOffset, summaryOffset + summaryPageSize - 1))
+    const { data: summaryPage, error: summaryError } = await summaryQuery
+    if (summaryError) throw new Error(summaryError.message)
+    const page = summaryPage ?? []
+    summaryRows.push(...page)
+    if (page.length < summaryPageSize || (typeof count === 'number' && summaryRows.length >= count)) break
+    summaryOffset += page.length
+  }
   const byType: MoniToolJson = {}
-  for (const row of rows) {
+  for (const row of summaryRows) {
     const key = text(row.txn_type, 40) || 'UNKNOWN'
     byType[key] = (byType[key] || 0) + num(row.quantity_g || row.total_weight_g)
   }
@@ -227,8 +250,10 @@ async function searchRawMaterialTransactions(args: MoniToolJson, context: MoniAg
       returned_count: rows.length,
       total_count: count,
       may_be_truncated: typeof count === 'number' ? count > rows.length : rows.length >= rowLimit,
+      summary_row_count: summaryRows.length,
+      summary_is_complete: typeof count === 'number' ? summaryRows.length >= count : true,
     },
-    summary: { transaction_count: rows.length, quantity_g_by_type: byType },
+    summary: { transaction_count: count ?? summaryRows.length, quantity_g_by_type: byType },
     transactions: rows,
   }
 }
