@@ -1,6 +1,8 @@
 export const CANONICAL_MONI_BUSINESS_ID = '20220523011'
 
-function yearMonthInSeoul(now: Date) {
+export type RequestedYearMonth = { year: number; month: number }
+
+export function businessYearMonthInSeoul(now: Date = new Date()): RequestedYearMonth {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Seoul',
     year: 'numeric',
@@ -14,14 +16,56 @@ function yearMonthInSeoul(now: Date) {
   return { year, month }
 }
 
-export function parseRequestedYearMonth(message: string, now = new Date()) {
+function previousBusinessMonth(now: Date): RequestedYearMonth {
+  const current = businessYearMonthInSeoul(now)
+  return current.month === 1
+    ? { year: current.year - 1, month: 12 }
+    : { year: current.year, month: current.month - 1 }
+}
+
+function uniquePeriods(periods: RequestedYearMonth[]) {
+  const seen = new Set<string>()
+  return periods.filter((period) => {
+    const key = `${period.year}-${period.month}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+export function parseRequestedYearMonths(message: string, now = new Date()): RequestedYearMonth[] {
   const normalized = String(message || '').replace(/\s+/g, ' ').trim()
-  const korean = normalized.match(/(20\d{2})\s*년\s*(1[0-2]|0?[1-9])\s*월/)
-  const compact = normalized.match(/(20\d{2})[-/.](1[0-2]|0?[1-9])(?:\b|월)/)
-  const match = korean || compact
-  if (match) return { year: Number(match[1]), month: Number(match[2]) }
-  if (/(이번\s*달|이번\s*월|금월|현재\s*월)/.test(normalized)) return yearMonthInSeoul(now)
-  throw new Error('월간 종합 조회에는 연월이 필요합니다. 예: 2026년 7월 또는 이번 달')
+  const current = businessYearMonthInSeoul(now)
+  const periods: RequestedYearMonth[] = []
+
+  let carriedYear: number | null = null
+  const koreanMonth = /(?:(20\d{2})\s*년\s*)?(1[0-2]|0?[1-9])\s*월/g
+  let match: RegExpExecArray | null
+  while ((match = koreanMonth.exec(normalized)) !== null) {
+    if (match[1]) carriedYear = Number(match[1])
+    periods.push({
+      year: carriedYear ?? current.year,
+      month: Number(match[2]),
+    })
+  }
+
+  if (!periods.length) {
+    const compactMonth = /(20\d{2})[-/.](1[0-2]|0?[1-9])(?:\b|월)/g
+    while ((match = compactMonth.exec(normalized)) !== null) {
+      periods.push({ year: Number(match[1]), month: Number(match[2]) })
+    }
+  }
+
+  if (/(지난\s*달|전월)/.test(normalized)) periods.push(previousBusinessMonth(now))
+  if (/(이번\s*달|이번\s*월|금월|현재\s*월)/.test(normalized)) periods.push(current)
+
+  return uniquePeriods(periods)
+}
+
+export function parseRequestedYearMonth(message: string, now = new Date()) {
+  const periods = parseRequestedYearMonths(message, now)
+  if (periods.length) return periods[0]
+  throw new Error('월간 종합 조회에는 월이 필요합니다. 연도를 생략하면 공장 기준 현재 연도로 해석합니다. 예: 7월 또는 이번 달')
 }
 
 export function monthRange(year: number, month: number) {
