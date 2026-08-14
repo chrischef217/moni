@@ -6,7 +6,9 @@ import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+// A two-turn Agents/Conversations eval can legitimately exceed the ordinary
+// request budget while it performs several read-only business queries.
+export const maxDuration = 300
 
 const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
 const DEFAULT_OPENAI_MODEL = 'gpt-5'

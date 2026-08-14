@@ -12,7 +12,7 @@ test('live evaluation API is admin-only and bounded', () => {
   assert.match(route, /requireAdmin/)
   assert.match(route, /status: 401/)
   assert.match(route, /status: 403/)
-  assert.match(route, /maxDuration = 60/)
+  assert.match(route, /maxDuration = 300/)
   assert.match(route, /case_id/)
 })
 
