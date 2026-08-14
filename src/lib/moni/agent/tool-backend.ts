@@ -14,10 +14,6 @@ const limit = (value: unknown, fallback = 30) => Math.max(1, Math.min(MAX_TOOL_R
 const validDate = (value: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(text(value, 10)) ? text(value, 10) : ''
 const safeSearch = (value: string) => value.replace(/[%_,()]/g, ' ')
 
-function businessIdsWithLegacy(context: MoniAgentToolContext) {
-  return Array.from(new Set([context.businessId, 'default'].filter(Boolean)))
-}
-
 function dateInZone(timeZone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -75,7 +71,7 @@ async function searchProductionRecords(args: MoniToolJson, context: MoniAgentToo
   let query = context.supabase
     .from('production_records')
     .select('id,lot_number,work_date,product_id,product_name,planned_quantity_g,actual_quantity_g,defect_quantity_g,sample_quantity_g,status,worker_name,inspection_result,note,production_unit_name,planned_quantity_ea,actual_quantity_ea')
-    .in('business_id', businessIdsWithLegacy(context))
+    .eq('business_id', context.businessId)
     .gte('work_date', startDate)
     .lte('work_date', endDate)
     .order('work_date', { ascending: false })
@@ -134,7 +130,7 @@ async function searchProductionPlans(args: MoniToolJson, context: MoniAgentToolC
   let query = context.supabase
     .from('monthly_production_plans')
     .select('id,plan_date,product_id,product_name,planned_quantity_g,note,business_id,updated_at')
-    .in('business_id', businessIdsWithLegacy(context))
+    .eq('business_id', context.businessId)
     .gte('plan_date', startDate)
     .lte('plan_date', endDate)
     .order('plan_date', { ascending: true })
@@ -159,7 +155,7 @@ async function getRawMaterialInventory(args: MoniToolJson, context: MoniAgentToo
   let query = context.supabase
     .from('raw_materials')
     .select('id,item_name,item_code,supplier,unit_price_per_kg,packing_weight_g,box_quantity,current_stock_g,is_active,is_stock_managed,country_of_origin,food_type,spec,storage_type,shelf_life_days')
-    .in('business_id', businessIdsWithLegacy(context))
+    .eq('business_id', context.businessId)
     .order('current_stock_g', { ascending: true })
     .limit(limit(args.limit, 50))
   if (search) query = query.or(`item_name.ilike.%${safeSearch(search)}%,item_code.ilike.%${safeSearch(search)}%,supplier.ilike.%${safeSearch(search)}%`)
@@ -190,7 +186,7 @@ async function searchRawMaterialTransactions(args: MoniToolJson, context: MoniAg
   let query = context.supabase
     .from('raw_material_transactions')
     .select('id,item_code,item_name,raw_material_name,txn_type,quantity_g,total_weight_g,unit_price,total_price,supplier,note,txn_date,transaction_date,production_record_id,source_purchase_id')
-    .in('business_id', businessIdsWithLegacy(context))
+    .eq('business_id', context.businessId)
     .gte('txn_date', startDate)
     .lte('txn_date', endDate)
     .order('txn_date', { ascending: false })
@@ -379,7 +375,7 @@ async function searchProductsAndRecipes(args: MoniToolJson, context: MoniAgentTo
   let query = context.supabase
     .from('products')
     .select('id,product_name,product_code,product_type,weight_g,product_spec,storage_type,shelf_life_days,shelf_life_standard,packaging_material,lot_rule,allergens,food_type_name,is_active,business_id')
-    .in('business_id', businessIdsWithLegacy(context))
+    .eq('business_id', context.businessId)
     .limit(Math.min(50, limit(args.limit, 20)))
   if (product) query = query.or(`product_name.ilike.%${safeSearch(product)}%,product_code.ilike.%${safeSearch(product)}%,id.ilike.%${safeSearch(product)}%`)
   if (bool(args.active_only)) query = query.eq('is_active', true)

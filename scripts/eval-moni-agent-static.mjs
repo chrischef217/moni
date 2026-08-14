@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 
 const cases = JSON.parse(readFileSync('evals/moni-agent-cases.json', 'utf8'))
+const businessCases = JSON.parse(readFileSync('evals/moni-ai-business-regression-cases.json', 'utf8'))
 const runtime = readFileSync('src/lib/moni/agent/conversation-runtime.ts', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
 const registry = readFileSync('src/lib/moni/agent/tools/registry.ts', 'utf8')
@@ -15,6 +16,16 @@ const regression = process.argv.includes('--regression')
 
 const failures = []
 if (!Array.isArray(cases) || cases.length < 15) failures.push('evaluation set must contain at least 15 cases')
+if (!Array.isArray(businessCases) || businessCases.length < 40) failures.push('business regression set must contain at least 40 cases')
+for (const [index, item] of businessCases.entries()) {
+  const prefix = 'business_case[' + index + ']'
+  if (!item?.id || !item?.category) failures.push(prefix + ' id and category are required')
+  if (!item?.prompt && (!Array.isArray(item?.turns) || item.turns.length < 2)) failures.push(prefix + ' prompt or multi-turn sequence is required')
+  if (!Array.isArray(item?.required_tools)) failures.push(prefix + ' required_tools must be an array')
+  if (!Array.isArray(item?.required_terms)) failures.push(prefix + ' required_terms must be an array')
+  if (!Array.isArray(item?.required_any_terms)) failures.push(prefix + ' required_any_terms must be an array')
+  if (!Array.isArray(item?.forbidden_terms)) failures.push(prefix + ' forbidden_terms must be an array')
+}
 
 const ids = new Set()
 for (const [index, item] of cases.entries()) {
@@ -87,5 +98,7 @@ console.log(JSON.stringify({
   ok: true,
   mode: regression ? 'regression' : 'static',
   case_count: cases.length,
+  business_case_count: businessCases.length,
+  business_question_count: businessCases.reduce((count, item) => count + (Array.isArray(item.turns) ? item.turns.length : 1), 0),
   marker_checks: markerChecks.length,
 }, null, 2))
