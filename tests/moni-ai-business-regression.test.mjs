@@ -45,3 +45,20 @@ test('zero-row answers must distinguish missing input from actual zero performan
     assert.ok(item.required_any_terms.flat().some((term) => /입력|확인|단정|부족|없/.test(term)))
   }
 })
+
+test('operational reads force the matching canonical tool without weakening write intent', () => {
+  assert.match(runtime, /function forcedReadTool/)
+  assert.match(runtime, /hasProductionMutationIntent\(message\)/)
+  assert.match(runtime, /return 'search_production_records'/)
+  assert.match(runtime, /return 'search_sales_and_receivables'/)
+  assert.match(runtime, /return 'search_purchases_and_payables'/)
+  assert.match(runtime, /toolChoice: forcedTool/)
+})
+
+test('agent instructions enforce one-time kg conversion and truncated-result disclosure', () => {
+  assert.match(runtime, /이름이 \*_g인 수량은 항상 g/)
+  assert.match(runtime, /1000으로 정확히 한 번 나누며/)
+  assert.match(runtime, /may_be_truncated=true/)
+  assert.match(runtime, /전체 원장·전체 건수라고 단정하지 않습니다/)
+  assert.ok(cases.some((item) => item.id === 'business-august-plan-unit-anomaly'))
+})

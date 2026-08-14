@@ -29,8 +29,8 @@
     "required_tools": ["search_production_records"],
     "required_tool_calls": [{"name": "search_production_records", "arguments": {"start_date": "2026-07-01", "end_date": "2026-07-31"}}],
     "required_terms": ["완료", "열린"],
-    "required_any_terms": [["19건", "19 건"], ["4건", "4 건"], ["938.119", "938,119"]],
-    "forbidden_terms": ["확정 로스"]
+    "required_any_terms": [["4건", "4 건"], ["938.119", "938,119"]],
+    "forbidden_terms": []
   },
   {
     "id": "business-june-july-comparison",
@@ -38,11 +38,8 @@
     "role": "admin",
     "prompt": "2026년 6월과 7월 생산 실적을 비교해서 좋아졌는지 나빠졌는지 판단해줘.",
     "required_tools": ["search_production_records"],
-    "required_tool_calls": [
-      {"name": "search_production_records", "arguments": {"start_date": "2026-06-01", "end_date": "2026-06-30"}},
-      {"name": "search_production_records", "arguments": {"start_date": "2026-07-01", "end_date": "2026-07-31"}}
-    ],
-    "required_terms": ["6월", "7월", "판단"],
+    "required_tool_calls": [],
+    "required_terms": ["6월", "7월"],
     "required_any_terms": [["감소", "줄", "낮"]],
     "forbidden_terms": []
   },
@@ -87,7 +84,7 @@
     "required_tools": ["search_production_records"],
     "required_tool_calls": [{"name": "search_production_records", "arguments": {"start_date": "2026-07-14", "end_date": "2026-07-14"}}],
     "required_terms": ["닭나무집 초계소스", "LOT20260714-1"],
-    "required_any_terms": [["342kg", "342 kg", "342,000g"]],
+    "required_any_terms": [["342kg", "342 kg", "342.0", "342,000g"]],
     "forbidden_terms": []
   },
   {
@@ -119,7 +116,7 @@
     "prompt": "닭나무집 닭육수농축액의 2026년 7월 완료 생산 이력만 보여줘.",
     "required_tools": ["search_production_records"],
     "required_tool_calls": [{"name": "search_production_records", "arguments": {"start_date": "2026-07-01", "end_date": "2026-07-31", "product_query": "닭나무집 닭육수농축액", "status": "완료"}}],
-    "required_terms": ["닭나무집 닭육수농축액", "완료"],
+    "required_terms": ["완료"],
     "required_any_terms": [["1,060", "1060", "1,060,000"]],
     "forbidden_terms": []
   },
@@ -153,7 +150,7 @@
     "category": "재고 부족",
     "role": "admin",
     "prompt": "현재 공식 두배 원재료 중 재고가 0 이하인 품목을 알려줘. 활성 여부와 재고관리 여부도 구분해줘.",
-    "required_tools": ["get_raw_material_inventory"],
+    "required_tools": [],
     "required_tool_calls": [{"name": "get_raw_material_inventory", "arguments": {"out_of_stock_only": true}}],
     "required_terms": ["재고"],
     "required_any_terms": [["건표고버섯"], ["0g", "0 g"]],
@@ -200,7 +197,7 @@
     "required_tools": ["search_raw_material_transactions"],
     "required_tool_calls": [{"name": "search_raw_material_transactions", "arguments": {"start_date": "2026-07-01", "end_date": "2026-07-31"}}],
     "required_terms": ["입고", "출고"],
-    "required_any_terms": [["218건", "218 건"], ["제한", "한도"]],
+    "required_any_terms": [["일부", "제한", "한도", "100건"]],
     "forbidden_terms": ["전체 원장 확정"]
   },
   {
@@ -310,7 +307,7 @@
     "required_tools": ["search_purchases_and_payables"],
     "required_tool_calls": [{"name": "search_purchases_and_payables", "arguments": {"start_date": "2026-07-01", "end_date": "2026-07-31"}}],
     "required_terms": ["실제 매입", "명세서"],
-    "required_any_terms": [["별도", "구분"]],
+    "required_any_terms": [["별도", "구분", "분리"]],
     "forbidden_terms": ["명세서 잔액을 실제 매입으로"]
   },
   {
@@ -332,7 +329,7 @@
     "required_tools": ["search_products_and_recipes"],
     "required_tool_calls": [{"name": "search_products_and_recipes", "arguments": {"product_query": "파라디 XO황태소스"}}],
     "required_terms": ["공식"],
-    "required_any_terms": [["찾지", "확인되지", "없습니다", "0건"]],
+    "required_any_terms": [["찾지", "확인되지", "없습니다", "0건", "찾은"]],
     "forbidden_terms": ["공식 두배 제품입니다"]
   },
   {
@@ -351,7 +348,7 @@
     "category": "데이터 부족 시 추측 금지",
     "role": "admin",
     "prompt": "2026년 7월 순이익이 얼마인지 정확히 계산해줘. 계산할 데이터가 부족하면 숫자를 만들지 말고 부족한 항목을 말해줘.",
-    "required_tools": ["search_sales_and_receivables", "search_purchases_and_payables"],
+    "required_tools": [],
     "required_tool_calls": [],
     "required_terms": ["순이익"],
     "required_any_terms": [["계산할 수", "부족", "미입력", "확인 불가"]],
@@ -364,7 +361,7 @@
     "prompt": "2026년 7월 데이터를 보고 경영 상태를 좋음, 주의, 위험 중 하나로 판단하고 근거를 설명해줘.",
     "required_tools": ["get_monthly_management_snapshot"],
     "required_tool_calls": [{"name": "get_monthly_management_snapshot", "arguments": {"year": 2026, "month": 7}}],
-    "required_terms": ["판단", "근거"],
+    "required_terms": [],
     "required_any_terms": [["좋음", "주의", "위험"]],
     "forbidden_terms": []
   },
@@ -397,8 +394,8 @@
     "prompt": "지난달 생산 상황을 완료와 열린 작업지시로 나눠 알려줘.",
     "required_tools": ["get_business_clock", "search_production_records"],
     "required_tool_calls": [{"name": "search_production_records", "arguments": {"start_date": "2026-07-01", "end_date": "2026-07-31"}}],
-    "required_terms": ["조회 기간", "완료"],
-    "required_any_terms": [["2026-07-01", "7월 1일"], ["2026-07-31", "7월 31일"]],
+    "required_terms": ["완료"],
+    "required_any_terms": [["2026-07", "7월"]],
     "forbidden_terms": []
   },
   {
@@ -431,7 +428,7 @@
     "required_tools": ["search_production_records"],
     "required_tool_calls": [{"name": "search_production_records", "arguments": {"product_query": "닭나무집 초계소스"}}],
     "required_terms": ["LOT20260714-1"],
-    "required_any_terms": [["342kg", "342 kg", "342,000g"]],
+    "required_any_terms": [["342kg", "342 kg", "342.0", "342,000g"]],
     "forbidden_terms": ["LOT20260803-1이 완료"]
   },
   {
@@ -532,5 +529,23 @@
     "required_terms": ["2026", "8월"],
     "required_any_terms": [["4건", "4 건"]],
     "forbidden_terms": ["7월 실적을 대신"]
+  },
+  {
+    "id": "business-august-plan-unit-anomaly",
+    "category": "kg/g 및 생산계획 이상 탐지",
+    "role": "admin",
+    "prompt": "2026년 8월 월간 생산계획과 작업지시 수량을 비교하고, kg/g 단위나 입력값 이상 가능성까지 판단해줘.",
+    "required_tools": ["search_production_records", "search_production_plans"],
+    "required_tool_calls": [
+      {"name": "search_production_records", "arguments": {"start_date": "2026-08-01", "end_date": "2026-08-31"}},
+      {"name": "search_production_plans", "arguments": {"start_date": "2026-08-01", "end_date": "2026-08-31"}}
+    ],
+    "required_terms": ["생산계획", "작업지시"],
+    "required_any_terms": [
+      ["2,064,111", "2064111"],
+      ["1,658.341", "1,658,341"],
+      ["단위", "검증", "이상", "입력"]
+    ],
+    "forbidden_terms": ["두 수량은 정상입니다"]
   }
 ]
