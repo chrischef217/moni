@@ -56,6 +56,7 @@ export type SalesStatementPdfInput = {
 function safe(value: unknown, max = 20_000) {
   return String(value ?? '')
     .replace(/\r\n/g, '\n')
+    .replace(/[•●▪]/g, '-')
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
     .slice(0, max)
 }
@@ -93,7 +94,7 @@ function isWide(char: string) {
 
 function textWidth(value: string, fontSize: number) {
   let width = 0
-  for (const char of value) width += isWide(char) ? fontSize : fontSize * 0.54
+  for (const char of value) width += isWide(char) ? fontSize * 0.92 : fontSize * 0.52
   return width
 }
 
@@ -126,7 +127,8 @@ function writeText(page: Page, value: string, x: number, yFromTop: number, fontS
     drawX = align === 'center' ? x + Math.max(0, (width - measured) / 2) : x + Math.max(0, width - measured)
   }
   const y = PAGE_HEIGHT - yFromTop
-  page.commands.push(`BT /F1 ${n(fontSize)} Tf ${fillColor(color)} ${n(drawX)} ${n(y)} Td <${cp949Hex(content)}> Tj ET`)
+  const characterSpacing = fontSize >= 13 ? -0.42 : -0.28
+  page.commands.push(`BT /F1 ${n(fontSize)} Tf ${n(characterSpacing)} Tc ${fillColor(color)} ${n(drawX)} ${n(y)} Td <${cp949Hex(content)}> Tj ET`)
 }
 
 function drawLine(page: Page, x1: number, y1Top: number, x2: number, y2Top: number, color: Rgb = COLORS.line, width = 0.7) {
@@ -146,6 +148,7 @@ function drawRect(page: Page, x: number, yTop: number, width: number, height: nu
 class PdfLayout {
   pages: Page[] = [{ commands: [] }]
   cursor = TOP
+  continuationTitle = 'MONI 문서'
 
   get page() { return this.pages[this.pages.length - 1] }
 
@@ -153,12 +156,13 @@ class PdfLayout {
     if (this.cursor + height <= PAGE_HEIGHT - BOTTOM) return
     this.pages.push({ commands: [] })
     this.cursor = TOP
-    this.header('MONI 업무 보고서', true)
+    this.header(this.continuationTitle, true)
   }
 
   gap(height = 8) { this.cursor += height }
 
   header(title: string, continuation = false) {
+    if (!continuation) this.continuationTitle = title
     this.ensure(50)
     writeText(this.page, title, MARGIN_X, this.cursor + 15, continuation ? 13 : 18, COLORS.navy)
     if (continuation) writeText(this.page, '계속', PAGE_WIDTH - MARGIN_X - 45, this.cursor + 15, 8, COLORS.muted, 'right', 45)
@@ -235,6 +239,14 @@ class PdfLayout {
     })
     this.cursor += 8
   }
+
+  footer(value: string) {
+    const y = PAGE_HEIGHT - 22
+    for (const page of this.pages) {
+      drawLine(page, MARGIN_X, y - 12, PAGE_WIDTH - MARGIN_X, y - 12, COLORS.line, 0.45)
+      writeText(page, value, MARGIN_X, y, 7.4, COLORS.muted)
+    }
+  }
 }
 
 function parseMarkdownTable(lines: string[], start: number) {
@@ -273,7 +285,7 @@ function renderMarkdown(layout: PdfLayout, markdown: string) {
     }
     const bullet = line.match(/^[-*]\s+(.+)$/)
     if (bullet) {
-      layout.paragraph(bullet[1], { bullet: '•' })
+      layout.paragraph(bullet[1], { bullet: '-' })
       index += 1
       continue
     }
@@ -299,8 +311,8 @@ function buildPdf(pages: Page[]) {
 
   setObject(1, '<< /Type /Catalog /Pages 2 0 R >>')
   setObject(2, '<< >>')
-  setObject(3, '<< /Type /Font /Subtype /Type0 /BaseFont /HYSMyeongJo-Medium /Encoding /KSCms-UHC-H /DescendantFonts [4 0 R] >>')
-  setObject(4, '<< /Type /Font /Subtype /CIDFontType0 /BaseFont /HYSMyeongJo-Medium /CIDSystemInfo << /Registry (Adobe) /Ordering (Korea1) /Supplement 1 >> >>')
+  setObject(3, '<< /Type /Font /Subtype /Type0 /BaseFont /HYGoThic-Medium /Encoding /KSCms-UHC-H /DescendantFonts [4 0 R] >>')
+  setObject(4, '<< /Type /Font /Subtype /CIDFontType0 /BaseFont /HYGoThic-Medium /CIDSystemInfo << /Registry (Adobe) /Ordering (Korea1) /Supplement 1 >> >>')
 
   const pageIds: number[] = []
   for (const page of pages) {
@@ -334,14 +346,13 @@ function buildPdf(pages: Page[]) {
 
 export function buildMoniReportPdf(input: { title?: string; question: string; answer: string; generatedAt: string }) {
   const layout = new PdfLayout()
-  layout.header(input.title || 'MONI AI 업무 보고서')
+  layout.header(input.title || 'MONI 분석 문서')
   layout.meta('두배 · MONI', input.generatedAt)
-  layout.heading('요청', 1)
-  layout.callout(cleanInlineMarkdown(input.question) || '요청 기록 없음')
-  layout.heading('MONI 분석 및 답변', 1)
+  layout.heading('질문', 1)
+  layout.callout(cleanInlineMarkdown(input.question) || '질문 기록 없음')
+  layout.heading('MONI 답변', 1)
   renderMarkdown(layout, input.answer)
-  layout.gap(6)
-  layout.paragraph('본 문서는 MONI 대화와 저장된 업무 데이터를 바탕으로 생성된 보고서입니다.', { color: COLORS.muted })
+  layout.footer('MONI 대화 답변을 문서 형태로 저장한 자료입니다.')
   return buildPdf(layout.pages)
 }
 
@@ -388,6 +399,6 @@ export function buildSalesStatementPdf(input: SalesStatementPdfInput) {
     layout.heading('비고', 2)
     layout.callout(input.note)
   }
-  layout.paragraph('MONI 판매관리의 공식 거래 데이터로 생성된 거래명세표입니다.', { color: COLORS.muted })
+  layout.footer('MONI 판매관리의 공식 거래 데이터로 생성된 거래명세표입니다.')
   return buildPdf(layout.pages)
 }
