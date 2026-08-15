@@ -15,7 +15,8 @@ test('mobile MONI mounts GPT-style answer actions under assistant replies', () =
   assert.match(actions, /싫어요/)
   assert.match(actions, /답변 복사/)
   assert.match(actions, /답변 공유/)
-  assert.match(actions, /보고서 다운로드/)
+  assert.match(actions, /문서 저장/)
+  assert.match(actions, /답변을 Word 문서로 저장/)
   assert.match(actions, /\.moni-markdown/)
 })
 
@@ -27,16 +28,17 @@ test('answer rating is explicit authenticated candidate learning evidence', () =
   assert.match(feedback, /user_login_id.*session\.loginId/s)
   assert.match(migration, /unique \(business_id, assistant_message_id, actor_login_id\)/)
   assert.match(migration, /learning_status.*CANDIDATE.*PMO_VERIFIED.*REJECTED/s)
-  assert.match(learning, /복사 \/ 공유 \/ 보고서 다운로드.*품질의 긍정·부정 증거로 사용하지 않는다/)
+  assert.match(learning, /품질의 긍정·부정 증거로 사용하지 않는다/)
   assert.match(learning, /최종 승인권은 GPT\(PMO\)/)
 })
 
-test('report download uses authenticated server-side stored conversation data', () => {
+test('answer document save uses authenticated server-side stored conversation data', () => {
   assert.match(report, /getSessionFromRequest/)
   assert.match(report, /eq\('role', 'assistant'\)/)
   assert.match(report, /lt\('created_at', answer\.created_at\)/)
   assert.match(report, /Packer\.toBuffer/)
-  assert.match(report, /MONI AI 업무 보고서/)
+  assert.match(report, /MONI 답변 문서/)
+  assert.match(report, /MONI_Answer_/)
   assert.match(report, /application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document/)
   assert.match(report, /Content-Disposition/)
   assert.match(actions, /URL\.createObjectURL/)

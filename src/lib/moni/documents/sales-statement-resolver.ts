@@ -15,6 +15,15 @@ export type SalesStatementArtifact = {
   canonical_form_url: string | null
 }
 
+function requestedOrdinal(input: string) {
+  const normalized = input.replace(/\s+/g, ' ').trim()
+  const followUp = normalized.match(/(?:그|위|아까|방금)?\s*([1-5])\s*번\s*(?:거래|거|꺼|항목)?/i)
+  if (!followUp) return null
+  if (!/(?:거래\s*(?:명세표|명세서)|거래|그|위|아까|방금)/i.test(normalized)) return null
+  const index = Number(followUp[1]) - 1
+  return Number.isInteger(index) && index >= 0 ? index : null
+}
+
 export async function resolveSalesStatementArtifacts(
   supabase: SupabaseClient,
   businessId: string,
@@ -72,11 +81,17 @@ export async function resolveSalesStatementArtifacts(
     }
   })
 
-  const matched = artifacts.filter((artifact) => {
+  let matched = artifacts.filter((artifact) => {
     if (exactNumbers.some((value) => value.toLowerCase() === artifact.statement_number.toLowerCase())) return true
     if (artifact.client_name.length >= 2 && input.toLowerCase().includes(artifact.client_name.toLowerCase())) return true
     return false
   })
+
+  if (matched.length === 0) {
+    const ordinal = requestedOrdinal(input)
+    if (ordinal !== null && artifacts[ordinal]) matched = [artifacts[ordinal]]
+    else if (artifacts.length === 1) matched = [artifacts[0]]
+  }
 
   return { matched, candidates: artifacts }
 }

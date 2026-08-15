@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '@/lib/allowance/session'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import { buildMoniReportPdf } from '@/lib/moni/documents/simple-pdf'
-import { sanitizeMoniUserFacingText } from '@/lib/moni/agent/user-facing-text'
+import {
+  removePdfCapabilityRefusal,
+  sanitizeMoniUserFacingText,
+  stripGeneratedDocumentLinks,
+} from '@/lib/moni/agent/user-facing-text'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -35,7 +39,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = createMoniServiceRoleClient()
     const { data: thread, error: threadError } = await supabase.from('moni_ai_threads')
-      .select('id,title,user_login_id')
+      .select('id,user_login_id')
       .eq('id', threadId)
       .eq('business_id', BUSINESS_ID)
       .eq('user_login_id', session.loginId)
@@ -65,16 +69,16 @@ export async function GET(request: NextRequest) {
     if (questionError) throw new Error(questionError.message)
 
     const stamp = seoulStamp()
-    const answerText = sanitizeMoniUserFacingText(text(answer.content, 20_000))
-      .replace(/\n*\[[^\]]*PDF[^\]]*\]\([^)]*\)\s*$/i, '')
-      .trim()
+    const answerText = stripGeneratedDocumentLinks(
+      sanitizeMoniUserFacingText(removePdfCapabilityRefusal(text(answer.content, 20_000))),
+    )
     const pdf = buildMoniReportPdf({
-      title: text(thread.title, 120) || 'MONI AI 업무 보고서',
+      title: 'MONI 분석 문서',
       question: text(question?.content || '질문 기록 없음', 6000),
       answer: answerText,
       generatedAt: stamp.display,
     })
-    const filename = `MONI_Report_${stamp.file}.pdf`
+    const filename = `MONI_Document_${stamp.file}.pdf`
 
     return new Response(Uint8Array.from(pdf), {
       status: 200,

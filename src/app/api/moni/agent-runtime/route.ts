@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
       .in('role', ['user', 'assistant']).order('created_at', { ascending: true }).limit(100)
     if (messageError) throw new Error(messageError.message)
     const safeMessages = (messages ?? []).map((row: any) => row.role === 'assistant'
-      ? { ...row, content: sanitizeMoniUserFacingText(row.content) }
+      ? { ...row, content: sanitizeMoniUserFacingText(removePdfCapabilityRefusal(row.content)) }
       : row)
     return NextResponse.json({ ok: true, thread, messages: safeMessages }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
           `[📄 거래명세표 PDF 다운로드](${artifact.pdf_url})`,
           artifact.canonical_form_url ? `[🧾 MONI 거래명세표 양식 열기](${artifact.canonical_form_url})` : '',
         ].filter(Boolean).join(' · ')
-        finalText = appendOnce(finalText, `**${artifact.sale_date} · ${artifact.client_name} · ${artifact.statement_number}**\n\n${links}`)
+        finalText = `거래명세표를 준비했습니다.\n\n**${artifact.sale_date} · ${artifact.client_name} · ${artifact.statement_number}**\n\n${links}`
         statementHandled = true
       } else {
         const choices = exact.length > 1 ? exact : artifacts.candidates

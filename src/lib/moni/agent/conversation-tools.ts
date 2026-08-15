@@ -124,6 +124,28 @@ function createReadTools(role: string) {
 
 const EmptyObjectSchema = z.object({})
 
+function factoryDateParts() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    date: `${values.year}-${values.month}-${values.day}`,
+  }
+}
+
+function sameElapsedEndDate(year: number, month: number, day: number) {
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const safeDay = Math.max(1, Math.min(day, lastDay))
+  return `${year}-${String(month).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`
+}
+
 function canonicalProductionSummary(productionRecords: any) {
   const rows = Array.isArray(productionRecords?.records) ? productionRecords.records : []
   const statusCounts: Record<string, number> = {}
@@ -135,7 +157,7 @@ function canonicalProductionSummary(productionRecords: any) {
     const status = text(row?.status, 80) || 'UNKNOWN'
     statusCounts[status] = (statusCounts[status] || 0) + 1
     const normalized = status.toLowerCase()
-    if (status === '완료' || normalized === 'completed' || normalized === 'confirmed') completedRecordCount += 1
+    if (status === '완료' || normalized === 'completed' || normalized === 'confirmed' || num(row?.actual_quantity_g) > 0) completedRecordCount += 1
     if (normalized === 'planned') {
       openWorkOrderCount += 1
       openPlannedQuantityG += num(row?.planned_quantity_g)
@@ -156,6 +178,22 @@ function canonicalProductionSummary(productionRecords: any) {
   }
 }
 
+function productionPlanDataQuality(productionCanonical: any, productionPlans: any) {
+  const monthlyPlanG = num(productionPlans?.summary?.planned_quantity_g)
+  const workOrderPlannedG = num(productionCanonical?.planned_quantity_g)
+  const ratio = workOrderPlannedG > 0 ? monthlyPlanG / workOrderPlannedG : null
+  const suspectedScaleMismatch = monthlyPlanG >= 50_000_000 && (workOrderPlannedG <= 0 || Number(ratio) >= 50)
+  return {
+    suspected_scale_mismatch: suspectedScaleMismatch,
+    monthly_plan_quantity_g: monthlyPlanG,
+    work_order_planned_quantity_g: workOrderPlannedG,
+    monthly_plan_to_work_order_ratio: ratio === null ? null : Number(ratio.toFixed(2)),
+    guidance: suspectedScaleMismatch
+      ? '월간 생산계획 합계가 작업지시 규모와 비정상적으로 크게 벌어져 있습니다. 단위 또는 입력값 검증 전에는 정상 계획량으로 단정하거나 경영 판단의 근거로 사용하지 않습니다.'
+      : null,
+  }
+}
+
 async function loadMonthlyManagementSnapshot(context: MoniConversationRuntimeContext, year: number, month: number) {
   const { start, end } = monthRange(year, month)
   const common = { start_date: start, end_date: end, limit: 100 }
@@ -164,6 +202,7 @@ async function loadMonthlyManagementSnapshot(context: MoniConversationRuntimeCon
   const productionRecords = await executeMoniReadOnlyTool('search_production_records', common, context)
   const productionPlans = await executeMoniReadOnlyTool('search_production_plans', common, context)
   const productionCanonical = canonicalProductionSummary(productionRecords)
+  const planQuality = productionPlanDataQuality(productionCanonical, productionPlans)
   return {
     period: { year, month, start_date: start, end_date: end, time_zone: 'Asia/Seoul' },
     canonical_summary: {
@@ -171,6 +210,9 @@ async function loadMonthlyManagementSnapshot(context: MoniConversationRuntimeCon
       actual_purchases: (purchases as any)?.actual_purchases_summary ?? null,
       production: productionCanonical,
       production_plans: (productionPlans as any)?.summary ?? null,
+    },
+    data_quality: {
+      production_plan: planQuality,
     },
     sales_and_receivables: sales,
     purchases_and_payables: purchases,
@@ -188,6 +230,7 @@ function interpretationContract() {
     '같은 제품·날짜·수량이 생산계획과 작업지시에 함께 존재하는 것만으로 중복 데이터라고 판단하거나 하나를 삭제·통합하라고 권고하지 않습니다.',
     '실제 중복이라고 말하려면 동일 업무단계 내부의 중복 ID/LOT/작업지시 등 별도 근거가 있어야 합니다.',
     '조회 한도에 도달한 배열은 전체 원장이라고 단정하지 않습니다.',
+    'data_quality.production_plan.suspected_scale_mismatch=true이면 월간 계획 합계를 정상값으로 단정하지 말고 데이터 검증 필요를 먼저 알립니다.',
   ]
 }
 
@@ -197,6 +240,7 @@ function compactComparisonMonth(snapshot: Awaited<ReturnType<typeof loadMonthlyM
   return {
     period: snapshot.period,
     canonical_summary: snapshot.canonical_summary,
+    data_quality: snapshot.data_quality,
     production_by_product: Array.isArray(records?.by_product) ? records.by_product.slice(0, 30) : [],
     production_plan_items: Array.isArray(plans?.plans)
       ? plans.plans.slice(0, 30).map((item: any) => ({
@@ -205,6 +249,43 @@ function compactComparisonMonth(snapshot: Awaited<ReturnType<typeof loadMonthlyM
         planned_quantity_g: item.planned_quantity_g,
       }))
       : [],
+  }
+}
+
+async function sameElapsedProductionComparison(
+  context: MoniConversationRuntimeContext,
+  periods: Array<{ year: number; month: number }>,
+) {
+  const today = factoryDateParts()
+  const hasCurrentMonth = periods.some((period) => period.year === today.year && period.month === today.month)
+  if (!hasCurrentMonth) return null
+
+  const months = []
+  for (const period of periods) {
+    const { start } = monthRange(period.year, period.month)
+    const end = sameElapsedEndDate(period.year, period.month, today.day)
+    const records = await executeMoniReadOnlyTool('search_production_records', {
+      start_date: start,
+      end_date: end,
+      limit: 100,
+    }, context)
+    months.push({
+      period: {
+        year: period.year,
+        month: period.month,
+        start_date: start,
+        end_date: end,
+        time_zone: 'Asia/Seoul',
+      },
+      production: canonicalProductionSummary(records),
+    })
+  }
+
+  return {
+    as_of_factory_date: today.date,
+    as_of_day: today.day,
+    basis: `각 월 1일~${today.day}일 동일 경과기간 생산실적 비교`,
+    months,
   }
 }
 
@@ -228,13 +309,16 @@ function createMonthlyManagementComparisonTool(role: string) {
           const snapshot = await loadMonthlyManagementSnapshot(context, period.year, period.month)
           months.push(compactComparisonMonth(snapshot))
         }
+        const sameElapsed = await sameElapsedProductionComparison(context, periods)
         return {
           comparison_periods: periods,
           months,
+          same_elapsed_day_comparison: sameElapsed,
           interpretation_contract: [
             ...interpretationContract(),
             '연도가 생략된 월은 다른 연도 단서가 없는 한 공장 기준 현재 연도로 해석하며 사용자에게 다시 확인하지 않습니다.',
-            '현재 진행 중인 월과 완료된 과거 월을 비교할 때는 현재 월이 부분기간이라는 점을 반드시 표시합니다.',
+            '현재 진행 중인 월과 완료된 과거 월의 생산 성과를 판단할 때는 full-month 합계가 아니라 same_elapsed_day_comparison을 우선 사용합니다.',
+            '현재 월의 미래 생산계획은 실제 완료실적과 분리해서 설명합니다.',
           ],
         }
       })

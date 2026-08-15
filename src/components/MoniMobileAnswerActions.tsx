@@ -14,7 +14,7 @@ const ICONS = {
   down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 3H4.8A1.8 1.8 0 0 0 3 4.8v7.4A1.8 1.8 0 0 0 4.8 14h2.7m0-11v11l4.1 6.1c.5.8 1.8.4 1.8-.6v-4.1h4.1a2.8 2.8 0 0 0 2.7-3.4l-1.5-6.7A3 3 0 0 0 15.8 3H7.5Z"/></svg>',
   copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
   share: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5"/><path d="M5 11v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
-  report: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
+  document: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
 }
 
 function button(icon: string, label: string, extraClass = '') {
@@ -53,7 +53,7 @@ function notice(text: string) {
 
 function filenameFromDisposition(value: string | null) {
   const match = value?.match(/filename="?([^";]+)"?/i)
-  return match?.[1] || `MONI_Report_${Date.now()}.docx`
+  return match?.[1] || `MONI_Answer_${Date.now()}.docx`
 }
 
 export default function MoniMobileAnswerActions() {
@@ -101,19 +101,19 @@ export default function MoniMobileAnswerActions() {
       }
     }
 
-    async function downloadReport(buttonNode: HTMLButtonElement, threadId: string, messageId: string) {
+    async function downloadDocument(buttonNode: HTMLButtonElement, threadId: string, messageId: string) {
       if (buttonNode.dataset.busy === '1') return
       buttonNode.dataset.busy = '1'
       buttonNode.classList.add('is-busy')
       const label = buttonNode.querySelector('span')
-      if (label) label.textContent = '작성 중'
+      if (label) label.textContent = '생성 중'
       try {
         const response = await fetch('/api/moni/answer-report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ thread_id: threadId, assistant_message_id: messageId }),
         })
-        if (!response.ok) throw new Error('report_failed')
+        if (!response.ok) throw new Error('document_failed')
         const blob = await response.blob()
         const url = URL.createObjectURL(blob)
         const anchor = document.createElement('a')
@@ -123,13 +123,13 @@ export default function MoniMobileAnswerActions() {
         anchor.click()
         anchor.remove()
         window.setTimeout(() => URL.revokeObjectURL(url), 5000)
-        notice('MONI 보고서를 만들었습니다.')
+        notice('답변을 문서 파일로 저장했습니다.')
       } catch {
-        notice('보고서를 만들지 못했습니다.')
+        notice('문서 파일을 만들지 못했습니다.')
       } finally {
         buttonNode.dataset.busy = '0'
         buttonNode.classList.remove('is-busy')
-        if (label) label.textContent = '보고서'
+        if (label) label.textContent = '문서 저장'
       }
     }
 
@@ -148,7 +148,7 @@ export default function MoniMobileAnswerActions() {
         down.dataset.rating = 'DOWN'
         const copy = button(ICONS.copy, '답변 복사')
         const share = button(ICONS.share, '답변 공유')
-        const report = button(`${ICONS.report}<span>보고서</span>`, '보고서 다운로드', 'moni-answer-report')
+        const documentButton = button(`${ICONS.document}<span>문서 저장</span>`, '답변을 Word 문서로 저장', 'moni-answer-report')
 
         up.addEventListener('click', () => void saveRating(toolbar!, threadId, message.id!, 'UP'))
         down.addEventListener('click', () => void saveRating(toolbar!, threadId, message.id!, 'DOWN'))
@@ -164,9 +164,9 @@ export default function MoniMobileAnswerActions() {
             void copyText(answer).then(() => notice('공유 대신 답변을 복사했습니다.'))
           }
         })
-        report.addEventListener('click', () => void downloadReport(report, threadId, message.id!))
+        documentButton.addEventListener('click', () => void downloadDocument(documentButton, threadId, message.id!))
 
-        toolbar.append(up, down, copy, share, report)
+        toolbar.append(up, down, copy, share, documentButton)
         bubble.appendChild(toolbar)
       }
       toolbar.dataset.messageId = message.id

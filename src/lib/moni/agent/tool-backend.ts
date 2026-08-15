@@ -15,7 +15,7 @@ const validDate = (value: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(text(value, 10)
 const safeSearch = (value: string) => value.replace(/[%_,()]/g, ' ')
 
 function businessIdsWithLegacy(context: MoniAgentToolContext) {
-  return Array.from(new Set([context.businessId, 'default'].filter(Boolean)))
+  return [context.businessId]
 }
 
 function dateInZone(timeZone: string) {
