@@ -42,7 +42,10 @@ type SpeechWindow = Window & {
 }
 
 const THREAD_KEY = 'moni-global-agent-thread-v11'
+const MESSAGE_CACHE_KEY = 'moni-mobile-message-cache-v1'
 const ETA_KEY = 'moni-mobile-eta-v1'
+const COMPOSER_MIN_HEIGHT = 42
+const COMPOSER_MAX_HEIGHT = 128
 const BASE_WAVE = [7, 11, 16, 22, 29, 18, 25, 13, 31, 20, 15, 9, 6]
 const DEFAULT_ETA: Record<RequestKind, number> = {
   'monthly-comparison': 20,
@@ -88,6 +91,27 @@ function rememberDuration(kind: RequestKind, actualSeconds: number) {
     stored[kind] = Math.max(5, Math.min(60, Math.round(previous * 0.65 + actualSeconds * 0.35)))
     window.localStorage.setItem(ETA_KEY, JSON.stringify(stored))
   } catch { /* ETA learning is UI-only */ }
+}
+
+function normalizeMessages(raw: unknown): Message[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((item): item is { role: 'user' | 'assistant'; content: unknown } => {
+      if (!item || typeof item !== 'object') return false
+      const role = (item as { role?: unknown }).role
+      return role === 'user' || role === 'assistant'
+    })
+    .map((item) => ({ role: item.role, content: String(item.content || '') }))
+    .filter((item) => item.content.trim())
+    .slice(-100)
+}
+
+function readCachedMessages() {
+  try {
+    return normalizeMessages(JSON.parse(window.localStorage.getItem(MESSAGE_CACHE_KEY) || '[]'))
+  } catch {
+    return []
+  }
 }
 
 function MicrophoneIcon() {
@@ -184,8 +208,11 @@ export default function MoniMobileChat() {
   const [speechActive, setSpeechActive] = useState(false)
   const [voiceDraft, setVoiceDraft] = useState('')
   const [waveTick, setWaveTick] = useState(0)
+  const [storageReady, setStorageReady] = useState(false)
+  const [restoring, setRestoring] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const voiceSeedRef = useRef('')
   const voiceDraftRef = useRef('')
@@ -194,6 +221,16 @@ export default function MoniMobileChat() {
 
   const status = error ? 'issue' : sending ? 'thinking' : listening ? 'listening' : 'live'
   const statusLabel = error ? 'ISSUE' : sending ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'
+
+  function resizeComposer() {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    const scrollHeight = textarea.scrollHeight
+    const nextHeight = Math.max(COMPOSER_MIN_HEIGHT, Math.min(scrollHeight, COMPOSER_MAX_HEIGHT))
+    textarea.style.height = `${nextHeight}px`
+    textarea.style.overflowY = scrollHeight > COMPOSER_MAX_HEIGHT ? 'auto' : 'hidden'
+  }
 
   function playCue(kind: 'sent' | 'error') {
     try {
@@ -235,22 +272,46 @@ export default function MoniMobileChat() {
   }
 
   useEffect(() => {
+    const cachedMessages = readCachedMessages()
+    if (cachedMessages.length) setMessages(cachedMessages)
+
     const saved = window.localStorage.getItem(THREAD_KEY) || ''
-    if (!saved) return
+    if (!saved) {
+      setStorageReady(true)
+      return
+    }
+
     setThreadId(saved)
+    setRestoring(true)
+    setStorageReady(true)
     void fetch(`/api/moni/agent-runtime?thread_id=${encodeURIComponent(saved)}&_=${Date.now()}`, { cache: 'no-store' })
       .then(async (response) => {
         const payload = await response.json() as { ok?: boolean; messages?: Array<{ role?: string; content?: string }> }
         if (!response.ok || !payload.ok) throw new Error('restore_failed')
-        setMessages((payload.messages || [])
-          .filter((item) => item.role === 'user' || item.role === 'assistant')
-          .map((item) => ({ role: item.role as 'user' | 'assistant', content: String(item.content || '') })))
+        const restored = normalizeMessages(payload.messages || [])
+        setMessages(restored)
+        try {
+          window.localStorage.setItem(MESSAGE_CACHE_KEY, JSON.stringify(restored))
+        } catch { /* local cache is best-effort */ }
       })
       .catch(() => {
-        window.localStorage.removeItem(THREAD_KEY)
-        setThreadId('')
+        // Never erase the user's visible conversation because of a temporary restore failure.
+        // Keep the saved thread id and local message cache so the next visit can retry.
       })
+      .finally(() => setRestoring(false))
   }, [])
+
+  useEffect(() => {
+    if (!storageReady) return
+    try {
+      if (messages.length) window.localStorage.setItem(MESSAGE_CACHE_KEY, JSON.stringify(messages.slice(-100)))
+      else window.localStorage.removeItem(MESSAGE_CACHE_KEY)
+    } catch { /* local cache is best-effort */ }
+  }, [messages, storageReady])
+
+  useEffect(() => {
+    resizeComposer()
+  }, [input])
 
   useEffect(() => {
     window.setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 20)
@@ -376,6 +437,26 @@ export default function MoniMobileChat() {
     }
   }
 
+  function startNewConversation() {
+    if (sending || listening) return
+    if (messages.length > 0 && !window.confirm('현재 대화를 지우고 새 대화를 시작할까요?')) return
+
+    try { window.speechSynthesis?.cancel() } catch { /* no-op */ }
+    try {
+      window.localStorage.removeItem(THREAD_KEY)
+      window.localStorage.removeItem(MESSAGE_CACHE_KEY)
+    } catch { /* local storage is best-effort */ }
+
+    setThreadId('')
+    setMessages([])
+    setInput('')
+    setError('')
+    setVoiceDraft('')
+    voiceDraftRef.current = ''
+    voiceSeedRef.current = ''
+    window.setTimeout(() => textareaRef.current?.focus(), 30)
+  }
+
   async function send(raw: string) {
     const question = raw.trim()
     if (!question || sending || listening) return
@@ -425,7 +506,7 @@ export default function MoniMobileChat() {
 
   return (
     <>
-      <header className="flex shrink-0 items-center gap-3 border-b border-[#d7e9e5] bg-white/95 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] backdrop-blur-xl">
+      <header className="flex shrink-0 items-center gap-3 overflow-visible border-b border-[#d7e9e5] bg-white/95 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+20px)] backdrop-blur-xl">
         <MobileMoniCharacter status={status} />
         <div className="min-w-0 flex-1">
           <h1 className="text-[16px] font-black tracking-[-0.02em] text-[#173b52]">MONI</h1>
@@ -434,13 +515,24 @@ export default function MoniMobileChat() {
             <span>{statusLabel}</span>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={startNewConversation}
+          disabled={sending || listening}
+          className="moni-new-chat-button relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-[#66aef5] bg-[#eef7ff] px-3 text-[12px] font-black text-[#175a9a] shadow-[0_4px_14px_rgba(23,90,154,0.12)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="새 대화 시작"
+          title="새 대화"
+        >
+          <span className="moni-new-chat-pulse h-2 w-2 rounded-full bg-[#2f80ed]" aria-hidden="true" />
+          <span>새 대화</span>
+        </button>
       </header>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-5">
         {messages.length === 0 ? (
           <div className="space-y-3">
             <div className="mx-auto max-w-[92%] rounded-2xl border border-[#d8e8e4] bg-white px-4 py-3 text-sm leading-6 text-[#263f4d] shadow-[0_5px_18px_rgba(23,59,82,0.035)]">
-              무엇이든 말씀하세요. 필요한 두배 데이터를 확인하고 답하겠습니다.
+              {restoring ? '이전 대화를 불러오고 있습니다…' : '무엇이든 말씀하세요. 필요한 두배 데이터를 확인하고 답하겠습니다.'}
             </div>
             {sending ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}
           </div>
@@ -484,13 +576,15 @@ export default function MoniMobileChat() {
             ) : (
               <div className="flex min-h-[58px] items-end gap-1.5 px-2 py-2">
                 <textarea
+                  ref={textareaRef}
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={keyDown}
                   disabled={sending}
                   rows={1}
                   placeholder="MONI에게 메시지"
-                  className="max-h-32 min-h-[42px] min-w-0 flex-1 resize-none bg-transparent px-3 py-[11px] text-[15px] leading-5 text-[#173b52] outline-none placeholder:text-[#9ba6ab] disabled:opacity-60"
+                  className="min-h-[42px] min-w-0 flex-1 resize-none bg-transparent px-3 py-[11px] text-[15px] leading-5 text-[#173b52] outline-none placeholder:text-[#9ba6ab] disabled:opacity-60"
+                  style={{ maxHeight: `${COMPOSER_MAX_HEIGHT}px`, overflowY: 'hidden' }}
                 />
                 <button type="button" onClick={() => void startVoiceInput()} disabled={sending} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#27343b] transition active:scale-95 disabled:opacity-30" aria-label="음성으로 입력">
                   <MicrophoneIcon />
@@ -527,6 +621,8 @@ export default function MoniMobileChat() {
         .moni-live-state-thinking { color:#2563eb; } .moni-live-state-thinking .moni-live-dot { background:#3b82f6; animation:moniThinkingPulse .85s ease-in-out infinite; }
         .moni-live-state-listening { color:#7c3aed; } .moni-live-state-listening .moni-live-dot { background:#8b5cf6; animation:moniThinkingPulse .75s ease-in-out infinite; }
         .moni-live-state-issue { color:#d97706; } .moni-live-state-issue .moni-live-dot { background:#f59e0b; }
+        .moni-new-chat-pulse { animation:moniNewChatPulse 1.35s ease-out infinite; }
+        @keyframes moniNewChatPulse { 0% { box-shadow:0 0 0 0 rgb(47 128 237 / .46); } 72% { box-shadow:0 0 0 7px rgb(47 128 237 / 0); } 100% { box-shadow:0 0 0 0 rgb(47 128 237 / 0); } }
         @keyframes moniLivePulse { 0% { box-shadow:0 0 0 0 rgb(239 68 68 / .48); opacity:1; } 70% { box-shadow:0 0 0 7px rgb(239 68 68 / 0); opacity:.7; } 100% { box-shadow:0 0 0 0 rgb(239 68 68 / 0); opacity:1; } }
         @keyframes moniThinkingPulse { 0%,100% { transform:scale(.82); opacity:.6; } 50% { transform:scale(1.18); opacity:1; } }
         .moni-markdown { line-height:1.65; } .moni-markdown > :first-child { margin-top:0; } .moni-markdown > :last-child { margin-bottom:0; }
@@ -536,7 +632,7 @@ export default function MoniMobileChat() {
         .moni-markdown ul,.moni-markdown ol { margin:6px 0 11px 20px; padding:0; } .moni-markdown ul { list-style:disc; } .moni-markdown ol { list-style:decimal; }
         .moni-markdown table { display:block; width:100%; margin:10px 0 12px; overflow-x:auto; border:1px solid #d6e7e3; border-radius:10px; border-collapse:separate; border-spacing:0; font-size:12px; }
         .moni-markdown th,.moni-markdown td { min-width:82px; padding:8px 9px; border-right:1px solid #e2eeeb; border-bottom:1px solid #e2eeeb; text-align:left; vertical-align:top; }
-        @media (prefers-reduced-motion:reduce) { .moni-thinking-dot,.moni-mobile-character,.moni-mobile-eye,.moni-live-dot { animation:none !important; } }
+        @media (prefers-reduced-motion:reduce) { .moni-thinking-dot,.moni-mobile-character,.moni-mobile-eye,.moni-live-dot,.moni-new-chat-pulse { animation:none !important; } }
       `}</style>
     </>
   )
