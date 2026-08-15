@@ -2,8 +2,8 @@
 
 import { useLayoutEffect } from 'react'
 
-const THREAD_KEY = 'moni-global-agent-thread-v11'
 const VOICE_CONFIRM_FALLBACK_MS = 30_000
+const VOICE_WAVE_FACTORS = [0.42, 0.62, 0.86, 0.54, 1, 0.7, 0.9, 0.5, 0.96, 0.68, 0.58, 0.48, 0.4]
 
 type RecognitionAlternative = { transcript: string }
 type RecognitionResult = {
@@ -63,19 +63,22 @@ function audioMimeType() {
   return ''
 }
 
+function updateVoiceWaveFromRms(rms: number) {
+  const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
+  if (!root) return
+  const normalized = Math.max(0, Math.min(1, (Number(rms) - 1.5) / 18))
+  VOICE_WAVE_FACTORS.forEach((factor, index) => {
+    const height = Math.round(4 + factor * 3 + normalized * (6 + factor * 20))
+    root.style.setProperty(`--moni-wave-h${index + 1}`, `${Math.max(5, Math.min(33, height))}px`)
+  })
+  root.style.setProperty('--moni-voice-level', normalized.toFixed(3))
+}
+
 export default function MoniMobileRuntimeGuard() {
   useLayoutEffect(() => {
-    // A fresh navigation opens a clean visible mobile chat. A normal reload
-    // preserves the active thread so accidental refreshes do not lose work.
-    try {
-      const navigation = window.performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
-      const legacyPerformance = window.performance as Performance & { navigation?: { type?: number } }
-      const isReload = navigation?.type === 'reload' || legacyPerformance.navigation?.type === 1
-      if (!isReload) window.localStorage.removeItem(THREAD_KEY)
-    } catch {
-      // Navigation metadata must never block the chat UI.
-    }
-
+    // The active mobile conversation is intentionally preserved across reloads,
+    // app switching and browser process recreation. Only the explicit `새 대화`
+    // action clears the thread key and visible message cache.
     const speechWindow = window as SpeechWindow
     const OriginalSpeechRecognition = speechWindow.SpeechRecognition
     const OriginalWebkitSpeechRecognition = speechWindow.webkitSpeechRecognition
@@ -129,6 +132,7 @@ export default function MoniMobileRuntimeGuard() {
         this.aborted = false
         this.stoppedByUser = false
         this.chunks = []
+        updateVoiceWaveFromRms(0)
         void this.beginRecording()
       }
 
@@ -229,6 +233,7 @@ export default function MoniMobileRuntimeGuard() {
               energy += delta * delta
             }
             const rms = Math.sqrt(energy / samples.length)
+            updateVoiceWaveFromRms(rms)
             const nowActive = rms >= 4.5
             if (nowActive !== this.speechActive) {
               this.speechActive = nowActive
@@ -278,6 +283,7 @@ export default function MoniMobileRuntimeGuard() {
           originalClearTimeout(this.analyserTimer)
           this.analyserTimer = null
         }
+        updateVoiceWaveFromRms(0)
         try { this.source?.disconnect() } catch { /* no-op */ }
         this.source = null
         this.analyser = null
@@ -298,6 +304,7 @@ export default function MoniMobileRuntimeGuard() {
     speechWindow.webkitSpeechRecognition = RecorderBackedRecognition as unknown as RecognitionConstructor
 
     return () => {
+      updateVoiceWaveFromRms(0)
       speechWindow.SpeechRecognition = OriginalSpeechRecognition
       speechWindow.webkitSpeechRecognition = OriginalWebkitSpeechRecognition
       window.setTimeout = originalSetTimeout as typeof window.setTimeout
