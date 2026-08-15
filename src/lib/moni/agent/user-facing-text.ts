@@ -26,6 +26,8 @@ const INTERNAL_LABELS: Array<[RegExp, string]> = [
   [/\bsearch_purchases_and_payables\b/gi, '매입·지급 조회'],
   [/\bget_monthly_management_snapshot\b/gi, '월간 경영 데이터 조회'],
   [/\bget_monthly_management_comparison\b/gi, '월간 비교 데이터 조회'],
+  [/\bOUTBOUND\b/gi, '출고'],
+  [/\bINBOUND\b/gi, '입고'],
   [/\btool[_\s-]*call(?:_count)?\b/gi, '내부 조회'],
   [/\bbusiness_id\b/gi, '사업자 기준'],
   [/\bopenai_conversation_id\b/gi, '대화 연결 정보'],
