@@ -13,7 +13,7 @@ import {
 } from 'docx'
 import { getSessionFromRequest } from '@/lib/allowance/session'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
-import { sanitizeMoniUserFacingText } from '@/lib/moni/agent/user-facing-text'
+import { sanitizeMoniUserFacingText, stripGeneratedDocumentLinks } from '@/lib/moni/agent/user-facing-text'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -43,7 +43,7 @@ function tableBlock(rows: string[][]) {
   const cleanRows = rows.filter((row) => !row.every((cell) => /^:?-{3,}:?$/.test(cell)))
   const columnCount = Math.max(1, ...cleanRows.map((row) => row.length))
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: '100%', type: WidthType.PERCENTAGE },
     rows: cleanRows.map((row, rowIndex) => new TableRow({
       tableHeader: rowIndex === 0,
       children: Array.from({ length: columnCount }, (_, columnIndex) => new TableCell({
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null) as ReportBody | null
     const threadId = text(body?.thread_id, 80)
     const messageId = text(body?.assistant_message_id, 80)
-    if (!threadId || !messageId) return NextResponse.json({ ok: false, error: '보고서 대상 답변이 필요합니다.' }, { status: 400 })
+    if (!threadId || !messageId) return NextResponse.json({ ok: false, error: '문서로 저장할 답변이 필요합니다.' }, { status: 400 })
 
     const supabase = createMoniServiceRoleClient()
     const { data: thread, error: threadError } = await supabase.from('moni_ai_threads')
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
       .select('id,content,created_at')
       .eq('id', messageId).eq('thread_id', threadId).eq('business_id', BUSINESS_ID).eq('role', 'assistant').maybeSingle()
     if (answerError) throw new Error(answerError.message)
-    if (!answer) return NextResponse.json({ ok: false, error: '보고서로 만들 MONI 답변을 찾을 수 없습니다.' }, { status: 404 })
+    if (!answer) return NextResponse.json({ ok: false, error: '문서로 저장할 MONI 답변을 찾을 수 없습니다.' }, { status: 404 })
 
     const { data: question, error: questionError } = await supabase.from('moni_ai_messages')
       .select('content,created_at')
@@ -174,14 +174,12 @@ export async function POST(request: NextRequest) {
 
     const stamp = seoulStamp()
     const questionText = text(question?.content || '질문 기록 없음', 6000)
-    const answerText = sanitizeMoniUserFacingText(text(answer.content, 20000))
-      .replace(/\n*\[[^\]]*PDF[^\]]*\]\([^)]*\)\s*$/i, '')
-      .trim()
+    const answerText = stripGeneratedDocumentLinks(sanitizeMoniUserFacingText(text(answer.content, 20000)))
 
     const document = new Document({
       styles: {
         default: {
-          document: { run: { font: 'Arial', size: 21, color: '263F4D' } },
+          document: { run: { font: 'Malgun Gothic', size: 21, color: '263F4D' } },
         },
       },
       sections: [{
@@ -192,17 +190,18 @@ export async function POST(request: NextRequest) {
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { after: 150 },
-            children: [new TextRun({ text: 'MONI AI 업무 보고서', bold: true, size: 38, color: '173B52' })],
+            children: [new TextRun({ text: 'MONI 답변 문서', bold: true, size: 38, color: '173B52' })],
           }),
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { after: 280 },
             children: [new TextRun({ text: `두배 · ${stamp.display}`, color: '64748B', size: 18 })],
           }),
-          new Paragraph({ text: '요청', heading: HeadingLevel.HEADING_1, spacing: { before: 100, after: 90 } }),
+          new Paragraph({ text: '질문', heading: HeadingLevel.HEADING_1, spacing: { before: 100, after: 90 } }),
           new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
+            width: { size: '100%', type: WidthType.PERCENTAGE },
             rows: [new TableRow({ children: [new TableCell({
+              width: { size: '100%', type: WidthType.PERCENTAGE },
               shading: { fill: 'F0F8F6' },
               margins: { top: 120, bottom: 120, left: 140, right: 140 },
               children: [new Paragraph({
@@ -212,11 +211,11 @@ export async function POST(request: NextRequest) {
             })] })],
           }),
           new Paragraph({ text: '', spacing: { after: 100 } }),
-          new Paragraph({ text: 'MONI 분석 및 답변', heading: HeadingLevel.HEADING_1, spacing: { before: 140, after: 100 } }),
+          new Paragraph({ text: 'MONI 답변', heading: HeadingLevel.HEADING_1, spacing: { before: 140, after: 100 } }),
           ...answerBlocks(answerText),
           new Paragraph({
             spacing: { before: 340 },
-            children: [new TextRun({ text: '본 문서는 MONI 대화에서 생성된 답변을 보고서 형식으로 정리한 자료입니다.', color: '64748B', size: 17 })],
+            children: [new TextRun({ text: '이 문서는 MONI 대화 답변을 문서 형태로 저장한 자료입니다.', color: '64748B', size: 17 })],
           }),
         ],
       }],
@@ -224,7 +223,7 @@ export async function POST(request: NextRequest) {
 
     const buffer = await Packer.toBuffer(document)
     const bodyBytes = Uint8Array.from(buffer).buffer
-    const filename = `MONI_Report_${stamp.file}.docx`
+    const filename = `MONI_Answer_${stamp.file}.docx`
     return new NextResponse(bodyBytes, {
       status: 200,
       headers: {
@@ -234,7 +233,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('[MONI_ANSWER_REPORT_ERROR]', { message: error instanceof Error ? error.message : 'unknown report error' })
-    return NextResponse.json({ ok: false, error: 'MONI 보고서를 만들지 못했습니다.' }, { status: 500 })
+    console.error('[MONI_ANSWER_DOCUMENT_ERROR]', { message: error instanceof Error ? error.message : 'unknown document error' })
+    return NextResponse.json({ ok: false, error: 'MONI 답변 문서를 만들지 못했습니다.' }, { status: 500 })
   }
 }
