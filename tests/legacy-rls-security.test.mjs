@@ -71,6 +71,9 @@ test('RLS hardening does not mutate business data or business identifiers', () =
 test('public DB access audit is now an enforcement gate', () => {
   assert.match(audit, /if \(findings\.length \|\| moniDbConsumers\.length/)
   assert.match(audit, /Public\/anon MONI database access regression detected/)
-  assert.match(audit, /ALLOWED_BROWSER_DB_CONSUMERS = new Set\(\['src\/components\/GlobalMoniAgent\.tsx'\]\)/)
+  assert.match(audit, /'src\/components\/GlobalMoniAgent\.tsx'/)
+  assert.match(audit, /'src\/components\/MoniMobileChat\.tsx'/)
+  assert.match(audit, /item\.tables\.length > 0/)
+  assert.match(audit, /uploadToSignedUrl/)
   assert.equal(existsSync('src/lib/supabase.ts'), false)
 })
