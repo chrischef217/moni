@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '@/lib/allowance/session'
 import { assertSafeUserRequest } from '@/lib/moni/agent/guardrails'
@@ -24,12 +25,33 @@ export const dynamic = 'force-dynamic'
 
 const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
 const MAX_MESSAGE_LENGTH = 6000
+const MAX_CURRENT_IMAGES = 4
+const MAX_CONTEXT_IMAGES = 3
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const DEFAULT_MODEL = 'gpt-5'
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 
-type AgentRequest = { message?: string; page?: MoniAgentPageContext; thread_id?: string }
+type AgentRequest = {
+  message?: string
+  page?: MoniAgentPageContext
+  thread_id?: string
+  attachment_ids?: string[]
+}
 type SessionUser = NonNullable<Awaited<ReturnType<typeof getSessionFromRequest>>>
 type Supabase = ReturnType<typeof createMoniServiceRoleClient>
 type ThreadRow = Awaited<ReturnType<typeof ensureThread>>
+type ImageAttachmentRow = {
+  id: string
+  file_name: string
+  mime_type: string
+  size_bytes: number
+  storage_bucket: string
+  storage_path: string
+  message_id: string | null
+  created_at: string
+}
+type LoadedImage = ImageAttachmentRow & { dataUrl: string }
+
 const text = (value: unknown, max = 500) => String(value ?? '').trim().slice(0, max)
 
 function modelName() { return text(process.env.OPENAI_MONI_MODEL, 100) || DEFAULT_MODEL }
@@ -38,6 +60,16 @@ function cleanPage(raw?: MoniAgentPageContext): MoniAgentPageContext {
     pathname: text(raw?.pathname, 300), search: text(raw?.search, 500), title: text(raw?.title, 160),
     headings: Array.isArray(raw?.headings) ? raw!.headings!.map((item) => text(item, 120)).filter(Boolean).slice(0, 6) : [],
   }
+}
+
+function normalizeAttachmentIds(raw: unknown) {
+  if (!Array.isArray(raw)) return []
+  return [...new Set(raw.map((item) => text(item, 80)).filter(Boolean))].slice(0, MAX_CURRENT_IMAGES)
+}
+
+function referencesEarlierImage(message: string) {
+  const normalized = String(message || '').replace(/\s+/g, ' ').trim()
+  return /(사진|이미지|첨부|그\s*사진|이\s*사진|이거|이것|그거|저거|첫\s*번째|두\s*번째|세\s*번째|이\s*부분|여기|아까\s*올린)/i.test(normalized)
 }
 
 function isConversationChainError(value: unknown) {
@@ -107,6 +139,57 @@ async function ensureThread(supabase: Supabase, session: SessionUser, threadId: 
   return data
 }
 
+async function loadImageRows(supabase: Supabase, threadId: string, ids: string[]) {
+  if (!ids.length) return [] as ImageAttachmentRow[]
+  const { data, error } = await supabase.from('moni_ai_attachments')
+    .select('id,file_name,mime_type,size_bytes,storage_bucket,storage_path,message_id,created_at')
+    .eq('business_id', BUSINESS_ID)
+    .eq('thread_id', threadId)
+    .eq('upload_status', 'READY')
+    .in('id', ids)
+  if (error) throw new Error(error.message)
+  const rows = (data ?? []) as ImageAttachmentRow[]
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  const ordered = ids.map((id) => byId.get(id)).filter((row): row is ImageAttachmentRow => Boolean(row))
+  if (ordered.length !== ids.length) throw new Error('첨부한 사진 일부를 확인할 수 없습니다. 다시 첨부해 주세요.')
+  return ordered
+}
+
+async function loadRecentReferencedImages(supabase: Supabase, threadId: string, excludedIds: string[]) {
+  const { data, error } = await supabase.from('moni_ai_attachments')
+    .select('id,file_name,mime_type,size_bytes,storage_bucket,storage_path,message_id,created_at')
+    .eq('business_id', BUSINESS_ID)
+    .eq('thread_id', threadId)
+    .eq('upload_status', 'READY')
+    .not('message_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(MAX_CONTEXT_IMAGES + excludedIds.length)
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as ImageAttachmentRow[])
+    .filter((row) => !excludedIds.includes(row.id) && ALLOWED_IMAGE_TYPES.has(String(row.mime_type || '').toLowerCase()))
+    .slice(0, MAX_CONTEXT_IMAGES)
+    .reverse()
+}
+
+async function downloadImage(supabase: Supabase, row: ImageAttachmentRow): Promise<LoadedImage> {
+  const mimeType = String(row.mime_type || '').toLowerCase()
+  const sizeBytes = Number(row.size_bytes || 0)
+  if (!ALLOWED_IMAGE_TYPES.has(mimeType)) throw new Error(`${row.file_name}은 지원하지 않는 사진 형식입니다.`)
+  if (sizeBytes <= 0 || sizeBytes > MAX_IMAGE_BYTES) throw new Error(`${row.file_name}은 10MB 이하 사진만 분석할 수 있습니다.`)
+  const { data, error } = await supabase.storage.from(row.storage_bucket).download(row.storage_path)
+  if (error || !data) throw new Error(`${row.file_name} 사진을 불러오지 못했습니다.`)
+  const buffer = Buffer.from(await data.arrayBuffer())
+  if (buffer.length > MAX_IMAGE_BYTES) throw new Error(`${row.file_name}은 10MB 이하 사진만 분석할 수 있습니다.`)
+  return { ...row, dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}` }
+}
+
+function buildImageContent(images: LoadedImage[]) {
+  return images.flatMap((image, index) => [
+    { type: 'input_text', text: `[첨부 사진 ${index + 1}: ${text(image.file_name, 160)}]` },
+    { type: 'input_image', image_url: image.dataUrl, detail: 'auto' },
+  ])
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getSessionFromRequest(request)
@@ -138,19 +221,39 @@ export async function POST(request: NextRequest) {
     if (!session) return NextResponse.json({ ok: false, error: '로그인이 필요합니다.' }, { status: 401 })
     const body = await request.json().catch(() => null) as AgentRequest | null
     if (!body) return NextResponse.json({ ok: false, error: '요청 본문이 필요합니다.' }, { status: 400 })
-    const message = text(body.message, MAX_MESSAGE_LENGTH)
-    if (!message) return NextResponse.json({ ok: false, error: '질문을 입력해 주세요.' }, { status: 400 })
-    assertSafeUserRequest(message)
+    const rawMessage = text(body.message, MAX_MESSAGE_LENGTH)
+    const attachmentIds = normalizeAttachmentIds(body.attachment_ids)
+    if (!rawMessage && !attachmentIds.length) return NextResponse.json({ ok: false, error: '질문을 입력하거나 사진을 첨부해 주세요.' }, { status: 400 })
+    const agentMessage = rawMessage || '첨부한 사진을 확인해줘.'
+    assertSafeUserRequest(agentMessage)
 
     const page = cleanPage(body.page)
     const supabase = createMoniServiceRoleClient()
     const thread = await ensureThread(supabase, session, text(body.thread_id, 80), page)
     let conversationId = await conversationIdForRun(supabase, thread)
 
+    const currentImageRows = await loadImageRows(supabase, thread.id, attachmentIds)
+    const priorImageRows = attachmentIds.length === 0 && referencesEarlierImage(agentMessage)
+      ? await loadRecentReferencedImages(supabase, thread.id, attachmentIds)
+      : []
+    const imageRows = [...currentImageRows, ...priorImageRows]
+    const loadedImages = await Promise.all(imageRows.map((row) => downloadImage(supabase, row)))
+    const storedUserText = [rawMessage || '첨부한 사진을 확인해줘.', attachmentIds.length ? `📷 사진 ${attachmentIds.length}장 첨부` : '']
+      .filter(Boolean).join('\n\n')
+
     const { data: userMessage, error: userError } = await supabase.from('moni_ai_messages').insert({
-      business_id: BUSINESS_ID, thread_id: thread.id, role: 'user', content: message, page_context: page,
+      business_id: BUSINESS_ID, thread_id: thread.id, role: 'user', content: storedUserText, page_context: page,
     }).select('id').single()
     if (userError) throw new Error(userError.message)
+
+    if (currentImageRows.length) {
+      const { error: attachError } = await supabase.from('moni_ai_attachments')
+        .update({ message_id: userMessage.id, updated_at: new Date().toISOString() })
+        .eq('business_id', BUSINESS_ID)
+        .eq('thread_id', thread.id)
+        .in('id', currentImageRows.map((row) => row.id))
+      if (attachError) throw new Error(attachError.message)
+    }
 
     const [{ data: recentRows }, threadMemory, pinnedProjectContext] = await Promise.all([
       supabase.from('moni_ai_messages').select('id,role,content,created_at').eq('thread_id', thread.id).eq('business_id', BUSINESS_ID)
@@ -161,10 +264,14 @@ export async function POST(request: NextRequest) {
 
     const recentContextText = (recentRows ?? []).map((row: any) => String(row.content || '')).join('\n')
     const model = modelName()
+    const currentContent: Record<string, unknown>[] = [
+      { type: 'input_text', text: agentMessage },
+      ...buildImageContent(loadedImages),
+    ]
     const runInput = {
       model,
-      currentContent: [{ type: 'input_text', text: message }],
-      currentUserText: message,
+      currentContent,
+      currentUserText: agentMessage,
       recentHistory: [...(recentRows ?? [])].reverse().map((row: any) => ({ role: String(row.role), content: String(row.content || '') })),
       threadMemory, pinnedProjectContext,
       context: {
@@ -214,9 +321,9 @@ export async function POST(request: NextRequest) {
     }
 
     let finalText = sanitizeMoniUserFacingText(result.text)
-    const pdfRequested = isPdfDocumentRequest(message)
-    const statementRequested = isSalesStatementRequest(message)
-    const exportDocumentRequested = isExportDocumentRequest(message)
+    const pdfRequested = isPdfDocumentRequest(agentMessage)
+    const statementRequested = isSalesStatementRequest(agentMessage)
+    const exportDocumentRequested = isExportDocumentRequest(agentMessage)
     let statementHandled = false
     let exportDocumentHandled = false
 
@@ -226,7 +333,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (statementRequested && session.role === 'admin') {
-      const artifacts = await resolveSalesStatementArtifacts(supabase as any, BUSINESS_ID, message)
+      const artifacts = await resolveSalesStatementArtifacts(supabase as any, BUSINESS_ID, agentMessage)
       const exact = artifacts.matched
       if (exact.length === 1) {
         const artifact = exact[0]
@@ -246,9 +353,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (exportDocumentRequested && session.role === 'admin') {
-      const artifact = await resolveLinkedExportDocument(supabase as any, BUSINESS_ID, message, recentContextText)
+      const artifact = await resolveLinkedExportDocument(supabase as any, BUSINESS_ID, agentMessage, recentContextText)
       if (artifact) {
-        const kinds = requestedExportDocumentKinds(message)
+        const kinds = requestedExportDocumentKinds(agentMessage)
         const links = [
           kinds.invoice ? `[📄 인보이스 PDF 저장 · ${artifact.invoice_no}](${artifact.invoice_url})` : '',
           kinds.packing ? `[📦 패킹 리스트 PDF 저장 · ${artifact.packing_list_no}](${artifact.packing_list_url})` : '',
@@ -279,7 +386,7 @@ export async function POST(request: NextRequest) {
 
     const now = new Date().toISOString()
     const { error: threadUpdateError } = await supabase.from('moni_ai_threads').update({
-      title: thread.title || message.replace(/\s+/g, ' ').slice(0, 80), current_page: page,
+      title: thread.title || agentMessage.replace(/\s+/g, ' ').slice(0, 80), current_page: page,
       updated_at: now, last_message_at: now, openai_conversation_id: result.conversationId,
       openai_conversation_updated_at: now,
     }).eq('id', thread.id)
@@ -297,6 +404,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true, text: finalText, provider: 'openai', model, thread_id: thread.id,
       assistant_message_id: assistantMessage.id,
+      attachment_count: currentImageRows.length,
+      image_context_count: loadedImages.length,
       agent_runtime: 'MONI_OPENAI_CONVERSATIONS_V1', conversation_state: 'SERVER_MANAGED',
       agent_run_id: result.agentRunId, agent_steps: result.stepCount, tool_call_count: result.toolCallCount,
       tools_used: result.toolsUsed, usage: result.usage, pmo_handoff_status: thread.pmo_handoff_status || 'NONE',
