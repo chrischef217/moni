@@ -42,13 +42,13 @@ test('monthly production live case follows the current snapshot tool contract', 
 test('live evaluation persists run and case result', () => {
   assert.match(runner, /moni_ai_eval_runs/)
   assert.match(runner, /moni_ai_eval_case_results/)
-  assert.match(runner, /live-single-case-v3/)
+  assert.match(runner, /live-single-case-v4/)
   assert.match(runner, /status: grade\.passed \? 'PASSED' : 'FAILED'/)
 })
 
 test('failed grade creates a verified PMO capability event', () => {
   assert.match(runner, /VALIDATOR_DETECTED/)
-  assert.match(runner, /MONI_LIVE_EVAL_V2/)
+  assert.match(runner, /MONI_LIVE_EVAL_V4/)
   assert.match(runner, /CAPABILITY_GAP/)
 })
 
