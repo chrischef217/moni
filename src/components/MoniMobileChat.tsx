@@ -1,12 +1,21 @@
 'use client'
 
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { moniBrowserDb } from '@/lib/moni/browser-db'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 type Reply = { ok?: boolean; text?: string; error?: string; thread_id?: string }
 type RequestKind = 'monthly-comparison' | 'monthly-report' | 'general'
+type PendingPhoto = {
+  id: string
+  fileName: string
+  mimeType: string
+  sizeBytes: number
+  previewUrl: string
+  localPreview: boolean
+}
 type SpeechRecognitionAlternativeLike = { transcript: string }
 type SpeechRecognitionResultLike = {
   isFinal: boolean
@@ -46,6 +55,9 @@ const MESSAGE_CACHE_KEY = 'moni-mobile-message-cache-v1'
 const ETA_KEY = 'moni-mobile-eta-v1'
 const COMPOSER_MIN_HEIGHT = 42
 const COMPOSER_MAX_HEIGHT = 128
+const MAX_PENDING_PHOTOS = 4
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024
+const ALLOWED_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const BASE_WAVE = [7, 11, 16, 22, 29, 18, 25, 13, 31, 20, 15, 9, 6]
 const DEFAULT_ETA: Record<RequestKind, number> = {
   'monthly-comparison': 20,
@@ -131,6 +143,33 @@ function SendIcon() {
   )
 }
 
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  )
+}
+
+function CameraIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 8.5h3l1.4-2h7.2l1.4 2h3v10H4z" />
+      <circle cx="12" cy="13.5" r="3.2" />
+    </svg>
+  )
+}
+
+function PhotoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="4" width="17" height="16" rx="2.5" />
+      <circle cx="9" cy="9" r="1.5" />
+      <path d="m5.5 17 4.2-4.2 2.7 2.7 2.1-2.1 4 3.6" />
+    </svg>
+  )
+}
+
 function MobileMoniCharacter({ status }: { status: 'live' | 'thinking' | 'listening' | 'issue' }) {
   return (
     <div className={`moni-mobile-character moni-mobile-character-${status}`} aria-hidden="true">
@@ -210,17 +249,28 @@ export default function MoniMobileChat() {
   const [waveTick, setWaveTick] = useState(0)
   const [storageReady, setStorageReady] = useState(false)
   const [restoring, setRestoring] = useState(false)
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const voiceSeedRef = useRef('')
   const voiceDraftRef = useRef('')
   const finishTimerRef = useRef<number | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
+  const pendingPhotosRef = useRef<PendingPhoto[]>([])
 
   const status = error ? 'issue' : sending ? 'thinking' : listening ? 'listening' : 'live'
   const statusLabel = error ? 'ISSUE' : sending ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'
+
+  function replacePendingPhotos(next: PendingPhoto[]) {
+    pendingPhotosRef.current = next
+    setPendingPhotos(next)
+  }
 
   function resizeComposer() {
     const textarea = textareaRef.current
@@ -271,6 +321,27 @@ export default function MoniMobileChat() {
     } catch { /* voice notification is best-effort UX */ }
   }
 
+  async function restorePendingPhotos(savedThreadId: string) {
+    try {
+      const response = await fetch(`/api/moni/agent-files?thread_id=${encodeURIComponent(savedThreadId)}&_=${Date.now()}`, { cache: 'no-store' })
+      const payload = await response.json() as { ok?: boolean; attachments?: Array<Record<string, unknown>> }
+      if (!response.ok || !payload.ok) return
+      const restored = (payload.attachments || [])
+        .filter((item) => !item.message_id && String(item.mime_type || '').startsWith('image/') && item.signed_url)
+        .slice(-MAX_PENDING_PHOTOS)
+        .map((item) => ({
+          id: String(item.id || ''),
+          fileName: String(item.file_name || '사진'),
+          mimeType: String(item.mime_type || 'image/jpeg'),
+          sizeBytes: Number(item.size_bytes || 0),
+          previewUrl: String(item.signed_url || ''),
+          localPreview: false,
+        }))
+        .filter((item) => item.id && item.previewUrl)
+      if (restored.length) replacePendingPhotos(restored)
+    } catch { /* attachment restore is best-effort */ }
+  }
+
   useEffect(() => {
     const cachedMessages = readCachedMessages()
     if (cachedMessages.length) setMessages(cachedMessages)
@@ -284,6 +355,7 @@ export default function MoniMobileChat() {
     setThreadId(saved)
     setRestoring(true)
     setStorageReady(true)
+    void restorePendingPhotos(saved)
     void fetch(`/api/moni/agent-runtime?thread_id=${encodeURIComponent(saved)}&_=${Date.now()}`, { cache: 'no-store' })
       .then(async (response) => {
         const payload = await response.json() as { ok?: boolean; messages?: Array<{ role?: string; content?: string }> }
@@ -338,6 +410,9 @@ export default function MoniMobileChat() {
     try { window.speechSynthesis?.cancel() } catch { /* no-op */ }
     if (finishTimerRef.current !== null) window.clearTimeout(finishTimerRef.current)
     void audioContextRef.current?.close().catch(() => undefined)
+    pendingPhotosRef.current.forEach((photo) => {
+      if (photo.localPreview) URL.revokeObjectURL(photo.previewUrl)
+    })
   }, [])
 
   function rebuildTranscript(event: SpeechRecognitionEventLike) {
@@ -373,8 +448,9 @@ export default function MoniMobileChat() {
   }
 
   async function startVoiceInput() {
-    if (sending || listening) return
+    if (sending || listening || photoBusy) return
     setError('')
+    setAttachmentMenuOpen(false)
     const speechWindow = window as SpeechWindow
     const Recognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition
     if (!Recognition) {
@@ -438,9 +514,13 @@ export default function MoniMobileChat() {
   }
 
   function startNewConversation() {
-    if (sending || listening) return
-    if (messages.length > 0 && !window.confirm('현재 대화를 지우고 새 대화를 시작할까요?')) return
+    if (sending || listening || photoBusy) return
+    if ((messages.length > 0 || pendingPhotos.length > 0) && !window.confirm('현재 대화를 지우고 새 대화를 시작할까요?')) return
 
+    pendingPhotos.forEach((photo) => {
+      if (photo.localPreview) URL.revokeObjectURL(photo.previewUrl)
+    })
+    replacePendingPhotos([])
     try { window.speechSynthesis?.cancel() } catch { /* no-op */ }
     try {
       window.localStorage.removeItem(THREAD_KEY)
@@ -452,28 +532,150 @@ export default function MoniMobileChat() {
     setInput('')
     setError('')
     setVoiceDraft('')
+    setAttachmentMenuOpen(false)
     voiceDraftRef.current = ''
     voiceSeedRef.current = ''
     window.setTimeout(() => textareaRef.current?.focus(), 30)
   }
 
+  async function uploadOnePhoto(file: File, activeThreadId: string) {
+    if (!ALLOWED_PHOTO_TYPES.has(file.type)) throw new Error('사진은 JPG, PNG, WEBP 형식으로 첨부해 주세요.')
+    if (file.size <= 0 || file.size > MAX_PHOTO_BYTES) throw new Error('사진 한 장은 10MB 이하만 첨부할 수 있습니다.')
+
+    const prepareResponse = await fetch('/api/moni/agent-files', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'prepare',
+        thread_id: activeThreadId || undefined,
+        file_name: file.name || `photo-${Date.now()}.jpg`,
+        mime_type: file.type,
+        size_bytes: file.size,
+        page: pageContext(),
+      }),
+    })
+    const prepared = await prepareResponse.json() as {
+      ok?: boolean
+      error?: string
+      thread_id?: string
+      attachment_id?: string
+      bucket?: string
+      path?: string
+      token?: string
+    }
+    if (!prepareResponse.ok || !prepared.ok || !prepared.thread_id || !prepared.attachment_id || !prepared.bucket || !prepared.path || !prepared.token) {
+      throw new Error(prepared.error || '사진 업로드를 준비하지 못했습니다.')
+    }
+
+    const { error: uploadError } = await moniBrowserDb.storage
+      .from(prepared.bucket)
+      .uploadToSignedUrl(prepared.path, prepared.token, file, { contentType: file.type, upsert: false })
+
+    if (uploadError) {
+      void fetch('/api/moni/agent-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'fail', thread_id: prepared.thread_id, attachment_id: prepared.attachment_id }),
+      })
+      throw new Error('사진 업로드에 실패했습니다. 다시 시도해 주세요.')
+    }
+
+    const completeResponse = await fetch('/api/moni/agent-files', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'complete', thread_id: prepared.thread_id, attachment_id: prepared.attachment_id }),
+    })
+    const completed = await completeResponse.json() as { ok?: boolean; error?: string }
+    if (!completeResponse.ok || !completed.ok) throw new Error(completed.error || '업로드한 사진을 확인하지 못했습니다.')
+
+    return {
+      threadId: prepared.thread_id,
+      photo: {
+        id: prepared.attachment_id,
+        fileName: file.name || '사진',
+        mimeType: file.type,
+        sizeBytes: file.size,
+        previewUrl: URL.createObjectURL(file),
+        localPreview: true,
+      } satisfies PendingPhoto,
+    }
+  }
+
+  async function handlePhotoFiles(files: File[]) {
+    if (!files.length || sending || listening || photoBusy) return
+    const remaining = Math.max(0, MAX_PENDING_PHOTOS - pendingPhotosRef.current.length)
+    if (remaining <= 0) {
+      setError('사진은 한 번에 최대 4장까지 첨부할 수 있습니다.')
+      return
+    }
+
+    setPhotoBusy(true)
+    setError('')
+    setAttachmentMenuOpen(false)
+    let activeThreadId = threadId
+    try {
+      for (const file of files.slice(0, remaining)) {
+        const uploaded = await uploadOnePhoto(file, activeThreadId)
+        activeThreadId = uploaded.threadId
+        setThreadId(activeThreadId)
+        window.localStorage.setItem(THREAD_KEY, activeThreadId)
+        replacePendingPhotos([...pendingPhotosRef.current, uploaded.photo])
+      }
+      if (files.length > remaining) setError(`사진은 한 번에 최대 ${MAX_PENDING_PHOTOS}장까지 첨부할 수 있습니다.`)
+    } catch (photoError) {
+      setError(photoError instanceof Error ? photoError.message : '사진 첨부 중 문제가 발생했습니다.')
+    } finally {
+      setPhotoBusy(false)
+      if (cameraInputRef.current) cameraInputRef.current.value = ''
+      if (galleryInputRef.current) galleryInputRef.current.value = ''
+    }
+  }
+
+  function photoInputChanged(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || [])
+    void handlePhotoFiles(files)
+  }
+
+  async function removePendingPhoto(photo: PendingPhoto) {
+    if (sending || photoBusy) return
+    replacePendingPhotos(pendingPhotosRef.current.filter((item) => item.id !== photo.id))
+    if (photo.localPreview) URL.revokeObjectURL(photo.previewUrl)
+    if (!threadId) return
+    try {
+      await fetch('/api/moni/agent-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', thread_id: threadId, attachment_id: photo.id }),
+      })
+    } catch { /* deletion cleanup is best-effort */ }
+  }
+
   async function send(raw: string) {
-    const question = raw.trim()
-    if (!question || sending || listening) return
-    const kind = requestKind(question)
+    const rawQuestion = raw.trim()
+    const photos = [...pendingPhotosRef.current]
+    if ((!rawQuestion && photos.length === 0) || sending || listening || photoBusy) return
+    const questionForAgent = rawQuestion || '첨부한 사진을 확인해줘.'
+    const displayQuestion = [rawQuestion, photos.length ? `📷 사진 ${photos.length}장 첨부` : ''].filter(Boolean).join('\n\n')
+    const kind = requestKind(questionForAgent)
     const estimated = readEstimatedSeconds(kind)
     const startedAt = Date.now()
     setEstimatedSeconds(estimated)
     setSending(true)
     setError('')
     setInput('')
-    setMessages((current) => [...current, { role: 'user', content: question }])
+    setAttachmentMenuOpen(false)
+    setMessages((current) => [...current, { role: 'user', content: displayQuestion }])
     playCue('sent')
     try {
       const response = await fetch('/api/moni/agent-runtime', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: question, thread_id: threadId || undefined, page: pageContext() }),
+        body: JSON.stringify({
+          message: rawQuestion,
+          attachment_ids: photos.map((photo) => photo.id),
+          thread_id: threadId || undefined,
+          page: pageContext(),
+        }),
       })
       const payload = await response.json() as Reply
       if (!response.ok || !payload.ok || !payload.text) throw new Error(payload.error || 'MONI 응답을 받지 못했습니다.')
@@ -481,6 +683,10 @@ export default function MoniMobileChat() {
         setThreadId(payload.thread_id)
         window.localStorage.setItem(THREAD_KEY, payload.thread_id)
       }
+      photos.forEach((photo) => {
+        if (photo.localPreview) URL.revokeObjectURL(photo.previewUrl)
+      })
+      replacePendingPhotos([])
       setMessages((current) => [...current, { role: 'assistant', content: payload.text! }])
       rememberDuration(kind, Math.max(1, Math.round((Date.now() - startedAt) / 1000)))
       window.setTimeout(announceMoniReply, 60)
@@ -518,7 +724,7 @@ export default function MoniMobileChat() {
         <button
           type="button"
           onClick={startNewConversation}
-          disabled={sending || listening}
+          disabled={sending || listening || photoBusy}
           className="moni-new-chat-button relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-[#66aef5] bg-[#eef7ff] px-3 text-[12px] font-black text-[#175a9a] shadow-[0_4px_14px_rgba(23,90,154,0.12)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           aria-label="새 대화 시작"
           title="새 대화"
@@ -540,7 +746,7 @@ export default function MoniMobileChat() {
           <div className="space-y-4">
             {messages.map((message, index) => (
               <div key={`${message.role}-${index}`} className={message.role === 'user'
-                ? 'ml-10 rounded-2xl bg-[#1fae91] px-4 py-3 text-sm leading-6 text-white'
+                ? 'ml-10 whitespace-pre-wrap rounded-2xl bg-[#1fae91] px-4 py-3 text-sm leading-6 text-white'
                 : 'mr-2 rounded-2xl border border-[#d8e8e4] bg-white px-4 py-3 text-sm leading-6 text-[#263f4d] shadow-[0_5px_18px_rgba(23,59,82,0.035)]'}>
                 {message.role === 'assistant'
                   ? <div className="moni-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
@@ -555,9 +761,37 @@ export default function MoniMobileChat() {
       <footer data-moni-mobile-composer className="shrink-0 bg-gradient-to-t from-white via-white/98 to-white/88 px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2">
         {error ? <div className="mb-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-800">{error}</div> : null}
         <form onSubmit={submit}>
-          <div className={`overflow-hidden rounded-[28px] border bg-white shadow-[0_8px_32px_rgba(23,59,82,0.12)] transition ${listening ? 'border-violet-300 ring-4 ring-violet-100/70' : 'border-[#d2dfdc]'}`}>
+          <div className={`relative overflow-visible rounded-[28px] border bg-white shadow-[0_8px_32px_rgba(23,59,82,0.12)] transition ${listening ? 'border-violet-300 ring-4 ring-violet-100/70' : 'border-[#d2dfdc]'}`}>
+            {attachmentMenuOpen && !listening ? (
+              <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-[188px] overflow-hidden rounded-2xl border border-[#d8e8e4] bg-white p-1.5 shadow-[0_14px_38px_rgba(23,59,82,0.18)]">
+                <button type="button" onClick={() => cameraInputRef.current?.click()} className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-[13px] font-bold text-[#244858] active:bg-[#eef8f5]">
+                  <CameraIcon /><span>카메라로 촬영</span>
+                </button>
+                <button type="button" onClick={() => galleryInputRef.current?.click()} className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-[13px] font-bold text-[#244858] active:bg-[#eef8f5]">
+                  <PhotoIcon /><span>사진에서 선택</span>
+                </button>
+              </div>
+            ) : null}
+
+            <input ref={cameraInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" capture="environment" className="hidden" onChange={photoInputChanged} />
+            <input ref={galleryInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="hidden" onChange={photoInputChanged} />
+
+            {pendingPhotos.length > 0 && !listening ? (
+              <div className="flex gap-2 overflow-x-auto px-3 pb-1 pt-3">
+                {pendingPhotos.map((photo) => (
+                  <div key={photo.id} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-[#cfe4df] bg-[#eff8f5]">
+                    <img src={photo.previewUrl} alt={photo.fileName} className="h-full w-full object-cover" />
+                    <button type="button" onClick={() => void removePendingPhoto(photo)} disabled={sending || photoBusy} className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-[13px] font-bold leading-none text-white" aria-label={`${photo.fileName} 첨부 취소`}>×</button>
+                  </div>
+                ))}
+                {photoBusy ? <div className="flex h-16 min-w-24 items-center justify-center rounded-xl border border-dashed border-[#cfe4df] px-3 text-[11px] font-bold text-[#6d8b95]">사진 준비 중…</div> : null}
+              </div>
+            ) : photoBusy && !listening ? (
+              <div className="px-4 pt-3 text-[11px] font-bold text-[#6d8b95]">사진을 안전하게 준비하고 있어요…</div>
+            ) : null}
+
             {listening ? (
-              <div className="flex min-h-[78px] items-center gap-3 px-3 py-2">
+              <div className="flex min-h-[78px] items-center gap-3 overflow-hidden px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex h-9 items-center justify-center gap-[3px]" aria-label="음성 인식 상태">
                     {BASE_WAVE.map((height, index) => {
@@ -574,22 +808,33 @@ export default function MoniMobileChat() {
                 </button>
               </div>
             ) : (
-              <div className="flex min-h-[58px] items-end gap-1.5 px-2 py-2">
+              <div className="flex min-h-[58px] items-end gap-1 px-2 py-2">
+                <button
+                  type="button"
+                  onClick={() => setAttachmentMenuOpen((value) => !value)}
+                  disabled={sending || photoBusy}
+                  className={`flex h-11 w-10 shrink-0 items-center justify-center rounded-full transition active:scale-95 disabled:opacity-30 ${attachmentMenuOpen ? 'bg-[#e8f7f3] text-[#187c69]' : 'text-[#53666f]'}`}
+                  aria-label="사진 첨부"
+                  title="사진 첨부"
+                >
+                  <PlusIcon />
+                </button>
                 <textarea
                   ref={textareaRef}
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={keyDown}
-                  disabled={sending}
+                  onFocus={() => setAttachmentMenuOpen(false)}
+                  disabled={sending || photoBusy}
                   rows={1}
-                  placeholder="MONI에게 메시지"
-                  className="min-h-[42px] min-w-0 flex-1 resize-none bg-transparent px-3 py-[11px] text-[15px] leading-5 text-[#173b52] outline-none placeholder:text-[#9ba6ab] disabled:opacity-60"
+                  placeholder={pendingPhotos.length ? '사진에 대해 물어보세요' : 'MONI에게 메시지'}
+                  className="min-h-[42px] min-w-0 flex-1 resize-none bg-transparent px-2 py-[11px] text-[15px] leading-5 text-[#173b52] outline-none placeholder:text-[#9ba6ab] disabled:opacity-60"
                   style={{ maxHeight: `${COMPOSER_MAX_HEIGHT}px`, overflowY: 'hidden' }}
                 />
-                <button type="button" onClick={() => void startVoiceInput()} disabled={sending} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#27343b] transition active:scale-95 disabled:opacity-30" aria-label="음성으로 입력">
+                <button type="button" onClick={() => void startVoiceInput()} disabled={sending || photoBusy} className="flex h-11 w-10 shrink-0 items-center justify-center rounded-full text-[#27343b] transition active:scale-95 disabled:opacity-30" aria-label="음성으로 입력">
                   <MicrophoneIcon />
                 </button>
-                <button type="submit" disabled={sending || !input.trim()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#17191b] text-white transition active:scale-95 disabled:bg-[#d7dcde] disabled:text-white" aria-label="전송">
+                <button type="submit" disabled={sending || photoBusy || (!input.trim() && pendingPhotos.length === 0)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#17191b] text-white transition active:scale-95 disabled:bg-[#d7dcde] disabled:text-white" aria-label="전송">
                   <SendIcon />
                 </button>
               </div>
