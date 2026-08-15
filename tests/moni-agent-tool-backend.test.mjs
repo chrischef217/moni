@@ -94,8 +94,9 @@ test('extracted backend owns every production read-only tool implementation', ()
   }
 })
 
-test('legacy tenant alias and critical business semantics are preserved in extracted backend', () => {
-  assert.match(backend, /\[context\.businessId, 'default'\]/)
+test('canonical tenant scope and critical business semantics are preserved in extracted backend', () => {
+  assert.match(backend, /return \[context\.businessId\]/)
+  assert.doesNotMatch(backend, /\[context\.businessId, 'default'\]/)
   assert.match(backend, /unit_price_per_kg 컬럼명은 레거시이며 운영상 기준 포장 1EA 가격입니다/)
   assert.match(backend, /unaccounted_gap_g는 확정 로스가 아니라/)
   assert.match(backend, /supplier_statement_balances는 거래처 명세서 잔액이며 실제 입고·매입 행으로 간주하지 않습니다/)
