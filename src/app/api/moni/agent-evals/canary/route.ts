@@ -1,17 +1,17 @@
 import { createHash } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { runLiveEvalCase } from '@/lib/moni/agent/live-eval'
+import { listLiveEvalCases, runLiveEvalCase } from '@/lib/moni/agent/live-eval'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-// A two-turn Agents/Conversations eval can legitimately exceed the ordinary
-// request budget while it performs several read-only business queries.
 export const maxDuration = 300
 
 const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
 const DEFAULT_OPENAI_MODEL = 'gpt-5'
+const FULL_BUSINESS_SUITE = '__FULL_BUSINESS_REGRESSION__'
+const BATCH_CONCURRENCY = 6
 const TokenSchema = z.string().trim().min(32).max(256)
 const RequestSchema = z.object({ token: TokenSchema })
 
@@ -27,6 +27,59 @@ function json(body: unknown, status = 200) {
       'Referrer-Policy': 'no-referrer',
     },
   })
+}
+
+async function runFullBusinessSuite(model: string, triggeredBy: string) {
+  const cases = listLiveEvalCases().filter((item) => item.id.startsWith('business-'))
+  const results: Array<{
+    case_id: string
+    ok: boolean
+    passed: boolean
+    score: number
+    duration_ms: number
+    eval_run_id?: string
+    error?: string
+  }> = []
+
+  for (let offset = 0; offset < cases.length; offset += BATCH_CONCURRENCY) {
+    const batch = cases.slice(offset, offset + BATCH_CONCURRENCY)
+    const settled = await Promise.allSettled(batch.map(async (item) => {
+      const result = await runLiveEvalCase({ caseId: item.id, model, triggeredBy })
+      return {
+        case_id: item.id,
+        ok: true,
+        passed: result.passed,
+        score: result.score,
+        duration_ms: result.durationMs,
+        eval_run_id: result.evalRunId,
+      }
+    }))
+    settled.forEach((item, index) => {
+      if (item.status === 'fulfilled') {
+        results.push(item.value)
+      } else {
+        results.push({
+          case_id: batch[index]?.id || `unknown-${offset + index}`,
+          ok: false,
+          passed: false,
+          score: 0,
+          duration_ms: 0,
+          error: item.reason instanceof Error ? item.reason.message : String(item.reason || 'unknown error'),
+        })
+      }
+    })
+  }
+
+  const passed = results.filter((item) => item.passed).length
+  const failed = results.length - passed
+  return {
+    case_count: results.length,
+    passed,
+    failed,
+    pass_rate: results.length ? passed / results.length : 0,
+    all_passed: failed === 0,
+    results,
+  }
 }
 
 async function executeCanary(token: string) {
@@ -83,10 +136,28 @@ async function executeCanary(token: string) {
   }
 
   try {
+    const model = String(process.env.OPENAI_MONI_MODEL || DEFAULT_OPENAI_MODEL).trim()
+    const triggeredBy = claimed.requested_by || 'system:pmo-canary'
+
+    if (claimed.case_id === FULL_BUSINESS_SUITE) {
+      const suite = await runFullBusinessSuite(model, triggeredBy)
+      const finishedAt = new Date().toISOString()
+      await supabase
+        .from('moni_ai_eval_canary_requests')
+        .update({
+          status: suite.all_passed ? 'COMPLETED' : 'FAILED',
+          error_message: suite.all_passed ? null : `${suite.failed} business regression case(s) failed`,
+          finished_at: finishedAt,
+          updated_at: finishedAt,
+        })
+        .eq('id', claimed.id)
+      return json({ ok: true, suite })
+    }
+
     const result = await runLiveEvalCase({
       caseId: claimed.case_id,
-      model: String(process.env.OPENAI_MONI_MODEL || DEFAULT_OPENAI_MODEL).trim(),
-      triggeredBy: claimed.requested_by || 'system:pmo-canary',
+      model,
+      triggeredBy,
     })
     const finishedAt = new Date().toISOString()
     await supabase
