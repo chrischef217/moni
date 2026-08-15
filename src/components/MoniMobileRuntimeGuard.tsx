@@ -2,7 +2,6 @@
 
 import { useLayoutEffect } from 'react'
 
-const THREAD_KEY = 'moni-global-agent-thread-v11'
 const VOICE_CONFIRM_FALLBACK_MS = 30_000
 const VOICE_WAVE_FACTORS = [0.42, 0.62, 0.86, 0.54, 1, 0.7, 0.9, 0.5, 0.96, 0.68, 0.58, 0.48, 0.4]
 
@@ -77,17 +76,9 @@ function updateVoiceWaveFromRms(rms: number) {
 
 export default function MoniMobileRuntimeGuard() {
   useLayoutEffect(() => {
-    // A fresh navigation opens a clean visible mobile chat. A normal reload
-    // preserves the active thread so accidental refreshes do not lose work.
-    try {
-      const navigation = window.performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
-      const legacyPerformance = window.performance as Performance & { navigation?: { type?: number } }
-      const isReload = navigation?.type === 'reload' || legacyPerformance.navigation?.type === 1
-      if (!isReload) window.localStorage.removeItem(THREAD_KEY)
-    } catch {
-      // Navigation metadata must never block the chat UI.
-    }
-
+    // The active mobile conversation is intentionally preserved across reloads,
+    // app switching and browser process recreation. Only the explicit `새 대화`
+    // action clears the thread key and visible message cache.
     const speechWindow = window as SpeechWindow
     const OriginalSpeechRecognition = speechWindow.SpeechRecognition
     const OriginalWebkitSpeechRecognition = speechWindow.webkitSpeechRecognition
