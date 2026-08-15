@@ -5,7 +5,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const MAX_AUDIO_BYTES = 15 * 1024 * 1024
-const DEFAULT_TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe'
+const DEFAULT_TRANSCRIBE_MODEL = 'gpt-4o-transcribe'
 
 function modelName() {
   return String(process.env.OPENAI_MONI_TRANSCRIBE_MODEL || DEFAULT_TRANSCRIBE_MODEL).trim()
@@ -39,7 +39,13 @@ export async function POST(request: NextRequest) {
     upstream.append('file', audio, audio.name || 'moni-voice.webm')
     upstream.append('model', modelName())
     upstream.append('language', 'ko')
-    upstream.append('prompt', '한국어 공장 경영 업무 대화입니다. 주요 용어: MONI, 두배, 생산계획, 생산실적, 작업지시, LOT, 재고, 원재료, 매출, 매입, 수금, 지급, 미수금, 미지급금.')
+    upstream.append('response_format', 'json')
+    upstream.append('prompt', [
+      '한국어 음성을 들리는 그대로 정확하게 받아쓰세요. 요약하거나 의미를 바꾸지 마세요.',
+      '숫자, 날짜, 월, 수량, 제품명, 회사명, LOT 표기를 특히 정확하게 보존하세요.',
+      '두배 식품공장 경영 업무 대화입니다.',
+      '주요 용어: MONI, 두배, 생산계획, 생산실적, 작업지시, LOT, 재고, 원재료, 매출, 매입, 수금, 지급, 미수금, 미지급금, 거래명세표, 인보이스, 패킹 리스트.',
+    ].join(' '))
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
