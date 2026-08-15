@@ -74,6 +74,12 @@ function isMonthlyManagementAnalysisRequest(message: string, role: string) {
   return hasMonth && hasProduction && hasAnalysisIntent && (hasManagement || hasProduction)
 }
 
+function isExplicitLotLookupRequest(message: string) {
+  const normalized = String(message || '').replace(/\s+/g, ' ').trim()
+  if (hasProductionMutationIntent(normalized)) return false
+  return /\bLOT\d{8}-\d+\b/i.test(normalized)
+}
+
 function isSalesClientMasterSummaryRequest(message: string, role: string) {
   if (String(role || '').toLowerCase() !== 'admin') return false
   const normalized = String(message || '').replace(/\s+/g, ' ').trim()
@@ -158,7 +164,16 @@ ${memory ? `${memory}\n` : ''}${history ? `[최근 MONI 대화 백업]\n${histor
 26. 첨부 사진은 업무 증거입니다. 사진에서 실제로 보이거나 읽히는 내용만 근거로 사용하고, 흐릿하거나 가려진 글자·수량·제품명·LOT·금액을 추측하거나 보완하지 않습니다.
 27. 사진이 첨부됐는데 사용자가 무엇을 원하는지 명확히 말하지 않았다면, 먼저 사진의 종류와 눈에 보이는 핵심 사실을 1~2문장으로 짧게 확인한 뒤 그 사진에 맞는 질문을 딱 하나만 합니다. 예를 들어 생산현장이면 불량/공정 확인 여부, 문서면 내용 확인/기존 MONI 데이터 비교 여부처럼 실제 사진에 맞춰 물어봅니다. 막연하게 “무엇을 도와드릴까요?”라고 하지 않습니다.
 28. 사진에 대한 사용자의 목적이 분명하면 불필요하게 다시 묻지 말고 바로 분석합니다. 회사 데이터와 비교가 필요한 질문이면 사진만 보고 결론내리지 말고 MONI 도구로 실제 데이터를 함께 확인합니다.
-29. 후속 질문의 “이 사진”, “그거”, “첫 번째 사진”, “두 번째 사진”, “이 부분”은 같은 대화에서 최근 첨부된 사진과 연결해서 이해합니다. 여러 사진이 있어 어느 사진인지 실제로 구분할 수 없을 때만 최소한으로 확인합니다.`
+29. 후속 질문의 “이 사진”, “그거”, “첫 번째 사진”, “두 번째 사진”, “이 부분”은 같은 대화에서 최근 첨부된 사진과 연결해서 이해합니다. 여러 사진이 있어 어느 사진인지 실제로 구분할 수 없을 때만 최소한으로 확인합니다.
+30. 공식 두배 업무 데이터는 현재 사업체 ID만 사용합니다. business_id=default 또는 다른 사업체의 행을 공식 데이터에 섞지 않습니다.
+31. 도구 조회가 0건이거나 합계가 0이면 “해당 조회 범위에 입력된 데이터가 없다/0으로 저장돼 있다”로 설명합니다. 실제 실적이 0, 매입이 없었다, 지급이 끝났다고 근거 없이 단정하지 않습니다.
+32. 이름이 *_g인 수량은 항상 g입니다. kg로 표시할 때 1000으로 정확히 한 번 나누며 이미 kg인 값을 다시 나누지 않습니다.
+33. 결과에 may_be_truncated=true가 있으면 상세 행은 일부라고 밝힙니다. summary_is_complete=true와 전체 summary가 같이 있으면 그 전체 집계를 우선 사용하고 상세 100행만 다시 합산하지 않으며 같은 도구를 반복 호출하지 않습니다.
+34. 사용자가 정확한 제품명·LOT·문서번호를 지정하면 답변에도 그 식별자를 유지합니다. exact 식별자가 공식 마스터에 없으면 유사 항목을 같은 것처럼 대체하지 않습니다. 최근 완료 LOT가 짧은 기간에서 안 보이면 제품 이력 범위를 합리적으로 넓혀 확인합니다.
+35. 월간 생산계획과 실제 작업지시 규모가 비정상적으로 크게 벌어지거나 data_quality_warnings가 있으면 단위·입력값 이상을 먼저 경고하고 임의 보정하지 않습니다. 검증 전 작업지시 발행·생산 착수를 권고하지 않습니다.
+36. 생산·작업지시·완료·LOT 질문은 search_production_records, 월간 계획은 search_production_plans, 매출·수금·미수는 search_sales_and_receivables, 매입·지급·미지급은 search_purchases_and_payables, 원재료 입출고는 search_material_transactions를 우선 사용합니다.
+37. 사용자가 오늘 우선순위를 물으면 현재 공장 날짜를 확인하고 당일 생산실적이 없어도 search_production_plans를 생략하지 않습니다. 생산실적·생산계획·매출/수금·매입/지급 근거를 함께 확인해 우선순위를 정합니다.
+38. data_quality_warnings가 반환되면 답변의 판단보다 먼저 그 경고를 반영합니다. 경고가 해소되지 않은 수치를 정상 KPI로 단정하지 않습니다.`
 }
 
 function usageOf(result: any) {
@@ -209,7 +224,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     model: input.model,
     status: 'RUNNING',
     validation_status: 'NOT_APPLICABLE',
-    prompt_version: 'MONI_CONVERSATIONS_V1_7_IMAGE_CONTEXT',
+    prompt_version: 'MONI_CONVERSATIONS_V1_8_IMAGE_BUSINESS_REGRESSION',
     metadata: { state_mode: 'OPENAI_CONVERSATIONS_API', separate_turn_write_approval: true },
   }).select('id').single()
   if (runError) {
@@ -250,10 +265,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         tool_arguments: {},
         status: 'COMPLETED',
         result_summary: {
-          preview: JSON.stringify({
-            total_registered_client_count: summary.total_registered_client_count,
-            basis: summary.basis,
-          }),
+          preview: JSON.stringify({ total_registered_client_count: summary.total_registered_client_count, basis: summary.basis }),
           truncated: false,
           output_bytes: 0,
         },
@@ -262,48 +274,18 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
       })
       const usage = { requests: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }
       await input.context.supabase.from('moni_ai_agent_runs').update({
-        status: 'COMPLETED',
-        step_count: 1,
-        tool_call_count: 1,
-        finished_at: new Date().toISOString(),
-        request_count: 0,
-        input_tokens: 0,
-        output_tokens: 0,
-        total_tokens: 0,
-        latency_ms: Date.now() - startedAt,
-        usage,
-        metadata: {
-          state_mode: 'OPENAI_CONVERSATIONS_API',
-          conversation_id: conversationId,
-          direct_sales_client_master_summary: true,
-          canonical_business_id: input.context.businessId,
-          separate_turn_write_approval: true,
-        },
+        status: 'COMPLETED', step_count: 1, tool_call_count: 1, finished_at: new Date().toISOString(),
+        request_count: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0,
+        latency_ms: Date.now() - startedAt, usage,
+        metadata: { state_mode: 'OPENAI_CONVERSATIONS_API', conversation_id: conversationId, direct_sales_client_master_summary: true, canonical_business_id: input.context.businessId, separate_turn_write_approval: true },
       }).eq('id', runRow.id)
-      return {
-        text: finalText,
-        conversationId,
-        agentRunId: runRow.id,
-        stepCount: 1,
-        toolCallCount: 1,
-        toolsUsed: [toolName],
-        usage,
-      }
+      return { text: finalText, conversationId, agentRunId: runRow.id, stepCount: 1, toolCallCount: 1, toolsUsed: [toolName], usage }
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : '거래처 마스터 조회 실패'
       await input.context.supabase.from('moni_ai_agent_runs').update({
-        status: 'FAILED',
-        step_count: 1,
-        tool_call_count: 1,
-        error_message: rawMessage.slice(0, 2000),
-        finished_at: new Date().toISOString(),
-        latency_ms: Date.now() - startedAt,
-        metadata: {
-          state_mode: 'OPENAI_CONVERSATIONS_API',
-          conversation_id: conversationId || null,
-          direct_sales_client_master_summary: true,
-          separate_turn_write_approval: true,
-        },
+        status: 'FAILED', step_count: 1, tool_call_count: 1, error_message: rawMessage.slice(0, 2000),
+        finished_at: new Date().toISOString(), latency_ms: Date.now() - startedAt,
+        metadata: { state_mode: 'OPENAI_CONVERSATIONS_API', conversation_id: conversationId || null, direct_sales_client_master_summary: true, separate_turn_write_approval: true },
       }).eq('id', runRow.id)
       throw new Error(rawMessage)
     }
@@ -311,8 +293,9 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
 
   const forceMonthlyComparison = isMonthlyManagementComparisonRequest(input.currentUserText, input.context.session.role)
   const forceMonthlySnapshot = !forceMonthlyComparison && isMonthlyManagementAnalysisRequest(input.currentUserText, input.context.session.role)
-  const boundedMonthlyPath = forceMonthlyComparison || forceMonthlySnapshot
-  const runTurnLimit = boundedMonthlyPath ? 4 : MAX_AGENT_TURNS
+  const forceLotLookup = !forceMonthlyComparison && !forceMonthlySnapshot && isExplicitLotLookupRequest(input.currentUserText)
+  const boundedReadPath = forceMonthlyComparison || forceMonthlySnapshot || forceLotLookup
+  const runTurnLimit = boundedReadPath ? 4 : MAX_AGENT_TURNS
 
   try {
     if (!conversationId) conversationId = await startOpenAIConversationsSession()
@@ -321,17 +304,19 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
       ? 'get_monthly_management_comparison'
       : forceMonthlySnapshot
         ? 'get_monthly_management_snapshot'
-        : undefined
+        : forceLotLookup
+          ? 'search_production_records'
+          : undefined
     const supervisor = new Agent<MoniConversationRuntimeContext>({
       name: 'MONI Business Agent',
       model: input.model,
       modelSettings: {
         parallelToolCalls: false,
-        ...(boundedMonthlyPath ? {
+        ...(boundedReadPath ? {
           toolChoice,
           reasoning: { effort: 'minimal' as const },
           text: { verbosity: 'low' as const },
-          maxTokens: forceMonthlyComparison ? 1500 : 1200,
+          maxTokens: forceMonthlyComparison ? 1500 : forceMonthlySnapshot ? 1200 : 900,
         } : {}),
       },
       instructions: buildInstructions(input),
@@ -341,67 +326,41 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
 
     try {
       result = await run(supervisor, currentInput as any, {
-        ...DEFAULT_AGENT_RUN_OPTIONS,
-        context: runtimeContext,
-        maxTurns: runTurnLimit,
-        conversationId,
-        reasoningItemIdPolicy: 'preserve',
+        ...DEFAULT_AGENT_RUN_OPTIONS, context: runtimeContext, maxTurns: runTurnLimit, conversationId, reasoningItemIdPolicy: 'preserve',
       })
     } catch (error) {
       if (!isConversationError(error)) throw error
       conversationId = await startOpenAIConversationsSession()
       retried = true
       result = await run(supervisor, currentInput as any, {
-        ...DEFAULT_AGENT_RUN_OPTIONS,
-        context: runtimeContext,
-        maxTurns: runTurnLimit,
-        conversationId,
-        reasoningItemIdPolicy: 'preserve',
+        ...DEFAULT_AGENT_RUN_OPTIONS, context: runtimeContext, maxTurns: runTurnLimit, conversationId, reasoningItemIdPolicy: 'preserve',
       })
     }
 
-    const finalText = typeof result.finalOutput === 'string'
-      ? result.finalOutput.trim()
-      : JSON.stringify(result.finalOutput ?? '').trim()
+    const finalText = typeof result.finalOutput === 'string' ? result.finalOutput.trim() : JSON.stringify(result.finalOutput ?? '').trim()
     if (!finalText) throw new Error('MONI가 최종 답변을 생성하지 못했습니다.')
 
     const usage = usageOf(result)
     const responseId = text(result.lastResponseId, 160)
     const stepCount = Math.min(runTurnLimit, runtimeContext.toolCallCount + 1)
     await input.context.supabase.from('moni_ai_agent_runs').update({
-      status: 'COMPLETED',
-      step_count: stepCount,
-      tool_call_count: runtimeContext.toolCallCount,
-      finished_at: new Date().toISOString(),
-      request_count: usage.requests,
-      input_tokens: usage.inputTokens,
-      output_tokens: usage.outputTokens,
-      total_tokens: usage.totalTokens,
-      latency_ms: Date.now() - startedAt,
-      trace_id: responseId || null,
-      usage,
+      status: 'COMPLETED', step_count: stepCount, tool_call_count: runtimeContext.toolCallCount,
+      finished_at: new Date().toISOString(), request_count: usage.requests, input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens, total_tokens: usage.totalTokens, latency_ms: Date.now() - startedAt,
+      trace_id: responseId || null, usage,
       metadata: {
-        state_mode: 'OPENAI_CONVERSATIONS_API',
-        conversation_id: conversationId,
-        conversation_rebuilt: retried,
-        forced_monthly_snapshot: forceMonthlySnapshot,
-        forced_monthly_comparison: forceMonthlyComparison,
-        forced_sales_client_master_summary: false,
-        run_turn_limit: runTurnLimit,
-        monthly_reasoning_effort: boundedMonthlyPath ? 'minimal' : null,
+        state_mode: 'OPENAI_CONVERSATIONS_API', conversation_id: conversationId, conversation_rebuilt: retried,
+        forced_monthly_snapshot: forceMonthlySnapshot, forced_monthly_comparison: forceMonthlyComparison,
+        forced_lot_lookup: forceLotLookup, forced_sales_client_master_summary: false,
+        run_turn_limit: runTurnLimit, bounded_reasoning_effort: boundedReadPath ? 'minimal' : null,
         separate_turn_write_approval: true,
       },
     }).eq('id', runRow.id)
 
     return {
-      text: finalText,
-      conversationId,
-      agentRunId: runRow.id,
-      stepCount,
-      toolCallCount: runtimeContext.toolCallCount,
-      toolsUsed: runtimeContext.toolsUsed,
-      responseId: responseId || undefined,
-      usage,
+      text: finalText, conversationId, agentRunId: runRow.id, stepCount,
+      toolCallCount: runtimeContext.toolCallCount, toolsUsed: runtimeContext.toolsUsed,
+      responseId: responseId || undefined, usage,
     }
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : 'MONI Agent 실행 실패'
@@ -411,47 +370,31 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
       : rawMessage
 
     await input.context.supabase.from('moni_ai_agent_runs').update({
-      status: 'FAILED',
-      step_count: Math.min(runTurnLimit, runtimeContext.toolCallCount + 1),
-      tool_call_count: runtimeContext.toolCallCount,
-      error_message: rawMessage.slice(0, 2000),
-      finished_at: new Date().toISOString(),
-      latency_ms: Date.now() - startedAt,
+      status: 'FAILED', step_count: Math.min(runTurnLimit, runtimeContext.toolCallCount + 1),
+      tool_call_count: runtimeContext.toolCallCount, error_message: rawMessage.slice(0, 2000),
+      finished_at: new Date().toISOString(), latency_ms: Date.now() - startedAt,
       metadata: {
-        state_mode: 'OPENAI_CONVERSATIONS_API',
-        conversation_id: conversationId || null,
-        conversation_rebuilt: retried,
-        forced_monthly_snapshot: forceMonthlySnapshot,
-        forced_monthly_comparison: forceMonthlyComparison,
-        forced_sales_client_master_summary: false,
-        run_turn_limit: runTurnLimit,
+        state_mode: 'OPENAI_CONVERSATIONS_API', conversation_id: conversationId || null,
+        conversation_rebuilt: retried, forced_monthly_snapshot: forceMonthlySnapshot,
+        forced_monthly_comparison: forceMonthlyComparison, forced_lot_lookup: forceLotLookup,
+        forced_sales_client_master_summary: false, run_turn_limit: runTurnLimit,
         separate_turn_write_approval: true,
       },
     }).eq('id', runRow.id)
 
     if (maxTurnsExceeded) {
       await reportPmoEvent({
-        supabase: input.context.supabase,
-        businessId: input.context.businessId,
-        threadId: input.context.threadId,
-        messageId: input.context.messageId,
-        agentRunId: runRow.id,
-        page: input.context.page,
-        session: input.context.session,
+        supabase: input.context.supabase, businessId: input.context.businessId, threadId: input.context.threadId,
+        messageId: input.context.messageId, agentRunId: runRow.id, page: input.context.page, session: input.context.session,
       }, {
-        event_type: 'CAPABILITY_GAP',
-        severity: 'MEDIUM',
-        title: 'MONI 응답 단계 초과',
+        event_type: 'CAPABILITY_GAP', severity: 'MEDIUM', title: 'MONI 응답 단계 초과',
         summary: '사용자 질문 처리 중 Agent turn budget을 초과했습니다. 질문 유형별 단일 복합 조회 또는 결정적 라우팅이 필요합니다.',
         evidence: {
-          capability: forceMonthlyComparison ? 'monthly_management_comparison' : forceMonthlySnapshot ? 'monthly_management_snapshot' : 'agent_turn_budget',
+          capability: forceMonthlyComparison ? 'monthly_management_comparison' : forceMonthlySnapshot ? 'monthly_management_snapshot' : forceLotLookup ? 'exact_lot_lookup' : 'agent_turn_budget',
           detail: text(input.currentUserText, 1200),
         },
-        detection_source: 'SYSTEM_DETECTED',
-        confidence: 1,
-        validation_status: 'VERIFIED',
-        validator_name: 'MONI_RUNTIME',
-        recommended_owner: 'GPT(PMO)',
+        detection_source: 'SYSTEM_DETECTED', confidence: 1, validation_status: 'VERIFIED',
+        validator_name: 'MONI_RUNTIME', recommended_owner: 'GPT(PMO)',
       }).catch(() => undefined)
     }
 

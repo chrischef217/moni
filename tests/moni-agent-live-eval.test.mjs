@@ -12,7 +12,7 @@ test('live evaluation API is admin-only and bounded', () => {
   assert.match(route, /requireAdmin/)
   assert.match(route, /status: 401/)
   assert.match(route, /status: 403/)
-  assert.match(route, /maxDuration = 60/)
+  assert.match(route, /maxDuration = 300/)
   assert.match(route, /case_id/)
 })
 
@@ -42,7 +42,7 @@ test('monthly production live case follows the current snapshot tool contract', 
 test('live evaluation persists run and case result', () => {
   assert.match(runner, /moni_ai_eval_runs/)
   assert.match(runner, /moni_ai_eval_case_results/)
-  assert.match(runner, /live-single-case-v2/)
+  assert.match(runner, /live-single-case-v3/)
   assert.match(runner, /status: grade\.passed \? 'PASSED' : 'FAILED'/)
 })
 

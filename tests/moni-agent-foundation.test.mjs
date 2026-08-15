@@ -126,7 +126,7 @@ test('PMO control plane enforces admin and transitions', () => {
 
 test('admin live evaluation remains authenticated and bounded', () => {
   assert.match(liveEvalRoute, /requireAdmin/)
-  assert.match(liveEvalRoute, /maxDuration = 60/)
+  assert.match(liveEvalRoute, /maxDuration = 300/)
   assert.match(liveEvalRoute, /runLiveEvalCase/)
 })
 
@@ -135,7 +135,7 @@ test('one-time canary stores only token hash and atomically claims request', () 
   assert.match(canaryRoute, /\.eq\('token_hash', tokenHash\)/)
   assert.match(canaryRoute, /\.eq\('status', 'PENDING'\)/)
   assert.match(canaryRoute, /claimed\.case_id/)
-  assert.match(canaryRoute, /maxDuration = 60/)
+  assert.match(canaryRoute, /maxDuration = 300/)
   assert.doesNotMatch(canaryRoute, /case_id\s*:\s*z\./)
   assert.match(canaryMigration, /token_hash text not null/)
   assert.doesNotMatch(canaryMigration, /\btoken\s+text\b/)

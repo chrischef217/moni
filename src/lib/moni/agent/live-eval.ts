@@ -1,4 +1,5 @@
 import casesJson from '../../../../evals/moni-agent-cases.json'
+import businessCasesJson from '../../../../evals/moni-ai-business-regression-cases.json'
 import { loadPinnedProjectContext } from '@/lib/moni/agent/memory'
 import { reportPmoEvent } from '@/lib/moni/agent/pmo'
 import { runMoniConversationAgent } from '@/lib/moni/agent/conversation-runtime'
@@ -15,24 +16,39 @@ const LIVE_SAFE_CASE_IDS = new Set([
   'freelancer-finance-denied',
   'freelancer-production-allowed',
 ])
+const WRITE_TOOL_NAMES = [
+  'prepare_production_plan_change',
+  'execute_production_plan_change',
+  'prepare_production_operation',
+  'execute_production_operation',
+]
 
 type EvalCase = {
   id: string
+  category?: string
   role?: 'admin' | 'freelancer'
-  prompt: string
+  prompt?: string
+  turns?: string[]
   required_tools: string[]
-  forbidden_tools: string[]
-  required_arguments: Record<string, unknown>
+  forbidden_tools?: string[]
+  required_arguments?: Record<string, unknown>
+  required_tool_calls?: Array<{ name: string; arguments: Record<string, unknown> }>
   required_terms: string[]
+  required_any_terms?: string[][]
   forbidden_terms: string[]
 }
 
 export type LiveEvalCaseSummary = Pick<EvalCase, 'id' | 'role' | 'prompt'>
 
-const cases = (casesJson as EvalCase[]).filter((item) => LIVE_SAFE_CASE_IDS.has(item.id))
+const legacyCases = (casesJson as EvalCase[]).filter((item) => LIVE_SAFE_CASE_IDS.has(item.id))
+const cases = [...legacyCases, ...(businessCasesJson as EvalCase[])]
 
 export function listLiveEvalCases(): LiveEvalCaseSummary[] {
-  return cases.map(({ id, role, prompt }) => ({ id, role, prompt }))
+  return cases.map(({ id, role, prompt, turns }) => ({
+    id,
+    role,
+    prompt: prompt || (turns || []).join(' → '),
+  }))
 }
 
 function valuesEqual(actual: unknown, expected: unknown) {
@@ -59,7 +75,7 @@ function gradeCase(args: {
       detail: toolSet.has(name) ? 'called' : 'missing',
     })
   }
-  for (const name of evalCase.forbidden_tools) {
+  for (const name of new Set([...(evalCase.forbidden_tools || []), ...WRITE_TOOL_NAMES])) {
     checks.push({
       name: `forbidden_tool:${name}`,
       passed: !toolSet.has(name),
@@ -74,6 +90,14 @@ function gradeCase(args: {
       name: `required_term:${term}`,
       passed: present,
       detail: present ? 'present' : 'missing',
+    })
+  }
+  for (const [index, terms] of (evalCase.required_any_terms || []).entries()) {
+    const matched = terms.some((term) => searchable.includes(term.toLowerCase()))
+    checks.push({
+      name: 'required_any_term:' + index,
+      passed: matched,
+      detail: matched ? 'matched' : 'missing one of ' + terms.join(' | '),
     })
   }
   for (const term of evalCase.forbidden_terms) {
@@ -94,6 +118,21 @@ function gradeCase(args: {
       name: `required_argument:${key}`,
       passed: matches,
       detail: matches ? `matched ${String(expected)}` : `missing ${String(expected)}`,
+    })
+  }
+
+  for (const [index, expectedCall] of (evalCase.required_tool_calls || []).entries()) {
+    const matches = toolRuns.some((toolRun) => (
+      toolRun.tool_name === expectedCall.name
+      && Object.entries(expectedCall.arguments || {}).every(([key, expected]) => (
+        key in (toolRun.tool_arguments || {})
+        && valuesEqual(toolRun.tool_arguments[key], expected)
+      ))
+    ))
+    checks.push({
+      name: 'required_tool_call:' + index + ':' + expectedCall.name,
+      passed: matches,
+      detail: matches ? 'matched' : 'missing ' + expectedCall.name + ' ' + JSON.stringify(expectedCall.arguments),
     })
   }
 
@@ -121,7 +160,7 @@ export async function runLiveEvalCase(args: {
     .from('moni_ai_eval_runs')
     .insert({
       business_id: BUSINESS_ID,
-      suite_name: 'live-single-case-v2',
+      suite_name: 'live-single-case-v3',
       model: args.model,
       triggered_by: args.triggeredBy,
       case_count: 1,
@@ -133,6 +172,7 @@ export async function runLiveEvalCase(args: {
 
   let agentRunId: string | null = null
   try {
+    const prompts = evalCase.turns?.length ? evalCase.turns : [evalCase.prompt || '']
     const { data: thread, error: threadError } = await supabase
       .from('moni_ai_threads')
       .insert({
@@ -153,7 +193,7 @@ export async function runLiveEvalCase(args: {
         business_id: BUSINESS_ID,
         thread_id: thread.id,
         role: 'user',
-        content: evalCase.prompt,
+        content: prompts[0],
         page_context: {
           pathname: '/intelligence',
           title: 'MONI Agent Quality',
@@ -165,10 +205,10 @@ export async function runLiveEvalCase(args: {
     if (messageError) throw new Error(messageError.message)
 
     const pinnedProjectContext = await loadPinnedProjectContext(supabase, BUSINESS_ID)
-    const result = await runMoniConversationAgent({
+    let result = await runMoniConversationAgent({
       model: args.model,
-      currentContent: [{ type: 'input_text', text: evalCase.prompt }],
-      currentUserText: evalCase.prompt,
+      currentContent: [{ type: 'input_text', text: prompts[0] }],
+      currentUserText: prompts[0],
       conversationId: null,
       recentHistory: [],
       threadMemory: {
@@ -213,18 +253,108 @@ export async function runLiveEvalCase(args: {
       })
     if (assistantMessageError) throw new Error(assistantMessageError.message)
 
+    const answerTexts = [result.text]
+    const agentRunIds = [result.agentRunId]
+    const toolsUsed = [...result.toolsUsed]
+    const totalUsage = { ...result.usage }
+    let totalToolCallCount = result.toolCallCount
+    let latestUserMessageId = userMessage.id
+
+    if (prompts.length > 1) {
+      const followUpPrompt = prompts[1]
+      const { data: followUpMessage, error: followUpMessageError } = await supabase
+        .from('moni_ai_messages')
+        .insert({
+          business_id: BUSINESS_ID,
+          thread_id: thread.id,
+          role: 'user',
+          content: followUpPrompt,
+          page_context: {
+            pathname: '/intelligence',
+            title: 'MONI Agent Quality',
+            eval_case_id: evalCase.id,
+            eval_turn: 2,
+          },
+        })
+        .select('id')
+        .single()
+      if (followUpMessageError) throw new Error(followUpMessageError.message)
+      latestUserMessageId = followUpMessage.id
+
+      const previousResult = result
+      result = await runMoniConversationAgent({
+        model: args.model,
+        currentContent: [{ type: 'input_text', text: followUpPrompt }],
+        currentUserText: followUpPrompt,
+        conversationId: previousResult.conversationId,
+        recentHistory: [
+          { role: 'user', content: prompts[0] },
+          { role: 'assistant', content: previousResult.text },
+        ],
+        threadMemory: {
+          summary: '',
+          salientFacts: [],
+          openItems: [],
+          decisions: [],
+          summarizedMessageCount: 0,
+          memoryVersion: 1,
+          lastSummarizedAt: null,
+        },
+        pinnedProjectContext,
+        context: {
+          supabase,
+          businessId: BUSINESS_ID,
+          threadId: thread.id,
+          messageId: followUpMessage.id,
+          page: { pathname: '/intelligence', title: 'MONI Agent Quality' },
+          session: {
+            loginId: 'system:eval:' + args.triggeredBy,
+            displayName: 'MONI Eval Runner',
+            role,
+          },
+        },
+      })
+      agentRunId = result.agentRunId
+      answerTexts.push(result.text)
+      agentRunIds.push(result.agentRunId)
+      for (const name of result.toolsUsed) if (!toolsUsed.includes(name)) toolsUsed.push(name)
+      totalToolCallCount += result.toolCallCount
+      totalUsage.requests += result.usage.requests
+      totalUsage.inputTokens += result.usage.inputTokens
+      totalUsage.outputTokens += result.usage.outputTokens
+      totalUsage.totalTokens += result.usage.totalTokens
+
+      const { error: followUpAssistantError } = await supabase
+        .from('moni_ai_messages')
+        .insert({
+          business_id: BUSINESS_ID,
+          thread_id: thread.id,
+          role: 'assistant',
+          content: result.text,
+          provider: 'openai',
+          model: args.model,
+          page_context: {
+            pathname: '/intelligence',
+            title: 'MONI Agent Quality',
+            eval_case_id: evalCase.id,
+            eval_turn: 2,
+          },
+        })
+      if (followUpAssistantError) throw new Error(followUpAssistantError.message)
+    }
+
     const { data: toolRuns, error: toolRunError } = await supabase
       .from('moni_ai_tool_runs')
       .select('tool_name,tool_arguments')
-      .eq('agent_run_id', result.agentRunId)
+      .in('agent_run_id', agentRunIds)
       .order('step_no', { ascending: true })
     if (toolRunError) throw new Error(toolRunError.message)
 
     const grade = gradeCase({
       evalCase,
-      answerText: result.text,
-      answer: result.text,
-      toolsUsed: result.toolsUsed,
+      answerText: answerTexts.join('\n\n'),
+      answer: answerTexts,
+      toolsUsed,
       toolRuns: (toolRuns ?? []) as Array<{
         tool_name: string
         tool_arguments: Record<string, unknown>
@@ -243,12 +373,12 @@ export async function runLiveEvalCase(args: {
         agent_run_id: result.agentRunId,
         details: {
           role,
-          prompt: evalCase.prompt,
-          tools_used: result.toolsUsed,
-          usage: result.usage,
+          prompts,
+          tools_used: toolsUsed,
+          usage: totalUsage,
           duration_ms: durationMs,
           checks: grade.checks,
-          answer: result.text,
+          answers: answerTexts,
         },
       })
     if (caseInsertError) throw new Error(caseInsertError.message)
@@ -264,20 +394,20 @@ export async function runLiveEvalCase(args: {
           role,
           score: grade.score,
           duration_ms: durationMs,
-          tool_call_count: result.toolCallCount,
-          usage: result.usage,
+          tool_call_count: totalToolCallCount,
+          usage: totalUsage,
         },
         finished_at: finishedAt,
       })
       .eq('id', evalRun.id)
     if (evalUpdateError) throw new Error(evalUpdateError.message)
 
-    if (!grade.passed) {
+    if (!grade.passed && !evalCase.id.startsWith('business-')) {
       await reportPmoEvent({
         supabase,
         businessId: BUSINESS_ID,
         threadId: thread.id,
-        messageId: userMessage.id,
+        messageId: latestUserMessageId,
         agentRunId: result.agentRunId,
         page: { pathname: '/intelligence', title: 'MONI Agent Quality' },
         session: {
@@ -311,10 +441,10 @@ export async function runLiveEvalCase(args: {
       score: grade.score,
       checks: grade.checks,
       agentRunId: result.agentRunId,
-      toolsUsed: result.toolsUsed,
-      usage: result.usage,
+      toolsUsed,
+      usage: totalUsage,
       durationMs,
-      answerText: result.text,
+      answerText: answerTexts.join('\n\n'),
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'MONI 실모델 평가 실행 실패'
@@ -326,7 +456,7 @@ export async function runLiveEvalCase(args: {
         status: 'ERROR',
         score: 0,
         agent_run_id: agentRunId,
-        details: { role, prompt: evalCase.prompt },
+        details: { role, prompts: evalCase.turns || [evalCase.prompt || ''] },
         error_message: message,
       })
     if (caseFailureInsertError) {

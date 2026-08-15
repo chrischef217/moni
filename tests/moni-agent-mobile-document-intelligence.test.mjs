@@ -122,8 +122,9 @@ test('answer document save is a document, not a report, and preserves markdown t
 })
 
 test('official business reads never mix default tenant rows into canonical MONI answers', () => {
-  assert.match(toolBackend, /return \[context\.businessId\]/)
+  assert.match(toolBackend, /\.eq\('business_id', context\.businessId\)/)
   assert.doesNotMatch(toolBackend, /\[context\.businessId, 'default'/)
+  assert.doesNotMatch(toolBackend, /\.in\('business_id',[^\n]*default/)
 })
 
 test('current-month production comparisons use equal elapsed periods and flag implausible plan scale', () => {
