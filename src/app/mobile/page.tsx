@@ -4,6 +4,7 @@ import AllowanceLogin from '@/components/AllowanceLogin'
 import MoniMobileAnswerActions from '@/components/MoniMobileAnswerActions'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
+import MoniMobileUxPolish from '@/components/MoniMobileUxPolish'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,7 @@ export default async function MoniMobilePage() {
     >
       <MoniMobileRuntimeGuard />
       <MoniMobileAnswerActions />
+      <MoniMobileUxPolish />
       <MoniMobileChat />
     </main>
   )
