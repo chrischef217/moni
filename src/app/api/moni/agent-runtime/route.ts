@@ -13,6 +13,11 @@ import {
   sanitizeMoniUserFacingText,
 } from '@/lib/moni/agent/user-facing-text'
 import { resolveSalesStatementArtifacts, salesStatementSelectionText } from '@/lib/moni/documents/sales-statement-resolver'
+import {
+  isExportDocumentRequest,
+  requestedExportDocumentKinds,
+  resolveLinkedExportDocument,
+} from '@/lib/moni/documents/export-document-resolver'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -154,6 +159,7 @@ export async function POST(request: NextRequest) {
       loadPinnedProjectContext(supabase, BUSINESS_ID),
     ])
 
+    const recentContextText = (recentRows ?? []).map((row: any) => String(row.content || '')).join('\n')
     const model = modelName()
     const runInput = {
       model,
@@ -210,7 +216,9 @@ export async function POST(request: NextRequest) {
     let finalText = sanitizeMoniUserFacingText(result.text)
     const pdfRequested = isPdfDocumentRequest(message)
     const statementRequested = isSalesStatementRequest(message)
+    const exportDocumentRequested = isExportDocumentRequest(message)
     let statementHandled = false
+    let exportDocumentHandled = false
 
     if (pdfRequested) {
       finalText = sanitizeMoniUserFacingText(removePdfCapabilityRefusal(finalText))
@@ -222,11 +230,11 @@ export async function POST(request: NextRequest) {
       const exact = artifacts.matched
       if (exact.length === 1) {
         const artifact = exact[0]
-        const links = [
-          `[📄 거래명세표 PDF 다운로드](${artifact.pdf_url})`,
-          artifact.canonical_form_url ? `[🧾 MONI 거래명세표 양식 열기](${artifact.canonical_form_url})` : '',
-        ].filter(Boolean).join(' · ')
-        finalText = `거래명세표를 준비했습니다.\n\n**${artifact.sale_date} · ${artifact.client_name} · ${artifact.statement_number}**\n\n${links}`
+        const statementUrl = artifact.canonical_form_url
+          ? `${artifact.canonical_form_url}${artifact.canonical_form_url.includes('?') ? '&' : '?'}auto=1`
+          : artifact.pdf_url
+        const statementLabel = artifact.canonical_form_url ? '📄 거래명세표 PDF 저장' : '📄 거래명세표 PDF 다운로드'
+        finalText = `거래명세표를 준비했습니다.\n\n**${artifact.sale_date} · ${artifact.client_name} · ${artifact.statement_number}**\n\n[${statementLabel}](${statementUrl})`
         statementHandled = true
       } else {
         const choices = exact.length > 1 ? exact : artifacts.candidates
@@ -237,13 +245,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (exportDocumentRequested && session.role === 'admin') {
+      const artifact = await resolveLinkedExportDocument(supabase as any, BUSINESS_ID, message, recentContextText)
+      if (artifact) {
+        const kinds = requestedExportDocumentKinds(message)
+        const links = [
+          kinds.invoice ? `[📄 인보이스 PDF 저장 · ${artifact.invoice_no}](${artifact.invoice_url})` : '',
+          kinds.packing ? `[📦 패킹 리스트 PDF 저장 · ${artifact.packing_list_no}](${artifact.packing_list_url})` : '',
+        ].filter(Boolean).join('\n\n')
+        finalText = `연결된 수출서류를 확인했습니다.\n\n**${artifact.document_date} · ${artifact.invoice_no} / ${artifact.packing_list_no}**\n\n${links}`
+      } else {
+        finalText = '연결된 인보이스·패킹 리스트를 정확히 특정하지 못했습니다. 거래명세표 번호 또는 인보이스 번호를 말씀해 주세요.'
+      }
+      exportDocumentHandled = true
+    }
+
     const { data: assistantMessage, error: assistantError } = await supabase.from('moni_ai_messages').insert({
       business_id: BUSINESS_ID, thread_id: thread.id, role: 'assistant', content: finalText,
       page_context: page, provider: 'openai', model,
     }).select('id').single()
     if (assistantError) throw new Error(assistantError.message)
 
-    if (pdfRequested && !statementHandled) {
+    if (pdfRequested && !statementHandled && !exportDocumentHandled) {
       const pdfUrl = `/api/moni/answer-pdf?thread_id=${encodeURIComponent(thread.id)}&assistant_message_id=${encodeURIComponent(assistantMessage.id)}`
       finalText = appendOnce(finalText, `[📄 PDF 파일 다운로드](${pdfUrl})`)
       const { error: pdfLinkError } = await supabase.from('moni_ai_messages')

@@ -195,7 +195,7 @@ export default function MoniMobileChat() {
   const status = error ? 'issue' : sending ? 'thinking' : listening ? 'listening' : 'live'
   const statusLabel = error ? 'ISSUE' : sending ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'
 
-  function playCue(kind: 'sent' | 'complete' | 'error') {
+  function playCue(kind: 'sent' | 'error') {
     try {
       const speechWindow = window as SpeechWindow
       const AudioContextClass = window.AudioContext || speechWindow.webkitAudioContext
@@ -207,17 +207,31 @@ export default function MoniMobileChat() {
       const oscillator = context.createOscillator()
       const gain = context.createGain()
       oscillator.type = 'sine'
-      const base = kind === 'sent' ? 620 : kind === 'complete' ? 760 : 300
-      oscillator.frequency.setValueAtTime(base, now)
-      if (kind === 'complete') oscillator.frequency.exponentialRampToValueAtTime(1040, now + 0.11)
+      oscillator.frequency.setValueAtTime(kind === 'sent' ? 620 : 300, now)
       gain.gain.setValueAtTime(0.0001, now)
-      gain.gain.exponentialRampToValueAtTime(kind === 'error' ? 0.035 : 0.045, now + 0.012)
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + (kind === 'complete' ? 0.22 : 0.12))
+      gain.gain.exponentialRampToValueAtTime(kind === 'error' ? 0.035 : 0.04, now + 0.012)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12)
       oscillator.connect(gain)
       gain.connect(context.destination)
       oscillator.start(now)
-      oscillator.stop(now + (kind === 'complete' ? 0.23 : 0.13))
+      oscillator.stop(now + 0.13)
     } catch { /* sound is best-effort UX */ }
+  }
+
+  function announceMoniReply() {
+    try {
+      if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return
+      const synthesis = window.speechSynthesis
+      synthesis.cancel()
+      const utterance = new SpeechSynthesisUtterance('모니, 답변이 왔어요.')
+      utterance.lang = 'ko-KR'
+      utterance.rate = 1
+      utterance.pitch = 1.03
+      utterance.volume = 0.92
+      const koreanVoice = synthesis.getVoices().find((voice) => /^ko(?:-|_)/i.test(voice.lang))
+      if (koreanVoice) utterance.voice = koreanVoice
+      synthesis.speak(utterance)
+    } catch { /* voice notification is best-effort UX */ }
   }
 
   useEffect(() => {
@@ -260,6 +274,7 @@ export default function MoniMobileChat() {
 
   useEffect(() => () => {
     try { recognitionRef.current?.abort() } catch { /* no-op */ }
+    try { window.speechSynthesis?.cancel() } catch { /* no-op */ }
     if (finishTimerRef.current !== null) window.clearTimeout(finishTimerRef.current)
     void audioContextRef.current?.close().catch(() => undefined)
   }, [])
@@ -387,7 +402,7 @@ export default function MoniMobileChat() {
       }
       setMessages((current) => [...current, { role: 'assistant', content: payload.text! }])
       rememberDuration(kind, Math.max(1, Math.round((Date.now() - startedAt) / 1000)))
-      playCue('complete')
+      window.setTimeout(announceMoniReply, 60)
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'MONI 연결 오류')
       playCue('error')

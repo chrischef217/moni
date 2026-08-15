@@ -28,6 +28,34 @@ const PDF_REFUSAL_PATTERNS = [
   /아래\s*내용을\s*그대로\s*(?:복사해\s*)?(?:인쇄|프린트)[^\n.]*PDF[^\n.]*저장[^\n.]*[.!]?/gi,
 ]
 
+function normalizeDocumentLinks(value: string) {
+  let output = value
+  const hasCanonicalStatement = /\]\(\/sales-management\/export\/documents\/[^)]+\/statement(?:\?[^)]*)?\)/i.test(output)
+
+  if (hasCanonicalStatement) {
+    output = output.replace(
+      /\n*\[[^\]]*거래\s*명세표[^\]]*(?:PDF|다운로드)[^\]]*\]\(\/api\/moni\/sales-statement-pdf\?[^)]*\)\s*[·.]?/gi,
+      '\n',
+    )
+  }
+
+  output = output.replace(
+    /\[[^\]]*(?:MONI\s*)?거래\s*명세표[^\]]*(?:양식\s*열기|열기)[^\]]*\]\((\/sales-management\/export\/documents\/[^)]+\/statement)(?:\?[^)]*)?\)/gi,
+    '[📄 거래명세표 PDF 저장]($1?auto=1)',
+  )
+
+  output = output.replace(
+    /\/sales-management\/export\/documents\/(EXPDOC-[A-Z0-9-]+)\/invoice\b/gi,
+    (_match, id: string) => `[📄 인보이스 PDF 저장](/sales-management/export/documents/${id}/print?type=invoice&auto=1)`,
+  )
+  output = output.replace(
+    /\/sales-management\/export\/documents\/(EXPDOC-[A-Z0-9-]+)\/packing-list\b/gi,
+    (_match, id: string) => `[📦 패킹 리스트 PDF 저장](/sales-management/export/documents/${id}/print?type=packing&auto=1)`,
+  )
+
+  return output.replace(/\n{3,}/g, '\n\n').trim()
+}
+
 function protectMarkdownDestinations(value: string) {
   const destinations: string[] = []
   const output = value.replace(/\]\(([^)]+)\)/g, (_match, destination: string) => {
@@ -41,7 +69,8 @@ function protectMarkdownDestinations(value: string) {
 }
 
 export function sanitizeMoniUserFacingText(value: unknown) {
-  const protectedLinks = protectMarkdownDestinations(String(value ?? '').replace(/\r\n/g, '\n'))
+  const normalized = normalizeDocumentLinks(String(value ?? '').replace(/\r\n/g, '\n'))
+  const protectedLinks = protectMarkdownDestinations(normalized)
   let output = protectedLinks.output
   for (const [pattern, replacement] of INTERNAL_LABELS) output = output.replace(pattern, replacement)
 
