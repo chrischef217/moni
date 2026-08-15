@@ -4,11 +4,13 @@ import { readFileSync } from 'node:fs'
 
 const page = readFileSync('src/app/mobile/page.tsx', 'utf8')
 const polish = readFileSync('src/components/MoniMobileUxPolish.tsx', 'utf8')
+const mobileChat = readFileSync('src/components/MoniMobileChat.tsx', 'utf8')
 const runtime = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
 const userFacing = readFileSync('src/lib/moni/agent/user-facing-text.ts', 'utf8')
 const pdfRoute = readFileSync('src/app/api/moni/answer-pdf/route.ts', 'utf8')
 const statementPdf = readFileSync('src/app/api/moni/sales-statement-pdf/route.ts', 'utf8')
 const statementResolver = readFileSync('src/lib/moni/documents/sales-statement-resolver.ts', 'utf8')
+const exportDocumentResolver = readFileSync('src/lib/moni/documents/export-document-resolver.ts', 'utf8')
 const pdfRenderer = readFileSync('src/lib/moni/documents/simple-pdf.ts', 'utf8')
 const docxDocument = readFileSync('src/app/api/moni/answer-report/route.ts', 'utf8')
 const toolBackend = readFileSync('src/lib/moni/agent/tool-backend.ts', 'utf8')
@@ -34,6 +36,7 @@ test('internal MONI labels and stale PDF instructions are removed before users s
   assert.match(runtime, /safeMessages/)
   assert.match(runtime, /sanitizeMoniUserFacingText\(removePdfCapabilityRefusal\(row\.content\)\)/)
   assert.match(userFacing, /protectMarkdownDestinations/)
+  assert.match(userFacing, /normalizeDocumentLinks/)
   assert.match(userFacing, /MONI_LINK_/)
   assert.match(userFacing, /PDF로\\s\*저장하는/)
   assert.match(userFacing, /stripGeneratedDocumentLinks/)
@@ -58,11 +61,13 @@ test('PDF requests return an authenticated real PDF download link with clean rea
   assert.doesNotMatch(pdfRenderer, /bullet: '•'/)
 })
 
-test('sales statement requests resolve canonical MONI sales data and follow-up selection without guessing', () => {
+test('sales statement requests expose one canonical MONI statement action', () => {
   assert.match(runtime, /resolveSalesStatementArtifacts/)
   assert.match(runtime, /거래명세표를 준비했습니다/)
-  assert.match(runtime, /거래명세표 PDF 다운로드/)
-  assert.match(runtime, /MONI 거래명세표 양식 열기/)
+  assert.match(runtime, /거래명세표 PDF 저장/)
+  assert.match(runtime, /canonical_form_url/)
+  assert.match(runtime, /auto=1/)
+  assert.doesNotMatch(runtime, /MONI 거래명세표 양식 열기/)
   assert.match(runtime, /거래명세표를 만들 거래를 특정해야 합니다/)
   assert.match(statementResolver, /DB-\\d\{8\}-\\d\{3\}/)
   assert.match(statementResolver, /sales_orders/)
@@ -74,6 +79,34 @@ test('sales statement requests resolve canonical MONI sales data and follow-up s
   assert.match(statementPdf, /company_profile/)
   assert.match(statementPdf, /buildSalesStatementPdf/)
   assert.match(statementPdf, /application\/pdf/)
+})
+
+test('linked invoice and packing-list requests resolve real export print routes', () => {
+  assert.match(runtime, /resolveLinkedExportDocument/)
+  assert.match(runtime, /requestedExportDocumentKinds/)
+  assert.match(runtime, /인보이스 PDF 저장/)
+  assert.match(runtime, /패킹 리스트 PDF 저장/)
+  assert.match(exportDocumentResolver, /sales_orders/)
+  assert.match(exportDocumentResolver, /source_reference/)
+  assert.match(exportDocumentResolver, /export_documents/)
+  assert.match(exportDocumentResolver, /\/print\?type=invoice&auto=1/)
+  assert.match(exportDocumentResolver, /\/print\?type=packing&auto=1/)
+  assert.doesNotMatch(exportDocumentResolver, /\/invoice`/)
+  assert.doesNotMatch(exportDocumentResolver, /\/packing-list`/)
+})
+
+test('restored historical document answers normalize stale links', () => {
+  assert.match(userFacing, /sales-statement-pdf/)
+  assert.match(userFacing, /거래명세표 PDF 저장/)
+  assert.match(userFacing, /type=invoice&auto=1/)
+  assert.match(userFacing, /type=packing&auto=1/)
+})
+
+test('mobile assistant completion uses a Korean voice notification instead of the generic completion beep', () => {
+  assert.match(mobileChat, /SpeechSynthesisUtterance/)
+  assert.match(mobileChat, /모니, 답변이 왔어요\./)
+  assert.match(mobileChat, /utterance\.lang = 'ko-KR'/)
+  assert.doesNotMatch(mobileChat, /playCue\('complete'\)/)
 })
 
 test('answer document save is a document, not a report, and preserves markdown tables', () => {
