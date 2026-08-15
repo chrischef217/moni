@@ -1,3 +1,15 @@
+const INTERNAL_CONTEXT_MARKERS = [
+  'MONI_SHARED_CONTEXT_START',
+  'MONI_SHARED_CONTEXT_END',
+  '[PMO 승인 공용 프로젝트 문맥]',
+  '[PMO 승인 공통 프로젝트 문맥]',
+]
+
+export function isMoniInternalContextMessage(value: unknown) {
+  const input = String(value ?? '')
+  return INTERNAL_CONTEXT_MARKERS.some((marker) => input.includes(marker))
+}
+
 const INTERNAL_LABELS: Array<[RegExp, string]> = [
   [/\bunaccounted[_\s-]*gap(?:_g)?\b/gi, '계획-완료 차이'],
   [/\bopen_planned_quantity_g\b/gi, '미완료 작업지시 계획량'],
@@ -69,7 +81,10 @@ function protectMarkdownDestinations(value: string) {
 }
 
 export function sanitizeMoniUserFacingText(value: unknown) {
-  const normalized = normalizeDocumentLinks(String(value ?? '').replace(/\r\n/g, '\n'))
+  const raw = String(value ?? '').replace(/\r\n/g, '\n')
+  if (isMoniInternalContextMessage(raw)) return ''
+
+  const normalized = normalizeDocumentLinks(raw)
   const protectedLinks = protectMarkdownDestinations(normalized)
   let output = protectedLinks.output
   for (const [pattern, replacement] of INTERNAL_LABELS) output = output.replace(pattern, replacement)
