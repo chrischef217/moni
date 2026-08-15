@@ -249,6 +249,8 @@ export async function executeProductionPlanChange(input: ExecuteProductionPlanIn
   const { data, error } = await supabase.rpc('moni_execute_production_plan_action', {
     p_confirmation_id: confirmationId,
     p_user_confirmation_text: userConfirmationText,
+    p_actor_login_id: identity.loginId,
+    p_source_client_id: identity.clientId,
   })
   if (error) throw new Error(`생산계획 실행 실패: ${error.message}`)
   const result = data as any
