@@ -1,6 +1,32 @@
 'use client'
 
+import { useEffect } from 'react'
+
+const DOCUMENT_LINK_SELECTOR = [
+  '.moni-markdown a[href*="/api/moni/answer-pdf"]',
+  '.moni-markdown a[href*="/api/moni/sales-statement-pdf"]',
+  '.moni-markdown a[href*="/sales-management/"]',
+].join(',')
+
+function markDocumentLinks(root: ParentNode) {
+  root.querySelectorAll<HTMLAnchorElement>(DOCUMENT_LINK_SELECTOR).forEach((link) => {
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    link.dataset.moniDocumentLink = 'new-tab'
+  })
+}
+
 export default function MoniMobileUxPolish() {
+  useEffect(() => {
+    const root = document.querySelector('[data-moni-mobile-chat]')
+    if (!root) return
+
+    markDocumentLinks(root)
+    const observer = new MutationObserver(() => markDocumentLinks(root))
+    observer.observe(root, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
+
   return (
     <style jsx global>{`
       [data-moni-mobile-chat] .ml-10.rounded-2xl {
