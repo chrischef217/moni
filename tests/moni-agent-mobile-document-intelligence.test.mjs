@@ -32,6 +32,7 @@ test('internal MONI labels and stale PDF instructions are removed before users s
   assert.match(userFacing, /생산 기록 조회/)
   assert.match(runtime, /sanitizeMoniUserFacingText\(result\.text\)/)
   assert.match(runtime, /safeMessages/)
+  assert.match(runtime, /sanitizeMoniUserFacingText\(removePdfCapabilityRefusal\(row\.content\)\)/)
   assert.match(userFacing, /protectMarkdownDestinations/)
   assert.match(userFacing, /MONI_LINK_/)
   assert.match(userFacing, /PDF로\\s\*저장하는/)
@@ -59,6 +60,7 @@ test('PDF requests return an authenticated real PDF download link with clean rea
 
 test('sales statement requests resolve canonical MONI sales data and follow-up selection without guessing', () => {
   assert.match(runtime, /resolveSalesStatementArtifacts/)
+  assert.match(runtime, /거래명세표를 준비했습니다/)
   assert.match(runtime, /거래명세표 PDF 다운로드/)
   assert.match(runtime, /MONI 거래명세표 양식 열기/)
   assert.match(runtime, /거래명세표를 만들 거래를 특정해야 합니다/)
