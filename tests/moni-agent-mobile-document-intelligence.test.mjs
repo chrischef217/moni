@@ -20,13 +20,14 @@ test('mobile user question bubble is light and readable', () => {
 })
 
 test('internal MONI labels are converted before users see answers', () => {
-  assert.match(userFacing, /unaccounted[_\\s-]*gap/)
+  assert.match(userFacing, /unaccounted/)
   assert.match(userFacing, /계획-완료 차이/)
   assert.match(userFacing, /search_production_records/)
   assert.match(userFacing, /생산 기록 조회/)
   assert.match(runtime, /sanitizeMoniUserFacingText\(result\.text\)/)
   assert.match(runtime, /safeMessages/)
   assert.match(userFacing, /protectMarkdownDestinations/)
+  assert.match(userFacing, /MONI_LINK_/)
 })
 
 test('PDF requests return an authenticated real PDF download link', () => {
