@@ -27,15 +27,19 @@ test('MONI replaces the native new-chat confirmation with an in-app reset dialog
   assert.match(polish, /업무 데이터와 평가·감사 기록은 삭제되지 않습니다/)
 })
 
-test('MONI voice bars travel left continuously and use the existing microphone analyser for amplitude', () => {
+test('MONI voice bars travel left continuously, stay pale in silence, and darken/grow with real microphone level', () => {
   assert.match(polish, /moniVoiceTravel/)
-  assert.match(polish, /animation: moniVoiceTravel 1\.56s linear infinite/)
+  assert.match(polish, /animation: moniVoiceTravel 2\.05s linear infinite/)
+  assert.match(polish, /opacity: calc\(\.24 \+ \(var\(--moni-voice-level, 0\) \* \.74\)\)/)
+  assert.match(polish, /box-shadow: 7px 0 0 currentColor, 14px 0 0 currentColor/)
+  assert.match(polish, /span::before/)
+  assert.match(polish, /span::after/)
   assert.match(polish, /--moni-wave-h13/)
   assert.doesNotMatch(polish, /moniVoiceFlow/)
   assert.doesNotMatch(polish, /scaleY\(/)
   assert.match(runtimeGuard, /getByteTimeDomainData/)
   assert.match(runtimeGuard, /updateVoiceWaveFromRms\(rms\)/)
-  assert.match(runtimeGuard, /--moni-wave-h\$\{index \+ 1\}/)
+  assert.match(runtimeGuard, /--moni-voice-level/)
   assert.match(runtimeGuard, /navigator\.mediaDevices\.getUserMedia/)
 })
 
