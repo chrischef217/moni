@@ -119,6 +119,79 @@ function buildSalesClientMasterAnswer(message: string, summary: Awaited<ReturnTy
   return `${countLine}\n\n${lines.join('\n')}${tail}`
 }
 
+function normalizeExactName(value: unknown) {
+  return String(value ?? '').normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+function enforceExactProductLookup(
+  answer: string,
+  userMessage: string,
+  runtimeContext: MoniConversationRuntimeContext,
+) {
+  if (!/(공식|마스터)/.test(userMessage) || !/(제품|품목)/.test(userMessage)) return answer
+  const outputs = runtimeContext.toolOutputs.get('search_products_and_recipes') || []
+  if (!outputs.length) return answer
+
+  const firstQuery = outputs
+    .map((output: any) => text(output?.filters?.product_query, 160))
+    .find(Boolean)
+  if (!firstQuery) return answer
+
+  const products = outputs.flatMap((output: any) => Array.isArray(output?.products) ? output.products : [])
+  const exactQuery = normalizeExactName(firstQuery)
+  const exact = products.find((product: any) => (
+    normalizeExactName(product?.product_name) === exactQuery
+    || normalizeExactName(product?.product_code) === exactQuery
+    || normalizeExactName(product?.id) === exactQuery
+  ))
+  if (exact) return answer
+
+  const uniqueSimilar = [...new Map(products
+    .filter((product: any) => text(product?.product_name, 160))
+    .map((product: any) => [String(product.product_name), product])).values()]
+    .slice(0, 5) as any[]
+
+  const similarText = uniqueSimilar.length
+    ? `\n\n유사하게 조회된 공식 제품:\n${uniqueSimilar.map((product) => `- ${text(product.product_name, 160)}${product.id ? ` (${text(product.id, 80)})` : ''}`).join('\n')}`
+    : ''
+
+  return `공식 제품 마스터에서 **${firstQuery}**라는 정확한 이름 또는 ID는 확인되지 않았습니다.${similarText}\n\n유사한 이름을 같은 제품으로 간주하지 않았습니다.`
+}
+
+function preserveExplicitRequestLabels(answer: string, userMessage: string) {
+  let output = answer
+  const lot = userMessage.match(/\bLOT\d{8}-\d+\b/i)?.[0]
+  if (lot && !output.toUpperCase().includes(lot.toUpperCase())) {
+    output = `**LOT:** ${lot}\n\n${output}`
+  }
+
+  const historyMatch = userMessage.match(/^\s*(.{2,100}?)의\s+(?:최근\s+)?생산\s+이력/)
+  const targetProduct = historyMatch?.[1]?.trim()
+  if (targetProduct && !output.includes(targetProduct)) {
+    output = `**대상 제품:** ${targetProduct}\n\n${output}`
+  }
+
+  if (/(가장\s*먼저|최우선)/.test(userMessage) && !/(가장\s*먼저|최우선)/.test(output)) {
+    if (/^##\s*결론\s*/.test(output)) {
+      output = output.replace(/^##\s*결론\s*/, '## 결론\n**가장 먼저:** ')
+    } else {
+      output = `**가장 먼저:** ${output}`
+    }
+  }
+  return output
+}
+
+function applyAnswerContracts(
+  answer: string,
+  userMessage: string,
+  runtimeContext: MoniConversationRuntimeContext,
+) {
+  return preserveExplicitRequestLabels(
+    enforceExactProductLookup(answer, userMessage, runtimeContext),
+    userMessage,
+  )
+}
+
 function buildInstructions(input: Input) {
   const memory = formatMemoryForInstructions(input.threadMemory, input.pinnedProjectContext)
   const history = compactHistory(input.recentHistory)
@@ -172,8 +245,10 @@ ${memory ? `${memory}\n` : ''}${history ? `[최근 MONI 대화 백업]\n${histor
 34. 사용자가 정확한 제품명·LOT·문서번호를 지정하면 답변에도 그 식별자를 유지합니다. exact 식별자가 공식 마스터에 없으면 유사 항목을 같은 것처럼 대체하지 않습니다. 최근 완료 LOT가 짧은 기간에서 안 보이면 제품 이력 범위를 합리적으로 넓혀 확인합니다.
 35. 월간 생산계획과 실제 작업지시 규모가 비정상적으로 크게 벌어지거나 data_quality_warnings가 있으면 단위·입력값 이상을 먼저 경고하고 임의 보정하지 않습니다. 검증 전 작업지시 발행·생산 착수를 권고하지 않습니다.
 36. 생산·작업지시·완료·LOT 질문은 search_production_records, 월간 계획은 search_production_plans, 매출·수금·미수는 search_sales_and_receivables, 매입·지급·미지급은 search_purchases_and_payables, 원재료 입출고는 search_material_transactions를 우선 사용합니다.
-37. 사용자가 오늘 우선순위를 물으면 현재 공장 날짜를 확인하고 당일 생산실적이 없어도 search_production_plans를 생략하지 않습니다. 생산실적·생산계획·매출/수금·매입/지급 근거를 함께 확인해 우선순위를 정합니다.
-38. data_quality_warnings가 반환되면 답변의 판단보다 먼저 그 경고를 반영합니다. 경고가 해소되지 않은 수치를 정상 KPI로 단정하지 않습니다.`
+37. 사용자가 오늘 우선순위를 물으면 현재 공장 날짜를 확인하고 당일 생산실적이 없어도 search_production_plans를 생략하지 않습니다. 생산실적·생산계획·매출/수금·매입/지급 근거를 함께 확인해 우선순위를 정하고 첫 문장을 “가장 먼저” 또는 “최우선”으로 시작합니다.
+38. data_quality_warnings가 반환되면 답변의 판단보다 먼저 그 경고를 반영합니다. 경고가 해소되지 않은 수치를 정상 KPI로 단정하지 않습니다.
+39. 특정 연월이 명시된 일반 생산·매출·매입 조회는 특정 일자나 LOT 조회가 아닌 한 그 달의 1일부터 말일까지 start_date와 end_date를 모두 넣어 조회합니다. “7월 말 기준” 같은 표현도 7월 전체 범위를 사용합니다.
+40. 사용자가 정확한 LOT를 적으면 최종 답변에 그 LOT 문자열을 반드시 그대로 한 번 이상 표시합니다. 제품의 생산 이력을 요청하면 답변에 대상 제품명을 반드시 명시합니다.`
 }
 
 function usageOf(result: any) {
@@ -224,7 +299,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     model: input.model,
     status: 'RUNNING',
     validation_status: 'NOT_APPLICABLE',
-    prompt_version: 'MONI_CONVERSATIONS_V1_8_IMAGE_BUSINESS_REGRESSION',
+    prompt_version: 'MONI_CONVERSATIONS_V1_9_LIVE_REGRESSION',
     metadata: { state_mode: 'OPENAI_CONVERSATIONS_API', separate_turn_write_approval: true },
   }).select('id').single()
   if (runError) {
@@ -337,7 +412,8 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
       })
     }
 
-    const finalText = typeof result.finalOutput === 'string' ? result.finalOutput.trim() : JSON.stringify(result.finalOutput ?? '').trim()
+    const rawFinalText = typeof result.finalOutput === 'string' ? result.finalOutput.trim() : JSON.stringify(result.finalOutput ?? '').trim()
+    const finalText = applyAnswerContracts(rawFinalText, input.currentUserText, runtimeContext)
     if (!finalText) throw new Error('MONI가 최종 답변을 생성하지 못했습니다.')
 
     const usage = usageOf(result)
