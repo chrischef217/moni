@@ -14,10 +14,6 @@ const limit = (value: unknown, fallback = 30) => Math.max(1, Math.min(MAX_TOOL_R
 const validDate = (value: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(text(value, 10)) ? text(value, 10) : ''
 const safeSearch = (value: string) => value.replace(/[%_,()]/g, ' ')
 
-function businessIdsWithLegacy(context: MoniAgentToolContext) {
-  return [context.businessId]
-}
-
 function dateInZone(timeZone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -71,16 +67,18 @@ async function getCompanyContext(args: MoniToolJson, context: MoniAgentToolConte
 async function searchProductionRecords(args: MoniToolJson, context: MoniAgentToolContext) {
   const { startDate, endDate } = resolveRange(args)
   const product = text(args.product_query, 160)
+  const lot = text(args.lot_query, 160)
   const status = text(args.status, 80)
   let query = context.supabase
     .from('production_records')
     .select('id,lot_number,work_date,product_id,product_name,planned_quantity_g,actual_quantity_g,defect_quantity_g,sample_quantity_g,status,worker_name,inspection_result,note,production_unit_name,planned_quantity_ea,actual_quantity_ea')
-    .in('business_id', businessIdsWithLegacy(context))
+    .eq('business_id', context.businessId)
     .gte('work_date', startDate)
     .lte('work_date', endDate)
     .order('work_date', { ascending: false })
     .limit(limit(args.limit, 100))
   if (product) query = query.or(`product_name.ilike.%${safeSearch(product)}%,product_id.ilike.%${safeSearch(product)}%`)
+  if (lot) query = query.ilike('lot_number', `%${safeSearch(lot)}%`)
   if (status) query = query.eq('status', status)
   const { data, error } = await query
   if (error) throw new Error(error.message)
@@ -113,7 +111,7 @@ async function searchProductionRecords(args: MoniToolJson, context: MoniAgentToo
   }
   return {
     range: { start_date: startDate, end_date: endDate, time_zone: 'Asia/Seoul' },
-    filters: { product_query: product || null, status: status || null },
+    filters: { product_query: product || null, lot_query: lot || null, status: status || null },
     summary: {
       record_count: rows.length,
       planned_quantity_g: planned,
@@ -131,10 +129,11 @@ async function searchProductionRecords(args: MoniToolJson, context: MoniAgentToo
 async function searchProductionPlans(args: MoniToolJson, context: MoniAgentToolContext) {
   const { startDate, endDate } = resolveRange(args)
   const product = text(args.product_query, 160)
+  const scaleReviewThresholdG = 10_000_000
   let query = context.supabase
     .from('monthly_production_plans')
     .select('id,plan_date,product_id,product_name,planned_quantity_g,note,business_id,updated_at')
-    .in('business_id', businessIdsWithLegacy(context))
+    .eq('business_id', context.businessId)
     .gte('plan_date', startDate)
     .lte('plan_date', endDate)
     .order('plan_date', { ascending: true })
@@ -143,6 +142,14 @@ async function searchProductionPlans(args: MoniToolJson, context: MoniAgentToolC
   const { data, error } = await query
   if (error) throw new Error(error.message)
   const rows = data ?? []
+  const unusuallyLargePlans = rows
+    .filter((row: any) => num(row.planned_quantity_g) >= scaleReviewThresholdG)
+    .map((row: any) => ({
+      id: row.id,
+      plan_date: row.plan_date,
+      product_name: row.product_name,
+      planned_quantity_g: num(row.planned_quantity_g),
+    }))
   return {
     range: { start_date: startDate, end_date: endDate, time_zone: 'Asia/Seoul' },
     filters: { product_query: product || null },
@@ -150,6 +157,12 @@ async function searchProductionPlans(args: MoniToolJson, context: MoniAgentToolC
       plan_count: rows.length,
       planned_quantity_g: rows.reduce((sum: number, row: any) => sum + num(row.planned_quantity_g), 0),
     },
+    data_quality_warnings: unusuallyLargePlans.length ? [{
+      code: 'PRODUCTION_PLAN_SCALE_REVIEW_REQUIRED',
+      message: '개별 생산계획이 10,000kg 이상입니다. kg/g 단위 또는 입력값을 확인하기 전에는 작업지시 발행을 권고하지 마세요.',
+      threshold_g: scaleReviewThresholdG,
+      plans: unusuallyLargePlans,
+    }] : [],
     plans: rows,
   }
 }
@@ -159,7 +172,7 @@ async function getRawMaterialInventory(args: MoniToolJson, context: MoniAgentToo
   let query = context.supabase
     .from('raw_materials')
     .select('id,item_name,item_code,supplier,unit_price_per_kg,packing_weight_g,box_quantity,current_stock_g,is_active,is_stock_managed,country_of_origin,food_type,spec,storage_type,shelf_life_days')
-    .in('business_id', businessIdsWithLegacy(context))
+    .eq('business_id', context.businessId)
     .order('current_stock_g', { ascending: true })
     .limit(limit(args.limit, 50))
   if (search) query = query.or(`item_name.ilike.%${safeSearch(search)}%,item_code.ilike.%${safeSearch(search)}%,supplier.ilike.%${safeSearch(search)}%`)
@@ -187,28 +200,60 @@ async function searchRawMaterialTransactions(args: MoniToolJson, context: MoniAg
   const { startDate, endDate } = resolveRange(args)
   const material = text(args.material_query, 160)
   const txnType = text(args.transaction_type, 40).toUpperCase()
-  let query = context.supabase
+  const rowLimit = limit(args.limit, 100)
+  const applyFilters = (builder: any) => {
+    let filtered = builder
+    if (material) filtered = filtered.or(`item_name.ilike.%${safeSearch(material)}%,raw_material_name.ilike.%${safeSearch(material)}%,item_code.ilike.%${safeSearch(material)}%`)
+    if (txnType === 'INBOUND' || txnType === 'OUTBOUND') filtered = filtered.eq('txn_type', txnType)
+    return filtered
+  }
+  let query = applyFilters(context.supabase
     .from('raw_material_transactions')
-    .select('id,item_code,item_name,raw_material_name,txn_type,quantity_g,total_weight_g,unit_price,total_price,supplier,note,txn_date,transaction_date,production_record_id,source_purchase_id')
-    .in('business_id', businessIdsWithLegacy(context))
+    .select('id,item_code,item_name,raw_material_name,txn_type,quantity_g,total_weight_g,unit_price,total_price,supplier,note,txn_date,transaction_date,production_record_id,source_purchase_id', { count: 'exact' })
+    .eq('business_id', context.businessId)
     .gte('txn_date', startDate)
     .lte('txn_date', endDate)
     .order('txn_date', { ascending: false })
-    .limit(limit(args.limit, 100))
-  if (material) query = query.or(`item_name.ilike.%${safeSearch(material)}%,raw_material_name.ilike.%${safeSearch(material)}%,item_code.ilike.%${safeSearch(material)}%`)
-  if (txnType === 'INBOUND' || txnType === 'OUTBOUND') query = query.eq('txn_type', txnType)
-  const { data, error } = await query
+    .limit(rowLimit))
+  const { data, error, count } = await query
   if (error) throw new Error(error.message)
   const rows = data ?? []
+  const summaryRows: any[] = []
+  const summaryPageSize = 1000
+  let summaryOffset = 0
+  while (true) {
+    const summaryQuery = applyFilters(context.supabase
+      .from('raw_material_transactions')
+      .select('item_code,item_name,raw_material_name,txn_type,quantity_g,total_weight_g')
+      .eq('business_id', context.businessId)
+      .gte('txn_date', startDate)
+      .lte('txn_date', endDate)
+      .order('txn_date', { ascending: false })
+      .range(summaryOffset, summaryOffset + summaryPageSize - 1))
+    const { data: summaryPage, error: summaryError } = await summaryQuery
+    if (summaryError) throw new Error(summaryError.message)
+    const page = summaryPage ?? []
+    summaryRows.push(...page)
+    if (page.length < summaryPageSize || (typeof count === 'number' && summaryRows.length >= count)) break
+    summaryOffset += page.length
+  }
   const byType: MoniToolJson = {}
-  for (const row of rows) {
+  for (const row of summaryRows) {
     const key = text(row.txn_type, 40) || 'UNKNOWN'
     byType[key] = (byType[key] || 0) + num(row.quantity_g || row.total_weight_g)
   }
   return {
     range: { start_date: startDate, end_date: endDate, time_zone: 'Asia/Seoul' },
     filters: { material_query: material || null, transaction_type: txnType || null },
-    summary: { transaction_count: rows.length, quantity_g_by_type: byType },
+    result_meta: {
+      requested_limit: rowLimit,
+      returned_count: rows.length,
+      total_count: count,
+      may_be_truncated: typeof count === 'number' ? count > rows.length : rows.length >= rowLimit,
+      summary_row_count: summaryRows.length,
+      summary_is_complete: typeof count === 'number' ? summaryRows.length >= count : true,
+    },
+    summary: { transaction_count: count ?? summaryRows.length, quantity_g_by_type: byType },
     transactions: rows,
   }
 }
@@ -379,7 +424,7 @@ async function searchProductsAndRecipes(args: MoniToolJson, context: MoniAgentTo
   let query = context.supabase
     .from('products')
     .select('id,product_name,product_code,product_type,weight_g,product_spec,storage_type,shelf_life_days,shelf_life_standard,packaging_material,lot_rule,allergens,food_type_name,is_active,business_id')
-    .in('business_id', businessIdsWithLegacy(context))
+    .eq('business_id', context.businessId)
     .limit(Math.min(50, limit(args.limit, 20)))
   if (product) query = query.or(`product_name.ilike.%${safeSearch(product)}%,product_code.ilike.%${safeSearch(product)}%,id.ilike.%${safeSearch(product)}%`)
   if (bool(args.active_only)) query = query.eq('is_active', true)
