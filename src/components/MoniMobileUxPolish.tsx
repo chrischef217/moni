@@ -62,7 +62,7 @@ export default function MoniMobileUxPolish() {
     <>
       {resetOpen ? (
         <div
-          className="fixed inset-0 z-[2200] flex items-end justify-center bg-[#102f42]/28 px-4 pb-[calc(env(safe-area-inset-bottom)+20px)] pt-20 backdrop-blur-[2px] sm:items-center"
+          className="fixed inset-0 z-[2200] flex items-center justify-center bg-[#102f42]/30 px-5 py-[calc(env(safe-area-inset-top)+24px)] backdrop-blur-[3px]"
           role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setResetOpen(false)
@@ -73,18 +73,18 @@ export default function MoniMobileUxPolish() {
             aria-modal="true"
             aria-labelledby="moni-reset-title"
             aria-describedby="moni-reset-description"
-            className="w-full max-w-[390px] overflow-hidden rounded-[26px] border border-[#d5e8e4] bg-white shadow-[0_24px_70px_rgba(17,56,75,0.22)]"
+            className="w-full max-w-[360px] overflow-hidden rounded-[26px] border border-[#d5e8e4] bg-white shadow-[0_24px_70px_rgba(17,56,75,0.24)]"
           >
             <div className="px-5 pb-4 pt-5">
               <div className="mb-3 flex items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#e8f7f3] text-[20px]" aria-hidden="true">✦</span>
                 <div className="min-w-0">
                   <h2 id="moni-reset-title" className="text-[17px] font-black tracking-[-0.02em] text-[#173b52]">새 대화를 시작할까요?</h2>
-                  <p className="mt-0.5 text-[11px] font-bold text-[#6f8994]">MONI 대화 컨텍스트 초기화</p>
+                  <p className="mt-0.5 text-[11px] font-bold text-[#6f8994]">지금 대화를 비우고 새로 시작합니다</p>
                 </div>
               </div>
               <p id="moni-reset-description" className="text-[13px] leading-6 text-[#486573]">
-                현재 화면의 대화와 이어지는 컨텍스트를 정리하고 새 대화로 시작합니다. 생산·매출·재고 같은 업무 데이터와 평가·감사 기록은 삭제되지 않습니다.
+                지금까지 나눈 대화는 화면에서 사라지고 새로운 대화를 시작합니다. 생산·매출·재고 같은 회사 업무 데이터는 그대로 유지됩니다.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2 border-t border-[#e6efed] bg-[#f8fbfa] p-3">
@@ -114,7 +114,8 @@ export default function MoniMobileUxPolish() {
           color: #173b52 !important;
           box-shadow: 0 4px 14px rgba(23, 59, 82, 0.035) !important;
         }
-        [data-moni-mobile-chat] textarea[placeholder="MONI에게 메시지"] {
+        [data-moni-mobile-chat] textarea[placeholder="MONI에게 메시지"],
+        [data-moni-mobile-chat] textarea[placeholder="사진에 대해 물어보세요"] {
           transition: height 120ms ease;
         }
         [data-moni-mobile-chat] .moni-mobile-character {

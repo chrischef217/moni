@@ -9,7 +9,13 @@ const CREATE_CLIENT_CALL = /\bcreateClient\s*\(/g
 const ENV_REF = /process\.env\.([A-Z0-9_]+)/g
 const MONI_BROWSER_IMPORT = /from\s+['"](?:@\/lib\/moni\/browser-db|\.\.?\/[^'"]*browser-db)['"]/g
 const MONI_DB_IMPORT = /import\s*\{([^}]*)\}\s*from\s*['"](?:@\/lib\/moni\/db|\.\.?\/[^'"]*moni\/db)['"]/g
-const ALLOWED_BROWSER_DB_CONSUMERS = new Set(['src/components/GlobalMoniAgent.tsx'])
+// Browser consumers are allowed only while they have zero direct table calls.
+// MoniMobileChat uses this client solely for uploadToSignedUrl on a server-issued
+// private Storage capability; any future `.from('table')` call still fails below.
+const ALLOWED_BROWSER_DB_CONSUMERS = new Set([
+  'src/components/GlobalMoniAgent.tsx',
+  'src/components/MoniMobileChat.tsx',
+])
 const ALLOWED_NON_SERVER_FACTORIES = new Set(['src/lib/moni/browser-db.ts'])
 
 function walk(dir) {

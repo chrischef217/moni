@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
       if (insertError) throw new Error(insertError.message)
 
       const { data: signed, error: signedError } = await supabase.storage.from(BUCKET).createSignedUploadUrl(storagePath)
-      if (signedError || !signed?.token) {
+      if (signedError || !signed?.token || !signed?.signedUrl) {
         await supabase.from('moni_ai_attachments').update({ upload_status: 'FAILED' }).eq('id', attachment.id)
         throw new Error(signedError?.message || '업로드 주소를 만들지 못했습니다.')
       }
@@ -186,6 +186,7 @@ export async function POST(request: NextRequest) {
         bucket: BUCKET,
         path: storagePath,
         token: signed.token,
+        signed_url: signed.signedUrl,
       })
     }
 

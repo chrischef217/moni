@@ -43,7 +43,7 @@ test('internal MONI labels and stale PDF instructions are removed before users s
 })
 
 test('PDF requests return an authenticated real PDF download link with clean readable rendering', () => {
-  assert.match(runtime, /isPdfDocumentRequest\(message\)/)
+  assert.match(runtime, /isPdfDocumentRequest\((?:message|agentMessage)\)/)
   assert.match(runtime, /removePdfCapabilityRefusal/)
   assert.match(runtime, /\/api\/moni\/answer-pdf\?thread_id=/)
   assert.match(runtime, /assistant_message_id/)
