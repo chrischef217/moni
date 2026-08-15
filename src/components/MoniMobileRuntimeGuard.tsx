@@ -2,6 +2,13 @@
 
 import { useLayoutEffect } from 'react'
 
+const MESSAGE_CACHE_KEY = 'moni-mobile-message-cache-v1'
+const INTERNAL_CONTEXT_MARKERS = [
+  'MONI_SHARED_CONTEXT_START',
+  'MONI_SHARED_CONTEXT_END',
+  '[PMO 승인 공용 프로젝트 문맥]',
+  '[PMO 승인 공통 프로젝트 문맥]',
+]
 const VOICE_CONFIRM_FALLBACK_MS = 30_000
 const VOICE_WAVE_FACTORS = [0.42, 0.62, 0.86, 0.54, 1, 0.7, 0.9, 0.5, 0.96, 0.68, 0.58, 0.48, 0.4]
 
@@ -40,6 +47,29 @@ type SpeechWindow = Window & {
   webkitAudioContext?: typeof AudioContext
 }
 
+function hasInternalContextMarker(value: unknown) {
+  const content = String(value ?? '')
+  return INTERNAL_CONTEXT_MARKERS.some((marker) => content.includes(marker))
+}
+
+function scrubLeakedInternalContextCache() {
+  try {
+    const raw = window.localStorage.getItem(MESSAGE_CACHE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      window.localStorage.removeItem(MESSAGE_CACHE_KEY)
+      return
+    }
+    const cleaned = parsed.filter((item) => !hasInternalContextMarker(item && typeof item === 'object' ? item.content : ''))
+    if (cleaned.length === parsed.length) return
+    if (cleaned.length) window.localStorage.setItem(MESSAGE_CACHE_KEY, JSON.stringify(cleaned))
+    else window.localStorage.removeItem(MESSAGE_CACHE_KEY)
+  } catch {
+    window.localStorage.removeItem(MESSAGE_CACHE_KEY)
+  }
+}
+
 function syntheticFinalEvent(transcript: string): RecognitionEvent {
   const result: RecognitionResult = {
     0: { transcript },
@@ -76,6 +106,11 @@ function updateVoiceWaveFromRms(rms: number) {
 
 export default function MoniMobileRuntimeGuard() {
   useLayoutEffect(() => {
+    // Never let a stale local cache render internal PMO/system context as chat.
+    // The server/database also classify these rows as system-only; this is the
+    // last client-side defense for old Android browser caches.
+    scrubLeakedInternalContextCache()
+
     // The active mobile conversation is intentionally preserved across reloads,
     // app switching and browser process recreation. Only the explicit `새 대화`
     // action clears the thread key and visible message cache.
