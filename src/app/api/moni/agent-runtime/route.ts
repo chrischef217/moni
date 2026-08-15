@@ -80,6 +80,13 @@ function isConversationChainError(value: unknown) {
     || (/conversation/.test(message) && /(not found|invalid|expired|does not exist)/.test(message))
 }
 
+function isImageInputContractError(value: unknown) {
+  const message = String(value || '').toLowerCase()
+  return /missing mutually exclusive parameters/.test(message)
+    && /file_id/.test(message)
+    && /image_url/.test(message)
+}
+
 function shouldDiscardPreviousConversation(value: unknown) {
   const message = String(value || '').toLowerCase()
   return isConversationChainError(message)
@@ -186,7 +193,7 @@ async function downloadImage(supabase: Supabase, row: ImageAttachmentRow): Promi
 function buildImageContent(images: LoadedImage[]) {
   return images.flatMap((image, index) => [
     { type: 'input_text', text: `[첨부 사진 ${index + 1}: ${text(image.file_name, 160)}]` },
-    { type: 'input_image', image_url: image.dataUrl, detail: 'auto' },
+    { type: 'input_image', image: image.dataUrl, detail: 'auto' },
   ])
 }
 
@@ -414,7 +421,9 @@ export async function POST(request: NextRequest) {
     const rawMessage = error instanceof Error ? error.message : 'MONI 응답 생성 중 오류가 발생했습니다.'
     const message = isConversationChainError(rawMessage)
       ? 'MONI 대화 연결 상태를 복구하지 못했습니다. 같은 오류가 반복되면 자동으로 PMO 점검 대상으로 분류됩니다.'
-      : rawMessage
+      : isImageInputContractError(rawMessage)
+        ? '사진 분석 연결 중 문제가 발생했습니다. 사진은 보존되어 있으니 잠시 후 같은 사진에 대해 다시 물어봐 주세요.'
+        : rawMessage
     console.error('[MONI_AGENT_SDK_ROUTE][MONI_CONVERSATION_ROUTE_ERROR]', { message: rawMessage, occurred_at: new Date().toISOString() })
     return NextResponse.json({ ok: false, error: message }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
   }

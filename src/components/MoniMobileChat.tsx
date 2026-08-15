@@ -678,15 +678,19 @@ export default function MoniMobileChat() {
         }),
       })
       const payload = await response.json() as Reply
+
+      // Once the server has accepted the submitted turn, the photo belongs to that
+      // message and must leave the composer even when model processing fails.
+      photos.forEach((photo) => {
+        if (photo.localPreview) URL.revokeObjectURL(photo.previewUrl)
+      })
+      replacePendingPhotos([])
+
       if (!response.ok || !payload.ok || !payload.text) throw new Error(payload.error || 'MONI 응답을 받지 못했습니다.')
       if (payload.thread_id) {
         setThreadId(payload.thread_id)
         window.localStorage.setItem(THREAD_KEY, payload.thread_id)
       }
-      photos.forEach((photo) => {
-        if (photo.localPreview) URL.revokeObjectURL(photo.previewUrl)
-      })
-      replacePendingPhotos([])
       setMessages((current) => [...current, { role: 'assistant', content: payload.text! }])
       rememberDuration(kind, Math.max(1, Math.round((Date.now() - startedAt) / 1000)))
       window.setTimeout(announceMoniReply, 60)
@@ -834,7 +838,18 @@ export default function MoniMobileChat() {
                 <button type="button" onClick={() => void startVoiceInput()} disabled={sending || photoBusy} className="flex h-11 w-10 shrink-0 items-center justify-center rounded-full text-[#27343b] transition active:scale-95 disabled:opacity-30" aria-label="음성으로 입력">
                   <MicrophoneIcon />
                 </button>
-                <button type="submit" disabled={sending || photoBusy || (!input.trim() && pendingPhotos.length === 0)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#17191b] text-white transition active:scale-95 disabled:bg-[#d7dcde] disabled:text-white" aria-label="전송">
+                <button
+                  type="submit"
+                  disabled={sending || photoBusy || (!input.trim() && pendingPhotos.length === 0)}
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition active:scale-95 ${
+                    sending || photoBusy
+                      ? 'bg-[#17191b]'
+                      : (!input.trim() && pendingPhotos.length === 0)
+                        ? 'bg-[#d7dcde]'
+                        : 'bg-[#17191b]'
+                  }`}
+                  aria-label="전송"
+                >
                   <SendIcon />
                 </button>
               </div>

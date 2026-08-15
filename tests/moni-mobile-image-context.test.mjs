@@ -24,13 +24,24 @@ test('mobile uploads photos through the existing signed attachment boundary', ()
   assert.match(mobile, /pendingPhotos\.length === 0/)
 })
 
-test('agent runtime sends attached photos as model image input and binds them to the user message', () => {
+test('agent runtime sends attached photos using the Agents SDK image field and binds them to the user message', () => {
   assert.match(runtime, /type: 'input_image'/)
-  assert.match(runtime, /image_url: image\.dataUrl/)
+  assert.match(runtime, /image: image\.dataUrl/)
+  assert.doesNotMatch(runtime, /image_url: image\.dataUrl/)
   assert.match(runtime, /message_id: userMessage\.id/)
   assert.match(runtime, /referencesEarlierImage/)
   assert.match(runtime, /loadRecentReferencedImages/)
   assert.match(runtime, /첨부한 사진을 확인해줘/)
+})
+
+test('submitted photos leave the composer after the server accepts the turn even when model processing returns an error', () => {
+  const sendBlock = mobile.slice(mobile.indexOf('async function send'), mobile.indexOf('function submit'))
+  const clearIndex = sendBlock.indexOf('replacePendingPhotos([])')
+  const validationIndex = sendBlock.indexOf("if (!response.ok || !payload.ok || !payload.text)")
+  assert.ok(clearIndex >= 0, 'sent photos should be cleared from the composer')
+  assert.ok(validationIndex >= 0, 'response validation should remain present')
+  assert.ok(clearIndex < validationIndex, 'photo cleanup must happen before an HTTP/model error is surfaced')
+  assert.match(mobile, /sending \|\| photoBusy\s*\? 'bg-\[#17191b\]'/)
 })
 
 test('MONI asks one useful follow-up only when photo intent is unclear', () => {
