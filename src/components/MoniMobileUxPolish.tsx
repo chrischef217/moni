@@ -136,41 +136,58 @@ export default function MoniMobileUxPolish() {
         [data-moni-mobile-chat] [aria-label="음성 인식 상태"] {
           position: relative;
           display: block !important;
-          height: 36px;
+          width: 100%;
+          height: 38px;
           overflow: hidden;
-          padding: 0 10px;
-          -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%);
-          mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%);
+          padding: 0 5px;
+          -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 5%, #000 95%, transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 5%, #000 95%, transparent 100%);
         }
         [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span {
           position: absolute;
           top: 50%;
-          left: calc(100% + 4px);
-          width: 3px !important;
+          left: calc(100% + 8px);
+          width: 2.5px !important;
+          min-height: 4px;
           border-radius: 999px;
-          background: #8b5cf6 !important;
+          color: #8b5cf6;
+          background: currentColor !important;
           transform: translateY(-50%);
-          opacity: .92;
-          transition: height 90ms ease-out;
-          animation: moniVoiceTravel 1.56s linear infinite;
-          will-change: left, height;
+          opacity: calc(.24 + (var(--moni-voice-level, 0) * .74));
+          transition: height 70ms linear, opacity 80ms linear;
+          animation: moniVoiceTravel 2.05s linear infinite;
+          will-change: left, height, opacity;
+          box-shadow: 7px 0 0 currentColor, 14px 0 0 currentColor;
         }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(1) { height: var(--moni-wave-h1, 6px) !important; animation-delay: 0s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(2) { height: var(--moni-wave-h2, 8px) !important; animation-delay: -.12s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(3) { height: var(--moni-wave-h3, 10px) !important; animation-delay: -.24s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(4) { height: var(--moni-wave-h4, 7px) !important; animation-delay: -.36s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(5) { height: var(--moni-wave-h5, 12px) !important; animation-delay: -.48s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(6) { height: var(--moni-wave-h6, 8px) !important; animation-delay: -.60s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(7) { height: var(--moni-wave-h7, 11px) !important; animation-delay: -.72s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(8) { height: var(--moni-wave-h8, 7px) !important; animation-delay: -.84s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(9) { height: var(--moni-wave-h9, 13px) !important; animation-delay: -.96s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(10) { height: var(--moni-wave-h10, 9px) !important; animation-delay: -1.08s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(11) { height: var(--moni-wave-h11, 8px) !important; animation-delay: -1.20s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(12) { height: var(--moni-wave-h12, 7px) !important; animation-delay: -1.32s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(13) { height: var(--moni-wave-h13, 6px) !important; animation-delay: -1.44s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span::before,
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span::after {
+          content: '';
+          position: absolute;
+          left: 21px;
+          top: 50%;
+          width: 2.5px;
+          border-radius: 999px;
+          background: currentColor;
+          transform: translateY(-50%);
+        }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span::before { height: 72%; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span::after { left: 28px; height: 48%; opacity: .82; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(1) { height: var(--moni-wave-h1, 5px) !important; animation-delay: 0s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(2) { height: var(--moni-wave-h2, 6px) !important; animation-delay: -.155s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(3) { height: var(--moni-wave-h3, 8px) !important; animation-delay: -.31s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(4) { height: var(--moni-wave-h4, 5px) !important; animation-delay: -.465s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(5) { height: var(--moni-wave-h5, 9px) !important; animation-delay: -.62s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(6) { height: var(--moni-wave-h6, 6px) !important; animation-delay: -.775s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(7) { height: var(--moni-wave-h7, 8px) !important; animation-delay: -.93s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(8) { height: var(--moni-wave-h8, 5px) !important; animation-delay: -1.085s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(9) { height: var(--moni-wave-h9, 10px) !important; animation-delay: -1.24s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(10) { height: var(--moni-wave-h10, 7px) !important; animation-delay: -1.395s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(11) { height: var(--moni-wave-h11, 6px) !important; animation-delay: -1.55s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(12) { height: var(--moni-wave-h12, 5px) !important; animation-delay: -1.705s; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(13) { height: var(--moni-wave-h13, 5px) !important; animation-delay: -1.86s; }
         @keyframes moniVoiceTravel {
-          from { left: calc(100% + 4px); }
-          to { left: -4px; }
+          from { left: calc(100% + 8px); }
+          to { left: -34px; }
         }
         [data-moni-mobile-chat] .moni-markdown table {
           scrollbar-width: thin;
