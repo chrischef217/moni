@@ -65,7 +65,7 @@ function extractCandidateNames(history: RecentMessage[]) {
     .filter((candidate) => {
       const normalized = normalizeName(candidate)
       if (normalized.length < 2) return false
-      return !/^(손세정제|핸드워시|핸드솝|액상비누|제품|라벨|사진)$/.test(normalized)
+      return !/^(손세정제|핸드워시|핸드솝|handsoap|액상비누|제품|라벨|사진)$/.test(normalized)
     })
     .slice(0, 6)
 }
@@ -97,31 +97,33 @@ export async function resolvePhotoProductMasterFollowup(
   const products = (data ?? []) as ProductRow[]
   const activeProductCount = Number(count ?? products.length)
   const candidateNames = extractCandidateNames(history)
-  const source = recentPhotoContext(history)
-  const normalizedSource = normalizeName(source)
 
-  const matchedProducts = products.filter((product) => {
-    const names = [product.product_name, product.product_code, product.id]
-      .map(normalizeName)
-      .filter((value) => value.length >= 3)
-    return names.some((name) => {
-      if (normalizedSource.includes(name)) return true
-      return candidateNames.some((candidate) => {
-        const normalizedCandidate = normalizeName(candidate)
-        return normalizedCandidate === name
-          || (name.length >= 4 && normalizedCandidate.includes(name))
-          || (normalizedCandidate.length >= 4 && name.includes(normalizedCandidate))
+  // Only compare names that were actually extracted from the latest photo analysis.
+  // Never scan the whole conversation for product names: unrelated earlier MONI
+  // messages can contain valid company products and would create false matches.
+  const matchedProducts = candidateNames.length
+    ? products.filter((product) => {
+        const names = [product.product_name, product.product_code, product.id]
+          .map(normalizeName)
+          .filter((value) => value.length >= 3)
+        return names.some((name) => candidateNames.some((candidate) => {
+          const normalizedCandidate = normalizeName(candidate)
+          return normalizedCandidate === name
+            || (name.length >= 4 && normalizedCandidate.includes(name))
+            || (normalizedCandidate.length >= 4 && name.includes(normalizedCandidate))
+        }))
       })
-    })
-  })
+    : []
 
   const candidateLabel = candidateNames.length
     ? candidateNames.slice(0, 2).map((name) => `**${name}**`).join(', ')
-    : '직전 사진에서 확인한 제품명'
+    : ''
 
-  const answer = matchedProducts.length
-    ? `직전 사진의 ${candidateLabel} 기준으로 공식 활성 제품 마스터를 직접 확인했습니다.\n\n우리 제품으로 확인되는 항목은 다음과 같습니다.\n${matchedProducts.slice(0, 5).map((product) => `- **${text(product.product_name, 160) || '이름 미등록'}**${product.id ? ` · ${text(product.id, 80)}` : ''}`).join('\n')}`
-    : `직전 사진의 ${candidateLabel} 기준으로 공식 활성 제품 마스터 **${activeProductCount}건**을 직접 확인했지만 일치하는 제품이 없습니다.\n\n따라서 현재 두배의 등록 제품으로는 확인되지 않습니다.`
+  const answer = !candidateNames.length
+    ? '직전 사진 분석에서 제품 마스터와 비교할 **정확한 제품명 또는 라벨명**을 확정하지 못했습니다. 임의의 동의어로 반복 검색하지 않았습니다. 제품명이 보이는 사진을 다시 첨부해 주세요.'
+    : matchedProducts.length
+      ? `직전 사진의 ${candidateLabel} 기준으로 공식 활성 제품 마스터를 직접 확인했습니다.\n\n우리 제품으로 확인되는 항목은 다음과 같습니다.\n${matchedProducts.slice(0, 5).map((product) => `- **${text(product.product_name, 160) || '이름 미등록'}**${product.id ? ` · ${text(product.id, 80)}` : ''}`).join('\n')}`
+      : `직전 사진의 ${candidateLabel} 기준으로 공식 활성 제품 마스터 **${activeProductCount}건**을 직접 확인했지만 일치하는 제품이 없습니다.\n\n따라서 현재 두배의 등록 제품으로는 확인되지 않습니다.`
 
   return {
     answer,
