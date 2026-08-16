@@ -66,6 +66,12 @@ test('photo follow-up product membership checks bypass repeated synonym tool loo
   assert.match(photoProductFollowup, /현재 두배의 등록 제품으로는 확인되지 않습니다/)
 })
 
+test('photo product matching uses only names extracted from the latest photo analysis', () => {
+  assert.match(photoProductFollowup, /Only compare names that were actually extracted from the latest photo analysis/)
+  assert.doesNotMatch(photoProductFollowup, /normalizedSource/)
+  assert.match(photoProductFollowup, /임의의 동의어로 반복 검색하지 않았습니다/)
+})
+
 test('turn-limit errors are translated to user language without PMO internals', () => {
   assert.match(runtime, /isAgentTurnLimitError/)
   assert.match(runtime, /확인 과정이 길어져 답변을 끝내지 못했습니다/)
