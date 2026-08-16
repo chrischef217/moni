@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 const mobile = readFileSync('src/components/MoniMobileChat.tsx', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
 const conversation = readFileSync('src/lib/moni/agent/conversation-runtime.ts', 'utf8')
+const trend = readFileSync('src/lib/moni/agent/recent-product-trend.ts', 'utf8')
 
 test('mobile prevents duplicate in-flight submits and restores rejected optimistic input', () => {
   assert.match(mobile, /sendInFlightRef/)
@@ -32,4 +33,16 @@ test('relative period followups proceed without confirmation loops or fabricated
   assert.match(conversation, /최근 대화에서 이미 대상 제품·거래처·지표가 확정돼 있고/)
   assert.match(conversation, /실제 MONI 도구가 오류를 반환하지 않았는데/)
   assert.match(conversation, /MONI_CONVERSATIONS_V1_10_MOBILE_CONTINUITY/)
+})
+
+test('recent N-month product trend followup is routed through a deterministic database aggregate', () => {
+  assert.match(conversation, /isRecentProductTrendFollowupRequest/)
+  assert.match(conversation, /resolveRecentProductTrendFollowup/)
+  assert.match(conversation, /get_recent_product_monthly_trend/)
+  assert.match(conversation, /DIRECT_DB_AGGREGATE/)
+  assert.match(trend, /직전 대화에서 확정한 제품들의 월별 추이를 바로 조회했습니다/)
+  assert.match(trend, /production_records/)
+  assert.match(trend, /sales_orders/)
+  assert.match(trend, /sales_order_items/)
+  assert.match(trend, /월말 미수잔액은 주문 단위 수금 데이터를 제품별로 임의 배분하지 않기 위해/)
 })
