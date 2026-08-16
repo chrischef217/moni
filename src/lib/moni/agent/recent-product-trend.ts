@@ -99,7 +99,7 @@ async function loadAllActiveProducts(context: MoniAgentToolContext) {
 }
 
 function resolveTargetProducts(products: ProductRow[], history: RecentMessage[]) {
-  const recent = history.slice(-8).reverse()
+  const recent = history.slice(-20).reverse()
   for (const message of recent) {
     const content = String(message.content || '')
     const matches = products.filter((product) => product.product_name && content.includes(product.product_name))
@@ -108,6 +108,23 @@ function resolveTargetProducts(products: ProductRow[], history: RecentMessage[])
     }
   }
   return []
+}
+
+async function loadRecentConversationHistory(context: MoniAgentToolContext) {
+  const { data, error } = await context.supabase
+    .from('moni_ai_messages')
+    .select('role,content,created_at')
+    .eq('business_id', context.businessId)
+    .eq('thread_id', context.threadId)
+    .in('role', ['user', 'assistant'])
+    .neq('id', context.messageId)
+    .order('created_at', { ascending: false })
+    .limit(20)
+  if (error) throw new Error(`최근 대화 문맥 조회 실패: ${error.message}`)
+  return [...(data ?? [])].reverse().map((row: any) => ({
+    role: String(row.role || ''),
+    content: String(row.content || ''),
+  }))
 }
 
 async function pagedSelect<T>(builderFactory: (from: number, to: number) => any) {
@@ -133,7 +150,10 @@ export async function resolveRecentProductTrendFollowup(
   if (!monthsCount) return null
 
   const products = await loadAllActiveProducts(context)
-  const targets = resolveTargetProducts(products, history)
+  let targets = resolveTargetProducts(products, history)
+  if (!targets.length) {
+    targets = resolveTargetProducts(products, await loadRecentConversationHistory(context))
+  }
   if (!targets.length) return null
 
   const today = factoryDateParts()

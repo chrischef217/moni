@@ -46,3 +46,11 @@ test('recent N-month product trend followup is routed through a deterministic da
   assert.match(trend, /sales_order_items/)
   assert.match(trend, /월말 미수잔액은 주문 단위 수금 데이터를 제품별로 임의 배분하지 않기 위해/)
 })
+
+test('trend resolver can recover target product names when they fell outside the short agent history', () => {
+  assert.match(trend, /loadRecentConversationHistory/)
+  assert.match(trend, /\.limit\(20\)/)
+  assert.match(trend, /history\.slice\(-20\)/)
+  assert.match(trend, /if \(!targets\.length\)/)
+  assert.match(trend, /최근 대화 문맥 조회 실패/)
+})
