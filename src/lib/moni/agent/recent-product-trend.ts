@@ -25,6 +25,8 @@ export type RecentProductTrendResult = {
   products: ProductRow[]
   monthRows: Array<Omit<MonthBucket, 'sales_order_ids'> & { sales_order_count: number }>
   currency: string | null
+  productionRecordCount: number
+  salesItemCount: number
   durationMs: number
 }
 
@@ -180,7 +182,7 @@ export async function resolveRecentProductTrendFollowup(
   const orderIds = orderRows.map((row) => String(row.id || '')).filter(Boolean)
   const orderDateById = new Map(orderRows.map((row) => [String(row.id), String(row.sale_date || '')]))
 
-  let itemRows: any[] = []
+  const itemRows: any[] = []
   for (let offset = 0; offset < orderIds.length; offset += 200) {
     const orderChunk = orderIds.slice(offset, offset + 200)
     if (!orderChunk.length) continue
@@ -232,8 +234,16 @@ export async function resolveRecentProductTrendFollowup(
     ? '※ 판매 통화가 둘 이상이라 공급가액 합계를 하나의 통화 금액처럼 해석하면 안 됩니다.'
     : '※ 판매금액은 제품별 판매행의 공급가액 기준입니다.'
   const receivableNote = '※ 제품별 과거 월말 미수잔액은 주문 단위 수금 데이터를 제품별로 임의 배분하지 않기 위해 이 표에서 제외했습니다.'
+  const dataPresenceNote = productionRows.length === 0 && itemRows.length === 0
+    ? '※ 이 기간의 해당 제품 생산기록과 판매행이 공식 DB에 입력되어 있지 않아 표가 0으로 표시됩니다. 이를 실제 실적이 0이었다고 단정하지 않습니다.'
+    : productionRows.length === 0
+      ? '※ 이 기간의 해당 제품 생산기록이 공식 DB에 입력되어 있지 않아 생산 관련 값이 0으로 표시됩니다. 실제 생산실적 0을 뜻한다고 단정하지 않습니다.'
+      : itemRows.length === 0
+        ? '※ 이 기간의 해당 제품 판매행이 공식 DB에 입력되어 있지 않아 판매 관련 값이 0으로 표시됩니다. 실제 판매실적 0을 뜻한다고 단정하지 않습니다.'
+        : ''
 
-  const answer = `최근 **${monthsCount}개월(${startDate}~${endDate})** 기준으로 직전 대화에서 확정한 제품들의 월별 추이를 바로 조회했습니다.\n\n${table}\n\n대상 제품\n${productLines}\n\n${currentMonthNote}\n${salesNote}\n${receivableNote}`
+  const notes = [currentMonthNote, salesNote, receivableNote, dataPresenceNote].filter(Boolean).join('\n')
+  const answer = `최근 **${monthsCount}개월(${startDate}~${endDate})** 기준으로 직전 대화에서 확정한 제품들의 월별 추이를 바로 조회했습니다.\n\n${table}\n\n대상 제품\n${productLines}\n\n${notes}`
 
   return {
     answer,
@@ -243,6 +253,8 @@ export async function resolveRecentProductTrendFollowup(
     products: targets,
     monthRows,
     currency,
+    productionRecordCount: productionRows.length,
+    salesItemCount: itemRows.length,
     durationMs: Date.now() - startedAt,
   }
 }
