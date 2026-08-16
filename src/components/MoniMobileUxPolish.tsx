@@ -223,7 +223,7 @@ export default function MoniMobileUxPolish() {
           background-position: 0 center;
           background-size: 180px 32px;
           opacity: .72;
-          transform: scaleY(calc(.38 + var(--moni-voice-level, 0) * .82));
+          transform: scaleY(calc(.38 + var(--moni-voice-level, 0)));
           transform-origin: center;
           transition: transform 190ms cubic-bezier(.2,.65,.3,1);
           animation: moniVoiceWaveDrift 8.5s linear infinite;
