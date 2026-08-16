@@ -96,6 +96,11 @@ function isAgentTurnLimitError(value: unknown) {
   return /max turns \(\d+\) exceeded/.test(message) || /조회 단계를 초과/.test(message)
 }
 
+function isBusyAgentError(value: unknown) {
+  const message = String(value || '')
+  return /다른 답변을 처리 중입니다/.test(message) || /MONI_BUSY/.test(message)
+}
+
 function shouldDiscardPreviousConversation(value: unknown) {
   return isConversationChainError(value) || isAgentTurnLimitError(value)
 }
@@ -113,6 +118,58 @@ async function clearConversationState(supabase: Supabase, threadId: string) {
     updated_at: now,
   }).eq('id', threadId).eq('business_id', BUSINESS_ID)
   if (error) throw new Error(error.message)
+}
+
+async function activeRunForThread(supabase: Supabase, threadId: string) {
+  const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString()
+  const { data, error } = await supabase.from('moni_ai_agent_runs')
+    .select('id,started_at')
+    .eq('business_id', BUSINESS_ID)
+    .eq('thread_id', threadId)
+    .eq('status', 'RUNNING')
+    .gte('started_at', staleBefore)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return data
+}
+
+async function hideRejectedBusyTurn(
+  supabase: Supabase,
+  threadId: string,
+  messageId: string,
+  storedUserText: string,
+  currentImageRows: ImageAttachmentRow[],
+) {
+  if (currentImageRows.length) {
+    const { error: attachmentError } = await supabase.from('moni_ai_attachments')
+      .update({ message_id: null, updated_at: new Date().toISOString() })
+      .eq('business_id', BUSINESS_ID)
+      .eq('thread_id', threadId)
+      .eq('message_id', messageId)
+      .in('id', currentImageRows.map((row) => row.id))
+    if (attachmentError) throw new Error(attachmentError.message)
+  }
+
+  const { error: messageError } = await supabase.from('moni_ai_messages')
+    .update({
+      role: 'system',
+      content: `[중복 전송 자동 차단] ${storedUserText}`,
+    })
+    .eq('id', messageId)
+    .eq('thread_id', threadId)
+    .eq('business_id', BUSINESS_ID)
+    .eq('role', 'user')
+  if (messageError) throw new Error(messageError.message)
+}
+
+function busyResponse() {
+  return NextResponse.json({
+    ok: false,
+    code: 'MONI_BUSY',
+    error: 'MONI가 이전 질문에 답변 중입니다. 현재 요청은 중복 등록하지 않았습니다. 답변이 끝난 뒤 다시 보내 주세요.',
+  }, { status: 409, headers: { 'Cache-Control': 'no-store' } })
 }
 
 async function conversationIdForRun(supabase: Supabase, thread: ThreadRow) {
@@ -243,6 +300,8 @@ export async function POST(request: NextRequest) {
     const page = cleanPage(body.page)
     const supabase = createMoniServiceRoleClient()
     const thread = await ensureThread(supabase, session, text(body.thread_id, 80), page)
+    const activeRun = await activeRunForThread(supabase, thread.id)
+    if (activeRun) return busyResponse()
     let conversationId = await conversationIdForRun(supabase, thread)
 
     const currentImageRows = await loadImageRows(supabase, thread.id, attachmentIds)
@@ -416,6 +475,10 @@ export async function POST(request: NextRequest) {
       result = await runMoniConversationAgent({ ...runInput, conversationId })
     } catch (firstError) {
       const raw = firstError instanceof Error ? firstError.message : String(firstError || '')
+      if (isBusyAgentError(raw)) {
+        await hideRejectedBusyTurn(supabase, thread.id, userMessage.id, storedUserText, currentImageRows)
+        return busyResponse()
+      }
       if (!conversationId || !isConversationChainError(raw)) throw firstError
 
       await clearConversationState(supabase, thread.id)
