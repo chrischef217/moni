@@ -26,7 +26,7 @@ export const productionToolDefinitions: MoniToolDefinition[] = [
   },
   {
     name: 'search_products_and_recipes',
-    description: '제품 마스터, 레시피, 원재료 매핑을 검색한다. 정확한 제품명이 공식 마스터에 없으면 유사 제품을 같은 제품이라고 단정하지 않는다.',
+    description: '제품 마스터, 레시피, 원재료 매핑을 검색한다. 정확한 제품명이 공식 마스터에 없으면 유사 제품을 같은 제품이라고 단정하지 않는다. 특히 사진에서 식별한 제품이 우리 제품인지 확인하는 요청은 사진에서 읽은 정확한 제품명 또는 라벨명을 한 번만 검색한다. 결과가 0건이면 그 정확한 이름의 제품은 공식 제품 마스터에 등록되지 않은 것으로 답하고 종료한다. 사용자가 유사 제품이나 같은 카테고리 비교를 명시적으로 요청하지 않은 한 동의어·번역어·카테고리 키워드로 반복 검색하지 않는다.',
     parameters: z.object({
       product_query: Query,
       active_only: z.boolean().optional(),
