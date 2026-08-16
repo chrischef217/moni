@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { Agent, run, startOpenAIConversationsSession } from '@openai/agents'
 import { createMoniConversationTools } from '@/lib/moni/agent/conversation-tools'
 import type { MoniAgentToolContext } from '@/lib/moni/agent/context-types'
@@ -5,6 +6,10 @@ import type { PinnedProjectContext, ThreadMemory } from '@/lib/moni/agent/memory
 import { formatMemoryForInstructions } from '@/lib/moni/agent/memory'
 import { rolePolicySummary } from '@/lib/moni/agent/policies'
 import { reportPmoEvent } from '@/lib/moni/agent/pmo'
+import {
+  isRecentProductTrendFollowupRequest,
+  resolveRecentProductTrendFollowup,
+} from '@/lib/moni/agent/recent-product-trend'
 import type { MoniConversationRuntimeContext } from '@/lib/moni/agent/conversation-runtime-types'
 import { hasProductionMutationIntent, parseRequestedYearMonths } from '@/lib/moni/v1-contracts'
 
@@ -248,7 +253,10 @@ ${memory ? `${memory}\n` : ''}${history ? `[최근 MONI 대화 백업]\n${histor
 37. 사용자가 오늘 우선순위를 물으면 현재 공장 날짜를 확인하고 당일 생산실적이 없어도 search_production_plans를 생략하지 않습니다. 생산실적·생산계획·매출/수금·매입/지급 근거를 함께 확인해 우선순위를 정하고 첫 문장을 “가장 먼저” 또는 “최우선”으로 시작합니다.
 38. data_quality_warnings가 반환되면 답변의 판단보다 먼저 그 경고를 반영합니다. 경고가 해소되지 않은 수치를 정상 KPI로 단정하지 않습니다.
 39. 특정 연월이 명시된 일반 생산·매출·매입 조회는 특정 일자나 LOT 조회가 아닌 한 그 달의 1일부터 말일까지 start_date와 end_date를 모두 넣어 조회합니다. “7월 말 기준” 같은 표현도 7월 전체 범위를 사용합니다.
-40. 사용자가 정확한 LOT를 적으면 최종 답변에 그 LOT 문자열을 반드시 그대로 한 번 이상 표시합니다. 제품의 생산 이력을 요청하면 답변에 대상 제품명을 반드시 명시합니다.`
+40. 사용자가 정확한 LOT를 적으면 최종 답변에 그 LOT 문자열을 반드시 그대로 한 번 이상 표시합니다. 제품의 생산 이력을 요청하면 답변에 대상 제품명을 반드시 명시합니다.
+41. 사용자가 “최신 N개월”, “직전 N개월”, “오늘 기준 최근 N개월”처럼 상대 기간을 명확히 말하면 공장 기준 현재 날짜에서 곧바로 기간을 계산하고 데이터를 조회합니다. “맞으면 2026년 3월~8월이라고 답해 주세요”처럼 다시 확인을 요구하지 않습니다.
+42. 최근 대화에서 이미 대상 제품·거래처·지표가 확정돼 있고 사용자가 “그렇게 해줘”, “월별 추이”, “최신 6개월만”처럼 후속 지시를 하면 직전 대상을 그대로 이어서 조회합니다. 같은 대상이나 기간을 다시 선택하게 만들지 않습니다.
+43. 실제 MONI 도구가 오류를 반환하지 않았는데 “백엔드 조회 오류”, “재시도 중”, “연결 복구 중”이라고 말하지 않습니다. 데이터가 필요한 답변은 실제 도구를 호출해 근거를 확보하고, 호출하지 못했다면 오류를 꾸며내지 말고 지원 범위를 정확히 설명합니다.`
 }
 
 function usageOf(result: any) {
@@ -299,11 +307,11 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     model: input.model,
     status: 'RUNNING',
     validation_status: 'NOT_APPLICABLE',
-    prompt_version: 'MONI_CONVERSATIONS_V1_9_LIVE_REGRESSION',
+    prompt_version: 'MONI_CONVERSATIONS_V1_10_MOBILE_CONTINUITY',
     metadata: { state_mode: 'OPENAI_CONVERSATIONS_API', separate_turn_write_approval: true },
   }).select('id').single()
   if (runError) {
-    if (/duplicate key|unique/i.test(runError.message)) throw new Error('이 MONI 대화에서 다른 답변을 처리 중입니다. 잠시 후 다시 보내주세요.')
+    if (/duplicate key|unique/i.test(runError.message)) throw new Error('MONI_BUSY: 이 MONI 대화에서 다른 답변을 처리 중입니다.')
     throw new Error(runError.message)
   }
 
@@ -320,6 +328,97 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
   }
 
   let conversationId = text(input.conversationId, 200)
+  const forceRecentProductTrend = isRecentProductTrendFollowupRequest(
+    input.currentUserText,
+    input.context.session.role,
+    input.recentHistory,
+  )
+
+  if (forceRecentProductTrend) {
+    try {
+      if (!conversationId) conversationId = await startOpenAIConversationsSession()
+      const direct = await resolveRecentProductTrendFollowup(input.context, input.currentUserText, input.recentHistory)
+      if (direct) {
+        const toolName = 'get_recent_product_monthly_trend'
+        const toolPayload = {
+          months_count: direct.monthsCount,
+          start_date: direct.startDate,
+          end_date: direct.endDate,
+          products: direct.products,
+          month_rows: direct.monthRows,
+          currency: direct.currency,
+        }
+        const serialized = JSON.stringify(toolPayload)
+        const now = new Date().toISOString()
+        await input.context.supabase.from('moni_ai_tool_runs').insert({
+          business_id: input.context.businessId,
+          agent_run_id: runRow.id,
+          thread_id: input.context.threadId,
+          message_id: input.context.messageId,
+          step_no: 1,
+          tool_name: toolName,
+          tool_arguments: { months_count: direct.monthsCount, source: 'recent_product_trend_context' },
+          status: 'COMPLETED',
+          result_summary: {
+            preview: serialized.slice(0, 10_000),
+            truncated: serialized.length > 10_000,
+            output_bytes: Buffer.byteLength(serialized, 'utf8'),
+          },
+          duration_ms: direct.durationMs,
+          finished_at: now,
+        })
+        const usage = { requests: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+        await input.context.supabase.from('moni_ai_agent_runs').update({
+          status: 'COMPLETED',
+          step_count: 1,
+          tool_call_count: 1,
+          finished_at: now,
+          request_count: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          total_tokens: 0,
+          latency_ms: Date.now() - startedAt,
+          usage,
+          metadata: {
+            state_mode: 'DIRECT_DB_AGGREGATE',
+            conversation_id: conversationId,
+            direct_recent_product_monthly_trend: true,
+            months_count: direct.monthsCount,
+            product_ids: direct.products.map((product) => product.id),
+            canonical_business_id: input.context.businessId,
+            separate_turn_write_approval: true,
+          },
+        }).eq('id', runRow.id)
+        return {
+          text: direct.answer,
+          conversationId,
+          agentRunId: runRow.id,
+          stepCount: 1,
+          toolCallCount: 1,
+          toolsUsed: [toolName],
+          usage,
+        }
+      }
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : '최근 제품 월별 추이 조회 실패'
+      await input.context.supabase.from('moni_ai_agent_runs').update({
+        status: 'FAILED',
+        step_count: 1,
+        tool_call_count: 1,
+        error_message: rawMessage.slice(0, 2000),
+        finished_at: new Date().toISOString(),
+        latency_ms: Date.now() - startedAt,
+        metadata: {
+          state_mode: 'DIRECT_DB_AGGREGATE',
+          conversation_id: conversationId || null,
+          direct_recent_product_monthly_trend: true,
+          separate_turn_write_approval: true,
+        },
+      }).eq('id', runRow.id)
+      throw new Error(rawMessage)
+    }
+  }
+
   let result: any
   let retried = false
   const forceSalesClientMasterSummary = isSalesClientMasterSummaryRequest(input.currentUserText, input.context.session.role)
