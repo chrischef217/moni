@@ -7,14 +7,14 @@ const mobileChat = readFileSync('src/components/MoniMobileChat.tsx', 'utf8')
 const runtimeGuard = readFileSync('src/components/MoniMobileRuntimeGuard.tsx', 'utf8')
 
 test('mobile voice input renders a slow dense neutral continuous wave inside the composer', () => {
-  assert.match(polish, /aria-label=\\"음성 인식 상태\\"/)
+  assert.match(polish, /\[aria-label="음성 인식 상태"\]/)
   assert.match(polish, /background-image: url\("data:image\/svg\+xml/)
   assert.match(polish, /stroke='%23798389'/)
   assert.match(polish, /background-repeat: repeat-x/)
   assert.match(polish, /background-size: 180px 32px/)
   assert.match(polish, /animation: moniVoiceWaveDrift 8\.5s linear infinite/)
   assert.match(polish, /transform: scaleY\(calc\(\.38 \+ var\(--moni-voice-level, 0\) \* \.82\)\)/)
-  assert.match(polish, /\[aria-label=\\"음성 인식 상태\\"\] > span \{\s*display: none !important;/)
+  assert.match(polish, /\[aria-label="음성 인식 상태"\] > span \{\s*display: none !important;/)
   assert.doesNotMatch(polish, /moniVoiceTravel 2\.05s/)
 })
 
