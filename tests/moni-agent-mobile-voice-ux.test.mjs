@@ -9,7 +9,9 @@ const runtimeGuard = readFileSync('src/components/MoniMobileRuntimeGuard.tsx', '
 test('mobile voice input renders a slow dense neutral continuous wave inside the composer', () => {
   assert.match(polish, /\[aria-label="음성 인식 상태"\]/)
   assert.match(polish, /background-image: url\("data:image\/svg\+xml/)
-  assert.match(polish, /stroke='%23798389'/)
+  assert.match(polish, /http%3A%2F%2Fwww\.w3\.org%2F2000%2Fsvg/)
+  assert.match(polish, /stroke%3D%22%23798389%22/)
+  assert.doesNotMatch(polish, /xmlns=['"]http:\/\//)
   assert.match(polish, /background-repeat: repeat-x/)
   assert.match(polish, /background-size: 180px 32px/)
   assert.match(polish, /animation: moniVoiceWaveDrift 8\.5s linear infinite/)
