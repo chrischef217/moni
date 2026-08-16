@@ -5,6 +5,10 @@ import { assertSafeUserRequest } from '@/lib/moni/agent/guardrails'
 import { loadPinnedProjectContext, loadThreadMemory, maybeRefreshThreadMemory } from '@/lib/moni/agent/memory'
 import { reportPmoEvent } from '@/lib/moni/agent/pmo'
 import { runMoniConversationAgent } from '@/lib/moni/agent/conversation-runtime'
+import {
+  isPhotoProductMasterFollowupRequest,
+  resolvePhotoProductMasterFollowup,
+} from '@/lib/moni/agent/photo-product-followup'
 import type { MoniAgentPageContext } from '@/lib/moni/agent/context-types'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import {
@@ -87,11 +91,13 @@ function isImageInputContractError(value: unknown) {
     && /image_url/.test(message)
 }
 
-function shouldDiscardPreviousConversation(value: unknown) {
+function isAgentTurnLimitError(value: unknown) {
   const message = String(value || '').toLowerCase()
-  return isConversationChainError(message)
-    || /max turns \(\d+\) exceeded/.test(message)
-    || /조회 단계를 초과/.test(message)
+  return /max turns \(\d+\) exceeded/.test(message) || /조회 단계를 초과/.test(message)
+}
+
+function shouldDiscardPreviousConversation(value: unknown) {
+  return isConversationChainError(value) || isAgentTurnLimitError(value)
 }
 
 function appendOnce(value: string, addition: string) {
@@ -269,8 +275,126 @@ export async function POST(request: NextRequest) {
       loadPinnedProjectContext(supabase, BUSINESS_ID),
     ])
 
-    const recentContextText = (recentRows ?? []).map((row: any) => String(row.content || '')).join('\n')
+    const recentHistory = [...(recentRows ?? [])].reverse().map((row: any) => ({ role: String(row.role), content: String(row.content || '') }))
+    const recentContextText = recentHistory.map((row) => row.content).join('\n')
     const model = modelName()
+
+    if (isPhotoProductMasterFollowupRequest(agentMessage, session.role, recentHistory)) {
+      const direct = await resolvePhotoProductMasterFollowup({
+        supabase,
+        businessId: BUSINESS_ID,
+        threadId: thread.id,
+        messageId: userMessage.id,
+        page,
+        session: { loginId: session.loginId, displayName: session.displayName, role: session.role },
+      }, recentHistory)
+      const finalText = sanitizeMoniUserFacingText(direct.answer)
+      const now = new Date().toISOString()
+      const usage = { requests: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+
+      const { data: directRun, error: directRunError } = await supabase.from('moni_ai_agent_runs').insert({
+        business_id: BUSINESS_ID,
+        thread_id: thread.id,
+        message_id: userMessage.id,
+        provider: 'openai',
+        model,
+        status: 'COMPLETED',
+        validation_status: 'NOT_APPLICABLE',
+        prompt_version: 'MONI_DIRECT_PHOTO_PRODUCT_MASTER_V1',
+        step_count: 1,
+        tool_call_count: 1,
+        request_count: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+        latency_ms: direct.durationMs,
+        finished_at: now,
+        usage,
+        metadata: {
+          direct_photo_product_master_match: true,
+          canonical_business_id: BUSINESS_ID,
+          candidate_names: direct.candidateNames,
+          matched_product_count: direct.matchedProducts.length,
+          active_product_count: direct.activeProductCount,
+        },
+      }).select('id').single()
+      if (directRunError) throw new Error(directRunError.message)
+
+      const toolPayload = {
+        candidate_names: direct.candidateNames,
+        matched_products: direct.matchedProducts,
+        active_product_count: direct.activeProductCount,
+      }
+      const serializedToolPayload = JSON.stringify(toolPayload)
+      const { error: directToolError } = await supabase.from('moni_ai_tool_runs').insert({
+        business_id: BUSINESS_ID,
+        agent_run_id: directRun.id,
+        thread_id: thread.id,
+        message_id: userMessage.id,
+        step_no: 1,
+        tool_name: 'get_photo_product_master_match',
+        tool_arguments: { source: 'recent_photo_context' },
+        status: 'COMPLETED',
+        result_summary: {
+          preview: serializedToolPayload.slice(0, 10_000),
+          truncated: serializedToolPayload.length > 10_000,
+          output_bytes: Buffer.byteLength(serializedToolPayload, 'utf8'),
+        },
+        duration_ms: direct.durationMs,
+        finished_at: now,
+      })
+      if (directToolError) throw new Error(directToolError.message)
+
+      const { data: assistantMessage, error: assistantError } = await supabase.from('moni_ai_messages').insert({
+        business_id: BUSINESS_ID,
+        thread_id: thread.id,
+        role: 'assistant',
+        content: finalText,
+        page_context: page,
+        provider: 'openai',
+        model,
+      }).select('id').single()
+      if (assistantError) throw new Error(assistantError.message)
+
+      const { error: threadUpdateError } = await supabase.from('moni_ai_threads').update({
+        title: thread.title || agentMessage.replace(/\s+/g, ' ').slice(0, 80),
+        current_page: page,
+        updated_at: now,
+        last_message_at: now,
+        openai_conversation_id: conversationId || null,
+        openai_conversation_updated_at: now,
+      }).eq('id', thread.id)
+      if (threadUpdateError) throw new Error(threadUpdateError.message)
+
+      void maybeRefreshThreadMemory({
+        supabase, businessId: BUSINESS_ID, threadId: thread.id, model, existingMemory: threadMemory,
+      }).catch((memoryError) => {
+        console.error('[MONI_MEMORY_REFRESH_ERROR]', {
+          thread_id: thread.id,
+          message: memoryError instanceof Error ? memoryError.message : 'memory refresh failed',
+        })
+      })
+
+      return NextResponse.json({
+        ok: true,
+        text: finalText,
+        provider: 'openai',
+        model,
+        thread_id: thread.id,
+        assistant_message_id: assistantMessage.id,
+        attachment_count: currentImageRows.length,
+        image_context_count: loadedImages.length,
+        agent_runtime: 'MONI_DIRECT_PHOTO_PRODUCT_MASTER_V1',
+        conversation_state: conversationId ? 'SERVER_MANAGED' : 'RESET_AFTER_FAILED_RUN',
+        agent_run_id: directRun.id,
+        agent_steps: 1,
+        tool_call_count: 1,
+        tools_used: ['get_photo_product_master_match'],
+        usage,
+        pmo_handoff_status: thread.pmo_handoff_status || 'NONE',
+      }, { headers: { 'Cache-Control': 'no-store' } })
+    }
+
     const currentContent: Record<string, unknown>[] = [
       { type: 'input_text', text: agentMessage },
       ...buildImageContent(loadedImages),
@@ -279,7 +403,7 @@ export async function POST(request: NextRequest) {
       model,
       currentContent,
       currentUserText: agentMessage,
-      recentHistory: [...(recentRows ?? [])].reverse().map((row: any) => ({ role: String(row.role), content: String(row.content || '') })),
+      recentHistory,
       threadMemory, pinnedProjectContext,
       context: {
         supabase, businessId: BUSINESS_ID, threadId: thread.id, messageId: userMessage.id, page,
@@ -420,10 +544,12 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : 'MONI 응답 생성 중 오류가 발생했습니다.'
     const message = isConversationChainError(rawMessage)
-      ? 'MONI 대화 연결 상태를 복구하지 못했습니다. 같은 오류가 반복되면 자동으로 PMO 점검 대상으로 분류됩니다.'
-      : isImageInputContractError(rawMessage)
-        ? '사진 분석 연결 중 문제가 발생했습니다. 사진은 보존되어 있으니 잠시 후 같은 사진에 대해 다시 물어봐 주세요.'
-        : rawMessage
+      ? 'MONI 대화 연결 상태를 다시 준비하고 있습니다. 같은 질문을 한 번만 다시 보내 주세요.'
+      : isAgentTurnLimitError(rawMessage)
+        ? '확인 과정이 길어져 답변을 끝내지 못했습니다. 대화 연결은 자동으로 정리됐으니 같은 질문을 한 번만 다시 보내 주세요.'
+        : isImageInputContractError(rawMessage)
+          ? '사진 분석 연결 중 문제가 발생했습니다. 사진은 보존되어 있으니 잠시 후 같은 사진에 대해 다시 물어봐 주세요.'
+          : rawMessage
     console.error('[MONI_AGENT_SDK_ROUTE][MONI_CONVERSATION_ROUTE_ERROR]', { message: rawMessage, occurred_at: new Date().toISOString() })
     return NextResponse.json({ ok: false, error: message }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
   }
