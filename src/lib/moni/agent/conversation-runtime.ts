@@ -14,6 +14,7 @@ import type { MoniConversationRuntimeContext } from '@/lib/moni/agent/conversati
 import { hasProductionMutationIntent, parseRequestedYearMonths } from '@/lib/moni/v1-contracts'
 
 const MAX_AGENT_TURNS = 8
+const BOUNDED_READ_TIMEOUT_MS = 45_000
 const DEFAULT_AGENT_RUN_OPTIONS = { maxTurns: MAX_AGENT_TURNS } as const
 const text = (value: unknown, max = 4000) => String(value ?? '').trim().slice(0, max)
 
@@ -307,7 +308,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     model: input.model,
     status: 'RUNNING',
     validation_status: 'NOT_APPLICABLE',
-    prompt_version: 'MONI_CONVERSATIONS_V1_10_MOBILE_CONTINUITY',
+    prompt_version: 'MONI_CONVERSATIONS_V1_11_THINKING_WATCHDOG',
     metadata: { state_mode: 'OPENAI_CONVERSATIONS_API', separate_turn_write_approval: true },
   }).select('id').single()
   if (runError) {
@@ -498,17 +499,45 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     })
     const currentInput = [{ role: 'user', content: input.currentContent }] as Record<string, unknown>[]
 
+    const runSupervisor = async (activeConversationId: string) => {
+      if (!boundedReadPath) {
+        return run(supervisor, currentInput as any, {
+          ...DEFAULT_AGENT_RUN_OPTIONS,
+          context: runtimeContext,
+          maxTurns: runTurnLimit,
+          conversationId: activeConversationId,
+          reasoningItemIdPolicy: 'preserve',
+        })
+      }
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), BOUNDED_READ_TIMEOUT_MS)
+      try {
+        return await run(supervisor, currentInput as any, {
+          ...DEFAULT_AGENT_RUN_OPTIONS,
+          context: runtimeContext,
+          maxTurns: runTurnLimit,
+          conversationId: activeConversationId,
+          reasoningItemIdPolicy: 'preserve',
+          signal: controller.signal,
+        })
+      } catch (error) {
+        if (controller.signal.aborted) {
+          throw new Error(`MONI_TIMEOUT: 읽기 전용 조회가 ${Math.round(BOUNDED_READ_TIMEOUT_MS / 1000)}초 안에 완료되지 않아 자동 종료했습니다. 같은 질문을 한 번만 다시 보내 주세요.`)
+        }
+        throw error
+      } finally {
+        clearTimeout(timeout)
+      }
+    }
+
     try {
-      result = await run(supervisor, currentInput as any, {
-        ...DEFAULT_AGENT_RUN_OPTIONS, context: runtimeContext, maxTurns: runTurnLimit, conversationId, reasoningItemIdPolicy: 'preserve',
-      })
+      result = await runSupervisor(conversationId)
     } catch (error) {
       if (!isConversationError(error)) throw error
       conversationId = await startOpenAIConversationsSession()
       retried = true
-      result = await run(supervisor, currentInput as any, {
-        ...DEFAULT_AGENT_RUN_OPTIONS, context: runtimeContext, maxTurns: runTurnLimit, conversationId, reasoningItemIdPolicy: 'preserve',
-      })
+      result = await runSupervisor(conversationId)
     }
 
     const rawFinalText = typeof result.finalOutput === 'string' ? result.finalOutput.trim() : JSON.stringify(result.finalOutput ?? '').trim()
@@ -528,6 +557,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         forced_monthly_snapshot: forceMonthlySnapshot, forced_monthly_comparison: forceMonthlyComparison,
         forced_lot_lookup: forceLotLookup, forced_sales_client_master_summary: false,
         run_turn_limit: runTurnLimit, bounded_reasoning_effort: boundedReadPath ? 'minimal' : null,
+        bounded_read_timeout_ms: boundedReadPath ? BOUNDED_READ_TIMEOUT_MS : null,
         separate_turn_write_approval: true,
       },
     }).eq('id', runRow.id)
@@ -540,6 +570,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : 'MONI Agent 실행 실패'
     const maxTurnsExceeded = /max turns \(\d+\) exceeded/i.test(rawMessage)
+    const timedOut = /^MONI_TIMEOUT:/.test(rawMessage)
     const userMessage = maxTurnsExceeded
       ? 'MONI가 조회 단계를 초과했습니다. 같은 실패가 반복되지 않도록 PMO 개선 항목으로 기록했습니다.'
       : rawMessage
@@ -553,20 +584,24 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         conversation_rebuilt: retried, forced_monthly_snapshot: forceMonthlySnapshot,
         forced_monthly_comparison: forceMonthlyComparison, forced_lot_lookup: forceLotLookup,
         forced_sales_client_master_summary: false, run_turn_limit: runTurnLimit,
+        bounded_read_timeout_ms: boundedReadPath ? BOUNDED_READ_TIMEOUT_MS : null,
         separate_turn_write_approval: true,
       },
     }).eq('id', runRow.id)
 
-    if (maxTurnsExceeded) {
+    if (maxTurnsExceeded || timedOut) {
       await reportPmoEvent({
         supabase: input.context.supabase, businessId: input.context.businessId, threadId: input.context.threadId,
         messageId: input.context.messageId, agentRunId: runRow.id, page: input.context.page, session: input.context.session,
       }, {
-        event_type: 'CAPABILITY_GAP', severity: 'MEDIUM', title: 'MONI 응답 단계 초과',
-        summary: '사용자 질문 처리 중 Agent turn budget을 초과했습니다. 질문 유형별 단일 복합 조회 또는 결정적 라우팅이 필요합니다.',
+        event_type: 'CAPABILITY_GAP', severity: timedOut ? 'HIGH' : 'MEDIUM', title: timedOut ? 'MONI 읽기 조회 시간 초과' : 'MONI 응답 단계 초과',
+        summary: timedOut
+          ? '읽기 전용 월간/LOT 조회가 제한 시간 안에 완료되지 않아 안전하게 중단했습니다. 쓰기 실행에는 이 제한을 적용하지 않습니다.'
+          : '사용자 질문 처리 중 Agent turn budget을 초과했습니다. 질문 유형별 단일 복합 조회 또는 결정적 라우팅이 필요합니다.',
         evidence: {
           capability: forceMonthlyComparison ? 'monthly_management_comparison' : forceMonthlySnapshot ? 'monthly_management_snapshot' : forceLotLookup ? 'exact_lot_lookup' : 'agent_turn_budget',
           detail: text(input.currentUserText, 1200),
+          timeout_ms: timedOut ? BOUNDED_READ_TIMEOUT_MS : null,
         },
         detection_source: 'SYSTEM_DETECTED', confidence: 1, validation_status: 'VERIFIED',
         validator_name: 'MONI_RUNTIME', recommended_owner: 'GPT(PMO)',
