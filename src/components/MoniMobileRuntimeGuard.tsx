@@ -10,6 +10,7 @@ const INTERNAL_CONTEXT_MARKERS = [
   '[PMO 승인 공통 프로젝트 문맥]',
 ]
 const VOICE_CONFIRM_FALLBACK_MS = 30_000
+const BOUNDED_READ_CLIENT_TIMEOUT_MS = 55_000
 const VOICE_WAVE_FACTORS = [0.42, 0.62, 0.86, 0.54, 1, 0.7, 0.9, 0.5, 0.96, 0.68, 0.58, 0.48, 0.4]
 
 type RecognitionAlternative = { transcript: string }
@@ -104,12 +105,104 @@ function updateVoiceWaveFromRms(rms: number) {
   root.style.setProperty('--moni-voice-level', normalized.toFixed(3))
 }
 
+function isBoundedReadQuestion(value: unknown) {
+  const normalized = String(value ?? '').replace(/\s+/g, ' ').trim()
+  if (!normalized) return false
+
+  const mutationObject = /(생산계획|작업지시|작업지시서|생산완료|생산확정|원재료\s*차감)/
+  const mutationAction = /(등록|생성|만들|추가|수정|변경|취소|삭제|완료\s*(?:처리|입력|해|시켜)|확정\s*(?:처리|해|시켜)|차감\s*(?:처리|해|시켜)|실행|진행)/
+  if (mutationObject.test(normalized) && mutationAction.test(normalized)) return false
+
+  if (/\bLOT\d{8}-\d+\b/i.test(normalized)) return true
+
+  const hasMonth = /(?:(?:20\d{2})\s*년\s*)?(?:1[0-2]|0?[1-9])\s*월|지난\s*달|전월|이번\s*달|이번\s*월|금월|현재\s*월/.test(normalized)
+  const hasProduction = /(생산|작업지시|생산계획|생산실적)/.test(normalized)
+  const hasAnalysisIntent = /(분석|종합|요약|평가|현황|상황|예측|보고|비교|차이|대비)/.test(normalized)
+  return hasMonth && hasProduction && hasAnalysisIntent
+}
+
+function agentRuntimeQuestion(input: RequestInfo | URL, init?: RequestInit) {
+  const method = String(init?.method || (typeof Request !== 'undefined' && input instanceof Request ? input.method : 'GET')).toUpperCase()
+  if (method !== 'POST') return ''
+
+  const rawUrl = typeof input === 'string'
+    ? input
+    : input instanceof URL
+      ? input.toString()
+      : input.url
+  let pathname = rawUrl
+  try { pathname = new URL(rawUrl, window.location.href).pathname } catch { /* compare raw path */ }
+  if (pathname !== '/api/moni/agent-runtime') return ''
+
+  if (typeof init?.body !== 'string') return ''
+  try {
+    const parsed = JSON.parse(init.body) as { message?: unknown }
+    return String(parsed.message ?? '')
+  } catch {
+    return ''
+  }
+}
+
+function timeoutRecoveryResponse(message?: string) {
+  const error = message && /^MONI_TIMEOUT:/.test(message)
+    ? message.replace(/^MONI_TIMEOUT:\s*/, '')
+    : 'MONI 응답 시간이 길어 자동으로 중단했습니다. 질문은 입력창에 복구했으니 한 번만 다시 보내 주세요.'
+  return new Response(JSON.stringify({ ok: false, code: 'MONI_BUSY', error }), {
+    status: 409,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  })
+}
+
 export default function MoniMobileRuntimeGuard() {
   useLayoutEffect(() => {
     // Never let a stale local cache render internal PMO/system context as chat.
     // The server/database also classify these rows as system-only; this is the
     // last client-side defense for old Android browser caches.
     scrubLeakedInternalContextCache()
+
+    const originalFetch = window.fetch.bind(window)
+    const originalSetTimeout = window.setTimeout.bind(window)
+    const originalClearTimeout = window.clearTimeout.bind(window)
+
+    // The server already cancels bounded read-only agent runs at 45 seconds.
+    // This client watchdog is deliberately slower and only covers the same
+    // read-only monthly/LOT paths. It never times out prepare/execute writes.
+    window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const question = agentRuntimeQuestion(input, init)
+      if (!isBoundedReadQuestion(question)) return originalFetch(input, init)
+
+      const controller = new AbortController()
+      let watchdogFired = false
+      const upstreamSignal = init?.signal
+      const relayAbort = () => controller.abort()
+      if (upstreamSignal) {
+        if (upstreamSignal.aborted) controller.abort()
+        else upstreamSignal.addEventListener('abort', relayAbort, { once: true })
+      }
+
+      const watchdog = originalSetTimeout(() => {
+        watchdogFired = true
+        controller.abort()
+      }, BOUNDED_READ_CLIENT_TIMEOUT_MS)
+
+      try {
+        const response = await originalFetch(input, { ...init, signal: controller.signal })
+        if (response.status >= 500) {
+          try {
+            const payload = await response.clone().json() as { error?: unknown }
+            const error = String(payload.error ?? '')
+            if (/^MONI_TIMEOUT:/.test(error)) return timeoutRecoveryResponse(error)
+          } catch { /* keep original response */ }
+        }
+        return response
+      } catch (error) {
+        if (watchdogFired) return timeoutRecoveryResponse()
+        throw error
+      } finally {
+        originalClearTimeout(watchdog)
+        upstreamSignal?.removeEventListener('abort', relayAbort)
+      }
+    }) as typeof window.fetch
 
     // The active mobile conversation is intentionally preserved across reloads,
     // app switching and browser process recreation. Only the explicit `새 대화`
@@ -123,11 +216,13 @@ export default function MoniMobileRuntimeGuard() {
     // and cumulative-result duplication. For MONI mobile we instead keep one
     // MediaRecorder microphone session open until the user explicitly presses
     // 확인, then transcribe the single captured recording once on the server.
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      return () => {
+        window.fetch = originalFetch as typeof window.fetch
+      }
+    }
 
     let transcriptionPending = false
-    const originalSetTimeout = window.setTimeout.bind(window)
-    const originalClearTimeout = window.clearTimeout.bind(window)
 
     // MoniMobileChat has a defensive 900ms recognition-finalization timer for
     // the old browser SpeechRecognition path. Server transcription can take
@@ -340,6 +435,7 @@ export default function MoniMobileRuntimeGuard() {
 
     return () => {
       updateVoiceWaveFromRms(0)
+      window.fetch = originalFetch as typeof window.fetch
       speechWindow.SpeechRecognition = OriginalSpeechRecognition
       speechWindow.webkitSpeechRecognition = OriginalWebkitSpeechRecognition
       window.setTimeout = originalSetTimeout as typeof window.setTimeout
