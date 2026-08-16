@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { Agent, run, startOpenAIConversationsSession } from '@openai/agents'
 import { createMoniConversationTools } from '@/lib/moni/agent/conversation-tools'
 import type { MoniAgentToolContext } from '@/lib/moni/agent/context-types'
@@ -5,6 +6,10 @@ import type { PinnedProjectContext, ThreadMemory } from '@/lib/moni/agent/memory
 import { formatMemoryForInstructions } from '@/lib/moni/agent/memory'
 import { rolePolicySummary } from '@/lib/moni/agent/policies'
 import { reportPmoEvent } from '@/lib/moni/agent/pmo'
+import {
+  isRecentProductTrendFollowupRequest,
+  resolveRecentProductTrendFollowup,
+} from '@/lib/moni/agent/recent-product-trend'
 import type { MoniConversationRuntimeContext } from '@/lib/moni/agent/conversation-runtime-types'
 import { hasProductionMutationIntent, parseRequestedYearMonths } from '@/lib/moni/v1-contracts'
 
@@ -323,6 +328,97 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
   }
 
   let conversationId = text(input.conversationId, 200)
+  const forceRecentProductTrend = isRecentProductTrendFollowupRequest(
+    input.currentUserText,
+    input.context.session.role,
+    input.recentHistory,
+  )
+
+  if (forceRecentProductTrend) {
+    try {
+      if (!conversationId) conversationId = await startOpenAIConversationsSession()
+      const direct = await resolveRecentProductTrendFollowup(input.context, input.currentUserText, input.recentHistory)
+      if (direct) {
+        const toolName = 'get_recent_product_monthly_trend'
+        const toolPayload = {
+          months_count: direct.monthsCount,
+          start_date: direct.startDate,
+          end_date: direct.endDate,
+          products: direct.products,
+          month_rows: direct.monthRows,
+          currency: direct.currency,
+        }
+        const serialized = JSON.stringify(toolPayload)
+        const now = new Date().toISOString()
+        await input.context.supabase.from('moni_ai_tool_runs').insert({
+          business_id: input.context.businessId,
+          agent_run_id: runRow.id,
+          thread_id: input.context.threadId,
+          message_id: input.context.messageId,
+          step_no: 1,
+          tool_name: toolName,
+          tool_arguments: { months_count: direct.monthsCount, source: 'recent_product_trend_context' },
+          status: 'COMPLETED',
+          result_summary: {
+            preview: serialized.slice(0, 10_000),
+            truncated: serialized.length > 10_000,
+            output_bytes: Buffer.byteLength(serialized, 'utf8'),
+          },
+          duration_ms: direct.durationMs,
+          finished_at: now,
+        })
+        const usage = { requests: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+        await input.context.supabase.from('moni_ai_agent_runs').update({
+          status: 'COMPLETED',
+          step_count: 1,
+          tool_call_count: 1,
+          finished_at: now,
+          request_count: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          total_tokens: 0,
+          latency_ms: Date.now() - startedAt,
+          usage,
+          metadata: {
+            state_mode: 'DIRECT_DB_AGGREGATE',
+            conversation_id: conversationId,
+            direct_recent_product_monthly_trend: true,
+            months_count: direct.monthsCount,
+            product_ids: direct.products.map((product) => product.id),
+            canonical_business_id: input.context.businessId,
+            separate_turn_write_approval: true,
+          },
+        }).eq('id', runRow.id)
+        return {
+          text: direct.answer,
+          conversationId,
+          agentRunId: runRow.id,
+          stepCount: 1,
+          toolCallCount: 1,
+          toolsUsed: [toolName],
+          usage,
+        }
+      }
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : '최근 제품 월별 추이 조회 실패'
+      await input.context.supabase.from('moni_ai_agent_runs').update({
+        status: 'FAILED',
+        step_count: 1,
+        tool_call_count: 1,
+        error_message: rawMessage.slice(0, 2000),
+        finished_at: new Date().toISOString(),
+        latency_ms: Date.now() - startedAt,
+        metadata: {
+          state_mode: 'DIRECT_DB_AGGREGATE',
+          conversation_id: conversationId || null,
+          direct_recent_product_monthly_trend: true,
+          separate_turn_write_approval: true,
+        },
+      }).eq('id', runRow.id)
+      throw new Error(rawMessage)
+    }
+  }
+
   let result: any
   let retried = false
   const forceSalesClientMasterSummary = isSalesClientMasterSummaryRequest(input.currentUserText, input.context.session.role)
