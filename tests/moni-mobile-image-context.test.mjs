@@ -6,6 +6,7 @@ const mobile = readFileSync('src/components/MoniMobileChat.tsx', 'utf8')
 const polish = readFileSync('src/components/MoniMobileUxPolish.tsx', 'utf8')
 const runtime = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
 const conversation = readFileSync('src/lib/moni/agent/conversation-runtime.ts', 'utf8')
+const photoProductFollowup = readFileSync('src/lib/moni/agent/photo-product-followup.ts', 'utf8')
 
 test('mobile offers both camera capture and photo picker', () => {
   assert.match(mobile, /카메라로 촬영/)
@@ -51,6 +52,31 @@ test('MONI asks one useful follow-up only when photo intent is unclear', () => {
   assert.match(conversation, /질문을 딱 하나만 합니다/)
   assert.match(conversation, /사용자의 목적이 분명하면 불필요하게 다시 묻지 말고 바로 분석합니다/)
   assert.match(conversation, /첫 번째 사진/)
+})
+
+test('photo follow-up product membership checks bypass repeated synonym tool loops', () => {
+  assert.match(runtime, /isPhotoProductMasterFollowupRequest/)
+  assert.match(runtime, /resolvePhotoProductMasterFollowup/)
+  assert.match(runtime, /MONI_DIRECT_PHOTO_PRODUCT_MASTER_V1/)
+  assert.match(runtime, /get_photo_product_master_match/)
+  assert.match(photoProductFollowup, /\.from\('products'\)/)
+  assert.match(photoProductFollowup, /\.eq\('business_id', context\.businessId\)/)
+  assert.match(photoProductFollowup, /\.eq\('is_active', true\)/)
+  assert.match(photoProductFollowup, /공식 활성 제품 마스터/)
+  assert.match(photoProductFollowup, /현재 두배의 등록 제품으로는 확인되지 않습니다/)
+})
+
+test('photo product matching uses only names extracted from the latest photo analysis', () => {
+  assert.match(photoProductFollowup, /Only compare names that were actually extracted from the latest photo analysis/)
+  assert.doesNotMatch(photoProductFollowup, /normalizedSource/)
+  assert.match(photoProductFollowup, /임의의 동의어로 반복 검색하지 않았습니다/)
+})
+
+test('turn-limit errors are translated to user language without PMO internals', () => {
+  assert.match(runtime, /isAgentTurnLimitError/)
+  assert.match(runtime, /확인 과정이 길어져 답변을 끝내지 못했습니다/)
+  const catchBlock = runtime.slice(runtime.lastIndexOf('} catch (error)'))
+  assert.doesNotMatch(catchBlock, /PMO 개선 항목/)
 })
 
 test('new conversation dialog is centered and uses plain user language', () => {
