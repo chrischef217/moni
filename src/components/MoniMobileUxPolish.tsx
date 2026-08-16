@@ -12,6 +12,10 @@ const DOCUMENT_LINK_SELECTOR = [
   '.moni-markdown a[href*="/sales-management/"]',
 ].join(',')
 
+type AudioWindow = Window & {
+  webkitAudioContext?: typeof AudioContext
+}
+
 function markDocumentLinks(root: ParentNode) {
   root.querySelectorAll<HTMLAnchorElement>(DOCUMENT_LINK_SELECTOR).forEach((link) => {
     link.target = '_blank'
@@ -40,9 +44,72 @@ export default function MoniMobileUxPolish() {
       return originalConfirm(message)
     }) as typeof window.confirm
 
+    let cueContext: AudioContext | null = null
+
+    function playVoiceCue(kind: 'start' | 'stop') {
+      try {
+        const audioWindow = window as AudioWindow
+        const AudioContextClass = window.AudioContext || audioWindow.webkitAudioContext
+        if (!AudioContextClass) return
+        const context = cueContext || new AudioContextClass()
+        cueContext = context
+        void context.resume()
+
+        const now = context.currentTime
+        const notes = kind === 'start'
+          ? [
+              { at: 0, from: 600, to: 690, duration: 0.062 },
+              { at: 0.078, from: 760, to: 880, duration: 0.068 },
+            ]
+          : [
+              { at: 0, from: 760, to: 680, duration: 0.066 },
+              { at: 0.082, from: 560, to: 470, duration: 0.074 },
+            ]
+
+        notes.forEach((note) => {
+          const oscillator = context.createOscillator()
+          const gain = context.createGain()
+          const startedAt = now + note.at
+          const endedAt = startedAt + note.duration
+
+          oscillator.type = 'sine'
+          oscillator.frequency.setValueAtTime(note.from, startedAt)
+          oscillator.frequency.exponentialRampToValueAtTime(note.to, endedAt)
+          gain.gain.setValueAtTime(0.0001, startedAt)
+          gain.gain.exponentialRampToValueAtTime(0.028, startedAt + 0.009)
+          gain.gain.exponentialRampToValueAtTime(0.0001, endedAt)
+          oscillator.connect(gain)
+          gain.connect(context.destination)
+          oscillator.start(startedAt)
+          oscillator.stop(endedAt + 0.005)
+        })
+      } catch {
+        // Voice button sounds are feedback only and must never block recording.
+      }
+    }
+
+    const handleVoiceCueClick = (event: Event) => {
+      const target = event.target instanceof Element ? event.target : null
+      const button = target?.closest('button')
+      if (!button || !root.contains(button) || button.hasAttribute('disabled')) return
+
+      if (button.getAttribute('aria-label') === '음성으로 입력') {
+        playVoiceCue('start')
+        return
+      }
+
+      const composer = button.closest('[data-moni-mobile-composer]')
+      const voiceWave = composer?.querySelector('[aria-label="음성 인식 상태"]')
+      if (voiceWave && button.textContent?.trim() === '확인') playVoiceCue('stop')
+    }
+
+    root.addEventListener('click', handleVoiceCueClick, true)
+
     return () => {
       observer.disconnect()
+      root.removeEventListener('click', handleVoiceCueClick, true)
       window.confirm = originalConfirm
+      if (cueContext) void cueContext.close().catch(() => undefined)
     }
   }, [])
 
@@ -134,61 +201,47 @@ export default function MoniMobileUxPolish() {
             box-shadow: 0 4px 14px rgba(23, 90, 154, .12), 0 0 0 3px rgba(47, 128, 237, .09);
           }
         }
+        [data-moni-mobile-chat] div:has(> div > [aria-label="음성 인식 상태"]) {
+          min-height: 62px !important;
+          gap: 7px !important;
+          padding: 6px 10px !important;
+        }
         [data-moni-mobile-chat] [aria-label="음성 인식 상태"] {
           position: relative;
           display: block !important;
           width: 100%;
-          height: 38px;
+          height: 30px;
           overflow: hidden;
-          padding: 0 5px;
-          -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 5%, #000 95%, transparent 100%);
-          mask-image: linear-gradient(90deg, transparent 0, #000 5%, #000 95%, transparent 100%);
+          padding: 0;
         }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span {
-          position: absolute;
-          top: 50%;
-          left: calc(100% + 8px);
-          width: 2.5px !important;
-          min-height: 4px;
-          border-radius: 999px;
-          color: #8b5cf6;
-          background: currentColor !important;
-          transform: translateY(-50%);
-          opacity: calc(.24 + (var(--moni-voice-level, 0) * .74));
-          transition: height 70ms linear, opacity 80ms linear;
-          animation: moniVoiceTravel 2.05s linear infinite;
-          will-change: left, height, opacity;
-          box-shadow: 7px 0 0 currentColor, 14px 0 0 currentColor;
-        }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span::before,
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span::after {
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"]::before {
           content: '';
           position: absolute;
-          left: 21px;
-          top: 50%;
-          width: 2.5px;
-          border-radius: 999px;
-          background: currentColor;
-          transform: translateY(-50%);
+          inset: 0;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 32'%3E%3Cpath d='M0 16 C3 16 3 13 6 13 S9 19 12 19 S15 14 18 14 S21 18 24 18 S27 15 30 15 S33 17 36 17 S39 12 42 12 S45 20 48 20 S51 14 54 14 S57 18 60 18 S63 15 66 15 S69 17 72 17 S75 13 78 13 S81 19 84 19 S87 14 90 14 S93 18 96 18 S99 15 102 15 S105 17 108 17 S111 12 114 12 S117 20 120 20 S123 14 126 14 S129 18 132 18 S135 15 138 15 S141 17 144 17 S147 13 150 13 S153 19 156 19 S159 14 162 14 S165 18 168 18 S171 15 174 15 S177 16 180 16' fill='none' stroke='%23798389' stroke-width='1.15' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+          background-repeat: repeat-x;
+          background-position: 0 center;
+          background-size: 180px 32px;
+          opacity: .72;
+          transform: scaleY(calc(.38 + var(--moni-voice-level, 0)));
+          transform-origin: center;
+          transition: transform 190ms cubic-bezier(.2,.65,.3,1);
+          animation: moniVoiceWaveDrift 8.5s linear infinite;
+          will-change: background-position, transform;
         }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span::before { height: 72%; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span::after { left: 28px; height: 48%; opacity: .82; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(1) { height: var(--moni-wave-h1, 5px) !important; animation-delay: 0s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(2) { height: var(--moni-wave-h2, 6px) !important; animation-delay: -.155s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(3) { height: var(--moni-wave-h3, 8px) !important; animation-delay: -.31s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(4) { height: var(--moni-wave-h4, 5px) !important; animation-delay: -.465s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(5) { height: var(--moni-wave-h5, 9px) !important; animation-delay: -.62s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(6) { height: var(--moni-wave-h6, 6px) !important; animation-delay: -.775s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(7) { height: var(--moni-wave-h7, 8px) !important; animation-delay: -.93s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(8) { height: var(--moni-wave-h8, 5px) !important; animation-delay: -1.085s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(9) { height: var(--moni-wave-h9, 10px) !important; animation-delay: -1.24s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(10) { height: var(--moni-wave-h10, 7px) !important; animation-delay: -1.395s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(11) { height: var(--moni-wave-h11, 6px) !important; animation-delay: -1.55s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(12) { height: var(--moni-wave-h12, 5px) !important; animation-delay: -1.705s; }
-        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span:nth-child(13) { height: var(--moni-wave-h13, 5px) !important; animation-delay: -1.86s; }
-        @keyframes moniVoiceTravel {
-          from { left: calc(100% + 8px); }
-          to { left: -34px; }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span {
+          display: none !important;
+        }
+        [data-moni-mobile-chat] [aria-label="음성 인식 상태"] + div {
+          min-height: 14px !important;
+          margin-top: 0 !important;
+          color: #8a9499 !important;
+          font-size: 10px !important;
+          line-height: 14px !important;
+        }
+        @keyframes moniVoiceWaveDrift {
+          from { background-position-x: 0; }
+          to { background-position-x: -180px; }
         }
         [data-moni-mobile-chat] .moni-markdown table {
           scrollbar-width: thin;
@@ -223,7 +276,7 @@ export default function MoniMobileUxPolish() {
         }
         @media (prefers-reduced-motion: reduce) {
           [data-moni-mobile-chat] .moni-new-chat-button,
-          [data-moni-mobile-chat] [aria-label="음성 인식 상태"] > span {
+          [data-moni-mobile-chat] [aria-label="음성 인식 상태"]::before {
             animation: none !important;
           }
         }
