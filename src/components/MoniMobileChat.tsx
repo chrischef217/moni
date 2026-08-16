@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { moniBrowserDb } from '@/lib/moni/browser-db'
 
 type Message = { role: 'user' | 'assistant'; content: string }
-type Reply = { ok?: boolean; text?: string; error?: string; thread_id?: string }
+type Reply = { ok?: boolean; text?: string; error?: string; code?: string; thread_id?: string }
 type RequestKind = 'monthly-comparison' | 'monthly-report' | 'general'
 type PendingPhoto = {
   id: string
@@ -263,6 +263,7 @@ export default function MoniMobileChat() {
   const finishTimerRef = useRef<number | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const pendingPhotosRef = useRef<PendingPhoto[]>([])
+  const sendInFlightRef = useRef(false)
 
   const status = error ? 'issue' : sending ? 'thinking' : listening ? 'listening' : 'live'
   const statusLabel = error ? 'ISSUE' : sending ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'
@@ -653,7 +654,8 @@ export default function MoniMobileChat() {
   async function send(raw: string) {
     const rawQuestion = raw.trim()
     const photos = [...pendingPhotosRef.current]
-    if ((!rawQuestion && photos.length === 0) || sending || listening || photoBusy) return
+    if ((!rawQuestion && photos.length === 0) || sending || listening || photoBusy || sendInFlightRef.current) return
+    sendInFlightRef.current = true
     const questionForAgent = rawQuestion || '첨부한 사진을 확인해줘.'
     const displayQuestion = [rawQuestion, photos.length ? `📷 사진 ${photos.length}장 첨부` : ''].filter(Boolean).join('\n\n')
     const kind = requestKind(questionForAgent)
@@ -679,6 +681,17 @@ export default function MoniMobileChat() {
       })
       const payload = await response.json() as Reply
 
+      if (response.status === 409 && payload.code === 'MONI_BUSY') {
+        setMessages((current) => {
+          const last = current[current.length - 1]
+          return last?.role === 'user' && last.content === displayQuestion ? current.slice(0, -1) : current
+        })
+        setInput(rawQuestion)
+        setError(payload.error || 'MONI가 이전 질문에 답변 중입니다. 답변이 끝난 뒤 다시 보내 주세요.')
+        playCue('error')
+        return
+      }
+
       // Once the server has accepted the submitted turn, the photo belongs to that
       // message and must leave the composer even when model processing fails.
       photos.forEach((photo) => {
@@ -698,6 +711,7 @@ export default function MoniMobileChat() {
       setError(sendError instanceof Error ? sendError.message : 'MONI 연결 오류')
       playCue('error')
     } finally {
+      sendInFlightRef.current = false
       setSending(false)
     }
   }
