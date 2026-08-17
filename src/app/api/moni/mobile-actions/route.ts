@@ -37,14 +37,15 @@ function parseDateHint(value: string) {
 }
 
 function parsePackCount(value: string) {
-  const match = value.match(/(?:총\s*)?([\d,.]+)\s*(?:개|포|봉|통|말|박스|box|ea)\b/i)
+  const match = value.match(/(?:총\s*)?([\d,.]+)\s*(?:개|포|봉|통|말|박스|box|ea)(?=$|\s|[,.·/)\]])/i)
   const count = match ? numeric(match[1]) : null
   return count && count > 0 && Number.isInteger(count) ? count : null
 }
 
 function parseExplicitWeightG(value: string) {
-  const preferred = value.match(/(?:총|전체|합계)\s*(?:중량|무게|수량)?\s*[:：]?\s*([\d,.]+)\s*(kg|킬로그램|킬로|g|그램)\b/i)
-  const fallback = value.match(/([\d,.]+)\s*(kg|킬로그램|킬로|g|그램)\b/i)
+  const unitEnd = '(?=$|\\s|[,.·/)\\]])'
+  const preferred = value.match(new RegExp(`(?:총|전체|합계)\\s*(?:중량|무게|수량)?\\s*[:：]?\\s*([\\d,.]+)\\s*(kg|킬로그램|킬로|g|그램)${unitEnd}`, 'i'))
+  const fallback = value.match(new RegExp(`([\\d,.]+)\\s*(kg|킬로그램|킬로|g|그램)${unitEnd}`, 'i'))
   const match = preferred || fallback
   if (!match) return null
   const amount = numeric(match[1])
