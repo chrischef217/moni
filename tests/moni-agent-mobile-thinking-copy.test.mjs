@@ -27,7 +27,7 @@ test('thinking detail keeps one current-progress label and removes duplicate pro
   assert.match(fix, /현재 진행 ·/)
   assert.doesNotMatch(fix, /진행 현황 ·/)
   assert.match(fix, /질문에 필요한 대상·기간·데이터 범위를 확인하고 있습니다/)
-  assert.match(fix, /STATUS_REFRESH_MS = 1200/)
+  assert.match(fix, /STATUS_REFRESH_MS = 500/)
   assert.match(fix, /payload\.run_status === 'RUNNING'/)
 })
 
