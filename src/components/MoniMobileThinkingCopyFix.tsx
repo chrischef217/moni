@@ -7,7 +7,6 @@ type ThinkingStage = 'normal' | 'grace' | 'detail-1' | 'detail-2' | 'apology'
 type RuntimeStatusPayload = {
   ok?: boolean
   progress?: string | null
-  progress_detail?: string | null
   run_status?: string | null
   completed_tool_steps?: number
   current_tool_label?: string | null
@@ -25,9 +24,9 @@ function stripDuplicateElapsedTime(value: string) {
 
 function visibleDetail(stage: ThinkingStage | '', rawDetail: string) {
   const cleanedDetail = stripDuplicateElapsedTime(rawDetail)
-  if (stage === 'normal') return cleanedDetail || '질문의 범위와 필요한 데이터를 확인하고 있습니다.'
-  if (stage === 'grace') return cleanedDetail || '예상 시간을 넘어 실제 실행 상태를 다시 확인하고 있습니다.'
-  return cleanedDetail || '실제 실행 상태를 확인하면서 다음 단계를 진행하고 있습니다.'
+  if (stage === 'normal') return cleanedDetail || '질문에 필요한 대상·기간·데이터 범위를 확인하고 있습니다.'
+  if (stage === 'grace') return cleanedDetail || '실제 실행 기록을 다시 확인하면서 다음 처리 단계를 이어가고 있습니다.'
+  return cleanedDetail || '현재 실행 단계와 완료된 조회를 기준으로 답변을 계속 준비하고 있습니다.'
 }
 
 export default function MoniMobileThinkingCopyFix() {
@@ -37,7 +36,6 @@ export default function MoniMobileThinkingCopyFix() {
     const chatRoot = root
 
     let liveProgress = ''
-    let liveProgressDetail = ''
     let statusTimer: number | null = null
     let statusRequestInFlight = false
 
@@ -57,9 +55,7 @@ export default function MoniMobileThinkingCopyFix() {
       mainLine.dataset.moniProgressMainLine = 'true'
       const detailLine = document.createElement('div')
       detailLine.dataset.moniProgressDetailLine = 'true'
-      const metaLine = document.createElement('div')
-      metaLine.dataset.moniProgressMetaLine = 'true'
-      lines.append(mainLine, detailLine, metaLine)
+      lines.append(mainLine, detailLine)
 
       const firstChild = panel.firstElementChild
       if (firstChild?.nextSibling) panel.insertBefore(lines, firstChild.nextSibling)
@@ -76,7 +72,6 @@ export default function MoniMobileThinkingCopyFix() {
       const lines = ensureLines(panel)
       const mainLine = lines.querySelector<HTMLElement>('[data-moni-progress-main-line]')
       const detailLine = lines.querySelector<HTMLElement>('[data-moni-progress-detail-line]')
-      const metaLine = lines.querySelector<HTMLElement>('[data-moni-progress-meta-line]')
 
       const stage = String(panel.dataset.moniThinkingStage || chatRoot.dataset.moniThinkingStage || '') as ThinkingStage | ''
       const main = String(panel.dataset.moniProgressMain || '').trim()
@@ -84,15 +79,10 @@ export default function MoniMobileThinkingCopyFix() {
         || '예상 대기 시간을 계산하고 있습니다.'
       const adaptiveDetail = stripDuplicateElapsedTime(String(panel.dataset.moniProgressDetail || '').trim())
       const detail = stripDuplicateElapsedTime(liveProgress) || visibleDetail(stage, adaptiveDetail)
-      const meta = stripDuplicateElapsedTime(liveProgressDetail) || (stage === 'normal'
-        ? '실제 실행 기록을 약 1초 간격으로 확인해 현재 단계를 갱신합니다.'
-        : '예상 시간을 넘긴 뒤에도 실제 실행 기록 기준으로 현재 위치를 계속 표시합니다.')
 
       const detailText = detail ? `현재 진행 · ${detail}` : ''
-      const metaText = meta ? `진행 현황 · ${meta}` : ''
       if (mainLine && mainLine.textContent !== main) mainLine.textContent = main
       if (detailLine && detailLine.textContent !== detailText) detailLine.textContent = detailText
-      if (metaLine && metaLine.textContent !== metaText) metaLine.textContent = metaText
       lines.hidden = false
     }
 
@@ -115,7 +105,6 @@ export default function MoniMobileThinkingCopyFix() {
 
         if (payload.run_status === 'RUNNING') {
           liveProgress = stripDuplicateElapsedTime(String(payload.progress || '').trim())
-          liveProgressDetail = stripDuplicateElapsedTime(String(payload.progress_detail || '').trim())
           syncAll()
         }
       } catch {
@@ -135,7 +124,6 @@ export default function MoniMobileThinkingCopyFix() {
         window.clearInterval(statusTimer)
         statusTimer = null
         liveProgress = ''
-        liveProgressDetail = ''
       }
       syncAll()
     }
@@ -174,7 +162,7 @@ export default function MoniMobileThinkingCopyFix() {
         visibility: visible !important;
         opacity: 1 !important;
         height: auto !important;
-        min-height: 48px !important;
+        min-height: 36px !important;
         gap: 5px;
         margin-top: 7px;
       }
@@ -199,12 +187,13 @@ export default function MoniMobileThinkingCopyFix() {
         line-height: 1.55;
       }
 
-      [data-moni-mobile-chat] [data-moni-progress-meta-line="true"] {
-        display: block !important;
-        color: #8a9da6;
-        font-size: 10px;
-        font-weight: 650;
-        line-height: 1.5;
+      [data-moni-mobile-chat] [data-moni-progress-detail-line="true"]::after {
+        content: '  •••';
+        display: inline-block;
+        min-width: 24px;
+        letter-spacing: 1.8px;
+        opacity: 0.36;
+        animation: moni-progress-dots 1.15s ease-in-out infinite;
       }
 
       [data-moni-mobile-chat] [data-moni-thinking-stage="grace"] [data-moni-progress-main-line="true"],
@@ -219,6 +208,18 @@ export default function MoniMobileThinkingCopyFix() {
       [data-moni-mobile-chat] [data-moni-thinking-stage="detail-2"] [data-moni-progress-detail-line="true"],
       [data-moni-mobile-chat] [data-moni-thinking-stage="apology"] [data-moni-progress-detail-line="true"] {
         color: #9f3f39;
+      }
+
+      @keyframes moni-progress-dots {
+        0%, 100% { opacity: 0.28; transform: translateX(0); }
+        50% { opacity: 0.9; transform: translateX(2px); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        [data-moni-mobile-chat] [data-moni-progress-detail-line="true"]::after {
+          animation: none;
+          opacity: 0.6;
+        }
       }
     `}</style>
   )
