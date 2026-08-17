@@ -37,6 +37,13 @@ test('the card supports one-pass fields, supplier suggestion, and selectable del
   assert.match(card, /여기서는 삭제\/수정 불가/)
 })
 
+test('photo analysis arriving after the blank card only backfills still-empty fields', () => {
+  assert.match(card, /lastAssistantMessageId/)
+  assert.match(card, /assistantId && assistantId !== lastAssistantMessageId\.current/)
+  assert.match(card, /const inferred = initialFields\(next\)/)
+  assert.match(card, /if \(!text\(merged\[key\]\) && text\(value\)\) merged\[key\] = value/)
+})
+
 test('explicit inbound or purchase-entry commands open a draft even before exact photo material matching', () => {
   assert.match(route, /const create = \/\(\?:입고\|매입\)/)
   assert.match(route, /if \(rawContext && remove\) return 'DELETE'/)
