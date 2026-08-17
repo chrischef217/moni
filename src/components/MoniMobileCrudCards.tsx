@@ -111,6 +111,7 @@ export default function MoniMobileCrudCards() {
   const [error, setError] = useState('')
   const refreshTimer = useRef<number | null>(null)
   const lastSourceKey = useRef('')
+  const lastAssistantMessageId = useRef('')
 
   const threadId = () => text(window.localStorage.getItem(THREAD_KEY))
 
@@ -125,11 +126,23 @@ export default function MoniMobileCrudCards() {
       setCard(next)
       if (next?.stage === 'draft') {
         const sourceKey = `${next.source_user_message_id}:${next.operation}`
+        const assistantId = text(next.source_assistant_message_id)
         if (lastSourceKey.current !== sourceKey) {
           lastSourceKey.current = sourceKey
+          lastAssistantMessageId.current = assistantId
           setFields(initialFields(next))
           setSelectedTransactionId('')
           setError('')
+        } else if (assistantId && assistantId !== lastAssistantMessageId.current) {
+          lastAssistantMessageId.current = assistantId
+          const inferred = initialFields(next)
+          setFields((current) => {
+            const merged = { ...current }
+            for (const [key, value] of Object.entries(inferred)) {
+              if (!text(merged[key]) && text(value)) merged[key] = value
+            }
+            return merged
+          })
         }
       }
     } catch {
