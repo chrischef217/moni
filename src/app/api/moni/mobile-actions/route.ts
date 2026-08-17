@@ -61,7 +61,7 @@ function classifyRawMaterialMutation(userText: string, contextText: string, hasM
   const remove = /(?:삭제|지워|제거|없애)/.test(current)
   if (rawContext && remove) return 'DELETE' as const
   if (rawContext && update) return 'UPDATE' as const
-  if ((rawContext || hasMaterialMatch) && create) return 'CREATE' as const
+  if (create) return 'CREATE' as const
   return null
 }
 
