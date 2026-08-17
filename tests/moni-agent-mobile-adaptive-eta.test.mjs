@@ -8,11 +8,15 @@ const etaLib = await readFile(new URL('../src/lib/moni/mobile-eta.ts', import.me
 const etaRoute = await readFile(new URL('../src/app/api/moni/agent-eta/route.ts', import.meta.url), 'utf8')
 const statusRoute = await readFile(new URL('../src/app/api/moni/agent-status/route.ts', import.meta.url), 'utf8')
 
-test('thinking heartbeat is single-source, soft, and accelerates by overtime stage', () => {
+test('thinking heartbeat is single-source, loud but limited, friendly, and accelerates by overtime stage', () => {
   assert.doesNotMatch(interaction, /createOscillator|playHeartbeat|heartbeatTimer/)
   assert.match(heartbeat, /oscillator\.type = 'sine'/)
-  assert.match(heartbeat, /peak: 0\.17/)
-  assert.match(heartbeat, /peak: 0\.125/)
+  assert.match(heartbeat, /harmonic\.type = 'triangle'/)
+  assert.match(heartbeat, /master\.gain\.value = 0\.98/)
+  assert.match(heartbeat, /limiter\.threshold\.value = -5/)
+  assert.match(heartbeat, /limiter\.ratio\.value = 12/)
+  assert.match(heartbeat, /peak: 0\.90/)
+  assert.match(heartbeat, /peak: 0\.74/)
   assert.match(heartbeat, /normal: 1320/)
   assert.match(heartbeat, /'detail-1': 820/)
   assert.match(heartbeat, /'detail-2': 640/)
