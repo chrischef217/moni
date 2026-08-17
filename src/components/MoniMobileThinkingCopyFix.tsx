@@ -38,10 +38,12 @@ export default function MoniMobileThinkingCopyFix() {
       const rawDetail = String(panel.dataset.moniProgressDetail || '').trim()
       const stage = String(panel.dataset.moniThinkingStage || '') as ThinkingStage | ''
       const detail = visibleDetail(stage, rawDetail)
+      const detailText = detail ? `현재 진행 · ${detail}` : ''
 
-      if (mainLine) mainLine.textContent = main
-      if (detailLine) detailLine.textContent = detail ? `현재 진행 · ${detail}` : ''
-      lines.hidden = !main && !detail
+      if (mainLine && mainLine.textContent !== main) mainLine.textContent = main
+      if (detailLine && detailLine.textContent !== detailText) detailLine.textContent = detailText
+      const shouldHide = !main && !detail
+      if (lines.hidden !== shouldHide) lines.hidden = shouldHide
     }
 
     function syncAll() {
