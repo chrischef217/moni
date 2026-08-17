@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 const VOICE_TARGET_SELECTOR = '[aria-label="음성 인식 상태"]'
 const HISTORY_SAMPLES = 144
 const SAMPLE_INTERVAL_MS = 58
-const SILENCE_THRESHOLD = 0.055
+const SILENCE_THRESHOLD = 0.14
 const ACTIVE_EPSILON = 0.012
 const MAX_DEVICE_PIXEL_RATIO = 2
 
