@@ -34,7 +34,7 @@ export default function MoniMobileHeartbeatBoost() {
     const chatRoot = root
 
     let context: AudioContext | null = null
-    let compressor: DynamicsCompressorNode | null = null
+    let limiter: DynamicsCompressorNode | null = null
     let master: GainNode | null = null
     let timer: number | null = null
     let active = false
@@ -46,16 +46,17 @@ export default function MoniMobileHeartbeatBoost() {
         if (!AudioContextClass) return null
         if (!context) {
           context = new AudioContextClass()
-          compressor = context.createDynamicsCompressor()
-          compressor.threshold.value = -14
-          compressor.knee.value = 24
-          compressor.ratio.value = 2.4
-          compressor.attack.value = 0.006
-          compressor.release.value = 0.2
+          limiter = context.createDynamicsCompressor()
+          // Keep the heartbeat near the already-audible button feedback level without digital clipping.
+          limiter.threshold.value = -5
+          limiter.knee.value = 8
+          limiter.ratio.value = 12
+          limiter.attack.value = 0.001
+          limiter.release.value = 0.12
 
           master = context.createGain()
-          master.gain.value = 0.72
-          compressor.connect(master)
+          master.gain.value = 0.98
+          limiter.connect(master)
           master.connect(context.destination)
         }
         if (context.state !== 'running') await context.resume()
@@ -79,14 +80,15 @@ export default function MoniMobileHeartbeatBoost() {
       emitHeartbeat(stage)
 
       const audio = await ensureGraph()
-      if (!audio || !compressor || !active) return
+      if (!audio || !limiter || !active) return
 
       const stageIndex = stage === 'normal' ? 0 : stage === 'grace' ? 1 : stage === 'detail-1' ? 2 : stage === 'detail-2' ? 3 : 4
-      const pitchScale = 1 + stageIndex * 0.012
+      const pitchScale = 1 + stageIndex * 0.014
       const baseTime = audio.currentTime + 0.008
+      // Two rounded, phone-speaker-friendly pulses: loud like the button cue, but sine/triangle based so it stays cute instead of harsh.
       const pulses = [
-        { at: 0, duration: 0.105, from: 188, to: 148, peak: 0.17 },
-        { at: 0.17, duration: 0.09, from: 210, to: 166, peak: 0.125 },
+        { at: 0, duration: 0.115, from: 286, to: 218, peak: 0.90 },
+        { at: 0.175, duration: 0.10, from: 326, to: 248, peak: 0.74 },
       ]
 
       for (const pulse of pulses) {
@@ -100,28 +102,32 @@ export default function MoniMobileHeartbeatBoost() {
         oscillator.frequency.setValueAtTime(pulse.from * pitchScale, startedAt)
         oscillator.frequency.exponentialRampToValueAtTime(pulse.to * pitchScale, endedAt)
         filter.type = 'lowpass'
-        filter.frequency.setValueAtTime(720, startedAt)
-        filter.Q.setValueAtTime(0.5, startedAt)
+        filter.frequency.setValueAtTime(980, startedAt)
+        filter.Q.setValueAtTime(0.45, startedAt)
         gain.gain.setValueAtTime(0.0001, startedAt)
-        gain.gain.exponentialRampToValueAtTime(pulse.peak, startedAt + 0.02)
+        gain.gain.exponentialRampToValueAtTime(pulse.peak, startedAt + 0.012)
         gain.gain.exponentialRampToValueAtTime(0.0001, endedAt)
         oscillator.connect(filter)
         filter.connect(gain)
-        gain.connect(compressor)
+        gain.connect(limiter)
         oscillator.start(startedAt)
         oscillator.stop(endedAt + 0.01)
 
-        // A tiny second harmonic keeps the sound warm and friendly without clipping.
+        // A soft upper layer gives small phone speakers enough presence without using the harsh square wave of button clicks.
         const harmonic = audio.createOscillator()
         const harmonicGain = audio.createGain()
-        harmonic.type = 'sine'
-        harmonic.frequency.setValueAtTime(pulse.from * pitchScale * 2, startedAt)
-        harmonic.frequency.exponentialRampToValueAtTime(pulse.to * pitchScale * 2, endedAt)
+        const harmonicFilter = audio.createBiquadFilter()
+        harmonic.type = 'triangle'
+        harmonic.frequency.setValueAtTime(pulse.from * pitchScale * 1.78, startedAt)
+        harmonic.frequency.exponentialRampToValueAtTime(pulse.to * pitchScale * 1.78, endedAt)
+        harmonicFilter.type = 'lowpass'
+        harmonicFilter.frequency.setValueAtTime(1450, startedAt)
         harmonicGain.gain.setValueAtTime(0.0001, startedAt)
-        harmonicGain.gain.exponentialRampToValueAtTime(pulse.peak * 0.12, startedAt + 0.024)
+        harmonicGain.gain.exponentialRampToValueAtTime(pulse.peak * 0.24, startedAt + 0.016)
         harmonicGain.gain.exponentialRampToValueAtTime(0.0001, endedAt)
-        harmonic.connect(harmonicGain)
-        harmonicGain.connect(compressor)
+        harmonic.connect(harmonicFilter)
+        harmonicFilter.connect(harmonicGain)
+        harmonicGain.connect(limiter)
         harmonic.start(startedAt)
         harmonic.stop(endedAt + 0.01)
       }

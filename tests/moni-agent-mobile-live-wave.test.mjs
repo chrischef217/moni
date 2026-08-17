@@ -25,6 +25,16 @@ test('THINKING waveform pulses from the same heartbeat event instead of an indep
   assert.doesNotMatch(liveWave, /@keyframes moniThinkingWave/)
 })
 
+test('heartbeat is raised near button-feedback output while retaining a limiter and rounded waveform', () => {
+  assert.match(heartbeat, /master\.gain\.value = 0\.98/)
+  assert.match(heartbeat, /limiter\.threshold\.value = -5/)
+  assert.match(heartbeat, /limiter\.ratio\.value = 12/)
+  assert.match(heartbeat, /peak: 0\.90/)
+  assert.match(heartbeat, /peak: 0\.74/)
+  assert.match(heartbeat, /oscillator\.type = 'sine'/)
+  assert.match(heartbeat, /harmonic\.type = 'triangle'/)
+})
+
 test('overtime THINKING state turns red while the shared heartbeat accelerates', () => {
   assert.match(liveWave, /data-moni-heartbeat-overtime="true"/)
   assert.match(liveWave, /#dc2626/)
@@ -32,6 +42,21 @@ test('overtime THINKING state turns red while the shared heartbeat accelerates',
   assert.match(heartbeat, /normal: 1320/)
   assert.match(heartbeat, /grace: 1040/)
   assert.match(heartbeat, /apology: 500/)
+})
+
+test('top-left MONI character changes expression and heat level with the exact heartbeat stage', () => {
+  assert.match(liveWave, /root\.dataset\.moniHeartbeatStage = String\(detail\.stage\)/)
+  assert.match(liveWave, /moni-heartbeat-character-hit/)
+  assert.match(liveWave, /data-moni-heartbeat-stage="normal"/)
+  assert.match(liveWave, /data-moni-heartbeat-stage="grace"/)
+  assert.match(liveWave, /data-moni-heartbeat-stage="detail-1"/)
+  assert.match(liveWave, /data-moni-heartbeat-stage="detail-2"/)
+  assert.match(liveWave, /data-moni-heartbeat-stage="apology"/)
+  assert.match(liveWave, /@keyframes moniThinkingEyes/)
+  assert.match(liveWave, /@keyframes moniThinkingOverheat/)
+  assert.match(liveWave, /@keyframes moniHeatPuffs/)
+  assert.match(liveWave, /@keyframes moniOverheatRing/)
+  assert.match(liveWave, /@keyframes moniCharacterHeartbeatHit/)
 })
 
 test('listening waveform reacts to real microphone level already exposed by runtime guard', () => {
