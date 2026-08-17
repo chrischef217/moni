@@ -5,7 +5,14 @@ import { useLayoutEffect } from 'react'
 type ThinkingStage = 'normal' | 'grace' | 'detail-1' | 'detail-2' | 'apology'
 type AudioWindow = Window & { webkitAudioContext?: typeof AudioContext }
 
-const BOOST_MULTIPLIER = 10
+type HeartbeatDetail = {
+  stage: ThinkingStage
+  delayMs: number
+  overtime: boolean
+}
+
+const HEARTBEAT_EVENT = 'moni:heartbeat'
+const HEARTBEAT_LEAD_MS = 260
 const STAGE_DELAY_MS: Record<ThinkingStage, number> = {
   normal: 1320,
   grace: 1040,
@@ -40,14 +47,14 @@ export default function MoniMobileHeartbeatBoost() {
         if (!context) {
           context = new AudioContextClass()
           compressor = context.createDynamicsCompressor()
-          compressor.threshold.value = -28
-          compressor.knee.value = 18
-          compressor.ratio.value = 7
-          compressor.attack.value = 0.002
-          compressor.release.value = 0.16
+          compressor.threshold.value = -14
+          compressor.knee.value = 24
+          compressor.ratio.value = 2.4
+          compressor.attack.value = 0.006
+          compressor.release.value = 0.2
 
           master = context.createGain()
-          master.gain.value = 0.96
+          master.gain.value = 0.72
           compressor.connect(master)
           master.connect(context.destination)
         }
@@ -58,55 +65,65 @@ export default function MoniMobileHeartbeatBoost() {
       }
     }
 
-    async function playBoostedHeartbeat() {
+    function emitHeartbeat(stage: ThinkingStage) {
+      const delayMs = STAGE_DELAY_MS[stage]
+      const detail: HeartbeatDetail = { stage, delayMs, overtime: stage !== 'normal' }
+      chatRoot.style.setProperty('--moni-heartbeat-ms', `${delayMs}ms`)
+      chatRoot.dataset.moniHeartbeatStage = stage
+      chatRoot.dataset.moniHeartbeatOvertime = detail.overtime ? 'true' : 'false'
+      window.dispatchEvent(new CustomEvent<HeartbeatDetail>(HEARTBEAT_EVENT, { detail }))
+    }
+
+    async function playCuteHeartbeat() {
+      const stage = currentStage(chatRoot)
+      emitHeartbeat(stage)
+
       const audio = await ensureGraph()
       if (!audio || !compressor || !active) return
 
-      const stage = currentStage(chatRoot)
       const stageIndex = stage === 'normal' ? 0 : stage === 'grace' ? 1 : stage === 'detail-1' ? 2 : stage === 'detail-2' ? 3 : 4
-      const pitchScale = 1 + stageIndex * 0.028
-      const baseTime = audio.currentTime + 0.006
+      const pitchScale = 1 + stageIndex * 0.012
+      const baseTime = audio.currentTime + 0.008
       const pulses = [
-        { at: 0, duration: 0.15, from: 265, to: 205, peak: 0.24 },
-        { at: 0.185, duration: 0.135, from: 235, to: 182, peak: 0.19 },
+        { at: 0, duration: 0.105, from: 188, to: 148, peak: 0.17 },
+        { at: 0.17, duration: 0.09, from: 210, to: 166, peak: 0.125 },
       ]
 
       for (const pulse of pulses) {
-        const boost = audio.createGain()
-        boost.gain.setValueAtTime(BOOST_MULTIPLIER, baseTime + pulse.at)
-        boost.connect(compressor)
+        const startedAt = baseTime + pulse.at
+        const endedAt = startedAt + pulse.duration
 
-        const layers = [
-          { ratio: 1, type: 'triangle' as OscillatorType, level: 1 },
-          { ratio: 1.82, type: 'sine' as OscillatorType, level: 0.42 },
-          { ratio: 2.65, type: 'sine' as OscillatorType, level: 0.2 },
-        ]
+        const oscillator = audio.createOscillator()
+        const gain = audio.createGain()
+        const filter = audio.createBiquadFilter()
+        oscillator.type = 'sine'
+        oscillator.frequency.setValueAtTime(pulse.from * pitchScale, startedAt)
+        oscillator.frequency.exponentialRampToValueAtTime(pulse.to * pitchScale, endedAt)
+        filter.type = 'lowpass'
+        filter.frequency.setValueAtTime(720, startedAt)
+        filter.Q.setValueAtTime(0.5, startedAt)
+        gain.gain.setValueAtTime(0.0001, startedAt)
+        gain.gain.exponentialRampToValueAtTime(pulse.peak, startedAt + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.0001, endedAt)
+        oscillator.connect(filter)
+        filter.connect(gain)
+        gain.connect(compressor)
+        oscillator.start(startedAt)
+        oscillator.stop(endedAt + 0.01)
 
-        for (const layer of layers) {
-          const oscillator = audio.createOscillator()
-          const gain = audio.createGain()
-          const filter = audio.createBiquadFilter()
-          const startedAt = baseTime + pulse.at
-          const endedAt = startedAt + pulse.duration
-
-          oscillator.type = layer.type
-          oscillator.frequency.setValueAtTime(pulse.from * pitchScale * layer.ratio, startedAt)
-          oscillator.frequency.exponentialRampToValueAtTime(pulse.to * pitchScale * layer.ratio, endedAt)
-
-          filter.type = 'lowpass'
-          filter.frequency.setValueAtTime(1700 + stageIndex * 80, startedAt)
-          filter.Q.setValueAtTime(0.72, startedAt)
-
-          gain.gain.setValueAtTime(0.0001, startedAt)
-          gain.gain.exponentialRampToValueAtTime(Math.max(0.001, pulse.peak * layer.level), startedAt + 0.014)
-          gain.gain.exponentialRampToValueAtTime(0.0001, endedAt)
-
-          oscillator.connect(filter)
-          filter.connect(gain)
-          gain.connect(boost)
-          oscillator.start(startedAt)
-          oscillator.stop(endedAt + 0.01)
-        }
+        // A tiny second harmonic keeps the sound warm and friendly without clipping.
+        const harmonic = audio.createOscillator()
+        const harmonicGain = audio.createGain()
+        harmonic.type = 'sine'
+        harmonic.frequency.setValueAtTime(pulse.from * pitchScale * 2, startedAt)
+        harmonic.frequency.exponentialRampToValueAtTime(pulse.to * pitchScale * 2, endedAt)
+        harmonicGain.gain.setValueAtTime(0.0001, startedAt)
+        harmonicGain.gain.exponentialRampToValueAtTime(pulse.peak * 0.12, startedAt + 0.024)
+        harmonicGain.gain.exponentialRampToValueAtTime(0.0001, endedAt)
+        harmonic.connect(harmonicGain)
+        harmonicGain.connect(compressor)
+        harmonic.start(startedAt)
+        harmonic.stop(endedAt + 0.01)
       }
     }
 
@@ -122,8 +139,9 @@ export default function MoniMobileHeartbeatBoost() {
       timer = window.setTimeout(() => {
         timer = null
         if (!active) return
-        void playBoostedHeartbeat()
-        schedule(STAGE_DELAY_MS[currentStage(chatRoot)])
+        const stage = currentStage(chatRoot)
+        void playCuteHeartbeat()
+        schedule(STAGE_DELAY_MS[stage])
       }, delay)
     }
 
@@ -131,10 +149,22 @@ export default function MoniMobileHeartbeatBoost() {
       const thinking = Boolean(chatRoot.querySelector('.moni-live-state-thinking'))
       if (thinking && !active) {
         active = true
-        schedule(120)
+        const stage = currentStage(chatRoot)
+        emitHeartbeat(stage)
+        schedule(HEARTBEAT_LEAD_MS)
       } else if (!thinking && active) {
         active = false
         clearTimer()
+        delete chatRoot.dataset.moniHeartbeatStage
+        delete chatRoot.dataset.moniHeartbeatOvertime
+        chatRoot.style.removeProperty('--moni-heartbeat-ms')
+      } else if (thinking && active) {
+        const stage = currentStage(chatRoot)
+        const previousStage = String(chatRoot.dataset.moniHeartbeatStage || '')
+        if (previousStage !== stage) {
+          emitHeartbeat(stage)
+          schedule(Math.min(180, STAGE_DELAY_MS[stage]))
+        }
       }
     }
 
