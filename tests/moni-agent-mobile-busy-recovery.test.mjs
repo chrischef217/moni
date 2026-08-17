@@ -19,7 +19,9 @@ test('same-question 409 recovery waits for the already running turn instead of s
   assert.match(recovery, /while \(Date\.now\(\) < deadline\)/)
   assert.match(recovery, /completedAnswerAfterLatestUser/)
   assert.match(recovery, /recovered_active_run: true/)
-  assert.doesNotMatch(recovery, /originalFetch\(input, init\)[\s\S]*originalFetch\(input, init\)/)
+  const originalRequestCalls = recovery.match(/originalFetch\(input, init\)/g) || []
+  assert.equal(originalRequestCalls.length, 2, 'one pass-through branch plus exactly one submitted agent request are allowed')
+  assert.match(recovery, /const response = await originalFetch\(input, init\)/)
 })
 
 test('different concurrent questions remain blocked by the server approval-safe busy guard', () => {
