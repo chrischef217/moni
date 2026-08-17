@@ -80,7 +80,7 @@ export default function MoniMobileThinkingCopyFix() {
         ? '실제 실행 기록이 생기면 현재 조회 단계를 약 2초 간격으로 갱신합니다.'
         : '실제 실행 기록 기준으로 현재 상태를 계속 확인하고 있습니다.')
 
-      const detailText = detail ? `현재 단계 · ${detail}` : ''
+      const detailText = detail ? `현재 진행 · ${detail}` : ''
       const metaText = meta ? `진행 현황 · ${meta}` : ''
       if (mainLine && mainLine.textContent !== main) mainLine.textContent = main
       if (detailLine && detailLine.textContent !== detailText) detailLine.textContent = detailText
