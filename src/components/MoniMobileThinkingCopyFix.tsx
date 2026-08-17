@@ -14,6 +14,7 @@ export default function MoniMobileThinkingCopyFix() {
   useLayoutEffect(() => {
     const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
     if (!root) return
+    const chatRoot = root
 
     function syncPanel(panel: HTMLElement) {
       let lines = panel.querySelector<HTMLElement>(':scope > [data-moni-progress-lines]')
@@ -47,12 +48,12 @@ export default function MoniMobileThinkingCopyFix() {
     }
 
     function syncAll() {
-      root.querySelectorAll<HTMLElement>('[data-moni-adaptive-progress="true"]').forEach(syncPanel)
+      chatRoot.querySelectorAll<HTMLElement>('[data-moni-adaptive-progress="true"]').forEach(syncPanel)
     }
 
     syncAll()
     const observer = new MutationObserver(syncAll)
-    observer.observe(root, {
+    observer.observe(chatRoot, {
       attributes: true,
       attributeFilter: [
         'data-moni-adaptive-progress',
