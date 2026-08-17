@@ -29,6 +29,12 @@ type LocalEtaProfile = {
   history?: number[]
 }
 
+function stripDuplicateElapsedTime(value: unknown) {
+  return String(value ?? '')
+    .replace(/^(?:처리|실행)\s*시작\s*후\s*\d+\s*초\s*(?:[·ㆍ:|-]\s*)?/i, '')
+    .trim()
+}
+
 function stripLegacyDemoLine(value: unknown) {
   const content = String(value ?? '')
   if (!LEGACY_DEMO_PATTERN.test(content)) return content
@@ -120,34 +126,35 @@ function parseAgentRequest(input: RequestInfo | URL, init?: RequestInit) {
 function progressCopy(stage: MoniThinkingStage, elapsedSeconds: number, estimateSeconds: number, kind: MoniEtaKind, liveProgress: string) {
   const overtime = Math.max(0, Math.floor(elapsedSeconds - estimateSeconds))
   const remaining = Math.max(0, Math.ceil(estimateSeconds - elapsedSeconds))
+  const cleanedProgress = stripDuplicateElapsedTime(liveProgress)
 
   if (stage === 'normal') {
     return {
       main: `예상 대기 시간 · 약 ${remaining}초 남음`,
-      detail: liveProgress || fallbackProgressText(kind, stage),
+      detail: cleanedProgress || fallbackProgressText(kind, stage),
     }
   }
   if (stage === 'grace') {
     return {
       main: `예상 시간 초과 · ${overtime}초 추가`,
-      detail: liveProgress || fallbackProgressText(kind, stage),
+      detail: cleanedProgress || fallbackProgressText(kind, stage),
     }
   }
   if (stage === 'detail-1') {
     return {
       main: `예상보다 ${overtime}초 더 걸리고 있습니다.`,
-      detail: liveProgress || fallbackProgressText(kind, stage),
+      detail: cleanedProgress || fallbackProgressText(kind, stage),
     }
   }
   if (stage === 'detail-2') {
     return {
       main: `추가 확인이 길어지고 있습니다 · +${overtime}초`,
-      detail: liveProgress || fallbackProgressText(kind, stage),
+      detail: cleanedProgress || fallbackProgressText(kind, stage),
     }
   }
   return {
     main: `예상보다 오래 걸리고 있습니다 · +${overtime}초`,
-    detail: liveProgress || fallbackProgressText(kind, stage),
+    detail: cleanedProgress || fallbackProgressText(kind, stage),
   }
 }
 
@@ -184,7 +191,7 @@ export default function MoniMobileInteractionPolish() {
       try {
         const response = await originalFetch(`/api/moni/agent-status?thread_id=${encodeURIComponent(activeThreadId)}&_=${now}`, { cache: 'no-store' })
         const payload = await response.json() as { ok?: boolean; progress?: string | null }
-        if (response.ok && payload.ok && payload.progress) activeProgress = String(payload.progress)
+        if (response.ok && payload.ok && payload.progress) activeProgress = stripDuplicateElapsedTime(payload.progress)
       } catch {
         // Runtime progress is supplemental. Fallback copy remains truthful and available.
       } finally {

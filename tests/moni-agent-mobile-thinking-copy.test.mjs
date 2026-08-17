@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const fix = readFileSync('src/components/MoniMobileThinkingCopyFix.tsx', 'utf8')
+const interaction = readFileSync('src/components/MoniMobileInteractionPolish.tsx', 'utf8')
 const page = readFileSync('src/app/mobile/page.tsx', 'utf8')
 
 test('mobile mounts the thinking copy fix after interaction polish', () => {
@@ -28,4 +29,14 @@ test('thinking detail explicitly labels current progress and status from the fir
   assert.match(fix, /질문의 범위와 필요한 데이터를 확인하고 있습니다/)
   assert.match(fix, /STATUS_REFRESH_MS = 1200/)
   assert.match(fix, /payload\.run_status === 'RUNNING'/)
+})
+
+test('duplicate runtime elapsed seconds are removed because ETA already owns timing', () => {
+  assert.match(fix, /function stripDuplicateElapsedTime/)
+  assert.match(fix, /\(\?:처리\|실행\).*시작.*후.*\\d\+.*초/)
+  assert.match(fix, /liveProgress = stripDuplicateElapsedTime/)
+  assert.match(fix, /liveProgressDetail = stripDuplicateElapsedTime/)
+  assert.match(interaction, /function stripDuplicateElapsedTime/)
+  assert.match(interaction, /activeProgress = stripDuplicateElapsedTime\(payload\.progress\)/)
+  assert.match(interaction, /cleanedProgress \|\| fallbackProgressText/)
 })

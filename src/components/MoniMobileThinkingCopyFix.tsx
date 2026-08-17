@@ -17,10 +17,17 @@ type RuntimeStatusPayload = {
 
 const STATUS_REFRESH_MS = 1200
 
+function stripDuplicateElapsedTime(value: string) {
+  return String(value || '')
+    .replace(/^(?:처리|실행)\s*시작\s*후\s*\d+\s*초\s*(?:[·ㆍ:|-]\s*)?/i, '')
+    .trim()
+}
+
 function visibleDetail(stage: ThinkingStage | '', rawDetail: string) {
-  if (stage === 'normal') return rawDetail || '질문의 범위와 필요한 데이터를 확인하고 있습니다.'
-  if (stage === 'grace') return rawDetail || '예상 시간을 넘어 실제 실행 상태를 다시 확인하고 있습니다.'
-  return rawDetail || '실제 실행 상태를 확인하면서 다음 단계를 진행하고 있습니다.'
+  const cleanedDetail = stripDuplicateElapsedTime(rawDetail)
+  if (stage === 'normal') return cleanedDetail || '질문의 범위와 필요한 데이터를 확인하고 있습니다.'
+  if (stage === 'grace') return cleanedDetail || '예상 시간을 넘어 실제 실행 상태를 다시 확인하고 있습니다.'
+  return cleanedDetail || '실제 실행 상태를 확인하면서 다음 단계를 진행하고 있습니다.'
 }
 
 export default function MoniMobileThinkingCopyFix() {
@@ -75,9 +82,9 @@ export default function MoniMobileThinkingCopyFix() {
       const main = String(panel.dataset.moniProgressMain || '').trim()
         || originalEta
         || '예상 대기 시간을 계산하고 있습니다.'
-      const adaptiveDetail = String(panel.dataset.moniProgressDetail || '').trim()
-      const detail = liveProgress || visibleDetail(stage, adaptiveDetail)
-      const meta = liveProgressDetail || (stage === 'normal'
+      const adaptiveDetail = stripDuplicateElapsedTime(String(panel.dataset.moniProgressDetail || '').trim())
+      const detail = stripDuplicateElapsedTime(liveProgress) || visibleDetail(stage, adaptiveDetail)
+      const meta = stripDuplicateElapsedTime(liveProgressDetail) || (stage === 'normal'
         ? '실제 실행 기록을 약 1초 간격으로 확인해 현재 단계를 갱신합니다.'
         : '예상 시간을 넘긴 뒤에도 실제 실행 기록 기준으로 현재 위치를 계속 표시합니다.')
 
@@ -107,8 +114,8 @@ export default function MoniMobileThinkingCopyFix() {
         if (!response.ok || !payload.ok) return
 
         if (payload.run_status === 'RUNNING') {
-          liveProgress = String(payload.progress || '').trim()
-          liveProgressDetail = String(payload.progress_detail || '').trim()
+          liveProgress = stripDuplicateElapsedTime(String(payload.progress || '').trim())
+          liveProgressDetail = stripDuplicateElapsedTime(String(payload.progress_detail || '').trim())
           syncAll()
         }
       } catch {
