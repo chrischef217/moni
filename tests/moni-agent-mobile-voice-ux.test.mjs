@@ -27,19 +27,31 @@ test('mobile waveform remains driven by real microphone level rather than decora
   assert.match(runtimeGuard, /updateVoiceWaveFromRms\(rms\)/)
 })
 
-test('voice start and confirm actions have distinct maximum-output audible cues', () => {
-  assert.match(polish, /playVoiceCue\(kind: 'start' \| 'stop'\)/)
-  assert.match(polish, /from: 640, to: 760/)
-  assert.match(polish, /from: 820, to: 980/)
-  assert.match(polish, /from: 860, to: 700/)
-  assert.match(polish, /from: 620, to: 440/)
+test('all enabled chat buttons use reliable audible feedback and voice cues stay near maximum output', () => {
+  assert.match(polish, /type UiCueKind = 'tap' \| 'start' \| 'stop' \| 'send'/)
+  assert.match(polish, /async function playUiCue\(kind: UiCueKind\)/)
+  assert.match(polish, /if \(context\.state !== 'running'\) await context\.resume\(\)/)
+  assert.match(polish, /if \(context\.state !== 'running'\) return/)
+  assert.match(polish, /from: 640, to: 760, duration: 0\.11, peak: 0\.96/)
+  assert.match(polish, /from: 820, to: 980, duration: 0\.12, peak: 0\.96/)
+  assert.match(polish, /from: 860, to: 700, duration: 0\.11, peak: 0\.96/)
+  assert.match(polish, /from: 620, to: 440, duration: 0\.13, peak: 0\.96/)
   assert.match(polish, /oscillator\.type = 'square'/)
-  assert.match(polish, /exponentialRampToValueAtTime\(0\.96, startedAt \+ 0\.006\)/)
+  assert.match(polish, /gain\.gain\.exponentialRampToValueAtTime\(note\.peak, startedAt \+ 0\.004\)/)
   assert.doesNotMatch(polish, /exponentialRampToValueAtTime\(0\.028,/)
+  assert.match(polish, /const button = target\?\.closest\('button'\)/)
+  assert.match(polish, /root\.addEventListener\('pointerdown', handleButtonPointerDown, true\)/)
+  assert.match(polish, /void playUiCue\(kind\)/)
+  assert.match(polish, /navigator\.vibrate\(kind === 'tap' \? 8 : 14\)/)
+})
+
+test('voice start, confirm, and send receive distinct button sounds', () => {
   assert.match(polish, /button\.getAttribute\('aria-label'\) === '음성으로 입력'/)
+  assert.match(polish, /kind = 'start'/)
+  assert.match(polish, /button\.getAttribute\('aria-label'\) === '전송'/)
+  assert.match(polish, /kind = 'send'/)
   assert.match(polish, /button\.textContent\?\.trim\(\) === '확인'/)
-  assert.match(polish, /playVoiceCue\('start'\)/)
-  assert.match(polish, /playVoiceCue\('stop'\)/)
+  assert.match(polish, /kind = 'stop'/)
 })
 
 test('voice confirmation still ends in editable composer text and does not auto-send', () => {

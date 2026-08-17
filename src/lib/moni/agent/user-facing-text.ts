@@ -33,6 +33,12 @@ const INTERNAL_LABELS: Array<[RegExp, string]> = [
   [/\bopenai_conversation_id\b/gi, '대화 연결 정보'],
   [/\bVERIFIED\b/gi, '검증됨'],
   [/\bAPPROVED\b/gi, '승인됨'],
+  [/\bPLANNED\b/gi, '계획'],
+  [/\bCOMPLETED\b/gi, '완료'],
+  [/\bCONFIRMED\b/gi, '확정'],
+  [/\bPENDING\b/gi, '대기'],
+  [/\bCANCELLED\b/gi, '취소'],
+  [/\bCANCELED\b/gi, '취소'],
 ]
 
 const PDF_REFUSAL_PATTERNS = [
@@ -92,6 +98,9 @@ export function sanitizeMoniUserFacingText(value: unknown) {
   for (const [pattern, replacement] of INTERNAL_LABELS) output = output.replace(pattern, replacement)
 
   output = output
+    .replace(/\s*\((?:Asia\/Seoul|Asia\/Bangkok)\)/gi, '')
+    .replace(/(?:Asia\/Seoul|Asia\/Bangkok)\s*(?:시간대|기준)/gi, '공장 기준')
+    .replace(/\b(?:Asia\/Seoul|Asia\/Bangkok)\b/gi, '')
     .replace(/`([a-z][a-z0-9]*(?:_[a-z0-9]+){2,})`/g, '내부 지표')
     .replace(/\b([a-z][a-z0-9]*(?:_[a-z0-9]+){2,})\b/g, '내부 지표')
     .replace(/[ \t]+\n/g, '\n')
