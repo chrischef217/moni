@@ -30,6 +30,31 @@ function elapsedSeconds(startedAt: unknown) {
   return Math.max(0, Math.floor((Date.now() - started) / 1000))
 }
 
+function inferExpectedToolName(message: string, recentContext: string) {
+  const current = String(message || '').replace(/\s+/g, ' ').trim()
+  const recent = String(recentContext || '').replace(/\s+/g, ' ').trim()
+
+  if (/(생산계획|월간\s*계획)/.test(current)) return 'search_production_plans'
+  if (/(생산실적|작업지시|작업지시서|\bLOT\d{8}-\d+\b)/i.test(current)) return 'search_production_records'
+  if (/(매출|판매|수금|미수)/.test(current)) return 'search_sales_and_receivables'
+  if (/(매입|지급|미지급)/.test(current)) return 'search_purchases_and_payables'
+  if (/(?:원재료|원료).*(?:소모|출고)|(?:소모|출고).*(?:원재료|원료)|원재료\s*입출고/.test(current)) return 'search_raw_material_transactions'
+  if (/(현재\s*재고|원재료\s*재고)/.test(current)) return 'get_raw_material_inventory'
+  if (/(제품\s*마스터|레시피|배합)/.test(current)) return 'search_products_and_recipes'
+
+  const contextualCue = /(?:\d{1,3}\s*번(?:만|도)?|넘버|번호|연번|다음|계속(?:\s*진행)?|이어(?:서|줘|가|계속)?|그럼|그거|그것|이것|저거|도\s*알려|까지\s*알려|뭔지|뭐였|얼마|몇\s*(?:개|건|곳)|체크|확인해)/i.test(current)
+  if (!contextualCue) return null
+
+  if (/(?:원재료|원료).*(?:소모|출고)|(?:소모|출고).*(?:원재료|원료)|출고\s*기준/.test(recent)) return 'search_raw_material_transactions'
+  if (/(생산계획|월간\s*계획)/.test(recent)) return 'search_production_plans'
+  if (/(생산실적|작업지시|작업지시서|\bLOT\d{8}-\d+\b)/i.test(recent)) return 'search_production_records'
+  if (/(매출|판매|수금|미수)/.test(recent)) return 'search_sales_and_receivables'
+  if (/(매입|지급|미지급)/.test(recent)) return 'search_purchases_and_payables'
+  if (/(제품\s*마스터|레시피|배합)/.test(recent)) return 'search_products_and_recipes'
+  if (/(현재\s*재고|원재료\s*재고)/.test(recent)) return 'get_raw_material_inventory'
+  return null
+}
+
 export async function GET(request: NextRequest) {
   const session = await getSessionFromRequest(request)
   if (!session || session.role === 'freelancer') {
@@ -45,7 +70,7 @@ export async function GET(request: NextRequest) {
   const recentCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
   const { data: runs, error: runError } = await supabase
     .from('moni_ai_agent_runs')
-    .select('id,status,started_at,created_at')
+    .select('id,status,started_at,created_at,message_id')
     .eq('business_id', BUSINESS_ID)
     .eq('thread_id', threadId)
     .gte('created_at', recentCutoff)
@@ -83,6 +108,34 @@ export async function GET(request: NextRequest) {
   const currentToolLabel = running ? describeTool(String(running.tool_name || '')) : null
   const lastCompletedToolLabel = latestCompleted ? describeTool(String(latestCompleted.tool_name || '')) : null
 
+  let expectedToolName: string | null = null
+  if (run.status === 'RUNNING' && !running && !latestCompleted) {
+    const { data: currentMessage } = await supabase
+      .from('moni_ai_messages')
+      .select('content')
+      .eq('business_id', BUSINESS_ID)
+      .eq('id', run.message_id)
+      .maybeSingle()
+    const currentText = String(currentMessage?.content || '').trim()
+
+    if (currentText) {
+      let recentContext = ''
+      const isContextualFollowup = /(?:\d{1,3}\s*번(?:만|도)?|넘버|번호|연번|다음|계속(?:\s*진행)?|이어(?:서|줘|가|계속)?|그럼|그거|그것|이것|저거|도\s*알려|까지\s*알려)/i.test(currentText)
+      if (isContextualFollowup) {
+        const { data: recentMessages } = await supabase
+          .from('moni_ai_messages')
+          .select('role,content,created_at')
+          .eq('business_id', BUSINESS_ID)
+          .eq('thread_id', threadId)
+          .lt('created_at', run.created_at)
+          .order('created_at', { ascending: false })
+          .limit(10)
+        recentContext = (recentMessages || []).map((item) => String(item.content || '')).join(' ')
+      }
+      expectedToolName = inferExpectedToolName(currentText, recentContext)
+    }
+  }
+
   let progress = ''
 
   if (running) {
@@ -92,6 +145,8 @@ export async function GET(request: NextRequest) {
       : `${currentToolLabel}을 실제 데이터에서 조회하고 있습니다 · 조회 ${currentStep}단계`
   } else if (latestCompleted && run.status === 'RUNNING') {
     progress = `${lastCompletedToolLabel} 확인 완료 · 실제 조회 ${completed.length}단계의 결과를 질문 조건과 맞춰 답변에 반영하고 있습니다.`
+  } else if (run.status === 'RUNNING' && expectedToolName) {
+    progress = `${describeTool(expectedToolName)} 조회를 준비하고 있습니다 · 질문에서 필요한 데이터 영역을 확인했습니다.`
   } else if (run.status === 'RUNNING') {
     progress = '질문의 대상·기간·조건을 확인하고 필요한 회사 데이터 범위를 준비하고 있습니다.'
   } else if (run.status === 'COMPLETED') {
@@ -115,5 +170,6 @@ export async function GET(request: NextRequest) {
     completed_tool_steps: completed.length,
     current_tool_label: currentToolLabel,
     last_completed_tool_label: lastCompletedToolLabel,
+    expected_tool_label: expectedToolName ? describeTool(expectedToolName) : null,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
