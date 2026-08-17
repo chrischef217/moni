@@ -6,6 +6,7 @@ import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
 import MoniMobileUxPolish from '@/components/MoniMobileUxPolish'
+import MoniMobileVoiceCanvasWave from '@/components/MoniMobileVoiceCanvasWave'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
 export const dynamic = 'force-dynamic'
@@ -36,6 +37,7 @@ export default async function MoniMobilePage() {
       <MoniMobileAnswerActions />
       <MoniMobileUxPolish />
       <MoniMobileLiveWave />
+      <MoniMobileVoiceCanvasWave />
       <MoniMobileChat />
     </main>
   )
