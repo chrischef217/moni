@@ -5,7 +5,6 @@ import {
   MONI_ETA_DEFAULTS,
   classifyMoniEtaKind,
   fallbackProgressText,
-  heartbeatDelayMs,
   robustEtaEstimate,
   thinkingStage,
   type MoniEtaKind,
@@ -16,12 +15,7 @@ const MESSAGE_CACHE_KEY = 'moni-mobile-message-cache-v1'
 const ADAPTIVE_ETA_KEY = 'moni-mobile-adaptive-eta-v2'
 const LEGACY_DEMO_PATTERN = /핸드워시\s*레몬/i
 const THINKING_SELECTOR = '.moni-live-state-thinking'
-const HEARTBEAT_LEAD_MS = 260
-const STATUS_REFRESH_MS = 4000
-
-type AudioWindow = Window & {
-  webkitAudioContext?: typeof AudioContext
-}
+const STATUS_REFRESH_MS = 1500
 
 type CachedMessage = {
   role?: unknown
@@ -130,13 +124,13 @@ function progressCopy(stage: MoniThinkingStage, elapsedSeconds: number, estimate
   if (stage === 'normal') {
     return {
       main: `예상 대기 시간 · 약 ${remaining}초 남음`,
-      detail: '최근 같은 유형의 실제 처리시간을 반영해 예상하고 있습니다.',
+      detail: liveProgress || fallbackProgressText(kind, stage),
     }
   }
   if (stage === 'grace') {
     return {
-      main: `예상 시간 도달 · 마무리 확인 중 · ${overtime}초 추가`,
-      detail: '아직 예상 오차 범위 안에서 결과를 정리하고 있습니다.',
+      main: `예상 시간 초과 · ${overtime}초 추가`,
+      detail: liveProgress || fallbackProgressText(kind, stage),
     }
   }
   if (stage === 'detail-1') {
@@ -153,7 +147,7 @@ function progressCopy(stage: MoniThinkingStage, elapsedSeconds: number, estimate
   }
   return {
     main: `예상보다 오래 걸리고 있습니다 · +${overtime}초`,
-    detail: `조금만 더 기다려 주세요. ${liveProgress || fallbackProgressText(kind, stage)}`,
+    detail: liveProgress || fallbackProgressText(kind, stage),
   }
 }
 
@@ -166,10 +160,6 @@ export default function MoniMobileInteractionPolish() {
     const chatRoot = root
     const originalFetch = window.fetch.bind(window)
 
-    let heartbeatContext: AudioContext | null = null
-    let heartbeatTimer: number | null = null
-    let heartbeatRunning = false
-    let heartbeatStage: MoniThinkingStage = 'normal'
     let thinkingUiTimer: number | null = null
     let activeStartedAt = 0
     let activeEstimateSeconds = MONI_ETA_DEFAULTS.general
@@ -178,97 +168,7 @@ export default function MoniMobileInteractionPolish() {
     let activeProgress = ''
     let activeRequestSerial = 0
     let lastStatusRefreshAt = 0
-
-    async function ensureAudioContext() {
-      try {
-        const audioWindow = window as AudioWindow
-        const AudioContextClass = window.AudioContext || audioWindow.webkitAudioContext
-        if (!AudioContextClass) return null
-        const context = heartbeatContext || new AudioContextClass()
-        heartbeatContext = context
-        if (context.state !== 'running') await context.resume()
-        return context.state === 'running' ? context : null
-      } catch {
-        return null
-      }
-    }
-
-    async function playHeartbeat() {
-      const context = await ensureAudioContext()
-      if (!context || !heartbeatRunning) return
-
-      try {
-        const baseTime = context.currentTime + 0.008
-        const stageIndex = heartbeatStage === 'normal' ? 0 : heartbeatStage === 'grace' ? 1 : heartbeatStage === 'detail-1' ? 2 : heartbeatStage === 'detail-2' ? 3 : 4
-        const pitchScale = 1 + stageIndex * 0.035
-        const pulses = [
-          { at: 0, from: 225 * pitchScale, to: 176 * pitchScale, duration: 0.145, peak: 0.57 },
-          { at: 0.19, from: 205 * pitchScale, to: 158 * pitchScale, duration: 0.13, peak: 0.435 },
-        ]
-
-        pulses.forEach((pulse) => {
-          const oscillator = context.createOscillator()
-          const gain = context.createGain()
-          const filter = context.createBiquadFilter()
-          const startedAt = baseTime + pulse.at
-          const endedAt = startedAt + pulse.duration
-
-          oscillator.type = 'triangle'
-          oscillator.frequency.setValueAtTime(pulse.from, startedAt)
-          oscillator.frequency.exponentialRampToValueAtTime(pulse.to, endedAt)
-
-          filter.type = 'lowpass'
-          filter.frequency.setValueAtTime(1100, startedAt)
-          filter.Q.setValueAtTime(0.7, startedAt)
-
-          gain.gain.setValueAtTime(0.0001, startedAt)
-          gain.gain.exponentialRampToValueAtTime(pulse.peak, startedAt + 0.018)
-          gain.gain.exponentialRampToValueAtTime(0.0001, endedAt)
-
-          oscillator.connect(filter)
-          filter.connect(gain)
-          gain.connect(context.destination)
-          oscillator.start(startedAt)
-          oscillator.stop(endedAt + 0.01)
-        })
-      } catch {
-        // Thinking heartbeat is optional feedback and must never block MONI.
-      }
-    }
-
-    function clearHeartbeatTimer() {
-      if (heartbeatTimer !== null) {
-        window.clearTimeout(heartbeatTimer)
-        heartbeatTimer = null
-      }
-    }
-
-    function scheduleHeartbeat(delayMs: number) {
-      clearHeartbeatTimer()
-      heartbeatTimer = window.setTimeout(() => {
-        heartbeatTimer = null
-        if (!heartbeatRunning) return
-        void playHeartbeat()
-        scheduleHeartbeat(heartbeatDelayMs(heartbeatStage))
-      }, delayMs)
-    }
-
-    function stopHeartbeat() {
-      heartbeatRunning = false
-      clearHeartbeatTimer()
-    }
-
-    function startHeartbeat() {
-      if (heartbeatRunning) return
-      heartbeatRunning = true
-      scheduleHeartbeat(HEARTBEAT_LEAD_MS)
-    }
-
-    function setHeartbeatStage(stage: MoniThinkingStage) {
-      if (heartbeatStage === stage) return
-      heartbeatStage = stage
-      if (heartbeatRunning) scheduleHeartbeat(Math.min(180, heartbeatDelayMs(stage)))
-    }
+    let statusRefreshInFlight = false
 
     function getThinkingPanel() {
       return Array.from(chatRoot.querySelectorAll<HTMLElement>('div[role="status"]'))
@@ -276,16 +176,19 @@ export default function MoniMobileInteractionPolish() {
     }
 
     async function refreshRuntimeProgress() {
-      if (!activeThreadId) return
+      if (!activeThreadId || statusRefreshInFlight) return
       const now = Date.now()
       if (now - lastStatusRefreshAt < STATUS_REFRESH_MS) return
       lastStatusRefreshAt = now
+      statusRefreshInFlight = true
       try {
         const response = await originalFetch(`/api/moni/agent-status?thread_id=${encodeURIComponent(activeThreadId)}&_=${now}`, { cache: 'no-store' })
         const payload = await response.json() as { ok?: boolean; progress?: string | null }
         if (response.ok && payload.ok && payload.progress) activeProgress = String(payload.progress)
       } catch {
         // Runtime progress is supplemental. Fallback copy remains truthful and available.
+      } finally {
+        statusRefreshInFlight = false
       }
     }
 
@@ -294,7 +197,6 @@ export default function MoniMobileInteractionPolish() {
       if (!activeStartedAt) activeStartedAt = Date.now()
       const elapsedSeconds = Math.max(0, (Date.now() - activeStartedAt) / 1000)
       const stage = thinkingStage(elapsedSeconds, activeEstimateSeconds)
-      setHeartbeatStage(stage)
       chatRoot.dataset.moniThinkingStage = stage
 
       const panel = getThinkingPanel()
@@ -306,7 +208,8 @@ export default function MoniMobileInteractionPolish() {
         panel.dataset.moniProgressDetail = copy.detail
       }
 
-      if (stage === 'detail-1' || stage === 'detail-2' || stage === 'apology') void refreshRuntimeProgress()
+      // Safe runtime execution state is useful from the first second, not only after ETA misses.
+      void refreshRuntimeProgress()
     }
 
     function stopThinkingUi() {
@@ -315,13 +218,11 @@ export default function MoniMobileInteractionPolish() {
         thinkingUiTimer = null
       }
       delete chatRoot.dataset.moniThinkingStage
-      stopHeartbeat()
     }
 
     function startThinkingUi() {
       if (thinkingUiTimer === null) thinkingUiTimer = window.setInterval(tickThinkingUi, 500)
       tickThinkingUi()
-      startHeartbeat()
     }
 
     function syncThinkingState() {
@@ -371,13 +272,6 @@ export default function MoniMobileInteractionPolish() {
     }
     window.fetch = wrappedFetch
 
-    const primeAudio = () => {
-      void ensureAudioContext()
-    }
-
-    chatRoot.addEventListener('pointerdown', primeAudio, true)
-    chatRoot.addEventListener('keydown', primeAudio, true)
-
     const observer = new MutationObserver(syncThinkingState)
     observer.observe(chatRoot, {
       attributes: true,
@@ -390,10 +284,7 @@ export default function MoniMobileInteractionPolish() {
     return () => {
       observer.disconnect()
       stopThinkingUi()
-      chatRoot.removeEventListener('pointerdown', primeAudio, true)
-      chatRoot.removeEventListener('keydown', primeAudio, true)
       window.fetch = originalFetch
-      if (heartbeatContext) void heartbeatContext.close().catch(() => undefined)
     }
   }, [])
 
@@ -434,31 +325,6 @@ export default function MoniMobileInteractionPolish() {
         color: #a6b0b5 !important;
         box-shadow: none !important;
         opacity: 1 !important;
-      }
-
-      [data-moni-mobile-chat] [data-moni-adaptive-progress="true"] > div:nth-child(2),
-      [data-moni-mobile-chat] [data-moni-adaptive-progress="true"] > div:nth-child(3) {
-        display: none !important;
-      }
-
-      [data-moni-mobile-chat] [data-moni-adaptive-progress="true"]::after {
-        content: attr(data-moni-progress-main) "\\A" attr(data-moni-progress-detail);
-        display: block;
-        margin-top: 5px;
-        color: #5d7d8d;
-        font-size: 11px;
-        font-weight: 700;
-        line-height: 1.55;
-        white-space: pre-line;
-      }
-
-      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-1"]::after,
-      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-2"]::after {
-        color: #4f7080;
-      }
-
-      [data-moni-mobile-chat] [data-moni-thinking-stage="apology"]::after {
-        color: #805f35;
       }
     `}</style>
   )
