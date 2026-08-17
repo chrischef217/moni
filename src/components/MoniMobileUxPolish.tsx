@@ -58,12 +58,12 @@ export default function MoniMobileUxPolish() {
         const now = context.currentTime
         const notes = kind === 'start'
           ? [
-              { at: 0, from: 600, to: 690, duration: 0.062 },
-              { at: 0.078, from: 760, to: 880, duration: 0.068 },
+              { at: 0, from: 640, to: 760, duration: 0.11 },
+              { at: 0.13, from: 820, to: 980, duration: 0.12 },
             ]
           : [
-              { at: 0, from: 760, to: 680, duration: 0.066 },
-              { at: 0.082, from: 560, to: 470, duration: 0.074 },
+              { at: 0, from: 860, to: 700, duration: 0.11 },
+              { at: 0.13, from: 620, to: 440, duration: 0.13 },
             ]
 
         notes.forEach((note) => {
@@ -72,11 +72,11 @@ export default function MoniMobileUxPolish() {
           const startedAt = now + note.at
           const endedAt = startedAt + note.duration
 
-          oscillator.type = 'sine'
+          oscillator.type = 'square'
           oscillator.frequency.setValueAtTime(note.from, startedAt)
           oscillator.frequency.exponentialRampToValueAtTime(note.to, endedAt)
           gain.gain.setValueAtTime(0.0001, startedAt)
-          gain.gain.exponentialRampToValueAtTime(0.028, startedAt + 0.009)
+          gain.gain.exponentialRampToValueAtTime(0.96, startedAt + 0.006)
           gain.gain.exponentialRampToValueAtTime(0.0001, endedAt)
           oscillator.connect(gain)
           gain.connect(context.destination)

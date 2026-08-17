@@ -27,12 +27,15 @@ test('mobile waveform remains driven by real microphone level rather than decora
   assert.match(runtimeGuard, /updateVoiceWaveFromRms\(rms\)/)
 })
 
-test('voice start and confirm actions have distinct short audible cues', () => {
+test('voice start and confirm actions have distinct maximum-output audible cues', () => {
   assert.match(polish, /playVoiceCue\(kind: 'start' \| 'stop'\)/)
-  assert.match(polish, /from: 600, to: 690/)
-  assert.match(polish, /from: 760, to: 880/)
-  assert.match(polish, /from: 760, to: 680/)
-  assert.match(polish, /from: 560, to: 470/)
+  assert.match(polish, /from: 640, to: 760/)
+  assert.match(polish, /from: 820, to: 980/)
+  assert.match(polish, /from: 860, to: 700/)
+  assert.match(polish, /from: 620, to: 440/)
+  assert.match(polish, /oscillator\.type = 'square'/)
+  assert.match(polish, /exponentialRampToValueAtTime\(0\.96, startedAt \+ 0\.006\)/)
+  assert.doesNotMatch(polish, /exponentialRampToValueAtTime\(0\.028,/)
   assert.match(polish, /button\.getAttribute\('aria-label'\) === '음성으로 입력'/)
   assert.match(polish, /button\.textContent\?\.trim\(\) === '확인'/)
   assert.match(polish, /playVoiceCue\('start'\)/)
