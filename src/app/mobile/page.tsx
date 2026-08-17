@@ -9,6 +9,7 @@ import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolis
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
 import MoniMobileThinkingCharacterMotion from '@/components/MoniMobileThinkingCharacterMotion'
+import MoniMobileThinkingCharacterMotionPatch from '@/components/MoniMobileThinkingCharacterMotionPatch'
 import MoniMobileThinkingCopyFix from '@/components/MoniMobileThinkingCopyFix'
 import MoniMobileUxPolish from '@/components/MoniMobileUxPolish'
 import MoniMobileVoiceCanvasWave from '@/components/MoniMobileVoiceCanvasWave'
@@ -47,6 +48,7 @@ export default async function MoniMobilePage() {
       <MoniMobileHeartbeatBoost />
       <MoniMobileLiveWave />
       <MoniMobileThinkingCharacterMotion />
+      <MoniMobileThinkingCharacterMotionPatch />
       <MoniMobileVoiceCanvasWave />
       <MoniMobileChat />
     </main>
