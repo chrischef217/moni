@@ -6,6 +6,7 @@ import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
+import MoniMobileThinkingCopyFix from '@/components/MoniMobileThinkingCopyFix'
 import MoniMobileUxPolish from '@/components/MoniMobileUxPolish'
 import MoniMobileVoiceCanvasWave from '@/components/MoniMobileVoiceCanvasWave'
 import { getSessionFromCookies } from '@/lib/allowance/session'
@@ -38,6 +39,7 @@ export default async function MoniMobilePage() {
       <MoniMobileAnswerActions />
       <MoniMobileUxPolish />
       <MoniMobileInteractionPolish />
+      <MoniMobileThinkingCopyFix />
       <MoniMobileLiveWave />
       <MoniMobileVoiceCanvasWave />
       <MoniMobileChat />
