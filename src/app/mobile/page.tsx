@@ -40,8 +40,8 @@ export default async function MoniMobilePage() {
       <MoniMobileAnswerActions />
       <MoniMobileUxPolish />
       <MoniMobileInteractionPolish />
-      <MoniMobileHeartbeatBoost />
       <MoniMobileThinkingCopyFix />
+      <MoniMobileHeartbeatBoost />
       <MoniMobileLiveWave />
       <MoniMobileVoiceCanvasWave />
       <MoniMobileChat />
