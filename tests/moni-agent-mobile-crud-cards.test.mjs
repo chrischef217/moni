@@ -44,6 +44,13 @@ test('photo analysis arriving after the blank card only backfills still-empty fi
   assert.match(card, /if \(!text\(merged\[key\]\) && text\(value\)\) merged\[key\] = value/)
 })
 
+test('photo-derived Korean pack counts and weights do not rely on ASCII word boundaries', () => {
+  assert.match(route, /개\|포\|봉\|통\|말\|박스\|box\|ea/)
+  assert.match(route, /\(\?=\$\|\\s\|\[,\.·\/\)\\\]\]\)/)
+  assert.match(route, /const unitEnd = '\(\?=\$\|\\\\s/)
+  assert.match(route, /kg\|킬로그램\|킬로\|g\|그램/)
+})
+
 test('explicit inbound or purchase-entry commands open a draft even before exact photo material matching', () => {
   assert.match(route, /const create = \/\(\?:입고\|매입\)/)
   assert.match(route, /if \(rawContext && remove\) return 'DELETE'/)
