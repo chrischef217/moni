@@ -95,7 +95,7 @@ function inferContextualCompanyDataTool(
   const normalized = String(message || '').replace(/\s+/g, ' ').trim()
   if (!normalized || normalized.length > 180 || hasProductionMutationIntent(normalized)) return null
 
-  const contextualCue = /(넘버|번호|다음|그럼|그거|그것|이것|저거|도\s*알려|까지\s*알려|뭔지|뭐였|얼마|몇\s*(?:개|건|곳)|체크|확인해)/i.test(normalized)
+  const contextualCue = /(?:\d{1,3}\s*번(?:만|도)?|넘버|번호|연번|다음|계속(?:\s*진행)?|이어(?:서|줘|가|계속)?|그럼|그거|그것|이것|저거|도\s*알려|까지\s*알려|뭔지|뭐였|얼마|몇\s*(?:개|건|곳)|체크|확인해)/i.test(normalized)
   if (!contextualCue) return null
 
   const recent = recentHistory
