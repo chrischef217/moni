@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const polish = readFileSync('src/components/MoniMobileInteractionPolish.tsx', 'utf8')
+const heartbeat = readFileSync('src/components/MoniMobileHeartbeatBoost.tsx', 'utf8')
 const mobilePage = readFileSync('src/app/mobile/page.tsx', 'utf8')
 
 test('mobile mounts the interaction polish before chat rendering', () => {
@@ -33,15 +34,12 @@ test('send button never uses the black busy treatment and disabled state is gray
   assert.doesNotMatch(polish, /#17191b/)
 })
 
-test('thinking state loops a two-pulse adaptive heartbeat and stops on state exit', () => {
+test('interaction polish owns ETA and progress only while heartbeat audio has one owner', () => {
   assert.match(polish, /THINKING_SELECTOR = '\.moni-live-state-thinking'/)
-  assert.match(polish, /HEARTBEAT_LEAD_MS = 260/)
-  assert.match(polish, /heartbeatDelayMs\(heartbeatStage\)/)
-  assert.match(polish, /oscillator\.type = 'triangle'/)
-  assert.match(polish, /const pulses = \[/)
-  assert.match(polish, /peak: 0\.57/)
-  assert.match(polish, /peak: 0\.435/)
-  assert.match(polish, /heartbeatTimer = window\.setTimeout/)
-  assert.match(polish, /function stopHeartbeat\(\)/)
-  assert.match(polish, /attributeFilter: \['class'\]/)
+  assert.match(polish, /thinkingStage\(elapsedSeconds, activeEstimateSeconds\)/)
+  assert.match(polish, /void refreshRuntimeProgress\(\)/)
+  assert.doesNotMatch(polish, /createOscillator|heartbeatTimer|playHeartbeat/)
+  assert.match(heartbeat, /function playCuteHeartbeat\(\)/)
+  assert.match(heartbeat, /const STAGE_DELAY_MS/)
+  assert.match(heartbeat, /createDynamicsCompressor/)
 })

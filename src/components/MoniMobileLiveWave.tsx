@@ -4,6 +4,13 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 const LIVE_WAVE_BAR_COUNT = 11
+const HEARTBEAT_EVENT = 'moni:heartbeat'
+
+type HeartbeatDetail = {
+  stage?: string
+  delayMs?: number
+  overtime?: boolean
+}
 
 function LivingWaveMarkup() {
   return (
@@ -19,19 +26,44 @@ export default function MoniMobileLiveWave() {
   const [target, setTarget] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
-    const root = document.querySelector('[data-moni-mobile-chat]')
+    const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
     if (!root) return
+
+    let pulseTimer: number | null = null
 
     const syncTarget = () => {
       const next = root.querySelector<HTMLElement>('.moni-live-state')
       setTarget((current) => current === next ? current : next)
     }
 
+    const pulseWave = (event: Event) => {
+      const detail = (event as CustomEvent<HeartbeatDetail>).detail || {}
+      const delayMs = Number(detail.delayMs)
+      if (Number.isFinite(delayMs) && delayMs > 0) root.style.setProperty('--moni-heartbeat-ms', `${Math.round(delayMs)}ms`)
+      root.dataset.moniHeartbeatOvertime = detail.overtime ? 'true' : 'false'
+
+      const wave = root.querySelector<HTMLElement>('[data-moni-live-wave]')
+      if (!wave) return
+      wave.classList.remove('moni-heartbeat-hit')
+      void wave.offsetWidth
+      wave.classList.add('moni-heartbeat-hit')
+      if (pulseTimer !== null) window.clearTimeout(pulseTimer)
+      pulseTimer = window.setTimeout(() => {
+        wave.classList.remove('moni-heartbeat-hit')
+        pulseTimer = null
+      }, 390)
+    }
+
     syncTarget()
     const observer = new MutationObserver(syncTarget)
     observer.observe(root, { childList: true, subtree: true })
+    window.addEventListener(HEARTBEAT_EVENT, pulseWave)
 
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      window.removeEventListener(HEARTBEAT_EVENT, pulseWave)
+      if (pulseTimer !== null) window.clearTimeout(pulseTimer)
+    }
   }, [])
 
   return (
@@ -40,6 +72,7 @@ export default function MoniMobileLiveWave() {
       <style jsx global>{`
         [data-moni-mobile-chat] .moni-live-state {
           min-height: 18px;
+          transition: color 180ms ease;
         }
         [data-moni-mobile-chat] .moni-live-wave {
           position: relative;
@@ -88,14 +121,39 @@ export default function MoniMobileLiveWave() {
         [data-moni-mobile-chat] .moni-live-wave-bar:nth-child(10) { animation-delay: -.43s; opacity: .58; }
         [data-moni-mobile-chat] .moni-live-wave-bar:nth-child(11) { animation-delay: -1.02s; opacity: .42; }
 
+        /* THINKING no longer runs an unrelated decorative loop. Every pulse is restarted by the real heartbeat scheduler. */
         [data-moni-mobile-chat] .moni-live-state-thinking .moni-live-wave-bar {
-          animation-name: moniThinkingWave;
-          animation-duration: .82s;
+          animation: none;
+          transform: scaleY(.3);
+          opacity: .5;
         }
         [data-moni-mobile-chat] .moni-live-state-thinking .moni-live-wave {
           opacity: 1;
           filter: drop-shadow(0 0 6px currentColor);
         }
+        [data-moni-mobile-chat] .moni-live-state-thinking .moni-live-wave.moni-heartbeat-hit {
+          animation: moniHeartbeatWaveHit 360ms cubic-bezier(.2, .72, .25, 1) both;
+        }
+        [data-moni-mobile-chat] .moni-live-state-thinking .moni-live-wave.moni-heartbeat-hit .moni-live-wave-bar {
+          animation: moniHeartbeatBarHit 360ms cubic-bezier(.2, .72, .25, 1) both;
+        }
+        [data-moni-mobile-chat] .moni-live-state-thinking .moni-live-wave.moni-heartbeat-hit .moni-live-wave-bar:nth-child(2n) { animation-delay: 22ms; }
+        [data-moni-mobile-chat] .moni-live-state-thinking .moni-live-wave.moni-heartbeat-hit .moni-live-wave-bar:nth-child(3n) { animation-delay: 42ms; }
+
+        [data-moni-mobile-chat][data-moni-heartbeat-overtime="true"] .moni-live-state-thinking {
+          color: #dc2626 !important;
+        }
+        [data-moni-mobile-chat][data-moni-heartbeat-overtime="true"] .moni-live-state-thinking .moni-live-dot {
+          background: #ef4444 !important;
+          box-shadow: 0 0 0 4px rgba(239, 68, 68, .10);
+        }
+        [data-moni-mobile-chat][data-moni-heartbeat-overtime="true"] .moni-live-state-thinking .moni-live-wave {
+          filter: drop-shadow(0 0 7px rgba(239, 68, 68, .8));
+        }
+        [data-moni-mobile-chat][data-moni-heartbeat-overtime="true"] div[role="status"] .moni-thinking-dot {
+          background: #ef4444 !important;
+        }
+
         [data-moni-mobile-chat] .moni-live-state-listening .moni-live-wave-bar {
           animation-name: moniListeningWave;
           animation-duration: .68s;
@@ -121,12 +179,18 @@ export default function MoniMobileLiveWave() {
           73% { transform: scaleY(.78); opacity: .88; }
           88% { transform: scaleY(.34); opacity: .52; }
         }
-        @keyframes moniThinkingWave {
-          0%, 100% { transform: scaleY(.34); opacity: .56; }
-          22% { transform: scaleY(1.05); opacity: 1; }
-          45% { transform: scaleY(.52); opacity: .74; }
-          69% { transform: scaleY(.92); opacity: .96; }
-          86% { transform: scaleY(.43); opacity: .64; }
+        @keyframes moniHeartbeatWaveHit {
+          0% { transform: scaleX(.9); opacity: .78; }
+          28% { transform: scaleX(1.08); opacity: 1; }
+          62% { transform: scaleX(.98); opacity: .9; }
+          100% { transform: scaleX(1); opacity: .92; }
+        }
+        @keyframes moniHeartbeatBarHit {
+          0% { transform: scaleY(.3); opacity: .5; }
+          24% { transform: scaleY(1.08); opacity: 1; }
+          52% { transform: scaleY(.48); opacity: .72; }
+          72% { transform: scaleY(.84); opacity: .96; }
+          100% { transform: scaleY(.3); opacity: .5; }
         }
         @keyframes moniListeningWave {
           0%, 100% { transform: scaleY(calc(.32 + var(--moni-voice-level, 0) * .72)); opacity: .58; }
@@ -147,6 +211,7 @@ export default function MoniMobileLiveWave() {
 
         @media (prefers-reduced-motion: reduce) {
           [data-moni-mobile-chat] .moni-live-wave-bar,
+          [data-moni-mobile-chat] .moni-live-wave,
           [data-moni-mobile-chat] .moni-live-wave::after {
             animation: none !important;
           }

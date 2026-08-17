@@ -12,13 +12,14 @@ type RuntimeStatusPayload = {
   completed_tool_steps?: number
   current_tool_label?: string | null
   last_completed_tool_label?: string | null
+  elapsed_seconds?: number
 }
 
-const STATUS_REFRESH_MS = 1800
+const STATUS_REFRESH_MS = 1200
 
 function visibleDetail(stage: ThinkingStage | '', rawDetail: string) {
   if (stage === 'normal') return rawDetail || '질문의 범위와 필요한 데이터를 확인하고 있습니다.'
-  if (stage === 'grace') return rawDetail || '확인된 내용을 정리하고 답변을 마무리하고 있습니다.'
+  if (stage === 'grace') return rawDetail || '예상 시간을 넘어 실제 실행 상태를 다시 확인하고 있습니다.'
   return rawDetail || '실제 실행 상태를 확인하면서 다음 단계를 진행하고 있습니다.'
 }
 
@@ -77,15 +78,15 @@ export default function MoniMobileThinkingCopyFix() {
       const adaptiveDetail = String(panel.dataset.moniProgressDetail || '').trim()
       const detail = liveProgress || visibleDetail(stage, adaptiveDetail)
       const meta = liveProgressDetail || (stage === 'normal'
-        ? '실제 실행 기록이 생기면 현재 조회 단계를 약 2초 간격으로 갱신합니다.'
-        : '실제 실행 기록 기준으로 현재 상태를 계속 확인하고 있습니다.')
+        ? '실제 실행 기록을 약 1초 간격으로 확인해 현재 단계를 갱신합니다.'
+        : '예상 시간을 넘긴 뒤에도 실제 실행 기록 기준으로 현재 위치를 계속 표시합니다.')
 
       const detailText = detail ? `현재 진행 · ${detail}` : ''
       const metaText = meta ? `진행 현황 · ${meta}` : ''
       if (mainLine && mainLine.textContent !== main) mainLine.textContent = main
       if (detailLine && detailLine.textContent !== detailText) detailLine.textContent = detailText
       if (metaLine && metaLine.textContent !== metaText) metaLine.textContent = metaText
-      if (lines.hidden) lines.hidden = false
+      lines.hidden = false
     }
 
     function syncAll() {
@@ -105,15 +106,13 @@ export default function MoniMobileThinkingCopyFix() {
         const payload = await response.json() as RuntimeStatusPayload
         if (!response.ok || !payload.ok) return
 
-        // While the UI is THINKING, only RUNNING data is accepted as live progress.
-        // This prevents the previous completed turn from briefly appearing as the current step.
         if (payload.run_status === 'RUNNING') {
           liveProgress = String(payload.progress || '').trim()
           liveProgressDetail = String(payload.progress_detail || '').trim()
           syncAll()
         }
       } catch {
-        // The card must keep the local truthful fallback instead of going blank.
+        // The card keeps its truthful local fallback when status polling is temporarily unavailable.
       } finally {
         statusRequestInFlight = false
       }
@@ -122,6 +121,7 @@ export default function MoniMobileThinkingCopyFix() {
     function syncPolling() {
       const active = thinkingPanels().length > 0
       if (active && statusTimer === null) {
+        syncAll()
         void refreshRuntimeStatus()
         statusTimer = window.setInterval(() => void refreshRuntimeStatus(), STATUS_REFRESH_MS)
       } else if (!active && statusTimer !== null) {
@@ -161,8 +161,13 @@ export default function MoniMobileThinkingCopyFix() {
         display: none !important;
       }
 
-      [data-moni-mobile-chat] [data-moni-progress-lines="true"] {
+      /* Higher specificity than every legacy nth-child hiding rule. */
+      [data-moni-mobile-chat] [data-moni-adaptive-progress="true"] > div[data-moni-progress-lines="true"]:not([data-never-match]) {
         display: grid !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        height: auto !important;
+        min-height: 48px !important;
         gap: 5px;
         margin-top: 7px;
       }
@@ -172,6 +177,7 @@ export default function MoniMobileThinkingCopyFix() {
       }
 
       [data-moni-mobile-chat] [data-moni-progress-main-line="true"] {
+        display: block !important;
         color: #456b79;
         font-size: 11.5px;
         font-weight: 850;
@@ -179,6 +185,7 @@ export default function MoniMobileThinkingCopyFix() {
       }
 
       [data-moni-mobile-chat] [data-moni-progress-detail-line="true"] {
+        display: block !important;
         color: #587b89;
         font-size: 10.8px;
         font-weight: 750;
@@ -186,21 +193,25 @@ export default function MoniMobileThinkingCopyFix() {
       }
 
       [data-moni-mobile-chat] [data-moni-progress-meta-line="true"] {
+        display: block !important;
         color: #8a9da6;
         font-size: 10px;
         font-weight: 650;
         line-height: 1.5;
       }
 
-      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-1"] [data-moni-progress-detail-line="true"],
-      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-2"] [data-moni-progress-detail-line="true"] {
-        color: #416c7e;
+      [data-moni-mobile-chat] [data-moni-thinking-stage="grace"] [data-moni-progress-main-line="true"],
+      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-1"] [data-moni-progress-main-line="true"],
+      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-2"] [data-moni-progress-main-line="true"],
+      [data-moni-mobile-chat] [data-moni-thinking-stage="apology"] [data-moni-progress-main-line="true"] {
+        color: #c2413b;
       }
 
-      [data-moni-mobile-chat] [data-moni-thinking-stage="apology"] [data-moni-progress-main-line="true"],
-      [data-moni-mobile-chat] [data-moni-thinking-stage="apology"] [data-moni-progress-detail-line="true"],
-      [data-moni-mobile-chat] [data-moni-thinking-stage="apology"] [data-moni-progress-meta-line="true"] {
-        color: #805f35;
+      [data-moni-mobile-chat] [data-moni-thinking-stage="grace"] [data-moni-progress-detail-line="true"],
+      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-1"] [data-moni-progress-detail-line="true"],
+      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-2"] [data-moni-progress-detail-line="true"],
+      [data-moni-mobile-chat] [data-moni-thinking-stage="apology"] [data-moni-progress-detail-line="true"] {
+        color: #9f3f39;
       }
     `}</style>
   )
