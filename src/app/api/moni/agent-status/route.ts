@@ -19,6 +19,7 @@ function describeTool(toolName: string) {
   if (toolName === 'get_recent_product_monthly_trend') return '최근 제품별 월간 흐름'
   if (toolName === 'get_sales_client_master_summary') return '거래처 마스터'
   if (/prepare/i.test(toolName)) return '승인 전 미리보기 조건'
+  if (/execute/i.test(toolName)) return '승인된 업무 실행 결과'
   return '회사 업무 데이터'
 }
 
@@ -46,7 +47,15 @@ export async function GET(request: NextRequest) {
 
   const run = runs?.[0]
   if (runError || !run) {
-    return NextResponse.json({ ok: true, progress: null, run_status: null }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json({
+      ok: true,
+      progress: '요청을 받았습니다. 아직 실행 상태가 생성되지 않아 첫 조회를 준비하고 있습니다.',
+      progress_detail: '실행 상태가 확인되는 즉시 현재 조회 단계를 표시합니다.',
+      run_status: null,
+      completed_tool_steps: 0,
+      current_tool_label: null,
+      last_completed_tool_label: null,
+    }, { headers: { 'Cache-Control': 'no-store' } })
   }
 
   const { data: toolRuns } = await supabase
@@ -55,26 +64,52 @@ export async function GET(request: NextRequest) {
     .eq('business_id', BUSINESS_ID)
     .eq('agent_run_id', run.id)
     .order('step_no', { ascending: false })
-    .limit(4)
+    .limit(8)
 
-  const completed = (toolRuns || []).filter((row) => row.status === 'COMPLETED')
-  const latest = completed[0]
-  let progress: string | null = null
+  const rows = toolRuns || []
+  const running = rows.find((row) => row.status === 'RUNNING')
+  const completed = rows.filter((row) => row.status === 'COMPLETED')
+  const failed = rows.find((row) => row.status === 'FAILED')
+  const latestCompleted = completed[0]
+  const currentToolLabel = running ? describeTool(String(running.tool_name || '')) : null
+  const lastCompletedToolLabel = latestCompleted ? describeTool(String(latestCompleted.tool_name || '')) : null
 
-  if (latest) {
-    const label = describeTool(String(latest.tool_name || ''))
-    const countText = completed.length >= 2 ? ` 현재까지 확인된 조회 단계는 ${completed.length}개입니다.` : ''
-    progress = `최근 ${label} 확인을 마쳤습니다.${countText} 이어지는 결과를 정리하고 있습니다.`
+  let progress = ''
+  let progressDetail = ''
+
+  if (running) {
+    progress = `현재 ${currentToolLabel}을 확인하고 있습니다.`
+    progressDetail = completed.length > 0
+      ? `앞선 조회 ${completed.length}단계를 완료했고, 현재 조회가 끝나면 결과를 이어서 정리합니다.`
+      : '첫 데이터 조회 단계가 실행 중입니다.'
+  } else if (latestCompleted && run.status === 'RUNNING') {
+    progress = `최근 ${lastCompletedToolLabel} 확인을 마쳤습니다.`
+    progressDetail = `현재까지 조회 ${completed.length}단계를 완료했고, 다음 조회 또는 최종 답변 정리를 진행하고 있습니다.`
   } else if (run.status === 'RUNNING') {
-    progress = '질문에 필요한 조회 범위를 확인하고 첫 데이터를 불러오는 중입니다.'
+    progress = '아직 도구 실행 전입니다. 질문에 필요한 조회 범위를 준비하고 있습니다.'
+    progressDetail = '조회가 시작되면 실제 실행 중인 데이터 영역을 여기에 바로 표시합니다.'
   } else if (run.status === 'COMPLETED') {
-    progress = '필요한 데이터 조회를 마치고 최종 답변을 정리하고 있습니다.'
+    progress = latestCompleted
+      ? `${lastCompletedToolLabel}까지 필요한 데이터 확인을 마쳤습니다.`
+      : '필요한 데이터 확인을 마쳤습니다.'
+    progressDetail = '최종 답변을 화면에 반영하고 있습니다.'
+  } else if (failed || run.status === 'FAILED') {
+    progress = failed
+      ? `${describeTool(String(failed.tool_name || ''))} 확인 단계에서 처리가 중단됐습니다.`
+      : '처리 상태가 중단되어 오류 정보를 확인하고 있습니다.'
+    progressDetail = '실패 원인을 임의로 추측하지 않고 실제 실행 기록 기준으로 상태를 표시하고 있습니다.'
+  } else {
+    progress = '현재 실행 상태를 확인하고 있습니다.'
+    progressDetail = '실제 실행 기록이 갱신되는 대로 현재 단계를 표시합니다.'
   }
 
   return NextResponse.json({
     ok: true,
     progress,
+    progress_detail: progressDetail,
     run_status: run.status,
     completed_tool_steps: completed.length,
+    current_tool_label: currentToolLabel,
+    last_completed_tool_label: lastCompletedToolLabel,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
