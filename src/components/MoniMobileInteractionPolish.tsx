@@ -57,6 +57,7 @@ export default function MoniMobileInteractionPolish() {
 
     const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
     if (!root) return
+    const chatRoot = root
 
     let heartbeatContext: AudioContext | null = null
     let heartbeatInterval: number | null = null
@@ -144,7 +145,7 @@ export default function MoniMobileInteractionPolish() {
     }
 
     function syncThinkingState() {
-      if (root.querySelector(THINKING_SELECTOR)) startHeartbeat()
+      if (chatRoot.querySelector(THINKING_SELECTOR)) startHeartbeat()
       else stopHeartbeat()
     }
 
@@ -152,11 +153,11 @@ export default function MoniMobileInteractionPolish() {
       void ensureAudioContext()
     }
 
-    root.addEventListener('pointerdown', primeAudio, true)
-    root.addEventListener('keydown', primeAudio, true)
+    chatRoot.addEventListener('pointerdown', primeAudio, true)
+    chatRoot.addEventListener('keydown', primeAudio, true)
 
     const observer = new MutationObserver(syncThinkingState)
-    observer.observe(root, {
+    observer.observe(chatRoot, {
       attributes: true,
       attributeFilter: ['class'],
       childList: true,
@@ -167,8 +168,8 @@ export default function MoniMobileInteractionPolish() {
     return () => {
       observer.disconnect()
       stopHeartbeat()
-      root.removeEventListener('pointerdown', primeAudio, true)
-      root.removeEventListener('keydown', primeAudio, true)
+      chatRoot.removeEventListener('pointerdown', primeAudio, true)
+      chatRoot.removeEventListener('keydown', primeAudio, true)
       if (heartbeatContext) void heartbeatContext.close().catch(() => undefined)
     }
   }, [])
