@@ -104,7 +104,6 @@ export function sanitizeMoniUserFacingText(value: unknown) {
     .replace(/`([a-z][a-z0-9]*(?:_[a-z0-9]+){2,})`/g, '내부 지표')
     .replace(/\b([a-z][a-z0-9]*(?:_[a-z0-9]+){2,})\b/g, '내부 지표')
     .replace(/[ \t]+\n/g, '\n')
-    .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
