@@ -14,7 +14,7 @@ type RuntimeStatusPayload = {
   elapsed_seconds?: number
 }
 
-const STATUS_REFRESH_MS = 1200
+const STATUS_REFRESH_MS = 500
 
 function stripDuplicateElapsedTime(value: string) {
   return String(value || '')
