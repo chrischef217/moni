@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const liveWave = readFileSync('src/components/MoniMobileLiveWave.tsx', 'utf8')
+const heartbeat = readFileSync('src/components/MoniMobileHeartbeatBoost.tsx', 'utf8')
 const mobilePage = readFileSync('src/app/mobile/page.tsx', 'utf8')
 
 test('MONI mobile mounts a persistent living status waveform through a React portal', () => {
@@ -12,17 +13,25 @@ test('MONI mobile mounts a persistent living status waveform through a React por
   assert.match(liveWave, /const LIVE_WAVE_BAR_COUNT = 11/)
   assert.match(liveWave, /data-moni-live-wave/)
   assert.match(liveWave, /createPortal\(<LivingWaveMarkup \/>, target\)/)
-  assert.match(liveWave, /observer\.observe\(root, \{ childList: true, subtree: true \}\)/)
 })
 
-test('living waveform changes behavior for live, thinking, listening, and issue states', () => {
-  assert.match(liveWave, /moni-live-state-thinking \.moni-live-wave-bar/)
-  assert.match(liveWave, /moni-live-state-listening \.moni-live-wave-bar/)
-  assert.match(liveWave, /moni-live-state-issue \.moni-live-wave-bar/)
-  assert.match(liveWave, /@keyframes moniLivingWave/)
-  assert.match(liveWave, /@keyframes moniThinkingWave/)
-  assert.match(liveWave, /@keyframes moniListeningWave/)
-  assert.match(liveWave, /@keyframes moniIssueWave/)
+test('THINKING waveform pulses from the same heartbeat event instead of an independent loop', () => {
+  assert.match(heartbeat, /HEARTBEAT_EVENT = 'moni:heartbeat'/)
+  assert.match(heartbeat, /window\.dispatchEvent\(new CustomEvent/)
+  assert.match(liveWave, /HEARTBEAT_EVENT = 'moni:heartbeat'/)
+  assert.match(liveWave, /window\.addEventListener\(HEARTBEAT_EVENT, pulseWave\)/)
+  assert.match(liveWave, /moni-heartbeat-hit/)
+  assert.match(liveWave, /@keyframes moniHeartbeatBarHit/)
+  assert.doesNotMatch(liveWave, /@keyframes moniThinkingWave/)
+})
+
+test('overtime THINKING state turns red while the shared heartbeat accelerates', () => {
+  assert.match(liveWave, /data-moni-heartbeat-overtime="true"/)
+  assert.match(liveWave, /#dc2626/)
+  assert.match(liveWave, /#ef4444/)
+  assert.match(heartbeat, /normal: 1320/)
+  assert.match(heartbeat, /grace: 1040/)
+  assert.match(heartbeat, /apology: 500/)
 })
 
 test('listening waveform reacts to real microphone level already exposed by runtime guard', () => {
