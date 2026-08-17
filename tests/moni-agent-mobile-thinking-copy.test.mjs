@@ -31,11 +31,11 @@ test('thinking detail keeps one current-progress label and removes duplicate pro
   assert.match(fix, /payload\.run_status === 'RUNNING'/)
 })
 
-test('current progress stays visually active without inventing percentage completion', () => {
+test('current progress stays visually active without inventing a completion ratio', () => {
   assert.match(fix, /moni-progress-dots/)
   assert.match(fix, /content: '  •••'/)
   assert.match(fix, /prefers-reduced-motion: reduce/)
-  assert.doesNotMatch(fix, /\d+%/)
+  assert.doesNotMatch(fix, /진행률|완료율|aria-valuenow/)
 })
 
 test('duplicate runtime elapsed seconds are removed because ETA already owns timing', () => {
