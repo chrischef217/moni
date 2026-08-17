@@ -5,11 +5,13 @@ import { readFileSync } from 'node:fs'
 const liveWave = readFileSync('src/components/MoniMobileLiveWave.tsx', 'utf8')
 const mobilePage = readFileSync('src/app/mobile/page.tsx', 'utf8')
 
-test('MONI mobile mounts a persistent living status waveform', () => {
+test('MONI mobile mounts a persistent living status waveform through a React portal', () => {
   assert.match(mobilePage, /import MoniMobileLiveWave from '@\/components\/MoniMobileLiveWave'/)
   assert.match(mobilePage, /<MoniMobileLiveWave \/>/)
+  assert.match(liveWave, /import \{ createPortal \} from 'react-dom'/)
   assert.match(liveWave, /const LIVE_WAVE_BAR_COUNT = 11/)
-  assert.match(liveWave, /wave\.dataset\.moniLiveWave = 'true'/)
+  assert.match(liveWave, /data-moni-live-wave/)
+  assert.match(liveWave, /createPortal\(<LivingWaveMarkup \/>, target\)/)
   assert.match(liveWave, /observer\.observe\(root, \{ childList: true, subtree: true \}\)/)
 })
 
