@@ -4,6 +4,7 @@ import AllowanceLogin from '@/components/AllowanceLogin'
 import MoniMobileAnswerActions from '@/components/MoniMobileAnswerActions'
 import MoniMobileBusyRecovery from '@/components/MoniMobileBusyRecovery'
 import MoniMobileChat from '@/components/MoniMobileChat'
+import MoniMobileCrudCards from '@/components/MoniMobileCrudCards'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
@@ -50,6 +51,7 @@ export default async function MoniMobilePage() {
       <MoniMobileThinkingCharacterMotion />
       <MoniMobileThinkingCharacterMotionPatch />
       <MoniMobileVoiceCanvasWave />
+      <MoniMobileCrudCards />
       <MoniMobileChat />
     </main>
   )
