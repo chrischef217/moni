@@ -44,6 +44,19 @@ function drawSmoothSegment(
   context.lineTo(last.x, last.y)
 }
 
+function createVoiceGradient(
+  context: CanvasRenderingContext2D,
+  width: number,
+  alpha: number,
+) {
+  const gradient = context.createLinearGradient(0, 0, width, 0)
+  gradient.addColorStop(0, `rgba(151, 132, 246, ${alpha})`)
+  gradient.addColorStop(0.36, `rgba(188, 130, 247, ${alpha})`)
+  gradient.addColorStop(0.7, `rgba(235, 147, 211, ${alpha})`)
+  gradient.addColorStop(1, `rgba(174, 139, 247, ${alpha})`)
+  return gradient
+}
+
 function VoiceCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -98,6 +111,18 @@ function VoiceCanvas() {
       const fractionalShift = Math.max(0, Math.min(1, (now - lastSampleAt) / SAMPLE_INTERVAL_MS))
       const stepX = width / (HISTORY_SAMPLES - 1)
 
+      // Always keep a thin resting baseline visible. Silence should look alive and ready,
+      // not like the waveform renderer disappeared.
+      context.save()
+      context.beginPath()
+      context.moveTo(0, centerY)
+      context.lineTo(width, centerY)
+      context.lineCap = 'round'
+      context.strokeStyle = createVoiceGradient(context, width, 0.38)
+      context.lineWidth = 1.15
+      context.stroke()
+      context.restore()
+
       const drawable = history.map((value, index) => ({
         value,
         x: (index - fractionalShift) * stepX,
@@ -122,16 +147,27 @@ function VoiceCanvas() {
 
       context.lineCap = 'round'
       context.lineJoin = 'round'
-      for (const points of segments) {
-        drawSmoothSegment(context, points)
-        context.strokeStyle = 'rgba(82, 104, 113, 0.16)'
-        context.lineWidth = 4.6
-        context.stroke()
+      const activeGradient = createVoiceGradient(context, width, 0.98)
+      const glowStrength = 7 + envelope * 11
 
+      for (const points of segments) {
+        context.save()
         drawSmoothSegment(context, points)
-        context.strokeStyle = 'rgba(74, 96, 105, 0.92)'
-        context.lineWidth = 1.55
+        context.strokeStyle = createVoiceGradient(context, width, 0.2)
+        context.lineWidth = 5.4
+        context.shadowColor = 'rgba(205, 137, 241, 0.34)'
+        context.shadowBlur = glowStrength
         context.stroke()
+        context.restore()
+
+        context.save()
+        drawSmoothSegment(context, points)
+        context.strokeStyle = activeGradient
+        context.lineWidth = 1.7 + envelope * 0.45
+        context.shadowColor = 'rgba(227, 143, 218, 0.58)'
+        context.shadowBlur = 4 + envelope * 8
+        context.stroke()
+        context.restore()
       }
 
       frame = window.requestAnimationFrame(draw)
@@ -192,6 +228,7 @@ export default function MoniMobileVoiceCanvasWave() {
           height: 100%;
           display: block;
           pointer-events: none;
+          filter: saturate(1.04);
         }
       `}</style>
     </>
