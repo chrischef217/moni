@@ -86,6 +86,36 @@ function isExplicitLotLookupRequest(message: string) {
   return /\bLOT\d{8}-\d+\b/i.test(normalized)
 }
 
+function inferContextualCompanyDataTool(
+  message: string,
+  role: string,
+  recentHistory: Input['recentHistory'],
+) {
+  if (String(role || '').toLowerCase() !== 'admin') return null
+  const normalized = String(message || '').replace(/\s+/g, ' ').trim()
+  if (!normalized || normalized.length > 180 || hasProductionMutationIntent(normalized)) return null
+
+  const contextualCue = /(넘버|번호|다음|그럼|그거|그것|이것|저거|도\s*알려|까지\s*알려|뭔지|뭐였|얼마|몇\s*(?:개|건|곳)|체크|확인해)/i.test(normalized)
+  if (!contextualCue) return null
+
+  const recent = recentHistory
+    .slice(-10)
+    .map((item) => String(item.content || ''))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+
+  if (/(?:원재료|원료).*(?:소모|출고)|(?:소모|출고).*(?:원재료|원료)|출고\s*기준/.test(recent)) {
+    return 'search_raw_material_transactions'
+  }
+  if (/(생산계획|월간\s*계획)/.test(recent)) return 'search_production_plans'
+  if (/(생산실적|작업지시|작업지시서|\bLOT\d{8}-\d+\b)/i.test(recent)) return 'search_production_records'
+  if (/(매출|판매|수금|미수)/.test(recent)) return 'search_sales_and_receivables'
+  if (/(매입|지급|미지급)/.test(recent)) return 'search_purchases_and_payables'
+  if (/(제품\s*마스터|레시피|배합)/.test(recent)) return 'search_products_and_recipes'
+  if (/(현재\s*재고|원재료\s*재고)/.test(recent)) return 'get_raw_material_inventory'
+  return null
+}
+
 function isSalesClientMasterSummaryRequest(message: string, role: string) {
   if (String(role || '').toLowerCase() !== 'admin') return false
   const normalized = String(message || '').replace(/\s+/g, ' ').trim()
@@ -250,14 +280,15 @@ ${memory ? `${memory}\n` : ''}${history ? `[최근 MONI 대화 백업]\n${histor
 33. 결과에 may_be_truncated=true가 있으면 상세 행은 일부라고 밝힙니다. summary_is_complete=true와 전체 summary가 같이 있으면 그 전체 집계를 우선 사용하고 상세 100행만 다시 합산하지 않으며 같은 도구를 반복 호출하지 않습니다.
 34. 사용자가 정확한 제품명·LOT·문서번호를 지정하면 답변에도 그 식별자를 유지합니다. exact 식별자가 공식 마스터에 없으면 유사 항목을 같은 것처럼 대체하지 않습니다. 최근 완료 LOT가 짧은 기간에서 안 보이면 제품 이력 범위를 합리적으로 넓혀 확인합니다.
 35. 월간 생산계획과 실제 작업지시 규모가 비정상적으로 크게 벌어지거나 data_quality_warnings가 있으면 단위·입력값 이상을 먼저 경고하고 임의 보정하지 않습니다. 검증 전 작업지시 발행·생산 착수를 권고하지 않습니다.
-36. 생산·작업지시·완료·LOT 질문은 search_production_records, 월간 계획은 search_production_plans, 매출·수금·미수는 search_sales_and_receivables, 매입·지급·미지급은 search_purchases_and_payables, 원재료 입출고는 search_material_transactions를 우선 사용합니다.
+36. 생산·작업지시·완료·LOT 질문은 search_production_records, 월간 계획은 search_production_plans, 매출·수금·미수는 search_sales_and_receivables, 매입·지급·미지급은 search_purchases_and_payables, 원재료 입출고는 search_raw_material_transactions를 우선 사용합니다.
 37. 사용자가 오늘 우선순위를 물으면 현재 공장 날짜를 확인하고 당일 생산실적이 없어도 search_production_plans를 생략하지 않습니다. 생산실적·생산계획·매출/수금·매입/지급 근거를 함께 확인해 우선순위를 정하고 첫 문장을 “가장 먼저” 또는 “최우선”으로 시작합니다.
 38. data_quality_warnings가 반환되면 답변의 판단보다 먼저 그 경고를 반영합니다. 경고가 해소되지 않은 수치를 정상 KPI로 단정하지 않습니다.
 39. 특정 연월이 명시된 일반 생산·매출·매입 조회는 특정 일자나 LOT 조회가 아닌 한 그 달의 1일부터 말일까지 start_date와 end_date를 모두 넣어 조회합니다. “7월 말 기준” 같은 표현도 7월 전체 범위를 사용합니다.
 40. 사용자가 정확한 LOT를 적으면 최종 답변에 그 LOT 문자열을 반드시 그대로 한 번 이상 표시합니다. 제품의 생산 이력을 요청하면 답변에 대상 제품명을 반드시 명시합니다.
 41. 사용자가 “최신 N개월”, “직전 N개월”, “오늘 기준 최근 N개월”처럼 상대 기간을 명확히 말하면 공장 기준 현재 날짜에서 곧바로 기간을 계산하고 데이터를 조회합니다. “맞으면 2026년 3월~8월이라고 답해 주세요”처럼 다시 확인을 요구하지 않습니다.
 42. 최근 대화에서 이미 대상 제품·거래처·지표가 확정돼 있고 사용자가 “그렇게 해줘”, “월별 추이”, “최신 6개월만”처럼 후속 지시를 하면 직전 대상을 그대로 이어서 조회합니다. 같은 대상이나 기간을 다시 선택하게 만들지 않습니다.
-43. 실제 MONI 도구가 오류를 반환하지 않았는데 “백엔드 조회 오류”, “재시도 중”, “연결 복구 중”이라고 말하지 않습니다. 데이터가 필요한 답변은 실제 도구를 호출해 근거를 확보하고, 호출하지 못했다면 오류를 꾸며내지 말고 지원 범위를 정확히 설명합니다.`
+43. 실제 MONI 도구가 오류를 반환하지 않았는데 “백엔드 조회 오류”, “재시도 중”, “연결 복구 중”이라고 말하지 않습니다. 데이터가 필요한 답변은 실제 도구를 호출해 근거를 확보하고, 호출하지 못했다면 오류를 꾸며내지 말고 지원 범위를 정확히 설명합니다.
+44. 직전 MONI 답변에 회사 수치가 이미 적혀 있어도 사용자가 “넘버 8”, “그 다음은?”, “그것도 알려줘”처럼 새로운 순번·항목·수치를 요구하면 직전 답변의 숫자를 그대로 재사용하지 말고 관련 MONI 조회 도구로 현재 공식 데이터를 다시 확인한 뒤 답합니다.`
 }
 
 function usageOf(result: any) {
@@ -308,7 +339,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
     model: input.model,
     status: 'RUNNING',
     validation_status: 'NOT_APPLICABLE',
-    prompt_version: 'MONI_CONVERSATIONS_V1_11_THINKING_WATCHDOG',
+    prompt_version: 'MONI_CONVERSATIONS_V1_12_LIVE_TOOL_PROGRESS',
     metadata: { state_mode: 'OPENAI_CONVERSATIONS_API', separate_turn_write_approval: true },
   }).select('id').single()
   if (runError) {
@@ -469,6 +500,9 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
   const forceMonthlyComparison = isMonthlyManagementComparisonRequest(input.currentUserText, input.context.session.role)
   const forceMonthlySnapshot = !forceMonthlyComparison && isMonthlyManagementAnalysisRequest(input.currentUserText, input.context.session.role)
   const forceLotLookup = !forceMonthlyComparison && !forceMonthlySnapshot && isExplicitLotLookupRequest(input.currentUserText)
+  const forceContextualReadTool = !forceMonthlyComparison && !forceMonthlySnapshot && !forceLotLookup
+    ? inferContextualCompanyDataTool(input.currentUserText, input.context.session.role, input.recentHistory)
+    : null
   const boundedReadPath = forceMonthlyComparison || forceMonthlySnapshot || forceLotLookup
   const runTurnLimit = boundedReadPath ? 4 : MAX_AGENT_TURNS
 
@@ -481,7 +515,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         ? 'get_monthly_management_snapshot'
         : forceLotLookup
           ? 'search_production_records'
-          : undefined
+          : forceContextualReadTool || undefined
     const supervisor = new Agent<MoniConversationRuntimeContext>({
       name: 'MONI Business Agent',
       model: input.model,
@@ -492,6 +526,8 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
           reasoning: { effort: 'minimal' as const },
           text: { verbosity: 'low' as const },
           maxTokens: forceMonthlyComparison ? 1500 : forceMonthlySnapshot ? 1200 : 900,
+        } : forceContextualReadTool ? {
+          toolChoice,
         } : {}),
       },
       instructions: buildInstructions(input),
@@ -555,7 +591,8 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
       metadata: {
         state_mode: 'OPENAI_CONVERSATIONS_API', conversation_id: conversationId, conversation_rebuilt: retried,
         forced_monthly_snapshot: forceMonthlySnapshot, forced_monthly_comparison: forceMonthlyComparison,
-        forced_lot_lookup: forceLotLookup, forced_sales_client_master_summary: false,
+        forced_lot_lookup: forceLotLookup, forced_contextual_read_tool: forceContextualReadTool,
+        forced_sales_client_master_summary: false,
         run_turn_limit: runTurnLimit, bounded_reasoning_effort: boundedReadPath ? 'minimal' : null,
         bounded_read_timeout_ms: boundedReadPath ? BOUNDED_READ_TIMEOUT_MS : null,
         separate_turn_write_approval: true,
@@ -583,6 +620,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
         state_mode: 'OPENAI_CONVERSATIONS_API', conversation_id: conversationId || null,
         conversation_rebuilt: retried, forced_monthly_snapshot: forceMonthlySnapshot,
         forced_monthly_comparison: forceMonthlyComparison, forced_lot_lookup: forceLotLookup,
+        forced_contextual_read_tool: forceContextualReadTool,
         forced_sales_client_master_summary: false, run_turn_limit: runTurnLimit,
         bounded_read_timeout_ms: boundedReadPath ? BOUNDED_READ_TIMEOUT_MS : null,
         separate_turn_write_approval: true,
@@ -599,7 +637,7 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
           ? '읽기 전용 월간/LOT 조회가 제한 시간 안에 완료되지 않아 안전하게 중단했습니다. 쓰기 실행에는 이 제한을 적용하지 않습니다.'
           : '사용자 질문 처리 중 Agent turn budget을 초과했습니다. 질문 유형별 단일 복합 조회 또는 결정적 라우팅이 필요합니다.',
         evidence: {
-          capability: forceMonthlyComparison ? 'monthly_management_comparison' : forceMonthlySnapshot ? 'monthly_management_snapshot' : forceLotLookup ? 'exact_lot_lookup' : 'agent_turn_budget',
+          capability: forceMonthlyComparison ? 'monthly_management_comparison' : forceMonthlySnapshot ? 'monthly_management_snapshot' : forceLotLookup ? 'exact_lot_lookup' : forceContextualReadTool ? 'contextual_company_data_followup' : 'agent_turn_budget',
           detail: text(input.currentUserText, 1200),
           timeout_ms: timedOut ? BOUNDED_READ_TIMEOUT_MS : null,
         },
