@@ -21,12 +21,22 @@ test('voice waveform records a dense slow history instead of reanimating the who
   assert.match(canvasWave, /window\.requestAnimationFrame\(draw\)/)
 })
 
-test('new waveform is driven by real microphone level and becomes blank during silence', () => {
+test('voice waveform is driven by real microphone level and decays to a visible baseline during silence', () => {
   assert.match(canvasWave, /getPropertyValue\('--moni-voice-level'\)/)
   assert.match(canvasWave, /const SILENCE_THRESHOLD = 0\.14/)
   assert.match(canvasWave, /target === 0\) envelope \*= 0\.26/)
   assert.match(canvasWave, /envelope < 0\.018\) envelope = 0/)
-  assert.match(canvasWave, /const active = Math\.abs\(point\.value\) > ACTIVE_EPSILON/)
+  assert.match(canvasWave, /context\.moveTo\(0, centerY\)/)
+  assert.match(canvasWave, /context\.lineTo\(width, centerY\)/)
+  assert.match(canvasWave, /createVoiceGradient\(context, width, 0\.38\)/)
+})
+
+test('active voice uses a polished violet-pink gradient with intensity-linked glow', () => {
+  assert.match(canvasWave, /rgba\(151, 132, 246, \$\{alpha\}\)/)
+  assert.match(canvasWave, /rgba\(235, 147, 211, \$\{alpha\}\)/)
+  assert.match(canvasWave, /const glowStrength = 7 \+ envelope \* 11/)
+  assert.match(canvasWave, /shadowColor = 'rgba\(227, 143, 218, 0\.58\)'/)
+  assert.match(canvasWave, /lineWidth = 1\.7 \+ envelope \* 0\.45/)
 })
 
 test('wave depth scales strongly with voice intensity while old CSS loop is disabled', () => {
