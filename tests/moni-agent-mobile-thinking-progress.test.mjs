@@ -17,10 +17,11 @@ test('THINKING progress rows stay visible and update from real runtime status', 
   assert.match(copyFix, /예상 대기 시간을 계산하고 있습니다/)
 })
 
-test('agent status reports actual running tool progress and elapsed time instead of hidden reasoning', () => {
+test('agent status reports actual running tool progress while ETA owns visible timing', () => {
   assert.match(statusRoute, /row\.status === 'RUNNING'/)
   assert.match(statusRoute, /현재 \$\{currentToolLabel\}을 확인하고 있습니다/)
-  assert.match(statusRoute, /처리 시작 후 \$\{elapsed\}초/)
+  assert.match(statusRoute, /확인을 마쳤고 답변에 반영하고 있습니다/)
+  assert.doesNotMatch(statusRoute, /처리 시작 후 \$\{elapsed\}초/)
   assert.match(statusRoute, /completed_tool_steps/)
   assert.match(statusRoute, /current_tool_label/)
   assert.match(statusRoute, /progress_detail/)
