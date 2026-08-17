@@ -2,6 +2,7 @@ import type { Viewport } from 'next'
 import { redirect } from 'next/navigation'
 import AllowanceLogin from '@/components/AllowanceLogin'
 import MoniMobileAnswerActions from '@/components/MoniMobileAnswerActions'
+import MoniMobileBusyRecovery from '@/components/MoniMobileBusyRecovery'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
@@ -41,6 +42,7 @@ export default async function MoniMobilePage() {
       <MoniMobileUxPolish />
       <MoniMobileInteractionPolish />
       <MoniMobileThinkingCopyFix />
+      <MoniMobileBusyRecovery />
       <MoniMobileHeartbeatBoost />
       <MoniMobileLiveWave />
       <MoniMobileVoiceCanvasWave />
