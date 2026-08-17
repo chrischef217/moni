@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import AllowanceLogin from '@/components/AllowanceLogin'
 import MoniMobileAnswerActions from '@/components/MoniMobileAnswerActions'
 import MoniMobileChat from '@/components/MoniMobileChat'
+import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
 import MoniMobileUxPolish from '@/components/MoniMobileUxPolish'
@@ -36,6 +37,7 @@ export default async function MoniMobilePage() {
       <MoniMobileRuntimeGuard />
       <MoniMobileAnswerActions />
       <MoniMobileUxPolish />
+      <MoniMobileInteractionPolish />
       <MoniMobileLiveWave />
       <MoniMobileVoiceCanvasWave />
       <MoniMobileChat />
