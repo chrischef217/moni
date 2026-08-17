@@ -33,12 +33,15 @@ test('send button never uses the black busy treatment and disabled state is gray
   assert.doesNotMatch(polish, /#17191b/)
 })
 
-test('thinking state loops a two-pulse cute heartbeat and stops on state exit', () => {
+test('thinking state loops a two-pulse adaptive heartbeat and stops on state exit', () => {
   assert.match(polish, /THINKING_SELECTOR = '\.moni-live-state-thinking'/)
-  assert.match(polish, /HEARTBEAT_INTERVAL_MS = 1320/)
+  assert.match(polish, /HEARTBEAT_LEAD_MS = 260/)
+  assert.match(polish, /heartbeatDelayMs\(heartbeatStage\)/)
   assert.match(polish, /oscillator\.type = 'triangle'/)
   assert.match(polish, /const pulses = \[/)
-  assert.match(polish, /heartbeatInterval = window\.setInterval/)
+  assert.match(polish, /peak: 0\.57/)
+  assert.match(polish, /peak: 0\.435/)
+  assert.match(polish, /heartbeatTimer = window\.setTimeout/)
   assert.match(polish, /function stopHeartbeat\(\)/)
   assert.match(polish, /attributeFilter: \['class'\]/)
 })

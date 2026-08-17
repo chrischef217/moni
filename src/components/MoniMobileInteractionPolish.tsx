@@ -1,12 +1,23 @@
 'use client'
 
 import { useLayoutEffect } from 'react'
+import {
+  MONI_ETA_DEFAULTS,
+  classifyMoniEtaKind,
+  fallbackProgressText,
+  heartbeatDelayMs,
+  robustEtaEstimate,
+  thinkingStage,
+  type MoniEtaKind,
+  type MoniThinkingStage,
+} from '@/lib/moni/mobile-eta'
 
 const MESSAGE_CACHE_KEY = 'moni-mobile-message-cache-v1'
+const ADAPTIVE_ETA_KEY = 'moni-mobile-adaptive-eta-v2'
 const LEGACY_DEMO_PATTERN = /핸드워시\s*레몬/i
 const THINKING_SELECTOR = '.moni-live-state-thinking'
-const HEARTBEAT_INTERVAL_MS = 1320
 const HEARTBEAT_LEAD_MS = 260
+const STATUS_REFRESH_MS = 4000
 
 type AudioWindow = Window & {
   webkitAudioContext?: typeof AudioContext
@@ -16,6 +27,12 @@ type CachedMessage = {
   role?: unknown
   content?: unknown
   [key: string]: unknown
+}
+
+type LocalEtaProfile = {
+  estimate?: number
+  samples?: number
+  history?: number[]
 }
 
 function stripLegacyDemoLine(value: unknown) {
@@ -51,6 +68,95 @@ function scrubLegacyDemoCache() {
   }
 }
 
+function readEtaProfiles() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(ADAPTIVE_ETA_KEY) || '{}')
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, LocalEtaProfile> : {}
+  } catch {
+    return {}
+  }
+}
+
+function localEstimate(kind: MoniEtaKind) {
+  const profile = readEtaProfiles()[kind]
+  const value = Number(profile?.estimate)
+  return Number.isFinite(value) && value >= 5 && value <= 60 ? Math.round(value) : MONI_ETA_DEFAULTS[kind]
+}
+
+function rememberLocalDuration(kind: MoniEtaKind, actualSeconds: number) {
+  if (!Number.isFinite(actualSeconds) || actualSeconds < 2 || actualSeconds > 120) return
+  try {
+    const profiles = readEtaProfiles()
+    const profile = profiles[kind] || {}
+    const previous = Number(profile.estimate) || MONI_ETA_DEFAULTS[kind]
+    const history = [...(Array.isArray(profile.history) ? profile.history : []), Math.round(actualSeconds)].slice(-10)
+    const target = robustEtaEstimate([...history].reverse(), MONI_ETA_DEFAULTS[kind])
+    const predictionError = Math.abs(actualSeconds - previous)
+    const learningRate = predictionError > 10 ? 0.72 : 0.46
+    const estimate = Math.max(5, Math.min(60, Math.round(previous * (1 - learningRate) + target * learningRate)))
+    profiles[kind] = {
+      estimate,
+      samples: Math.min(999, Number(profile.samples || 0) + 1),
+      history,
+    }
+    window.localStorage.setItem(ADAPTIVE_ETA_KEY, JSON.stringify(profiles))
+  } catch {
+    // ETA learning is UX-only and must never block the business request.
+  }
+}
+
+function parseAgentRequest(input: RequestInfo | URL, init?: RequestInit) {
+  const method = String(init?.method || (typeof Request !== 'undefined' && input instanceof Request ? input.method : 'GET')).toUpperCase()
+  if (method !== 'POST') return null
+  const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  let pathname = rawUrl
+  try { pathname = new URL(rawUrl, window.location.href).pathname } catch { /* keep raw URL */ }
+  if (pathname !== '/api/moni/agent-runtime' || typeof init?.body !== 'string') return null
+  try {
+    const body = JSON.parse(init.body) as { message?: unknown; thread_id?: unknown; attachment_ids?: unknown[] }
+    return {
+      question: String(body.message || '').trim() || (Array.isArray(body.attachment_ids) && body.attachment_ids.length ? '첨부한 사진을 확인해줘.' : ''),
+      threadId: String(body.thread_id || '').trim(),
+    }
+  } catch {
+    return null
+  }
+}
+
+function progressCopy(stage: MoniThinkingStage, elapsedSeconds: number, estimateSeconds: number, kind: MoniEtaKind, liveProgress: string) {
+  const overtime = Math.max(0, Math.floor(elapsedSeconds - estimateSeconds))
+  const remaining = Math.max(0, Math.ceil(estimateSeconds - elapsedSeconds))
+
+  if (stage === 'normal') {
+    return {
+      main: `예상 대기 시간 · 약 ${remaining}초 남음`,
+      detail: '최근 같은 유형의 실제 처리시간을 반영해 예상하고 있습니다.',
+    }
+  }
+  if (stage === 'grace') {
+    return {
+      main: `예상 시간 도달 · 마무리 확인 중 · ${overtime}초 추가`,
+      detail: '아직 예상 오차 범위 안에서 결과를 정리하고 있습니다.',
+    }
+  }
+  if (stage === 'detail-1') {
+    return {
+      main: `예상보다 ${overtime}초 더 걸리고 있습니다.`,
+      detail: liveProgress || fallbackProgressText(kind, stage),
+    }
+  }
+  if (stage === 'detail-2') {
+    return {
+      main: `추가 확인이 길어지고 있습니다 · +${overtime}초`,
+      detail: liveProgress || fallbackProgressText(kind, stage),
+    }
+  }
+  return {
+    main: `예상보다 오래 걸리고 있습니다 · +${overtime}초`,
+    detail: `조금만 더 기다려 주세요. ${liveProgress || fallbackProgressText(kind, stage)}`,
+  }
+}
+
 export default function MoniMobileInteractionPolish() {
   useLayoutEffect(() => {
     scrubLegacyDemoCache()
@@ -58,11 +164,20 @@ export default function MoniMobileInteractionPolish() {
     const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
     if (!root) return
     const chatRoot = root
+    const originalFetch = window.fetch.bind(window)
 
     let heartbeatContext: AudioContext | null = null
-    let heartbeatInterval: number | null = null
-    let heartbeatLeadTimer: number | null = null
+    let heartbeatTimer: number | null = null
     let heartbeatRunning = false
+    let heartbeatStage: MoniThinkingStage = 'normal'
+    let thinkingUiTimer: number | null = null
+    let activeStartedAt = 0
+    let activeEstimateSeconds = MONI_ETA_DEFAULTS.general
+    let activeKind: MoniEtaKind = 'general'
+    let activeThreadId = ''
+    let activeProgress = ''
+    let activeRequestSerial = 0
+    let lastStatusRefreshAt = 0
 
     async function ensureAudioContext() {
       try {
@@ -84,9 +199,11 @@ export default function MoniMobileInteractionPolish() {
 
       try {
         const baseTime = context.currentTime + 0.008
+        const stageIndex = heartbeatStage === 'normal' ? 0 : heartbeatStage === 'grace' ? 1 : heartbeatStage === 'detail-1' ? 2 : heartbeatStage === 'detail-2' ? 3 : 4
+        const pitchScale = 1 + stageIndex * 0.035
         const pulses = [
-          { at: 0, from: 225, to: 176, duration: 0.145, peak: 0.19 },
-          { at: 0.19, from: 205, to: 158, duration: 0.13, peak: 0.145 },
+          { at: 0, from: 225 * pitchScale, to: 176 * pitchScale, duration: 0.145, peak: 0.57 },
+          { at: 0.19, from: 205 * pitchScale, to: 158 * pitchScale, duration: 0.13, peak: 0.435 },
         ]
 
         pulses.forEach((pulse) => {
@@ -101,7 +218,7 @@ export default function MoniMobileInteractionPolish() {
           oscillator.frequency.exponentialRampToValueAtTime(pulse.to, endedAt)
 
           filter.type = 'lowpass'
-          filter.frequency.setValueAtTime(980, startedAt)
+          filter.frequency.setValueAtTime(1100, startedAt)
           filter.Q.setValueAtTime(0.7, startedAt)
 
           gain.gain.setValueAtTime(0.0001, startedAt)
@@ -119,35 +236,140 @@ export default function MoniMobileInteractionPolish() {
       }
     }
 
+    function clearHeartbeatTimer() {
+      if (heartbeatTimer !== null) {
+        window.clearTimeout(heartbeatTimer)
+        heartbeatTimer = null
+      }
+    }
+
+    function scheduleHeartbeat(delayMs: number) {
+      clearHeartbeatTimer()
+      heartbeatTimer = window.setTimeout(() => {
+        heartbeatTimer = null
+        if (!heartbeatRunning) return
+        void playHeartbeat()
+        scheduleHeartbeat(heartbeatDelayMs(heartbeatStage))
+      }, delayMs)
+    }
+
     function stopHeartbeat() {
       heartbeatRunning = false
-      if (heartbeatLeadTimer !== null) {
-        window.clearTimeout(heartbeatLeadTimer)
-        heartbeatLeadTimer = null
-      }
-      if (heartbeatInterval !== null) {
-        window.clearInterval(heartbeatInterval)
-        heartbeatInterval = null
-      }
+      clearHeartbeatTimer()
     }
 
     function startHeartbeat() {
       if (heartbeatRunning) return
       heartbeatRunning = true
-      heartbeatLeadTimer = window.setTimeout(() => {
-        heartbeatLeadTimer = null
-        if (!heartbeatRunning) return
-        void playHeartbeat()
-        heartbeatInterval = window.setInterval(() => {
-          if (heartbeatRunning) void playHeartbeat()
-        }, HEARTBEAT_INTERVAL_MS)
-      }, HEARTBEAT_LEAD_MS)
+      scheduleHeartbeat(HEARTBEAT_LEAD_MS)
+    }
+
+    function setHeartbeatStage(stage: MoniThinkingStage) {
+      if (heartbeatStage === stage) return
+      heartbeatStage = stage
+      if (heartbeatRunning) scheduleHeartbeat(Math.min(180, heartbeatDelayMs(stage)))
+    }
+
+    function getThinkingPanel() {
+      return Array.from(chatRoot.querySelectorAll<HTMLElement>('div[role="status"]'))
+        .find((node) => (node.textContent || '').includes('MONI가 확인 중')) || null
+    }
+
+    async function refreshRuntimeProgress() {
+      if (!activeThreadId) return
+      const now = Date.now()
+      if (now - lastStatusRefreshAt < STATUS_REFRESH_MS) return
+      lastStatusRefreshAt = now
+      try {
+        const response = await originalFetch(`/api/moni/agent-status?thread_id=${encodeURIComponent(activeThreadId)}&_=${now}`, { cache: 'no-store' })
+        const payload = await response.json() as { ok?: boolean; progress?: string | null }
+        if (response.ok && payload.ok && payload.progress) activeProgress = String(payload.progress)
+      } catch {
+        // Runtime progress is supplemental. Fallback copy remains truthful and available.
+      }
+    }
+
+    function tickThinkingUi() {
+      if (!chatRoot.querySelector(THINKING_SELECTOR)) return
+      if (!activeStartedAt) activeStartedAt = Date.now()
+      const elapsedSeconds = Math.max(0, (Date.now() - activeStartedAt) / 1000)
+      const stage = thinkingStage(elapsedSeconds, activeEstimateSeconds)
+      setHeartbeatStage(stage)
+      chatRoot.dataset.moniThinkingStage = stage
+
+      const panel = getThinkingPanel()
+      if (panel) {
+        const copy = progressCopy(stage, elapsedSeconds, activeEstimateSeconds, activeKind, activeProgress)
+        panel.dataset.moniAdaptiveProgress = 'true'
+        panel.dataset.moniThinkingStage = stage
+        panel.dataset.moniProgressMain = copy.main
+        panel.dataset.moniProgressDetail = copy.detail
+      }
+
+      if (stage === 'detail-1' || stage === 'detail-2' || stage === 'apology') void refreshRuntimeProgress()
+    }
+
+    function stopThinkingUi() {
+      if (thinkingUiTimer !== null) {
+        window.clearInterval(thinkingUiTimer)
+        thinkingUiTimer = null
+      }
+      delete chatRoot.dataset.moniThinkingStage
+      stopHeartbeat()
+    }
+
+    function startThinkingUi() {
+      if (thinkingUiTimer === null) thinkingUiTimer = window.setInterval(tickThinkingUi, 500)
+      tickThinkingUi()
+      startHeartbeat()
     }
 
     function syncThinkingState() {
-      if (chatRoot.querySelector(THINKING_SELECTOR)) startHeartbeat()
-      else stopHeartbeat()
+      if (chatRoot.querySelector(THINKING_SELECTOR)) startThinkingUi()
+      else stopThinkingUi()
     }
+
+    async function refreshLearnedEstimate(kind: MoniEtaKind, serial: number) {
+      try {
+        const response = await originalFetch(`/api/moni/agent-eta?kind=${encodeURIComponent(kind)}&_=${Date.now()}`, { cache: 'no-store' })
+        const payload = await response.json() as { ok?: boolean; estimate_seconds?: number; sample_count?: number }
+        if (!response.ok || !payload.ok || serial !== activeRequestSerial) return
+        const central = Number(payload.estimate_seconds)
+        const centralSamples = Number(payload.sample_count || 0)
+        if (!Number.isFinite(central) || central < 5 || central > 60) return
+        const local = localEstimate(kind)
+        activeEstimateSeconds = centralSamples >= 3
+          ? Math.max(5, Math.min(60, Math.round(central * 0.72 + local * 0.28)))
+          : local
+        tickThinkingUi()
+      } catch {
+        // Keep the local/default estimate when central learning is unavailable.
+      }
+    }
+
+    const wrappedFetch: typeof window.fetch = async (input, init) => {
+      const details = parseAgentRequest(input, init)
+      if (!details) return originalFetch(input, init)
+
+      const serial = ++activeRequestSerial
+      activeKind = classifyMoniEtaKind(details.question)
+      activeEstimateSeconds = localEstimate(activeKind)
+      activeStartedAt = Date.now()
+      activeThreadId = details.threadId || window.localStorage.getItem('moni-global-agent-thread-v11') || ''
+      activeProgress = ''
+      lastStatusRefreshAt = 0
+      void refreshLearnedEstimate(activeKind, serial)
+
+      try {
+        const response = await originalFetch(input, init)
+        const actualSeconds = (Date.now() - activeStartedAt) / 1000
+        if (serial === activeRequestSerial && response.ok) rememberLocalDuration(activeKind, actualSeconds)
+        return response
+      } catch (error) {
+        throw error
+      }
+    }
+    window.fetch = wrappedFetch
 
     const primeAudio = () => {
       void ensureAudioContext()
@@ -167,9 +389,10 @@ export default function MoniMobileInteractionPolish() {
 
     return () => {
       observer.disconnect()
-      stopHeartbeat()
+      stopThinkingUi()
       chatRoot.removeEventListener('pointerdown', primeAudio, true)
       chatRoot.removeEventListener('keydown', primeAudio, true)
+      window.fetch = originalFetch
       if (heartbeatContext) void heartbeatContext.close().catch(() => undefined)
     }
   }, [])
@@ -211,6 +434,31 @@ export default function MoniMobileInteractionPolish() {
         color: #a6b0b5 !important;
         box-shadow: none !important;
         opacity: 1 !important;
+      }
+
+      [data-moni-mobile-chat] [data-moni-adaptive-progress="true"] > div:nth-child(2),
+      [data-moni-mobile-chat] [data-moni-adaptive-progress="true"] > div:nth-child(3) {
+        display: none !important;
+      }
+
+      [data-moni-mobile-chat] [data-moni-adaptive-progress="true"]::after {
+        content: attr(data-moni-progress-main) "\\A" attr(data-moni-progress-detail);
+        display: block;
+        margin-top: 5px;
+        color: #5d7d8d;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1.55;
+        white-space: pre-line;
+      }
+
+      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-1"]::after,
+      [data-moni-mobile-chat] [data-moni-thinking-stage="detail-2"]::after {
+        color: #4f7080;
+      }
+
+      [data-moni-mobile-chat] [data-moni-thinking-stage="apology"]::after {
+        color: #805f35;
       }
     `}</style>
   )
