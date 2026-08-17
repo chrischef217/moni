@@ -16,6 +16,8 @@ type AudioWindow = Window & {
   webkitAudioContext?: typeof AudioContext
 }
 
+type UiCueKind = 'tap' | 'start' | 'stop' | 'send'
+
 function markDocumentLinks(root: ParentNode) {
   root.querySelectorAll<HTMLAnchorElement>(DOCUMENT_LINK_SELECTOR).forEach((link) => {
     link.target = '_blank'
@@ -46,25 +48,35 @@ export default function MoniMobileUxPolish() {
 
     let cueContext: AudioContext | null = null
 
-    function playVoiceCue(kind: 'start' | 'stop') {
+    async function playUiCue(kind: UiCueKind) {
       try {
         const audioWindow = window as AudioWindow
         const AudioContextClass = window.AudioContext || audioWindow.webkitAudioContext
         if (!AudioContextClass) return
+
         const context = cueContext || new AudioContextClass()
         cueContext = context
-        void context.resume()
+        if (context.state !== 'running') await context.resume()
+        if (context.state !== 'running') return
 
-        const now = context.currentTime
+        const now = context.currentTime + 0.004
         const notes = kind === 'start'
           ? [
-              { at: 0, from: 640, to: 760, duration: 0.11 },
-              { at: 0.13, from: 820, to: 980, duration: 0.12 },
+              { at: 0, from: 640, to: 760, duration: 0.11, peak: 0.96 },
+              { at: 0.13, from: 820, to: 980, duration: 0.12, peak: 0.96 },
             ]
-          : [
-              { at: 0, from: 860, to: 700, duration: 0.11 },
-              { at: 0.13, from: 620, to: 440, duration: 0.13 },
-            ]
+          : kind === 'stop'
+            ? [
+                { at: 0, from: 860, to: 700, duration: 0.11, peak: 0.96 },
+                { at: 0.13, from: 620, to: 440, duration: 0.13, peak: 0.96 },
+              ]
+            : kind === 'send'
+              ? [
+                  { at: 0, from: 820, to: 1040, duration: 0.085, peak: 0.92 },
+                ]
+              : [
+                  { at: 0, from: 720, to: 790, duration: 0.065, peak: 0.86 },
+                ]
 
         notes.forEach((note) => {
           const oscillator = context.createOscillator()
@@ -76,38 +88,47 @@ export default function MoniMobileUxPolish() {
           oscillator.frequency.setValueAtTime(note.from, startedAt)
           oscillator.frequency.exponentialRampToValueAtTime(note.to, endedAt)
           gain.gain.setValueAtTime(0.0001, startedAt)
-          gain.gain.exponentialRampToValueAtTime(0.96, startedAt + 0.006)
+          gain.gain.exponentialRampToValueAtTime(note.peak, startedAt + 0.004)
           gain.gain.exponentialRampToValueAtTime(0.0001, endedAt)
           oscillator.connect(gain)
           gain.connect(context.destination)
           oscillator.start(startedAt)
-          oscillator.stop(endedAt + 0.005)
+          oscillator.stop(endedAt + 0.006)
         })
       } catch {
-        // Voice button sounds are feedback only and must never block recording.
+        // Button sounds are feedback only and must never block MONI actions.
       }
     }
 
-    const handleVoiceCueClick = (event: Event) => {
+    const handleButtonPointerDown = (event: Event) => {
       const target = event.target instanceof Element ? event.target : null
       const button = target?.closest('button')
       if (!button || !root.contains(button) || button.hasAttribute('disabled')) return
 
+      let kind: UiCueKind = 'tap'
       if (button.getAttribute('aria-label') === '음성으로 입력') {
-        playVoiceCue('start')
-        return
+        kind = 'start'
+      } else if (button.getAttribute('aria-label') === '전송') {
+        kind = 'send'
+      } else {
+        const composer = button.closest('[data-moni-mobile-composer]')
+        const voiceWave = composer?.querySelector('[aria-label="음성 인식 상태"]')
+        if (voiceWave && button.textContent?.trim() === '확인') kind = 'stop'
       }
 
-      const composer = button.closest('[data-moni-mobile-composer]')
-      const voiceWave = composer?.querySelector('[aria-label="음성 인식 상태"]')
-      if (voiceWave && button.textContent?.trim() === '확인') playVoiceCue('stop')
+      void playUiCue(kind)
+      try {
+        if (typeof navigator.vibrate === 'function') navigator.vibrate(kind === 'tap' ? 8 : 14)
+      } catch {
+        // Haptic feedback is optional.
+      }
     }
 
-    root.addEventListener('click', handleVoiceCueClick, true)
+    root.addEventListener('pointerdown', handleButtonPointerDown, true)
 
     return () => {
       observer.disconnect()
-      root.removeEventListener('click', handleVoiceCueClick, true)
+      root.removeEventListener('pointerdown', handleButtonPointerDown, true)
       window.confirm = originalConfirm
       if (cueContext) void cueContext.close().catch(() => undefined)
     }
