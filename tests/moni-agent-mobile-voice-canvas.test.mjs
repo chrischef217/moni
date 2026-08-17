@@ -23,7 +23,7 @@ test('voice waveform records a dense slow history instead of reanimating the who
 
 test('new waveform is driven by real microphone level and becomes blank during silence', () => {
   assert.match(canvasWave, /getPropertyValue\('--moni-voice-level'\)/)
-  assert.match(canvasWave, /const SILENCE_THRESHOLD = 0\.055/)
+  assert.match(canvasWave, /const SILENCE_THRESHOLD = 0\.14/)
   assert.match(canvasWave, /target === 0\) envelope \*= 0\.26/)
   assert.match(canvasWave, /envelope < 0\.018\) envelope = 0/)
   assert.match(canvasWave, /const active = Math\.abs\(point\.value\) > ACTIVE_EPSILON/)
