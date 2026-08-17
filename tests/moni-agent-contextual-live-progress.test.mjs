@@ -7,7 +7,12 @@ const statusRoute = readFileSync('src/app/api/moni/agent-status/route.ts', 'utf8
 
 test('short contextual company-data followups force a real read tool instead of memory-only numbers', () => {
   assert.match(runtime, /function inferContextualCompanyDataTool/)
-  assert.match(runtime, /넘버\|번호\|다음/)
+  assert.match(runtime, /넘버/)
+  assert.match(runtime, /번호/)
+  assert.match(runtime, /다음/)
+  assert.match(runtime, /\\d\{1,3\}\\s\*번/)
+  assert.match(runtime, /계속/)
+  assert.match(runtime, /이어/)
   assert.match(runtime, /return 'search_raw_material_transactions'/)
   assert.match(runtime, /forceContextualReadTool/)
   assert.match(runtime, /forceContextualReadTool \|\| undefined/)
@@ -24,6 +29,7 @@ test('raw-material instruction points to the real catalog tool name', () => {
 test('agent status reports detailed observable phases without stale pre-tool wording', () => {
   assert.match(statusRoute, /search_raw_material_transactions' \|\| toolName === 'search_material_transactions'/)
   assert.match(statusRoute, /원재료 입출고·소모 기록/)
+  assert.match(statusRoute, /조회를 준비하고 있습니다 · 질문에서 필요한 데이터 영역을 확인했습니다/)
   assert.match(statusRoute, /실제 데이터에서 조회하고 있습니다 · 조회 \$\{currentStep\}단계/)
   assert.match(statusRoute, /확인 완료 · 실제 조회 \$\{completed\.length\}단계의 결과를 질문 조건과 맞춰 답변에 반영하고 있습니다/)
   assert.match(statusRoute, /질문의 대상·기간·조건을 확인하고 필요한 회사 데이터 범위를 준비하고 있습니다/)
