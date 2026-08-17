@@ -21,12 +21,13 @@ test('raw-material instruction points to the real catalog tool name', () => {
   assert.match(runtime, /새로운 순번·항목·수치를 요구하면 직전 답변의 숫자를 그대로 재사용하지 말고 관련 MONI 조회 도구/)
 })
 
-test('agent status reports observable phases instead of claiming it is still before the first tool call', () => {
+test('agent status reports detailed observable phases without stale pre-tool wording', () => {
   assert.match(statusRoute, /search_raw_material_transactions' \|\| toolName === 'search_material_transactions'/)
   assert.match(statusRoute, /원재료 입출고·소모 기록/)
-  assert.match(statusRoute, /첫 실제 데이터 조회가 실행 중입니다/)
-  assert.match(statusRoute, /확인을 마쳤고 답변에 반영하고 있습니다/)
-  assert.match(statusRoute, /질문 맥락과 필요한 조회 범위를 확인하고 있습니다/)
+  assert.match(statusRoute, /실제 데이터에서 조회하고 있습니다 · 조회 \$\{currentStep\}단계/)
+  assert.match(statusRoute, /확인 완료 · 실제 조회 \$\{completed\.length\}단계의 결과를 질문 조건과 맞춰 답변에 반영하고 있습니다/)
+  assert.match(statusRoute, /질문의 대상·기간·조건을 확인하고 필요한 회사 데이터 범위를 준비하고 있습니다/)
+  assert.match(statusRoute, /최종 답변을 구성하고 있습니다/)
   assert.doesNotMatch(statusRoute, /아직 데이터 조회 도구 호출 전입니다/)
   assert.doesNotMatch(statusRoute, /처리 시작 후 \$\{elapsed\}초/)
 })
