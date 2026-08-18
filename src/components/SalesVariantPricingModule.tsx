@@ -65,6 +65,7 @@ type Payload = {
 
 type VariantForm = {
   product_id: string
+  variant_name: string
   packaging_material_id: string
   sales_unit: SalesUnit
   unit_weight_g: string
@@ -137,6 +138,7 @@ function Summary({ label, value, note, tone = 'default' }: { label: string; valu
 function emptyVariant(productId = ''): VariantForm {
   return {
     product_id: productId,
+    variant_name: '',
     packaging_material_id: '',
     sales_unit: 'kg',
     unit_weight_g: '',
@@ -228,6 +230,7 @@ export default function SalesVariantPricingModule() {
     setVariantId(row?.id ?? '')
     setVariantForm(row ? {
       product_id: row.product_id,
+      variant_name: row.variant_name,
       packaging_material_id: row.packaging_material_id ?? '',
       sales_unit: row.sales_unit,
       unit_weight_g: String(row.unit_weight_g ?? ''),
@@ -265,6 +268,12 @@ export default function SalesVariantPricingModule() {
     setPackagingOpen(false)
   }
 
+  function clearPackaging() {
+    setVariantForm((current) => ({ ...current, packaging_material_id: '' }))
+    setPackagingQuery('')
+    setPackagingOpen(false)
+  }
+
   function addOverride() {
     const used = new Set(overrideDrafts.map((row) => row.client_id).filter(Boolean))
     const nextClient = clients.find((row) => row.status === 'active' && !used.has(row.id))
@@ -298,7 +307,7 @@ export default function SalesVariantPricingModule() {
     setNotice('')
     try {
       if (!variantForm.product_id) throw new Error('제품을 선택해 주세요.')
-      if (!variantForm.packaging_material_id) throw new Error('부재료 관리에 등록된 포장재를 선택해 주세요.')
+      if (!variantForm.variant_name.trim()) throw new Error('판매규격을 입력해 주세요.')
 
       const clientIds = overrideDrafts.map((row) => row.client_id).filter(Boolean)
       if (new Set(clientIds).size !== clientIds.length) throw new Error('같은 거래처의 예외조건을 두 번 등록할 수 없습니다.')
@@ -311,6 +320,7 @@ export default function SalesVariantPricingModule() {
 
       const result = await post('save_variant', {
         ...variantForm,
+        variant_name: variantForm.variant_name.trim(),
         unit_weight_g: Number(variantForm.unit_weight_g || 0),
         box_units: Number(variantForm.box_units || 0),
         default_unit_price: Number(variantForm.default_unit_price || 0),
@@ -359,7 +369,7 @@ export default function SalesVariantPricingModule() {
           <div>
             <p className="text-sm font-black text-emerald-300">MONI PRODUCT SPEC PRICING</p>
             <h1 className="mt-1 text-3xl font-black">제품 규격 단가</h1>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">제품별 기본 판매규격과 기본단가를 한 곳에서 관리합니다. 특정 거래처만 가격·MOQ가 다르면 해당 규격 카드의 예외조건으로 추가하고, 예외가 없으면 기본단가가 자동 적용됩니다.</p>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">제품별 판매규격과 기본단가를 한 곳에서 관리합니다. 판매규격은 `10kg`, `2kg`, `5kg × 2입 박스`처럼 실제 판매 형태로 유지하고, 사용하는 포장재는 부재료 관리 항목과 별도로 연결합니다.</p>
           </div>
           <button type="button" onClick={() => void load()} className={secondaryButton}>새로고침</button>
         </div>
@@ -370,7 +380,7 @@ export default function SalesVariantPricingModule() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Summary label="판매 대상 제품" value={`${products.length}개`} />
-        <Summary label="판매규격 및 단가" value={`${variants.length}개`} note="제품 하나에 여러 포장 형태 가능" tone="success" />
+        <Summary label="판매규격 및 단가" value={`${variants.length}개`} note="제품 하나에 여러 판매 형태 가능" tone="success" />
         <Summary label="거래처 예외조건" value={`${activeOverrideCount}건`} note="예외가 없으면 기본단가 자동 적용" />
         <Summary label="기본단가 미설정" value={`${missingPrice}개`} note={`다중규격 제품 ${multiVariantCount}개`} tone={missingPrice ? 'warning' : 'success'} />
       </div>
@@ -379,9 +389,9 @@ export default function SalesVariantPricingModule() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700 p-5">
           <div>
             <h2 className="text-xl font-black">제품별 판매규격 및 단가</h2>
-            <p className="mt-1 text-sm text-slate-400">포장재는 `부재료 관리`에 등록된 활성 부재료에서 선택합니다. 가격만 다른 거래처는 새 규격을 만들지 말고 기존 규격의 거래처 예외조건을 사용합니다.</p>
+            <p className="mt-1 text-sm text-slate-400">가격만 다른 거래처는 새 규격을 만들지 말고 기존 규격 카드의 거래처 예외조건을 사용합니다. 실제 판매 형태가 다를 때만 새 판매규격 카드를 추가합니다.</p>
           </div>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="제품·포장재·규격 검색" className="w-full max-w-[320px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="제품·판매규격 검색" className="w-full max-w-[320px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500" />
         </div>
 
         <div className="divide-y divide-slate-800">
@@ -407,7 +417,8 @@ export default function SalesVariantPricingModule() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="font-black text-white">{row.variant_name} {row.is_default && <span className="ml-1 rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-300">기본</span>}</div>
-                        <div className="mt-1 text-xs text-slate-500">{packaging?.material_code ? `${packaging.material_code} · ` : ''}{packaging?.spec ? `포장재 규격 ${packaging.spec} · ` : ''}{variantSpec(row)}</div>
+                        <div className="mt-1 text-xs text-slate-500">{variantSpec(row)}</div>
+                        <div className="mt-1 text-xs text-slate-500">포장재 · {packaging ? `${packaging.material_name}${packaging.spec ? ` / ${packaging.spec}` : ''}` : '부재료 미연결'}</div>
                       </div>
                       <span className={row.active ? 'text-xs text-emerald-300' : 'text-xs text-slate-500'}>{row.active ? '사용' : '중지'}</span>
                     </div>
@@ -445,7 +456,19 @@ export default function SalesVariantPricingModule() {
           </select>
         </Field>
 
-        <Field label="포장재 · 부재료에서 선택">
+        <Field label="판매규격">
+          <input value={variantForm.variant_name} onChange={(e) => setVariantForm((current) => ({ ...current, variant_name: e.target.value }))} placeholder="예: 10kg / 2kg / 5kg × 2입 박스" className={inputClass} />
+        </Field>
+
+        <Field label="판매단위">
+          <select value={variantForm.sales_unit} onChange={(e) => setVariantForm((current) => ({ ...current, sales_unit: e.target.value as SalesUnit }))} className={inputClass}>
+            <option value="kg">kg</option>
+            <option value="ea">EA</option>
+            <option value="box">BOX</option>
+          </select>
+        </Field>
+
+        <Field label="포장재 규격 · 부재료 관리에서 선택">
           <div className="relative">
             <input
               value={packagingQuery}
@@ -477,19 +500,9 @@ export default function SalesVariantPricingModule() {
               {!packagingResults.length && <div className="px-3 py-4 text-center text-xs text-slate-500">검색되는 활성 부재료가 없습니다.</div>}
             </div>}
           </div>
-        </Field>
-
-        <Field label="판매단위">
-          <select value={variantForm.sales_unit} onChange={(e) => setVariantForm((current) => ({ ...current, sales_unit: e.target.value as SalesUnit }))} className={inputClass}>
-            <option value="kg">kg</option>
-            <option value="ea">EA</option>
-            <option value="box">BOX</option>
-          </select>
-        </Field>
-
-        <Field label="포장재 규격">
-          <div className="min-h-[42px] rounded-xl border border-slate-700 bg-slate-950/55 px-3 py-2.5 text-sm font-bold text-slate-200">
-            {selectedPackaging?.spec || (variantForm.packaging_material_id ? '규격 미등록' : '포장재를 선택하면 부재료 등록 규격이 표시됩니다.')}
+          <div className="mt-2 flex min-h-5 items-center justify-between gap-3 text-xs text-slate-500">
+            <span>{selectedPackaging ? `선택됨 · ${selectedPackaging.material_name}${selectedPackaging.spec ? ` · ${selectedPackaging.spec}` : ''}` : '필요한 경우에만 실제 사용하는 부재료 포장재를 연결하세요.'}</span>
+            {variantForm.packaging_material_id && <button type="button" onClick={clearPackaging} className="shrink-0 font-bold text-slate-300 hover:text-white">선택 해제</button>}
           </div>
         </Field>
 
@@ -522,8 +535,8 @@ export default function SalesVariantPricingModule() {
       <section className="mt-7 rounded-2xl border border-slate-700 bg-slate-950/30">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-700 p-5">
           <div>
-            <h3 className="font-black text-white">거래처별 예외 규격·단가 <span className="ml-1 text-xs font-medium text-slate-500">선택사항</span></h3>
-            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">같은 포장규격인데 특정 거래처만 가격 또는 MOQ가 다를 때만 추가합니다. 등록하지 않은 거래처는 위 기본단가와 기본 MOQ를 자동 사용합니다. 실제 포장 형태가 다르면 별도 판매규격 카드로 추가하세요.</p>
+            <h3 className="font-black text-white">거래처별 예외 판매조건 <span className="ml-1 text-xs font-medium text-slate-500">선택사항</span></h3>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">이 판매규격에서 특정 거래처만 단가·MOQ가 다를 때 추가합니다. 등록하지 않은 거래처는 위 기본단가와 기본 MOQ를 자동 사용합니다. 거래처의 실제 판매규격 자체가 다르면 별도 판매규격 카드로 추가하세요.</p>
           </div>
           <button type="button" onClick={addOverride} className={secondaryButton}>+ 거래처 예외 추가</button>
         </div>
@@ -558,7 +571,7 @@ export default function SalesVariantPricingModule() {
                   <Field label={`예외 MOQ(${unitLabel(variantForm.sales_unit)})`}>
                     <input type="number" min="0" disabled={!draft.active} value={draft.moq_quantity} onChange={(e) => patchOverride(draft.key, { moq_quantity: e.target.value })} className={inputClass} />
                   </Field>
-                  <Field label="예외조건 비고">
+                  <Field label="거래처 별도 표기·요청사항">
                     <input disabled={!draft.active} value={draft.note} onChange={(e) => patchOverride(draft.key, { note: e.target.value })} placeholder="선택 입력" className={inputClass} />
                   </Field>
                 </div>
