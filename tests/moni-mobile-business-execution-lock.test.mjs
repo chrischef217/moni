@@ -1,27 +1,28 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 
 const page = readFileSync('src/app/mobile/page.tsx', 'utf8')
-const guard = readFileSync('src/components/MoniMobileBusinessExecuteGuard.tsx', 'utf8')
-const route = readFileSync('src/app/api/moni/mobile-business-execute/route.ts', 'utf8')
+const route = readFileSync('src/app/api/moni/mobile-business-actions/route.ts', 'utf8')
 
-test('mobile generic business execution is routed through a duplicate-safe lock', () => {
-  assert.match(page, /MoniMobileBusinessExecuteGuard/)
-  assert.match(guard, /command === 'execute'/)
-  assert.match(guard, /\/api\/moni\/mobile-business-execute/)
+test('mobile generic business execution uses one server-side duplicate-safe lock', () => {
+  assert.doesNotMatch(page, /MoniMobileBusinessExecuteGuard/)
+  assert.equal(existsSync('src/components/MoniMobileBusinessExecuteGuard.tsx'), false)
+  assert.equal(existsSync('src/app/api/moni/mobile-business-execute/route.ts'), false)
   assert.match(route, /status: 'EXECUTING'/)
   assert.match(route, /\.eq\('status', 'PENDING'\)/)
-  assert.match(route, /이미 처리 중이거나 완료된 승인 건입니다\. 중복 실행하지 않습니다/)
+  assert.match(route, /중복 실행하지 않습니다/)
 })
 
-test('production contracts keep their existing audited confirmation executor', () => {
+test('production contracts keep their existing audited confirmation executors', () => {
   assert.match(route, /executeProductionPlanChange/)
   assert.match(route, /executeProductionOperation/)
 })
 
-test('generic execution marks success or failure after the lock', () => {
+test('generic execution records success, failure, and audit after the lock', () => {
   assert.match(route, /status: 'EXECUTED'/)
   assert.match(route, /status: 'FAILED'/)
   assert.match(route, /error_message/)
+  assert.match(route, /moni_action_audit_log/)
+  assert.match(route, /verification_basis: 'PC_API_SUCCESS'/)
 })
