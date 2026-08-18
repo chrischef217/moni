@@ -12,18 +12,18 @@ test('PC sales registration keeps a new client selection empty until the user ch
 })
 
 test('sales save validation and server failures are visible inside the open modal', () => {
-  assert.match(enhancer, /data-sales-save-message/)
-  assert.match(enhancer, /거래처를 선택해 주세요/)
-  assert.match(enhancer, /판매품목의 판매규격을 선택해 주세요/)
-  assert.match(enhancer, /판매품목의 수량을 확인해 주세요/)
-  assert.match(enhancer, /판매품목의 판매단가를 확인해 주세요/)
-  assert.match(enhancer, /topLevelSalesError/)
+  assert.match(alerts, /data-sales-save-message/)
+  assert.match(alerts, /거래처를 선택해 주세요/)
+  assert.match(alerts, /판매품목의 판매규격을 선택해 주세요/)
+  assert.match(alerts, /판매품목의 수량을 확인해 주세요/)
+  assert.match(alerts, /판매품목의 판매단가를 확인해 주세요/)
+  assert.match(alerts, /currentSalesPageError/)
 })
 
 test('backdated sales switch the visible month after a confirmed save', () => {
-  assert.match(enhancer, /pendingSaleMonth/)
-  assert.match(enhancer, /input\[type="month"\]/)
-  assert.match(enhancer, /setNativeInputValue\(monthInput, pendingSaleMonth\)/)
+  assert.match(alerts, /pendingSaleMonth/)
+  assert.match(alerts, /input\[type="month"\]/)
+  assert.match(alerts, /setNativeInputValue\(monthInput, pendingSaleMonth\)/)
 })
 
 test('visible PC sessions are refreshed and an expired authenticated shell reloads to login', () => {
