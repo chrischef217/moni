@@ -75,12 +75,12 @@ export default function SalesOrderClientSearchEnhancer() {
         const selectedName = () => options.find((option) => option.id === nativeSelect.value)?.name || ''
         let filtered = options
 
-        function closeList() {
+        const closeList = () => {
           list.hidden = true
           input.setAttribute('aria-expanded', 'false')
         }
 
-        function selectClient(id: string) {
+        const selectClient = (id: string) => {
           const option = options.find((item) => item.id === id)
           if (!option) return
           input.value = option.name
@@ -88,7 +88,7 @@ export default function SalesOrderClientSearchEnhancer() {
           closeList()
         }
 
-        function render(query = '') {
+        const render = (query = '') => {
           const needle = normalize(query)
           filtered = options.filter((option) => !needle || normalize(option.name).includes(needle))
           list.replaceChildren()
