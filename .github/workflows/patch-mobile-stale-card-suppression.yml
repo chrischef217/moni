@@ -1,0 +1,119 @@
+name: Patch Mobile Stale Card Suppression
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/patch-mobile-stale-card-suppression.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-form-interaction-stability
+          fetch-depth: 0
+
+      - name: Patch new-turn stale card suppression
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def rep(path, old, new, name):
+              text = path.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'{path}: missing {name}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print(f'OK {name}')
+
+          # Broadcast every user turn before the request starts.
+          chat = Path('src/components/MoniMobileChat.tsx')
+          rep(chat,
+              "    setStructuredSubmitting(structuredRequest)\n    setSending(true)\n",
+              "    setStructuredSubmitting(structuredRequest)\n    window.dispatchEvent(new CustomEvent('moni:user-turn-start', { detail: { structured: structuredRequest } }))\n    setSending(true)\n",
+              'chat new-turn event')
+
+          def patch_card(path_str, card_type, selector, timer_block, cleanup_block):
+              p = Path(path_str)
+              rep(p,
+                  "  const sourceRef = useRef('')\n",
+                  "  const sourceRef = useRef('')\n  const activeCardSourceRef = useRef('')\n  const suppressedCardSourceRef = useRef('')\n",
+                  f'{path_str} source refs')
+              rep(p,
+                  f"      const next = (payload.card || null) as {card_type} | null\n      if (cardHasFocus('{selector}')) return\n      setCard(next)\n",
+                  f"      const next = (payload.card || null) as {card_type} | null\n      if (cardHasFocus('{selector}')) return\n      const nextSource = next?.source_user_message_id || ''\n      if (nextSource && suppressedCardSourceRef.current === nextSource) return\n      if (nextSource && suppressedCardSourceRef.current && suppressedCardSourceRef.current !== nextSource) suppressedCardSourceRef.current = ''\n      activeCardSourceRef.current = nextSource\n      setCard(next)\n",
+                  f'{path_str} stale refresh guard')
+              rep(p,
+                  timer_block,
+                  "    const hideCardForNewTurn = () => {\n      suppressedCardSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideCardForNewTurn)\n" + timer_block,
+                  f'{path_str} new-turn listener')
+              rep(p,
+                  cleanup_block,
+                  cleanup_block.replace("return () => {", "return () => { window.removeEventListener('moni:user-turn-start', hideCardForNewTurn);"),
+                  f'{path_str} listener cleanup')
+
+          # Extended form differs slightly because it has a simple node host.
+          p = Path('src/components/MoniMobileExtendedFormCard.tsx')
+          rep(p,
+              "  const sourceRef = useRef('')\n",
+              "  const sourceRef = useRef('')\n  const activeCardSourceRef = useRef('')\n  const suppressedCardSourceRef = useRef('')\n",
+              'extended source refs')
+          rep(p,
+              "      const next = (payload.card || null) as Card | null\n      if (cardHasFocus('[data-moni-pc-form-card-host=\"true\"]')) return\n      setCard(next)\n",
+              "      const next = (payload.card || null) as Card | null\n      if (cardHasFocus('[data-moni-pc-form-card-host=\"true\"]')) return\n      const nextSource = next?.source_user_message_id || ''\n      if (nextSource && suppressedCardSourceRef.current === nextSource) return\n      if (nextSource && suppressedCardSourceRef.current && suppressedCardSourceRef.current !== nextSource) suppressedCardSourceRef.current = ''\n      activeCardSourceRef.current = nextSource\n      setCard(next)\n",
+              'extended stale refresh guard')
+          rep(p,
+              "    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.clearInterval(timer); node.remove() }\n",
+              "    const hideCardForNewTurn = () => {\n      suppressedCardSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideCardForNewTurn)\n    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.removeEventListener('moni:user-turn-start', hideCardForNewTurn); window.clearInterval(timer); node.remove() }\n",
+              'extended new-turn listener')
+
+          # Business card.
+          p = Path('src/components/MoniMobileBusinessCards.tsx')
+          rep(p,
+              "  const sourceRef = useRef('')\n",
+              "  const sourceRef = useRef('')\n  const activeCardSourceRef = useRef('')\n  const suppressedCardSourceRef = useRef('')\n",
+              'business source refs')
+          rep(p,
+              "      const next = (payload.card || null) as Card | null\n      if (cardHasFocus('[data-moni-business-card-host=\"true\"]')) return\n      setCard(next)\n",
+              "      const next = (payload.card || null) as Card | null\n      if (cardHasFocus('[data-moni-business-card-host=\"true\"]')) return\n      const nextSource = next?.source_user_message_id || ''\n      if (nextSource && suppressedCardSourceRef.current === nextSource) return\n      if (nextSource && suppressedCardSourceRef.current && suppressedCardSourceRef.current !== nextSource) suppressedCardSourceRef.current = ''\n      activeCardSourceRef.current = nextSource\n      setCard(next)\n",
+              'business stale refresh guard')
+          rep(p,
+              "    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { observer.disconnect(); window.clearInterval(timer); cardHost.remove() }\n",
+              "    const hideCardForNewTurn = () => {\n      suppressedCardSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideCardForNewTurn)\n    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.removeEventListener('moni:user-turn-start', hideCardForNewTurn); observer.disconnect(); window.clearInterval(timer); cardHost.remove() }\n",
+              'business new-turn listener')
+
+          # Raw card.
+          p = Path('src/components/MoniMobileRawMaterialCardV2.tsx')
+          rep(p,
+              "  const sourceRef = useRef('')\n",
+              "  const sourceRef = useRef('')\n  const activeCardSourceRef = useRef('')\n  const suppressedCardSourceRef = useRef('')\n",
+              'raw source refs')
+          rep(p,
+              "      const next = (payload.card || null) as ActionCard | null\n      if (cardHasFocus('[data-moni-raw-material-v2-host=\"true\"]')) return\n      setCard(next)\n",
+              "      const next = (payload.card || null) as ActionCard | null\n      if (cardHasFocus('[data-moni-raw-material-v2-host=\"true\"]')) return\n      const nextSource = next?.source_user_message_id || ''\n      if (nextSource && suppressedCardSourceRef.current === nextSource) return\n      if (nextSource && suppressedCardSourceRef.current && suppressedCardSourceRef.current !== nextSource) suppressedCardSourceRef.current = ''\n      activeCardSourceRef.current = nextSource\n      setCard(next)\n",
+              'raw stale refresh guard')
+          rep(p,
+              "    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const interval = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { observer.disconnect(); window.clearInterval(interval); cardHost.remove() }\n",
+              "    const hideCardForNewTurn = () => {\n      suppressedCardSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideCardForNewTurn)\n    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const interval = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.removeEventListener('moni:user-turn-start', hideCardForNewTurn); observer.disconnect(); window.clearInterval(interval); cardHost.remove() }\n",
+              'raw new-turn listener')
+
+          # Extend regression test.
+          t = Path('tests/moni-mobile-form-interaction-stability.test.mjs')
+          text = t.read_text(encoding='utf-8')
+          text += "\ntest('new user turns suppress stale cards until a newer card source arrives',()=>{assert.match(chat,/moni:user-turn-start/);for(const s of [ext,biz,raw]){assert.match(s,/suppressedCardSourceRef/);assert.match(s,/hideCardForNewTurn/)}});\n"
+          t.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit branch patch
+        shell: bash
+        run: |
+          git config user.name "MONI PMO Patch"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/components/MoniMobileChat.tsx src/components/MoniMobileExtendedFormCard.tsx src/components/MoniMobileBusinessCards.tsx src/components/MoniMobileRawMaterialCardV2.tsx tests/moni-mobile-form-interaction-stability.test.mjs
+          git commit -m "Suppress stale mobile cards on new user turns"
+          git push origin HEAD:fix/mobile-form-interaction-stability
