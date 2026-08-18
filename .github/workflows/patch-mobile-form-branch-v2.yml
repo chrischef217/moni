@@ -1,0 +1,147 @@
+name: Patch Mobile Form Branch V2
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/patch-mobile-form-branch-v2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-form-interaction-stability
+          fetch-depth: 0
+
+      - name: Apply deterministic interaction fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def rep(path, old, new, name):
+              text = path.read_text(encoding='utf-8')
+              if old not in text:
+                  print(f'SKIP {name}: pattern not found')
+                  return False
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print(f'OK {name}')
+              return True
+
+          # Extended form: nested InputField component remounted on every keystroke.
+          p = Path('src/components/MoniMobileExtendedFormCard.tsx')
+          rep(p,
+              "  function InputField({ item }: { item: FieldSchema }) {\n",
+              "  function renderInputField(item: FieldSchema) {\n",
+              'extended renderInputField')
+          rep(p,
+              "<InputField item={item}/>",
+              "{renderInputField(item)}",
+              'extended renderInputField call')
+          rep(p,
+              "const norm = (value: unknown) => txt(value).normalize('NFKC').toLocaleLowerCase('ko-KR').replace(/\\s+/g, '')\n",
+              "const norm = (value: unknown) => txt(value).normalize('NFKC').toLocaleLowerCase('ko-KR').replace(/\\s+/g, '')\n\nfunction prepareButtonLabel(operation: string) {\n  if (operation === 'UPDATE') return '변경 내용 확인'\n  if (operation === 'DELETE') return '삭제 내용 확인'\n  if (operation === 'DEACTIVATE') return '비활성화 내용 확인'\n  if (operation === 'ADJUST') return '조정 내용 확인'\n  if (operation === 'REVERSE') return '취소 내용 확인'\n  if (operation === 'RECEIVE') return '수금 내용 확인'\n  if (operation === 'SET_DUE' || operation === 'SET_RULE' || operation === 'SET_TARGET' || operation === 'CLEAR_TARGET') return '설정 내용 확인'\n  return '입력 내용 확인'\n}\n",
+              'extended button helper')
+          rep(p,
+              "{busy?'확인 중…':'변경 내용 확인'}",
+              "{busy?'확인 중…':prepareButtonLabel(card.operation)}",
+              'extended button label')
+
+          # Prevent a pending 900ms poll response from rewriting any focused mobile form.
+          helper = """\nfunction cardHasFocus(selector: string) {\n  const host = document.querySelector<HTMLElement>(selector)\n  const active = document.activeElement\n  return Boolean(host && active instanceof HTMLElement && host.contains(active))\n}\n"""
+          rep(p,
+              "function pickSchemaValues(schema: FieldSchema[], values: Record<string, any> | undefined) {",
+              helper + "\nfunction pickSchemaValues(schema: FieldSchema[], values: Record<string, any> | undefined) {",
+              'extended focus helper')
+          rep(p,
+              "      const next = (payload.card || null) as Card | null\n      setCard(next)\n",
+              "      const next = (payload.card || null) as Card | null\n      if (cardHasFocus('[data-moni-pc-form-card-host=\"true\"]')) return\n      setCard(next)\n",
+              'extended focus guard')
+
+          # Business forms (sales statement/client select etc.) and raw-material form: same focus protection.
+          p = Path('src/components/MoniMobileBusinessCards.tsx')
+          rep(p,
+              "function domainTitle(domain: Domain, operation: Operation) {",
+              helper + "\nfunction domainTitle(domain: Domain, operation: Operation) {",
+              'business focus helper')
+          rep(p,
+              "      const next = (payload.card || null) as Card | null\n      setCard(next)\n",
+              "      const next = (payload.card || null) as Card | null\n      if (cardHasFocus('[data-moni-business-card-host=\"true\"]')) return\n      setCard(next)\n",
+              'business focus guard')
+
+          p = Path('src/components/MoniMobileRawMaterialCardV2.tsx')
+          rep(p,
+              "function title(operation: Operation) {",
+              helper + "\nfunction title(operation: Operation) {",
+              'raw focus helper')
+          rep(p,
+              "      const next = (payload.card || null) as ActionCard | null\n      setCard(next)\n",
+              "      const next = (payload.card || null) as ActionCard | null\n      if (cardHasFocus('[data-moni-raw-material-v2-host=\"true\"]')) return\n      setCard(next)\n",
+              'raw focus guard')
+
+          # Chat: structured text writes should not show THINKING/heartbeat and should use direct action-start on an existing thread.
+          p = Path('src/components/MoniMobileChat.tsx')
+          rep(p,
+              "import { moniBrowserDb } from '@/lib/moni/browser-db'\n",
+              "import { moniBrowserDb } from '@/lib/moni/browser-db'\nimport { classifyMobileBusinessIntent } from '@/lib/moni/mobile-business-intents'\nimport { classifyMobileExtendedIntent } from '@/lib/moni/mobile-extended-intents'\n",
+              'chat intent imports')
+          rep(p,
+              "  const [sending, setSending] = useState(false)\n",
+              "  const [sending, setSending] = useState(false)\n  const [structuredSubmitting, setStructuredSubmitting] = useState(false)\n",
+              'chat structured state')
+          rep(p,
+              "  const status = error ? 'issue' : sending ? 'thinking' : listening ? 'listening' : 'live'\n  const statusLabel = error ? 'ISSUE' : sending ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'\n",
+              "  const status = error ? 'issue' : sending && !structuredSubmitting ? 'thinking' : listening ? 'listening' : 'live'\n  const statusLabel = error ? 'ISSUE' : sending && !structuredSubmitting ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'\n",
+              'chat thinking status')
+          rep(p,
+              "    const displayQuestion = [rawQuestion, photos.length ? `📷 사진 ${photos.length}장 첨부` : ''].filter(Boolean).join('\\n\\n')\n",
+              "    const displayQuestion = [rawQuestion, photos.length ? `📷 사진 ${photos.length}장 첨부` : ''].filter(Boolean).join('\\n\\n')\n    const structuredRequest = photos.length === 0 && Boolean(classifyMobileBusinessIntent(rawQuestion) || classifyMobileExtendedIntent(rawQuestion))\n",
+              'chat structured detection')
+          rep(p,
+              "    setEstimatedSeconds(estimated)\n    setSending(true)\n",
+              "    setEstimatedSeconds(estimated)\n    setStructuredSubmitting(structuredRequest)\n    setSending(true)\n",
+              'chat structured start')
+
+          text = p.read_text(encoding='utf-8')
+          start = text.find('  async function send(raw: string) {')
+          end = text.find('\n  function submit(', start)
+          if start >= 0 and end > start:
+              block = text[start:end]
+              old = "const response = await fetch('/api/moni/agent-runtime', {"
+              if old in block:
+                  block = block.replace(old, "const response = await fetch(structuredRequest && threadId ? '/api/moni/mobile-action-start' : '/api/moni/agent-runtime', {", 1)
+                  print('OK chat direct structured route')
+              old = "      sendInFlightRef.current = false\n      setSending(false)"
+              if old in block:
+                  block = block.replace(old, "      sendInFlightRef.current = false\n      setStructuredSubmitting(false)\n      setSending(false)", 1)
+                  print('OK chat structured cleanup')
+              text = text[:start] + block + text[end:]
+          old_indicator = "{sending ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}"
+          if old_indicator in text:
+              text = text.replace(old_indicator, "{sending && !structuredSubmitting ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}")
+              print('OK chat thinking indicators')
+          p.write_text(text, encoding='utf-8')
+
+          # Extended assistant copy must stop telling CREATE users to press a change button.
+          p = Path('src/lib/moni/mobile-extended-intents.ts')
+          rep(p,
+              "  return `${labels[intent.domain]} 입력 카드를 열었습니다. 현재 PC 업무폼과 같은 기준으로 값을 확인·수정한 뒤 ‘변경 내용 확인’을 눌러 주세요.`\n",
+              "  const actionLabel = intent.operation === 'UPDATE' ? '변경 내용 확인' : intent.operation === 'DELETE' ? '삭제 내용 확인' : intent.operation === 'DEACTIVATE' ? '비활성화 내용 확인' : intent.operation === 'ADJUST' ? '조정 내용 확인' : intent.operation === 'REVERSE' ? '취소 내용 확인' : intent.operation === 'RECEIVE' ? '수금 내용 확인' : intent.operation === 'SET_DUE' || intent.operation === 'SET_RULE' || intent.operation === 'SET_TARGET' || intent.operation === 'CLEAR_TARGET' ? '설정 내용 확인' : '입력 내용 확인'\n  return `${labels[intent.domain]} 입력 카드를 열었습니다. 현재 PC 업무폼과 같은 기준으로 값을 확인·수정한 뒤 ‘${actionLabel}’을 눌러 주세요.`\n",
+              'extended assistant wording')
+
+          Path('tests/moni-mobile-form-interaction-stability.test.mjs').write_text("""import test from 'node:test'\nimport assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\nconst chat=readFileSync('src/components/MoniMobileChat.tsx','utf8')\nconst ext=readFileSync('src/components/MoniMobileExtendedFormCard.tsx','utf8')\nconst biz=readFileSync('src/components/MoniMobileBusinessCards.tsx','utf8')\nconst raw=readFileSync('src/components/MoniMobileRawMaterialCardV2.tsx','utf8')\ntest('extended inputs keep stable identity',()=>{assert.match(ext,/function renderInputField\(item: FieldSchema\)/);assert.doesNotMatch(ext,/<InputField/)});\ntest('all card forms protect focused inputs from polling',()=>{for(const s of [ext,biz,raw]){assert.match(s,/document\.activeElement/);assert.match(s,/cardHasFocus/)}});\ntest('structured text writes do not enter thinking UI',()=>{assert.match(chat,/structuredRequest && threadId \? '\\/api\\/moni\\/mobile-action-start'/);assert.match(chat,/sending && !structuredSubmitting \? 'thinking'/);assert.match(chat,/sending && !structuredSubmitting \? <ThinkingIndicator/)});\ntest('create and update button wording differs',()=>{assert.match(ext,/return '입력 내용 확인'/);assert.match(ext,/operation === 'UPDATE'\) return '변경 내용 확인'/)});\n""",encoding='utf-8')
+          PY
+
+      - name: Commit patch branch
+        shell: bash
+        run: |
+          git config user.name "MONI PMO Patch"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/components/MoniMobileChat.tsx src/components/MoniMobileExtendedFormCard.tsx src/components/MoniMobileBusinessCards.tsx src/components/MoniMobileRawMaterialCardV2.tsx src/lib/moni/mobile-extended-intents.ts tests/moni-mobile-form-interaction-stability.test.mjs
+          git commit -m "Fix mobile form focus and structured thinking state"
+          git push origin HEAD:fix/mobile-form-interaction-stability
