@@ -9,7 +9,7 @@ const salesItems = [
   { label: '세금계산서', view: 'tax-invoices' },
   { label: '영업 수당 정산', view: 'settlements' },
   { label: '거래처 관리', view: 'clients' },
-  { label: '판매규격·단가', view: 'pricing' },
+  { label: '제품 규격 단가', view: 'pricing' },
 ]
 
 function normalized(element: Element | null) {
