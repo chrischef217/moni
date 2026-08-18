@@ -5,6 +5,7 @@ import MoniMobileAnswerActions from '@/components/MoniMobileAnswerActions'
 import MoniMobileBusyRecovery from '@/components/MoniMobileBusyRecovery'
 import MoniMobileBusinessCards from '@/components/MoniMobileBusinessCards'
 import MoniMobileBusinessCatalogGuard from '@/components/MoniMobileBusinessCatalogGuard'
+import MoniMobileBusinessExecuteGuard from '@/components/MoniMobileBusinessExecuteGuard'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileContinuityGuard from '@/components/MoniMobileContinuityGuard'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
@@ -48,6 +49,7 @@ export default async function MoniMobilePage() {
       <MoniMobileRawCardRouteGuard />
       <MoniMobilePackagingRouteGuard />
       <MoniMobileBusinessCatalogGuard />
+      <MoniMobileBusinessExecuteGuard />
       <MoniMobileContinuityGuard />
       <MoniMobileHeartbeatBoost />
       <MoniMobileLiveWave />
