@@ -86,13 +86,14 @@ export default function MoniMobileCrudCatalogEnhancer() {
       const materialField = fieldByLabel(card, '원재료')
       const nativeSelect = materialField?.querySelector<HTMLSelectElement>('select') || null
       if (!materialField || !nativeSelect || materialField.querySelector('[data-moni-material-search]')) return
+      const materialSelect: HTMLSelectElement = nativeSelect
       if (!loadedRef.current || !catalogRef.current.length) {
         if (retryTimer === null) retryTimer = window.setTimeout(() => { retryTimer = null; scan() }, 250)
         return
       }
 
-      nativeSelect.style.display = 'none'
-      nativeSelect.setAttribute('aria-hidden', 'true')
+      materialSelect.style.display = 'none'
+      materialSelect.setAttribute('aria-hidden', 'true')
 
       const shell = document.createElement('div')
       shell.dataset.moniMaterialSearch = 'true'
@@ -112,7 +113,7 @@ export default function MoniMobileCrudCatalogEnhancer() {
       reference.className = 'moni-material-reference'
       reference.hidden = true
       shell.append(input, count, list, reference)
-      materialField.insertBefore(shell, nativeSelect)
+      materialField.insertBefore(shell, materialSelect)
 
       const all = catalogRef.current
       const stockManagedCount = all.filter((item) => item.is_stock_managed).length
@@ -162,7 +163,7 @@ export default function MoniMobileCrudCatalogEnhancer() {
 
       function applyMaterial(material: Material, replaceLinkedValues: boolean) {
         if (!material.is_stock_managed) return
-        setNativeValue(nativeSelect, material.id)
+        setNativeValue(materialSelect, material.id)
         input.value = material.name
         updateSuppliers(material)
         renderReference(material)
@@ -214,7 +215,7 @@ export default function MoniMobileCrudCatalogEnhancer() {
         renderList(input.value)
         const exact = all.find((material) => normalize(material.name) === normalize(input.value) || normalize(material.item_code) === normalize(input.value))
         if (exact?.is_stock_managed) applyMaterial(exact, true)
-        else if (!exact && nativeSelect.value) setNativeValue(nativeSelect, '')
+        else if (!exact && materialSelect.value) setNativeValue(materialSelect, '')
       })
       input.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') list.hidden = true
@@ -226,7 +227,7 @@ export default function MoniMobileCrudCatalogEnhancer() {
       document.addEventListener('pointerdown', close)
       shell.addEventListener('DOMNodeRemoved', () => document.removeEventListener('pointerdown', close), { once: true })
 
-      const selectedId = nativeSelect.value
+      const selectedId = materialSelect.value
       const selected = all.find((material) => material.id === selectedId)
       if (selected) {
         input.value = selected.name
