@@ -1,0 +1,315 @@
+name: Fix MONI Mobile Form Interactions
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/fix-mobile-form-interactions.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: moni-mobile-form-interactions
+  cancel-in-progress: false
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: prj_6FPUpj6cyTSCktMHpp3luh142XFr
+
+jobs:
+  patch-test-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch mobile form interaction architecture
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: {label}: expected 1 match, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # 1) Chat: route text-only structured writes directly to the action-card endpoint,
+          # suppress THINKING/heartbeat for those writes, and broadcast a new-turn event.
+          chat = Path('src/components/MoniMobileChat.tsx')
+          replace_once(chat,
+              "import { moniBrowserDb } from '@/lib/moni/browser-db'\n",
+              "import { moniBrowserDb } from '@/lib/moni/browser-db'\nimport { classifyMobileBusinessIntent } from '@/lib/moni/mobile-business-intents'\nimport { classifyMobileExtendedIntent } from '@/lib/moni/mobile-extended-intents'\n",
+              'structured intent imports')
+          replace_once(chat,
+              "  const [sending, setSending] = useState(false)\n",
+              "  const [sending, setSending] = useState(false)\n  const [structuredSubmitting, setStructuredSubmitting] = useState(false)\n",
+              'structured submitting state')
+          replace_once(chat,
+              "  const status = error ? 'issue' : sending ? 'thinking' : listening ? 'listening' : 'live'\n  const statusLabel = error ? 'ISSUE' : sending ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'\n",
+              "  const status = error ? 'issue' : sending && !structuredSubmitting ? 'thinking' : listening ? 'listening' : 'live'\n  const statusLabel = error ? 'ISSUE' : sending && !structuredSubmitting ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'\n",
+              'structured thinking suppression')
+          replace_once(chat,
+              "    const displayQuestion = [rawQuestion, photos.length ? `📷 사진 ${photos.length}장 첨부` : ''].filter(Boolean).join('\\n\\n')\n    const kind = requestKind(questionForAgent)\n",
+              "    const displayQuestion = [rawQuestion, photos.length ? `📷 사진 ${photos.length}장 첨부` : ''].filter(Boolean).join('\\n\\n')\n    const structuredRequest = photos.length === 0 && Boolean(classifyMobileBusinessIntent(rawQuestion) || classifyMobileExtendedIntent(rawQuestion))\n    const kind = requestKind(questionForAgent)\n",
+              'structured request classification')
+          replace_once(chat,
+              "    setEstimatedSeconds(estimated)\n    setSending(true)\n",
+              "    setEstimatedSeconds(estimated)\n    setStructuredSubmitting(structuredRequest)\n    setSending(true)\n    window.dispatchEvent(new CustomEvent('moni:user-turn-start', { detail: { structured: structuredRequest } }))\n",
+              'new turn event')
+          old_fetch = """      const response = await fetch('/api/moni/agent-runtime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: rawQuestion,
+          attachment_ids: photos.map((photo) => photo.id),
+          thread_id: threadId || undefined,
+          page: pageContext(),
+        }),
+      })
+"""
+          new_fetch = """      let activeThreadId = threadId
+      if (structuredRequest && !activeThreadId) {
+        const threadResponse = await fetch('/api/moni/mobile-thread', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ page: pageContext() }),
+          cache: 'no-store',
+        })
+        const threadPayload = await threadResponse.json() as { ok?: boolean; error?: string; thread_id?: string }
+        if (!threadResponse.ok || !threadPayload.ok || !threadPayload.thread_id) throw new Error(threadPayload.error || 'MONI 대화방을 준비하지 못했습니다.')
+        activeThreadId = threadPayload.thread_id
+        setThreadId(activeThreadId)
+        window.localStorage.setItem(THREAD_KEY, activeThreadId)
+      }
+
+      const response = await fetch(structuredRequest ? '/api/moni/mobile-action-start' : '/api/moni/agent-runtime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: rawQuestion,
+          attachment_ids: photos.map((photo) => photo.id),
+          thread_id: activeThreadId || undefined,
+          page: pageContext(),
+        }),
+      })
+"""
+          replace_once(chat, old_fetch, new_fetch, 'direct structured endpoint')
+          replace_once(chat,
+              "      sendInFlightRef.current = false\n      setSending(false)\n",
+              "      sendInFlightRef.current = false\n      setStructuredSubmitting(false)\n      setSending(false)\n",
+              'structured submitting cleanup')
+          text = chat.read_text(encoding='utf-8')
+          count = text.count("{sending ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}")
+          if count != 2:
+              raise SystemExit(f'{chat}: expected 2 thinking indicator matches, found {count}')
+          text = text.replace("{sending ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}", "{sending && !structuredSubmitting ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}")
+          chat.write_text(text, encoding='utf-8')
+
+          # Shared helper injected into all three card renderers. It prevents an in-flight poll
+          # from replacing the form while Android Chrome has an input focused.
+          helper = """
+function isEditingCardHost(selector: string) {
+  const host = document.querySelector<HTMLElement>(selector)
+  const active = document.activeElement
+  return Boolean(host && active instanceof HTMLElement && host.contains(active))
+}
+"""
+
+          # 2) Extended PC form cards.
+          ext = Path('src/components/MoniMobileExtendedFormCard.tsx')
+          replace_once(ext,
+              "const norm = (value: unknown) => txt(value).normalize('NFKC').toLocaleLowerCase('ko-KR').replace(/\\s+/g, '')\n",
+              "const norm = (value: unknown) => txt(value).normalize('NFKC').toLocaleLowerCase('ko-KR').replace(/\\s+/g, '')\n" + helper + "\nfunction prepareButtonLabel(operation: string) {\n  if (operation === 'UPDATE') return '변경 내용 확인'\n  if (operation === 'DELETE') return '삭제 내용 확인'\n  if (operation === 'DEACTIVATE') return '비활성화 내용 확인'\n  if (operation === 'ADJUST') return '조정 내용 확인'\n  if (operation === 'REVERSE') return '취소 내용 확인'\n  if (operation === 'SET_DUE' || operation === 'SET_RULE' || operation === 'SET_TARGET' || operation === 'CLEAR_TARGET') return '설정 내용 확인'\n  if (operation === 'RECEIVE') return '수금 내용 확인'\n  return '입력 내용 확인'\n}\n",
+              'extended helper and button labels')
+          replace_once(ext,
+              "  const sourceRef = useRef('')\n",
+              "  const sourceRef = useRef('')\n  const activeCardSourceRef = useRef('')\n  const suppressedSourceRef = useRef('')\n",
+              'extended source refs')
+          replace_once(ext,
+              "      const next = (payload.card || null) as Card | null\n      setCard(next)\n",
+              "      const next = (payload.card || null) as Card | null\n      if (isEditingCardHost('[data-moni-pc-form-card-host=\"true\"]')) return\n      if (next?.source_user_message_id && suppressedSourceRef.current === next.source_user_message_id) return\n      if (next?.source_user_message_id && suppressedSourceRef.current && suppressedSourceRef.current !== next.source_user_message_id) suppressedSourceRef.current = ''\n      activeCardSourceRef.current = next?.source_user_message_id || ''\n      setCard(next)\n",
+              'extended poll focus/suppression guard')
+          replace_once(ext,
+              "    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.clearInterval(timer); node.remove() }\n",
+              "    const hideStaleCard = () => {\n      suppressedSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideStaleCard)\n    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.removeEventListener('moni:user-turn-start', hideStaleCard); window.clearInterval(timer); node.remove() }\n",
+              'extended stale card event')
+          replace_once(ext, "  function CandidateList() {\n", "  function renderCandidateList() {\n", 'extended candidate renderer')
+          replace_once(ext, "  function InputField({ item }: { item: FieldSchema }) {\n", "  function renderInputField(item: FieldSchema) {\n", 'extended input renderer')
+          replace_once(ext, "        <CandidateList/>\n", "        {renderCandidateList()}\n", 'extended candidate render call')
+          replace_once(ext, "<InputField item={item}/>", "{renderInputField(item)}", 'extended input render call')
+          replace_once(ext,
+              "{busy?'확인 중…':'변경 내용 확인'}",
+              "{busy?'확인 중…':prepareButtonLabel(card.operation)}",
+              'extended operation button')
+
+          # 3) Core business cards: pause poll during edit and suppress stale prior card on a new user turn.
+          biz = Path('src/components/MoniMobileBusinessCards.tsx')
+          replace_once(biz,
+              "const normalize = (value: unknown) => text(value).normalize('NFKC').toLowerCase().replace(/\\s+/g, '')\n",
+              "const normalize = (value: unknown) => text(value).normalize('NFKC').toLowerCase().replace(/\\s+/g, '')\n" + helper,
+              'business focus helper')
+          replace_once(biz,
+              "  const sourceRef = useRef('')\n",
+              "  const sourceRef = useRef('')\n  const activeCardSourceRef = useRef('')\n  const suppressedSourceRef = useRef('')\n",
+              'business source refs')
+          replace_once(biz,
+              "      const next = (payload.card || null) as Card | null\n      setCard(next)\n",
+              "      const next = (payload.card || null) as Card | null\n      if (isEditingCardHost('[data-moni-business-card-host=\"true\"]')) return\n      if (next?.source_user_message_id && suppressedSourceRef.current === next.source_user_message_id) return\n      if (next?.source_user_message_id && suppressedSourceRef.current && suppressedSourceRef.current !== next.source_user_message_id) suppressedSourceRef.current = ''\n      activeCardSourceRef.current = next?.source_user_message_id || ''\n      setCard(next)\n",
+              'business poll focus/suppression guard')
+          replace_once(biz,
+              "    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { observer.disconnect(); window.clearInterval(timer); cardHost.remove() }\n",
+              "    const hideStaleCard = () => {\n      suppressedSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideStaleCard)\n    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.removeEventListener('moni:user-turn-start', hideStaleCard); observer.disconnect(); window.clearInterval(timer); cardHost.remove() }\n",
+              'business stale card event')
+
+          # 4) Raw-material card: same focus/stale protection.
+          raw = Path('src/components/MoniMobileRawMaterialCardV2.tsx')
+          replace_once(raw,
+              "const normalize = (value: unknown) => text(value).normalize('NFKC').toLowerCase().replace(/\\s+/g, '')\n",
+              "const normalize = (value: unknown) => text(value).normalize('NFKC').toLowerCase().replace(/\\s+/g, '')\n" + helper,
+              'raw focus helper')
+          replace_once(raw,
+              "  const sourceRef = useRef('')\n",
+              "  const sourceRef = useRef('')\n  const activeCardSourceRef = useRef('')\n  const suppressedSourceRef = useRef('')\n",
+              'raw source refs')
+          replace_once(raw,
+              "      const next = (payload.card || null) as ActionCard | null\n      setCard(next)\n",
+              "      const next = (payload.card || null) as ActionCard | null\n      if (isEditingCardHost('[data-moni-raw-material-v2-host=\"true\"]')) return\n      if (next?.source_user_message_id && suppressedSourceRef.current === next.source_user_message_id) return\n      if (next?.source_user_message_id && suppressedSourceRef.current && suppressedSourceRef.current !== next.source_user_message_id) suppressedSourceRef.current = ''\n      activeCardSourceRef.current = next?.source_user_message_id || ''\n      setCard(next)\n",
+              'raw poll focus/suppression guard')
+          replace_once(raw,
+              "    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const interval = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { observer.disconnect(); window.clearInterval(interval); cardHost.remove() }\n",
+              "    const hideStaleCard = () => {\n      suppressedSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideStaleCard)\n    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const interval = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.removeEventListener('moni:user-turn-start', hideStaleCard); observer.disconnect(); window.clearInterval(interval); cardHost.remove() }\n",
+              'raw stale card event')
+
+          # 5) Extended assistant copy must match the operation-specific button label.
+          intents = Path('src/lib/moni/mobile-extended-intents.ts')
+          replace_once(intents,
+              "  return `${labels[intent.domain]} 입력 카드를 열었습니다. 현재 PC 업무폼과 같은 기준으로 값을 확인·수정한 뒤 ‘변경 내용 확인’을 눌러 주세요.`\n",
+              "  const actionLabel = intent.operation === 'UPDATE' ? '변경 내용 확인'\n    : intent.operation === 'DELETE' ? '삭제 내용 확인'\n      : intent.operation === 'DEACTIVATE' ? '비활성화 내용 확인'\n        : intent.operation === 'ADJUST' ? '조정 내용 확인'\n          : intent.operation === 'REVERSE' ? '취소 내용 확인'\n            : intent.operation === 'RECEIVE' ? '수금 내용 확인'\n              : intent.operation === 'SET_DUE' || intent.operation === 'SET_RULE' || intent.operation === 'SET_TARGET' || intent.operation === 'CLEAR_TARGET' ? '설정 내용 확인'\n                : '입력 내용 확인'\n  return `${labels[intent.domain]} 입력 카드를 열었습니다. 현재 PC 업무폼과 같은 기준으로 값을 확인·수정한 뒤 ‘${actionLabel}’을 눌러 주세요.`\n",
+              'extended assistant action label')
+          PY
+
+      - name: Add mobile form regression tests
+        shell: bash
+        run: |
+          cat > tests/moni-mobile-form-interaction-stability.test.mjs <<'EOF'
+          import test from 'node:test'
+          import assert from 'node:assert/strict'
+          import { readFileSync } from 'node:fs'
+
+          const chat = readFileSync('src/components/MoniMobileChat.tsx', 'utf8')
+          const extended = readFileSync('src/components/MoniMobileExtendedFormCard.tsx', 'utf8')
+          const business = readFileSync('src/components/MoniMobileBusinessCards.tsx', 'utf8')
+          const raw = readFileSync('src/components/MoniMobileRawMaterialCardV2.tsx', 'utf8')
+          const intents = readFileSync('src/lib/moni/mobile-extended-intents.ts', 'utf8')
+
+          test('text-only structured writes bypass the agent thinking path', () => {
+            assert.match(chat, /structuredRequest \? '\/api\/moni\/mobile-action-start' : '\/api\/moni\/agent-runtime'/)
+            assert.match(chat, /sending && !structuredSubmitting \? 'thinking'/)
+            assert.match(chat, /sending && !structuredSubmitting \? <ThinkingIndicator/)
+            assert.match(chat, /moni:user-turn-start/)
+          })
+
+          test('extended PC form inputs are stable render functions rather than nested component types', () => {
+            assert.match(extended, /function renderInputField\(item: FieldSchema\)/)
+            assert.match(extended, /renderInputField\(item\)/)
+            assert.doesNotMatch(extended, /function InputField\(/)
+            assert.doesNotMatch(extended, /<InputField/)
+          })
+
+          test('all mobile card families pause server refresh while an input owns focus', () => {
+            for (const source of [extended, business, raw]) {
+              assert.match(source, /document\.activeElement/)
+              assert.match(source, /isEditingCardHost/)
+            }
+          })
+
+          test('a new user turn hides stale unfinished cards across all card families', () => {
+            for (const source of [extended, business, raw]) {
+              assert.match(source, /addEventListener\('moni:user-turn-start'/)
+              assert.match(source, /suppressedSourceRef/)
+            }
+          })
+
+          test('CREATE uses input confirmation wording while UPDATE keeps change confirmation wording', () => {
+            assert.match(extended, /return '입력 내용 확인'/)
+            assert.match(extended, /operation === 'UPDATE'\) return '변경 내용 확인'/)
+            assert.match(intents, /'입력 내용 확인'/)
+            assert.match(intents, /'변경 내용 확인'/)
+          })
+          EOF
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run focused interaction regression
+        run: node --test tests/moni-mobile-form-interaction-stability.test.mjs tests/moni-mobile-card-host-stability.test.mjs
+
+      - name: Run full MONI agent regression
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: build-only-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: build-only-service-role-key
+          ALLOWANCE_ENCRYPTION_KEY: build-only-allowance-encryption-key-32
+          MONI_BUSINESS_ID: "20220523011"
+          MONI_MCP_ENABLED: "false"
+          MONI_PUBLIC_BASE_URL: https://moni-sigma.vercel.app
+        run: |
+          npm run prebuild
+          npm run test:agent
+
+      - name: Commit validated fixes to main
+        shell: bash
+        run: |
+          git config user.name "MONI PMO Interaction Fix"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/components/MoniMobileChat.tsx src/components/MoniMobileExtendedFormCard.tsx src/components/MoniMobileBusinessCards.tsx src/components/MoniMobileRawMaterialCardV2.tsx src/lib/moni/mobile-extended-intents.ts tests/moni-mobile-form-interaction-stability.test.mjs
+          git commit -m "Stabilize mobile form focus and structured card transitions"
+          git push origin HEAD:main
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Link MONI Vercel project
+        shell: bash
+        run: |
+          mkdir -p .vercel
+          cat > .vercel/project.json <<JSON
+          {"orgId":"${VERCEL_ORG_ID}","projectId":"${VERCEL_PROJECT_ID}"}
+          JSON
+
+      - name: Pull production environment
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build production artifact
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy validated artifact to Production
+        id: deploy
+        shell: bash
+        run: |
+          set -o pipefail
+          DEPLOY_URL=$(vercel deploy --prebuilt --archive=tgz --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "deployment_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+          echo "Deployment URL: ${DEPLOY_URL}"
+
+      - name: Production smoke check
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location --max-time 30 "${{ steps.deploy.outputs.deployment_url }}/mobile" >/dev/null
+          curl --fail --silent --show-error --location --max-time 30 "https://moni-sigma.vercel.app/mobile" >/dev/null
+          echo "MONI mobile form interaction production smoke passed."
