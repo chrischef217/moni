@@ -18,7 +18,7 @@ export const inventoryToolDefinitions: MoniToolDefinition[] = [
   },
   {
     name: 'search_raw_material_transactions',
-    description: '기간·원재료·입출고 유형별 원재료 입출고 원장을 조회한다.',
+    description: '기간·원재료·입출고 유형별 원재료 입출고 원장을 조회한다. 중요: 사용자가 실제로 받은 원재료, 실제 입고량, 매입 입고, 기간 내 가장 많이 입고된 원재료를 묻는 경우 note에 MONI_STOCK_RECONCILIATION이 포함된 INBOUND 행은 기초재고/재고보정용 내부 행이므로 실제 입고에서 반드시 제외한다. 같은 원재료의 정상 INBOUND가 여러 건이면 기간 내 합산해서 비교한다. 재고보정 자체를 감사하거나 현재재고 형성 과정을 묻는 경우에만 해당 보정행을 별도로 설명한다.',
     parameters: z.object({
       start_date: DateValue,
       end_date: DateValue,
