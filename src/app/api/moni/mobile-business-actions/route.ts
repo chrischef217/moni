@@ -15,7 +15,6 @@ const num = (value: unknown) => {
   const parsed = Number(String(value ?? '').replace(/,/g, ''))
   return Number.isFinite(parsed) ? parsed : 0
 }
-const validDate = (value: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(text(value, 10)) ? text(value, 10) : ''
 const uuidLike = (value: unknown) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text(value, 80))
 
 function today() {
@@ -40,18 +39,26 @@ async function latestThreadExchange(threadId: string, loginId: string) {
   const thread = await db.from('moni_ai_threads').select('id').eq('id', threadId).eq('business_id', BUSINESS_ID).eq('user_login_id', loginId).eq('status', 'ACTIVE').maybeSingle()
   if (thread.error) throw new Error(thread.error.message)
   if (!thread.data) throw new Error('현재 MONI 대화방을 확인할 수 없습니다.')
-  const messages = await db.from('moni_ai_messages').select('id,role,content,created_at').eq('business_id', BUSINESS_ID).eq('thread_id', threadId).order('created_at', { ascending: false }).limit(16)
+  const messages = await db.from('moni_ai_messages').select('id,role,content,created_at').eq('business_id', BUSINESS_ID).eq('thread_id', threadId).order('created_at', { ascending: false }).limit(18)
   if (messages.error) throw new Error(messages.error.message)
   const chronological = [...(messages.data ?? [])].reverse()
   let userIndex = -1
-  for (let index = chronological.length - 1; index >= 0; index -= 1) if (chronological[index]?.role === 'user') { userIndex = index; break }
+  for (let index = chronological.length - 1; index >= 0; index -= 1) {
+    if (chronological[index]?.role === 'user') { userIndex = index; break }
+  }
   if (userIndex < 0) return { user: null, assistant: null }
   return { user: chronological[userIndex], assistant: chronological.slice(userIndex + 1).find((row) => row.role === 'assistant') || null }
 }
 
-async function findGenericConfirmation(session: { loginId: string }, threadId: string, sourceUserId: string) {
+async function findConfirmation(loginId: string, threadId: string, sourceUserId: string) {
   const db = createMoniServiceRoleClient()
-  const result = await db.from('moni_action_confirmations').select('*').eq('business_id', BUSINESS_ID).eq('requested_by_login_id', session.loginId).eq('source_client_id', `moni-mobile:${threadId}`).order('created_at', { ascending: false }).limit(20)
+  const result = await db.from('moni_action_confirmations')
+    .select('*')
+    .eq('business_id', BUSINESS_ID)
+    .eq('requested_by_login_id', loginId)
+    .in('source_client_id', [`moni-mobile:${threadId}`, `moni-web:${threadId}`])
+    .order('created_at', { ascending: false })
+    .limit(30)
   if (result.error) throw new Error(result.error.message)
   return (result.data ?? []).find((row: any) => text(row?.payload?.source_user_message_id, 100) === sourceUserId) || null
 }
@@ -59,7 +66,7 @@ async function findGenericConfirmation(session: { loginId: string }, threadId: s
 async function loadCommon() {
   const db = createMoniServiceRoleClient()
   const [products, clients, variants, terms, suppliers, raw, packaging] = await Promise.all([
-    db.from('products').select('id,product_name,product_code,weight_g,product_type,is_active').eq('is_active', true).order('product_name'),
+    db.from('products').select('id,product_name,product_code,weight_g,product_type,is_active').eq('business_id', BUSINESS_ID).eq('is_active', true).order('product_name'),
     db.from('sales_clients').select('id,company_name,status').eq('business_id', BUSINESS_ID).eq('status', 'active').order('company_name'),
     db.from('sales_product_variants').select('id,product_id,variant_name,sales_unit,unit_weight_g,box_units,default_unit_price,moq_quantity,active').eq('business_id', BUSINESS_ID).eq('active', true).order('product_id').order('variant_name'),
     db.from('sales_client_variant_terms').select('id,client_id,variant_id,unit_price,moq_quantity,active').eq('business_id', BUSINESS_ID).eq('active', true),
@@ -80,14 +87,17 @@ async function draftFor(domain: MobileBusinessDomain, operation: MobileBusinessO
   const base = { stage: 'draft', domain, operation, source_user_message_id: sourceUserId, fields: {}, candidates: [], options: common }
 
   if (domain === 'packaging_inbound') {
-    const result = await db.from('packaging_transactions').select('id,material_code,txn_type,quantity,txn_date,note,created_at').eq('business_id', BUSINESS_ID).order('txn_date', { ascending: false }).order('created_at', { ascending: false }).limit(50)
+    const result = await db.from('packaging_transactions').select('id,material_code,txn_type,quantity,txn_date,note,created_at').eq('business_id', BUSINESS_ID).order('txn_date', { ascending: false }).order('created_at', { ascending: false }).limit(80)
     if (result.error) throw new Error(result.error.message)
     const meta = new Map((common.packaging_materials as any[]).flatMap((row) => [[text(row.id), row], [text(row.material_code), row]]))
-    return { ...base, fields: { tx_date: today(), quantity: '', counterparty: '', note: '' }, candidates: (result.data ?? []).filter((row: any) => text(row.txn_type).toUpperCase().includes('INBOUND')).map((row: any) => ({ ...row, material_name: text(meta.get(text(row.material_code))?.material_name) || text(row.material_code) })) }
+    const candidates = (result.data ?? [])
+      .filter((row: any) => text(row.txn_type).toUpperCase().includes('INBOUND'))
+      .map((row: any) => ({ ...row, material_name: text(meta.get(text(row.material_code))?.material_name) || text(row.material_code) }))
+    return { ...base, fields: { tx_date: today(), quantity: '', counterparty: '', note: '' }, candidates }
   }
 
   if (domain === 'production_plan') {
-    const result = await db.from('monthly_production_plans').select('*').eq('business_id', BUSINESS_ID).order('plan_date', { ascending: false }).order('created_at', { ascending: false }).limit(50)
+    const result = await db.from('monthly_production_plans').select('*').eq('business_id', BUSINESS_ID).order('plan_date', { ascending: false }).order('created_at', { ascending: false }).limit(100)
     if (result.error) throw new Error(result.error.message)
     return { ...base, fields: { plan_date: today(), product_id: '', planned_quantity_kg: '', note: '' }, candidates: result.data ?? [] }
   }
@@ -95,27 +105,42 @@ async function draftFor(domain: MobileBusinessDomain, operation: MobileBusinessO
   if (domain === 'production_work') {
     let statuses = ['planned']
     if (operation === 'CONFIRM') statuses = ['completed', '완료']
-    const result = await db.from('production_records').select('id,work_date,lot_number,product_id,product_name,planned_quantity_g,actual_quantity_g,defect_quantity_g,sample_quantity_g,status,worker_name,inspection_result,inspection_note,sanitation_check,note').eq('business_id', BUSINESS_ID).in('status', statuses).order('work_date', { ascending: false }).order('created_at', { ascending: false }).limit(60)
+    const result = await db.from('production_records').select('id,work_date,lot_number,product_id,product_name,planned_quantity_g,actual_quantity_g,defect_quantity_g,sample_quantity_g,status,worker_name,inspection_result,inspection_note,sanitation_check,note').eq('business_id', BUSINESS_ID).in('status', statuses).order('work_date', { ascending: false }).order('created_at', { ascending: false }).limit(100)
     if (result.error) throw new Error(result.error.message)
-    return { ...base, fields: operation === 'CREATE' ? { work_date: today(), product_id: '', planned_quantity_kg: '', lot_number: '', worker_name: '', note: '' } : operation === 'COMPLETE' ? { record_id: '', actual_quantity_kg: '', defect_quantity_kg: '0', sample_quantity_kg: '0', worker_name: '', inspection_result: '적합', inspection_note: '', sanitation_check: true } : { record_id: '', work_date: '', planned_quantity_kg: '', lot_number: '', worker_name: '', note: '', reason: '' }, candidates: result.data ?? [] }
+    const fields = operation === 'CREATE'
+      ? { work_date: today(), product_id: '', planned_quantity_kg: '', lot_number: '', worker_name: '', note: '' }
+      : operation === 'COMPLETE'
+        ? { record_id: '', actual_quantity_kg: '', defect_quantity_kg: '0', sample_quantity_kg: '0', worker_name: '', inspection_result: '적합', inspection_note: '', sanitation_check: true }
+        : { record_id: '', work_date: '', planned_quantity_kg: '', lot_number: '', worker_name: '', note: '', reason: '' }
+    return { ...base, fields, candidates: result.data ?? [] }
   }
 
   if (domain === 'sales_order') {
-    const monthStart = `${today().slice(0, 7)}-01`
-    const orders = await db.from('sales_orders').select('*').eq('business_id', BUSINESS_ID).gte('sale_date', monthStart).order('sale_date', { ascending: false }).order('created_at', { ascending: false }).limit(60)
-    if (orders.error) throw new Error(orders.error.message)
-    return { ...base, fields: { sale_date: today(), client_id: '', status: 'confirmed', vat_rate: '10', note: '', items: [{ sales_variant_id: '', quantity: '', unit_price: '' }] }, candidates: orders.data ?? [] }
+    const [orders, items] = await Promise.all([
+      db.from('sales_orders').select('*').eq('business_id', BUSINESS_ID).order('sale_date', { ascending: false }).order('created_at', { ascending: false }).limit(100),
+      db.from('sales_order_items').select('id,order_id,product_id,product_name,specification,quantity,unit,unit_price,supply_amount,sales_variant_id,sales_variant_name,sort_order').order('order_id').order('sort_order'),
+    ])
+    if (orders.error || items.error) throw new Error(orders.error?.message || items.error?.message || '판매건 조회 실패')
+    const itemsByOrder = new Map<string, any[]>()
+    for (const row of items.data ?? []) {
+      const key = text(row.order_id)
+      const list = itemsByOrder.get(key) || []
+      list.push(row)
+      itemsByOrder.set(key, list)
+    }
+    const candidates = (orders.data ?? []).map((row: any) => ({ ...row, items: itemsByOrder.get(text(row.id)) || [] }))
+    return { ...base, fields: { sale_date: today(), client_id: '', status: 'confirmed', vat_rate: '10', note: '', items: [{ sales_variant_id: '', quantity: '', unit_price: '' }] }, candidates }
   }
 
   if (domain === 'purchase') {
-    const purchases = await db.from('purchases').select('*').eq('business_id', BUSINESS_ID).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }).limit(60)
+    const purchases = await db.from('purchases').select('*').eq('business_id', BUSINESS_ID).order('purchase_date', { ascending: false }).order('created_at', { ascending: false }).limit(100)
     if (purchases.error) throw new Error(purchases.error.message)
     return { ...base, fields: { supplier_id: '', purchase_date: today(), receipt_date: today(), purchase_category: 'RAW_MATERIAL', material_id: '', quantity: '', unit: 'KG', unit_price: '', tax_invoice_status: 'NOT_REQUIRED', notes: '' }, candidates: purchases.data ?? [] }
   }
 
   if (domain === 'payment') {
     const [purchases, payments] = await Promise.all([
-      db.from('purchases').select('id,purchase_no,purchase_date,supplier_name_snapshot,total_amount,status').eq('business_id', BUSINESS_ID).neq('status', 'CANCELLED').order('purchase_date', { ascending: false }).limit(100),
+      db.from('purchases').select('id,purchase_no,purchase_date,supplier_name_snapshot,total_amount,status').eq('business_id', BUSINESS_ID).neq('status', 'CANCELLED').order('purchase_date', { ascending: false }).limit(150),
       db.from('purchase_payments').select('purchase_id,amount').eq('business_id', BUSINESS_ID),
     ])
     if (purchases.error || payments.error) throw new Error(purchases.error?.message || payments.error?.message || '지급 대상 조회 실패')
@@ -136,14 +161,20 @@ function preview(domain: MobileBusinessDomain, operation: MobileBusinessOperatio
   return '업무 실행 미리보기'
 }
 
+function storedActionType(operation: MobileBusinessOperation) {
+  if (operation === 'CANCEL') return 'DELETE'
+  return operation
+}
+
 async function createGenericConfirmation(input: { session: any; threadId: string; sourceUserId: string; domain: MobileBusinessDomain; operation: MobileBusinessOperation; payload: Record<string, any>; before?: any; previewText: string }) {
   const db = createMoniServiceRoleClient()
+  const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString()
   const result = await db.from('moni_action_confirmations').insert({
     business_id: BUSINESS_ID,
     action_domain: `mobile_${input.domain}`,
-    action_type: input.operation,
-    target_id: text(input.payload.target_id, 100) || null,
-    payload: { ...input.payload, source_user_message_id: input.sourceUserId },
+    action_type: storedActionType(input.operation),
+    target_id: uuidLike(input.payload.target_id) ? input.payload.target_id : null,
+    payload: { ...input.payload, semantic_operation: input.operation, source_user_message_id: input.sourceUserId },
     before_snapshot: input.before || null,
     preview_text: input.previewText,
     warnings: [],
@@ -151,7 +182,7 @@ async function createGenericConfirmation(input: { session: any; threadId: string
     requested_by_login_id: input.session.loginId,
     requested_by_role: input.session.role,
     source_client_id: `moni-mobile:${input.threadId}`,
-    expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+    expires_at: expiresAt,
   }).select('id,status,expires_at,preview_text,warnings').single()
   if (result.error) throw new Error(result.error.message)
   return result.data
@@ -168,6 +199,60 @@ async function internalJson(request: NextRequest, path: string, init: RequestIni
   return payload
 }
 
+async function executeGeneric(request: NextRequest, session: any, threadId: string, confirmation: any) {
+  const db = createMoniServiceRoleClient()
+  const domain = text(confirmation.action_domain).replace(/^mobile_/, '') as MobileBusinessDomain
+  const operation = text(confirmation.payload?.semantic_operation || confirmation.action_type) as MobileBusinessOperation
+  const payload = confirmation.payload || {}
+
+  const lock = await db.from('moni_action_confirmations').update({ status: 'EXECUTING', user_confirmation_text: '모바일 업무 카드 최종 확정' }).eq('id', confirmation.id).eq('status', 'PENDING').select('id').maybeSingle()
+  if (lock.error) throw new Error(lock.error.message)
+  if (!lock.data) throw new Error('다른 실행이 이미 이 승인 건을 처리 중입니다. 중복 실행하지 않습니다.')
+
+  try {
+    let result: any
+    if (domain === 'packaging_inbound') {
+      if (operation === 'CREATE') result = await internalJson(request, '/api/moni/packaging-transactions', { method: 'POST', body: JSON.stringify({ material_code: payload.material_code, quantity: payload.quantity, tx_date: payload.tx_date, counterparty: payload.counterparty, note: payload.note }) })
+      else if (operation === 'UPDATE') result = await internalJson(request, '/api/moni/packaging-transactions', { method: 'PATCH', body: JSON.stringify({ id: payload.target_id, quantity: payload.quantity, tx_date: payload.tx_date, counterparty: payload.counterparty, note: payload.note }) })
+      else result = await internalJson(request, `/api/moni/packaging-transactions?id=${encodeURIComponent(payload.target_id)}`, { method: 'DELETE' })
+    } else if (domain === 'sales_order') {
+      result = operation === 'CANCEL'
+        ? await internalJson(request, '/api/moni/sales-orders-v4', { method: 'POST', body: JSON.stringify({ action: 'cancel_order', id: payload.target_id, data: { reason: payload.reason || '모바일 MONI에서 취소' } }) })
+        : await internalJson(request, '/api/moni/sales-orders-v4', { method: 'POST', body: JSON.stringify({ action: 'save_order', id: operation === 'UPDATE' ? payload.target_id : '', data: payload }) })
+    } else if (domain === 'purchase') {
+      result = operation === 'CANCEL'
+        ? await internalJson(request, '/api/moni/purchases', { method: 'POST', body: JSON.stringify({ action: 'cancel_purchase', id: payload.target_id }) })
+        : await internalJson(request, '/api/moni/purchases', { method: 'POST', body: JSON.stringify({ action: 'create_purchase', ...payload }) })
+    } else if (domain === 'payment') {
+      result = await internalJson(request, '/api/moni/purchases', { method: 'POST', body: JSON.stringify({ action: 'add_payment', ...payload }) })
+    } else {
+      throw new Error('허용되지 않은 모바일 실행 영역입니다.')
+    }
+
+    const snapshot = { verified: true, verification_basis: 'PC_API_SUCCESS', domain, operation, result }
+    const complete = await db.from('moni_action_confirmations').update({ status: 'EXECUTED', result_snapshot: snapshot, executed_at: new Date().toISOString(), error_message: null }).eq('id', confirmation.id).eq('status', 'EXECUTING')
+    if (complete.error) throw new Error(complete.error.message)
+    await db.from('moni_action_audit_log').insert({
+      confirmation_id: confirmation.id,
+      business_id: BUSINESS_ID,
+      action_domain: `mobile_${domain}`,
+      action_type: storedActionType(operation),
+      target_table: domain,
+      target_id: uuidLike(payload.target_id) ? payload.target_id : null,
+      before_snapshot: confirmation.before_snapshot || null,
+      after_snapshot: snapshot,
+      actor_login_id: session.loginId,
+      actor_role: session.role,
+      source_client_id: `moni-mobile:${threadId}`,
+      user_confirmation_text: '모바일 업무 카드 최종 확정',
+    })
+    return snapshot
+  } catch (error) {
+    await db.from('moni_action_confirmations').update({ status: 'FAILED', error_message: error instanceof Error ? error.message : '실행 실패' }).eq('id', confirmation.id).eq('status', 'EXECUTING')
+    throw error
+  }
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request)
   if (auth.response || !auth.session) return auth.response!
@@ -178,11 +263,11 @@ export async function GET(request: NextRequest) {
     if (!exchange.user) return NextResponse.json({ ok: true, card: null }, { headers: { 'Cache-Control': 'no-store' } })
     const intent = classifyMobileBusinessIntent(exchange.user.content)
     if (!intent || intent.domain === 'raw_material_inbound') return NextResponse.json({ ok: true, card: null }, { headers: { 'Cache-Control': 'no-store' } })
-    const existing = await findGenericConfirmation(auth.session, threadId, text(exchange.user.id, 100))
+    const existing = await findConfirmation(auth.session.loginId, threadId, text(exchange.user.id, 100))
     if (existing) {
       const status = text(existing.status, 30)
-      const stage = status === 'PENDING' ? 'confirmation' : status === 'EXECUTED' ? 'completed' : status === 'FAILED' ? 'failed' : null
-      if (stage) return NextResponse.json({ ok: true, card: { stage, domain: intent.domain, operation: intent.operation, source_user_message_id: exchange.user.id, confirmation_id: existing.id, preview_text: existing.preview_text, warnings: existing.warnings || [], result: existing.result_snapshot, error: existing.error_message } }, { headers: { 'Cache-Control': 'no-store' } })
+      const stage = status === 'PENDING' || status === 'EXECUTING' ? 'confirmation' : status === 'EXECUTED' ? 'completed' : status === 'FAILED' ? 'failed' : null
+      if (stage) return NextResponse.json({ ok: true, card: { stage, domain: intent.domain, operation: intent.operation, source_user_message_id: exchange.user.id, confirmation_id: existing.id, preview_text: existing.preview_text, warnings: existing.warnings || [], result: existing.result_snapshot, error: existing.error_message, busy: status === 'EXECUTING' } }, { headers: { 'Cache-Control': 'no-store' } })
     }
     return NextResponse.json({ ok: true, card: await draftFor(intent.domain, intent.operation, text(exchange.user.id, 100)) }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
@@ -207,12 +292,19 @@ export async function POST(request: NextRequest) {
       const sourceUserId = text(body.source_user_message_id, 100)
       const fields = (body.fields || {}) as Record<string, any>
       const targetId = text(body.target_id, 100)
-      if (!sourceUserId) throw new Error('원본 사용자 요청을 확인할 수 없습니다.')
+      if (!sourceUserId || !uuidLike(sourceUserId)) throw new Error('원본 사용자 요청을 확인할 수 없습니다.')
+
+      const exchange = await latestThreadExchange(threadId, auth.session.loginId)
+      const currentIntent = exchange.user ? classifyMobileBusinessIntent(exchange.user.content) : null
+      if (!exchange.user || text(exchange.user.id) !== sourceUserId || !currentIntent || currentIntent.domain !== domain || currentIntent.operation !== operation) {
+        throw new Error('현재 대화의 최신 업무 요청과 입력 카드가 일치하지 않습니다.')
+      }
 
       if (domain === 'production_plan') {
         const result = await prepareProductionPlanChange({ action: operation, plan_id: targetId, plan_date: fields.plan_date, product_id: fields.product_id, planned_quantity_kg: fields.planned_quantity_kg, note: fields.note, reason: fields.reason }, who)
         const db = createMoniServiceRoleClient()
-        await db.from('moni_action_confirmations').update({ payload: { ...(await db.from('moni_action_confirmations').select('payload').eq('id', result.confirmation_id).single()).data?.payload, source_user_message_id: sourceUserId } }).eq('id', result.confirmation_id)
+        const row = await db.from('moni_action_confirmations').select('payload').eq('id', result.confirmation_id).single()
+        await db.from('moni_action_confirmations').update({ payload: { ...(row.data?.payload || {}), source_user_message_id: sourceUserId } }).eq('id', result.confirmation_id)
         return NextResponse.json({ ok: true, confirmation: result })
       }
 
@@ -251,9 +343,14 @@ export async function POST(request: NextRequest) {
           payload.client_name = client.company_name
         }
         if (operation === 'UPDATE' || operation === 'CANCEL') {
-          const result = await createMoniServiceRoleClient().from('sales_orders').select('*').eq('id', targetId).eq('business_id', BUSINESS_ID).maybeSingle()
-          if (result.error || !result.data) throw new Error('대상 판매건을 찾을 수 없습니다.')
-          before = result.data
+          const db = createMoniServiceRoleClient()
+          const [order, items] = await Promise.all([
+            db.from('sales_orders').select('*').eq('id', targetId).eq('business_id', BUSINESS_ID).maybeSingle(),
+            db.from('sales_order_items').select('*').eq('order_id', targetId).order('sort_order'),
+          ])
+          if (order.error || !order.data) throw new Error(order.error?.message || '대상 판매건을 찾을 수 없습니다.')
+          if (items.error) throw new Error(items.error.message)
+          before = { ...order.data, items: items.data ?? [] }
         }
       }
 
@@ -282,8 +379,7 @@ export async function POST(request: NextRequest) {
         before = result.data
       }
 
-      const previewText = preview(domain, operation, payload, before)
-      const confirmation = await createGenericConfirmation({ session: auth.session, threadId, sourceUserId, domain, operation, payload, before, previewText })
+      const confirmation = await createGenericConfirmation({ session: auth.session, threadId, sourceUserId, domain, operation, payload, before, previewText: preview(domain, operation, payload, before) })
       return NextResponse.json({ ok: true, confirmation })
     }
 
@@ -291,45 +387,23 @@ export async function POST(request: NextRequest) {
       const confirmationId = text(body.confirmation_id, 80)
       if (!uuidLike(confirmationId)) throw new Error('유효한 confirmation_id가 필요합니다.')
       const db = createMoniServiceRoleClient()
-      const confirmationResult = await db.from('moni_action_confirmations').select('*').eq('id', confirmationId).eq('business_id', BUSINESS_ID).eq('requested_by_login_id', auth.session.loginId).eq('source_client_id', `moni-mobile:${threadId}`).maybeSingle()
-      if (confirmationResult.error || !confirmationResult.data) throw new Error('승인 건을 찾을 수 없습니다.')
-      const confirmation = confirmationResult.data as any
-      if (confirmation.status !== 'PENDING') throw new Error('이미 처리되었거나 실행할 수 없는 승인 건입니다.')
-      if (new Date(confirmation.expires_at).getTime() <= Date.now()) throw new Error('승인 시간이 만료되었습니다. 입력 내용을 다시 확인해 주세요.')
+      const result = await db.from('moni_action_confirmations').select('*').eq('id', confirmationId).eq('business_id', BUSINESS_ID).eq('requested_by_login_id', auth.session.loginId).in('source_client_id', [`moni-mobile:${threadId}`, `moni-web:${threadId}`]).maybeSingle()
+      if (result.error || !result.data) throw new Error('승인 건을 찾을 수 없습니다.')
+      const confirmation = result.data as any
+      if (confirmation.status === 'EXECUTED') return NextResponse.json({ ok: true, result: confirmation.result_snapshot || { verified: true, duplicate_safe: true } })
+      if (confirmation.status !== 'PENDING') throw new Error('이미 처리 중이거나 실행할 수 없는 승인 건입니다. 중복 실행하지 않습니다.')
+      if (new Date(confirmation.expires_at).getTime() <= Date.now()) {
+        await db.from('moni_action_confirmations').update({ status: 'EXPIRED' }).eq('id', confirmationId).eq('status', 'PENDING')
+        throw new Error('승인 시간이 만료되었습니다. 입력 내용을 다시 확인해 주세요.')
+      }
 
       if (confirmation.action_domain === 'production_plan') {
-        const result = await executeProductionPlanChange({ confirmation_id: confirmationId, user_confirmation_text: '모바일 업무 카드 최종 확정' }, who)
-        return NextResponse.json({ ok: true, result })
+        return NextResponse.json({ ok: true, result: await executeProductionPlanChange({ confirmation_id: confirmationId, user_confirmation_text: '모바일 업무 카드 최종 확정' }, who) })
       }
       if (confirmation.action_domain === 'production_record') {
-        const result = await executeProductionOperation({ confirmation_id: confirmationId, user_confirmation_text: '모바일 업무 카드 최종 확정' }, who)
-        return NextResponse.json({ ok: true, result })
+        return NextResponse.json({ ok: true, result: await executeProductionOperation({ confirmation_id: confirmationId, user_confirmation_text: '모바일 업무 카드 최종 확정' }, who) })
       }
-
-      const domain = text(confirmation.action_domain).replace(/^mobile_/, '') as MobileBusinessDomain
-      const operation = text(confirmation.action_type) as MobileBusinessOperation
-      const payload = confirmation.payload || {}
-      let result: any
-
-      if (domain === 'packaging_inbound') {
-        if (operation === 'CREATE') result = await internalJson(request, '/api/moni/packaging-transactions', { method: 'POST', body: JSON.stringify({ material_code: payload.material_code, quantity: payload.quantity, tx_date: payload.tx_date, counterparty: payload.counterparty, note: payload.note }) })
-        else if (operation === 'UPDATE') result = await internalJson(request, '/api/moni/packaging-transactions', { method: 'PATCH', body: JSON.stringify({ id: payload.target_id, quantity: payload.quantity, tx_date: payload.tx_date, counterparty: payload.counterparty, note: payload.note }) })
-        else result = await internalJson(request, `/api/moni/packaging-transactions?id=${encodeURIComponent(payload.target_id)}`, { method: 'DELETE' })
-      } else if (domain === 'sales_order') {
-        result = operation === 'CANCEL'
-          ? await internalJson(request, '/api/moni/sales-orders-v4', { method: 'POST', body: JSON.stringify({ action: 'cancel_order', id: payload.target_id, data: { reason: payload.reason || '모바일 MONI에서 취소' } }) })
-          : await internalJson(request, '/api/moni/sales-orders-v4', { method: 'POST', body: JSON.stringify({ action: 'save_order', id: operation === 'UPDATE' ? payload.target_id : '', data: payload }) })
-      } else if (domain === 'purchase') {
-        result = operation === 'CANCEL'
-          ? await internalJson(request, '/api/moni/purchases', { method: 'POST', body: JSON.stringify({ action: 'cancel_purchase', id: payload.target_id }) })
-          : await internalJson(request, '/api/moni/purchases', { method: 'POST', body: JSON.stringify({ action: 'create_purchase', ...payload }) })
-      } else if (domain === 'payment') {
-        result = await internalJson(request, '/api/moni/purchases', { method: 'POST', body: JSON.stringify({ action: 'add_payment', ...payload }) })
-      } else throw new Error('지원하지 않는 모바일 실행 영역입니다.')
-
-      const update = await db.from('moni_action_confirmations').update({ status: 'EXECUTED', result_snapshot: result, executed_at: new Date().toISOString() }).eq('id', confirmationId).eq('status', 'PENDING')
-      if (update.error) throw new Error(update.error.message)
-      return NextResponse.json({ ok: true, result })
+      return NextResponse.json({ ok: true, result: await executeGeneric(request, auth.session, threadId, confirmation) })
     }
 
     return NextResponse.json({ ok: false, error: '지원하지 않는 명령입니다.' }, { status: 400 })
