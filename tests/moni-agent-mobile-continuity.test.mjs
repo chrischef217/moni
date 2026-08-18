@@ -48,11 +48,15 @@ test('agent POST uses keepalive and recovers completed server messages after a m
 })
 
 test('background recovery never resubmits the business command', () => {
+  const helperStart = continuity.indexOf('async function loadThreadMessages')
+  const helperEnd = continuity.indexOf('async function matchingActionCard', helperStart)
+  const helperBody = continuity.slice(helperStart, helperEnd)
   const recoveryStart = continuity.indexOf('async function recoverFinishedTurn')
   const recoveryEnd = continuity.indexOf('function cardReadyText', recoveryStart)
   const recoveryBody = continuity.slice(recoveryStart, recoveryEnd)
-  assert.match(recoveryBody, /agent-runtime\?thread_id=/)
+  assert.match(helperBody, /agent-runtime\?thread_id=/)
   assert.match(recoveryBody, /agent-status\?thread_id=/)
+  assert.doesNotMatch(helperBody, /method:\s*'POST'/)
   assert.doesNotMatch(recoveryBody, /method:\s*'POST'/)
 })
 
