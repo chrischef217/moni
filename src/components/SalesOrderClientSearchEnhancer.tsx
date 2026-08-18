@@ -72,6 +72,12 @@ export default function SalesOrderClientSearchEnhancer() {
         root.append(inputWrap, list)
         clientField.insertBefore(root, nativeSelect)
 
+        // New product sales must never inherit the first active client as a default.
+        // Editing keeps the stored client untouched.
+        if (title === '제품 판매등록' && nativeSelect.value) {
+          setNativeSelectValue(nativeSelect, '')
+        }
+
         const selectedName = () => options.find((option) => option.id === nativeSelect.value)?.name || ''
         let filtered = options
 
@@ -141,6 +147,7 @@ export default function SalesOrderClientSearchEnhancer() {
         const onSelectChange = () => {
           const name = selectedName()
           if (name && normalize(input.value) !== normalize(name)) input.value = name
+          if (!nativeSelect.value && input.value && title === '제품 판매등록') input.value = ''
         }
         const onDocumentPointer = (event: PointerEvent) => {
           const target = event.target as Node | null

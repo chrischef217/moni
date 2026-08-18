@@ -17,6 +17,12 @@ test('client combobox lists every active option from the existing sales select a
   assert.match(enhancer, /전체 거래처 \$\{options\.length\}개/)
 })
 
+test('new product sales clears the auto-selected first active client while edit mode preserves the saved client', () => {
+  assert.match(enhancer, /title === '제품 판매등록' && nativeSelect\.value/)
+  assert.match(enhancer, /setNativeSelectValue\(nativeSelect, ''\)/)
+  assert.doesNotMatch(enhancer, /title === '제품 판매 수정' && nativeSelect\.value[^\n]*setNativeSelectValue\(nativeSelect, ''\)/)
+})
+
 test('typing a different client clears the previous client id and selecting a result dispatches the existing React change path', () => {
   assert.match(enhancer, /setNativeSelectValue\(nativeSelect, ''\)/)
   assert.match(enhancer, /setNativeSelectValue\(nativeSelect, option\.id\)/)
