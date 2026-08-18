@@ -21,8 +21,11 @@ test('first mobile turn bootstraps and persists a thread before the long agent r
   assert.match(threadRoute, /status', 'ACTIVE'/)
 })
 
-test('text business mutation turns end immediately in the structured card path without starting the agent runtime', () => {
-  assert.match(continuity, /if \(intent && attachmentCount === 0\)/)
+test('all text PC business mutation turns end immediately in the structured card path without starting the agent runtime', () => {
+  assert.match(continuity, /classifyMobileBusinessIntent/)
+  assert.match(continuity, /classifyMobileExtendedIntent/)
+  assert.match(continuity, /const textCardIntent = coreIntent \|\| extendedIntent/)
+  assert.match(continuity, /if \(textCardIntent && attachmentCount === 0\)/)
   assert.match(continuity, /\/api\/moni\/mobile-action-start/)
   assert.match(actionStart, /classifyMobileBusinessIntent/)
   assert.match(actionStart, /classifyMobileExtendedIntent/)
@@ -30,8 +33,8 @@ test('text business mutation turns end immediately in the structured card path w
   assert.doesNotMatch(actionStart, /runMoniConversationAgent/)
 })
 
-test('photo business mutations can hand control to the card as soon as the card is ready while analysis continues', () => {
-  assert.match(continuity, /intent && attachmentCount > 0/)
+test('photo transaction mutations can hand control to the card as soon as the card is ready while analysis continues', () => {
+  assert.match(continuity, /coreIntent && attachmentCount > 0/)
   assert.match(continuity, /matchingActionCard/)
   assert.match(continuity, /Promise\.race/)
   assert.match(continuity, /structured_action_card: true/)
