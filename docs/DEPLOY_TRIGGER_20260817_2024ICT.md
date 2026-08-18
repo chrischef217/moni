@@ -8,4 +8,8 @@ Approved feature baseline:
 - canonical business_id: `20220523011`
 - Production target: `https://moni-sigma.vercel.app`
 
+Retry history:
+- 2026-08-17 20:25 ICT: Vercel deployment rate limit returned.
+- 2026-08-18 10:23 ICT: manual retry requested; new main push created to test whether the deployment limit has cleared.
+
 This file changes no application behavior. It exists only to create a new `main` push so Vercel Git integration can deploy the already-approved feature baseline.
