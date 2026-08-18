@@ -73,6 +73,8 @@ export default function MoniMobileExtendedFormCard() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const sourceRef = useRef('')
+  const activeCardSourceRef = useRef('')
+  const suppressedCardSourceRef = useRef('')
 
   const threadId = () => txt(window.localStorage.getItem(THREAD_KEY))
   const refresh = useCallback(async () => {
@@ -84,6 +86,10 @@ export default function MoniMobileExtendedFormCard() {
       if (!response.ok || !payload.ok) return
       const next = (payload.card || null) as Card | null
       if (cardHasFocus('[data-moni-pc-form-card-host="true"]')) return
+      const nextSource = next?.source_user_message_id || ''
+      if (nextSource && suppressedCardSourceRef.current === nextSource) return
+      if (nextSource && suppressedCardSourceRef.current && suppressedCardSourceRef.current !== nextSource) suppressedCardSourceRef.current = ''
+      activeCardSourceRef.current = nextSource
       setCard(next)
       if (next?.stage === 'draft') {
         const key = `${next.source_user_message_id}:${next.domain}:${next.operation}`
@@ -109,9 +115,15 @@ export default function MoniMobileExtendedFormCard() {
     node.className = 'moni-pc-form-host'
     scroller.appendChild(node)
     setHost(node)
+    const hideCardForNewTurn = () => {
+      suppressedCardSourceRef.current = activeCardSourceRef.current
+      setCard(null)
+      setError('')
+    }
+    window.addEventListener('moni:user-turn-start', hideCardForNewTurn)
     const timer = window.setInterval(() => void refresh(), 900)
     void refresh()
-    return () => { window.clearInterval(timer); node.remove() }
+    return () => { window.removeEventListener('moni:user-turn-start', hideCardForNewTurn); window.clearInterval(timer); node.remove() }
   }, [refresh])
 
   function setField(key: string, value: any) { setFields((current) => ({ ...current, [key]: value })) }

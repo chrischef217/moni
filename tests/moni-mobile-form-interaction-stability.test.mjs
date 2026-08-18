@@ -9,3 +9,5 @@ test('extended inputs keep stable identity',()=>{assert.match(ext,/function rend
 test('all card forms protect focused inputs from polling',()=>{for(const s of [ext,biz,raw]){assert.match(s,/document\.activeElement/);assert.match(s,/cardHasFocus/)}});
 test('structured text writes do not enter thinking UI',()=>{assert.match(chat,/structuredRequest && threadId \? '\/api\/moni\/mobile-action-start'/);assert.match(chat,/sending && !structuredSubmitting \? 'thinking'/);assert.match(chat,/sending && !structuredSubmitting \? <ThinkingIndicator/)});
 test('create and update button wording differs',()=>{assert.match(ext,/return '입력 내용 확인'/);assert.match(ext,/operation === 'UPDATE'\) return '변경 내용 확인'/)});
+
+test('new user turns suppress stale cards until a newer card source arrives',()=>{assert.match(chat,/moni:user-turn-start/);for(const s of [ext,biz,raw]){assert.match(s,/suppressedCardSourceRef/);assert.match(s,/hideCardForNewTurn/)}});

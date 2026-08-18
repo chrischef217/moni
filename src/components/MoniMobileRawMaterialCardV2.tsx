@@ -105,6 +105,8 @@ export default function MoniMobileRawMaterialCardV2() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const sourceRef = useRef('')
+  const activeCardSourceRef = useRef('')
+  const suppressedCardSourceRef = useRef('')
 
   const threadId = () => text(window.localStorage.getItem(THREAD_KEY))
 
@@ -125,6 +127,10 @@ export default function MoniMobileRawMaterialCardV2() {
       if (!response.ok || !payload.ok) return
       const next = (payload.card || null) as ActionCard | null
       if (cardHasFocus('[data-moni-raw-material-v2-host="true"]')) return
+      const nextSource = next?.source_user_message_id || ''
+      if (nextSource && suppressedCardSourceRef.current === nextSource) return
+      if (nextSource && suppressedCardSourceRef.current && suppressedCardSourceRef.current !== nextSource) suppressedCardSourceRef.current = ''
+      activeCardSourceRef.current = nextSource
       setCard(next)
       if (next?.stage === 'draft') {
         const key = `${next.source_user_message_id}:${next.operation}`
@@ -154,11 +160,17 @@ export default function MoniMobileRawMaterialCardV2() {
       setHost(cardHost)
     }
     place()
+    const hideCardForNewTurn = () => {
+      suppressedCardSourceRef.current = activeCardSourceRef.current
+      setCard(null)
+      setError('')
+    }
+    window.addEventListener('moni:user-turn-start', hideCardForNewTurn)
     const observer = new MutationObserver(place)
     observer.observe(root, { childList: true, subtree: true })
     const interval = window.setInterval(() => void refresh(), 900)
     void refresh()
-    return () => { observer.disconnect(); window.clearInterval(interval); cardHost.remove() }
+    return () => { window.removeEventListener('moni:user-turn-start', hideCardForNewTurn); observer.disconnect(); window.clearInterval(interval); cardHost.remove() }
   }, [refresh])
 
   const draft = card?.stage === 'draft' ? card : null

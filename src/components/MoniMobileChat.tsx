@@ -667,6 +667,7 @@ export default function MoniMobileChat() {
     const startedAt = Date.now()
     setEstimatedSeconds(estimated)
     setStructuredSubmitting(structuredRequest)
+    window.dispatchEvent(new CustomEvent('moni:user-turn-start', { detail: { structured: structuredRequest } }))
     setSending(true)
     setError('')
     setInput('')
