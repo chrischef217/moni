@@ -75,9 +75,10 @@ type VariantForm = {
   active: boolean
   note: string
 }
-type TermForm = {
+type OverrideDraft = {
+  key: string
+  term_id?: string
   client_id: string
-  variant_id: string
   unit_price: string
   moq_quantity: string
   active: boolean
@@ -86,8 +87,8 @@ type TermForm = {
 }
 
 const inputClass = 'w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500'
-const secondaryButton = 'rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-slate-500 hover:text-white disabled:opacity-40'
-const primaryButton = 'rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white hover:bg-blue-500 disabled:opacity-40'
+const secondaryButton = 'rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40'
+const primaryButton = 'rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40'
 
 function money(value: unknown) {
   return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Math.round(Number(value ?? 0)))}원`
@@ -103,17 +104,20 @@ function variantSpec(row: Variant) {
   if (row.sales_unit === 'ea') return `${qty(row.unit_weight_g)}g / EA`
   return `${qty(row.unit_weight_g)}g × ${qty(row.box_units)}EA / BOX`
 }
+function draftKey() {
+  return `override-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+}
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="block text-sm text-slate-300"><span className="mb-1.5 block">{label}</span>{children}</label>
 }
-function Modal({ title, onClose, children, maxWidth = 'max-w-3xl' }: { title: string; onClose: () => void; children: ReactNode; maxWidth?: string }) {
-  return <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/75 p-4">
-    <div className={`max-h-[94vh] w-full ${maxWidth} overflow-hidden rounded-3xl border border-slate-700 bg-[#0f1b2d] shadow-2xl`}>
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/75 p-4">
+    <div className="max-h-[95vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-700 bg-[#0f1b2d] shadow-2xl">
       <div className="flex items-center justify-between border-b border-slate-700 px-6 py-4">
-        <h2 className="text-xl font-black">{title}</h2>
+        <h2 className="text-xl font-black text-white">{title}</h2>
         <button type="button" onClick={onClose} className={secondaryButton}>닫기</button>
       </div>
-      <div className="max-h-[calc(94vh-78px)] overflow-y-auto p-6">{children}</div>
+      <div className="max-h-[calc(95vh-78px)] overflow-y-auto p-6">{children}</div>
     </div>
   </div>
 }
@@ -157,17 +161,7 @@ export default function SalesVariantPricingModule() {
   const [variantForm, setVariantForm] = useState<VariantForm>(emptyVariant())
   const [packagingQuery, setPackagingQuery] = useState('')
   const [packagingOpen, setPackagingOpen] = useState(false)
-  const [selectedClientId, setSelectedClientId] = useState('')
-  const [termModal, setTermModal] = useState(false)
-  const [termForm, setTermForm] = useState<TermForm>({
-    client_id: '',
-    variant_id: '',
-    unit_price: '0',
-    moq_quantity: '0',
-    active: true,
-    note: '',
-    agent_rates: {},
-  })
+  const [overrideDrafts, setOverrideDrafts] = useState<OverrideDraft[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -175,11 +169,10 @@ export default function SalesVariantPricingModule() {
     try {
       const response = await fetch(`/api/moni/sales-pricing-v4?_=${Date.now()}`, { cache: 'no-store' })
       const payload = await response.json() as Payload
-      if (!response.ok || !payload.ok) throw new Error(payload.error || '판매규격 데이터를 불러오지 못했습니다.')
+      if (!response.ok || !payload.ok) throw new Error(payload.error || '제품 규격 단가 데이터를 불러오지 못했습니다.')
       setData(payload)
-      setSelectedClientId((current) => current || payload.clients.find((row) => row.status === 'active')?.id || '')
     } catch (e) {
-      setError(e instanceof Error ? e.message : '판매규격 데이터를 불러오지 못했습니다.')
+      setError(e instanceof Error ? e.message : '제품 규격 단가 데이터를 불러오지 못했습니다.')
     } finally {
       setLoading(false)
     }
@@ -194,31 +187,30 @@ export default function SalesVariantPricingModule() {
   const people = data?.people ?? []
   const terms = data?.client_variant_terms ?? []
 
-  const productById = useMemo(() => new Map(products.map((row) => [row.id, row])), [products])
   const packagingById = useMemo(() => new Map(packagingMaterials.map((row) => [row.id, row])), [packagingMaterials])
+  const clientById = useMemo(() => new Map(clients.map((row) => [row.id, row])), [clients])
   const personById = useMemo(() => new Map(people.map((row) => [row.id, row])), [people])
-  const termByKey = useMemo(() => new Map(terms.map((row) => [`${row.client_id}:${row.variant_id}`, row])), [terms])
-  const selectedClient = clients.find((row) => row.id === selectedClientId)
   const selectedPackaging = packagingById.get(variantForm.packaging_material_id)
 
   const packagingResults = useMemo(() => {
     const query = packagingQuery.trim().toLocaleLowerCase('ko-KR')
     const rows = packagingMaterials.filter((row) => row.is_active !== false)
-    if (!query) return rows.slice(0, 12)
-    return rows.filter((row) => `${row.material_name} ${row.material_code ?? ''} ${row.spec ?? ''} ${row.material_type ?? ''}`
+    if (!query) return rows.slice(0, 30)
+    return rows.filter((row) => `${row.material_name} ${row.material_code ?? ''} ${row.spec ?? ''} ${row.material_type ?? ''} ${row.ingredient_type ?? ''}`
       .toLocaleLowerCase('ko-KR')
       .includes(query))
-      .slice(0, 12)
+      .slice(0, 30)
   }, [packagingMaterials, packagingQuery])
 
-  const query = search.trim().toLowerCase()
+  const query = search.trim().toLocaleLowerCase('ko-KR')
   const visibleProducts = products.filter((product) =>
     !query
-    || `${product.product_name} ${product.product_code ?? ''}`.toLowerCase().includes(query)
-    || variants.some((variant) => variant.product_id === product.id && variant.variant_name.toLowerCase().includes(query)),
+    || `${product.product_name} ${product.product_code ?? ''} ${product.product_spec ?? ''}`.toLocaleLowerCase('ko-KR').includes(query)
+    || variants.some((variant) => variant.product_id === product.id && variant.variant_name.toLocaleLowerCase('ko-KR').includes(query)),
   )
   const multiVariantCount = products.filter((product) => variants.filter((variant) => variant.product_id === product.id).length > 1).length
   const missingPrice = variants.filter((variant) => variant.active && Number(variant.default_unit_price) <= 0).length
+  const activeOverrideCount = terms.filter((term) => term.active).length
 
   async function post(action: string, bodyData: Record<string, unknown>, id = '') {
     const response = await fetch('/api/moni/sales-pricing-v4', {
@@ -228,10 +220,11 @@ export default function SalesVariantPricingModule() {
     })
     const result = await response.json()
     if (!response.ok || !result.ok) throw new Error(result.error || '저장에 실패했습니다.')
-    return result
+    return result as { ok: true; variant?: Variant; term?: Term }
   }
 
   function openVariant(productId: string, row?: Variant) {
+    setError('')
     setVariantId(row?.id ?? '')
     setVariantForm(row ? {
       product_id: row.product_id,
@@ -247,8 +240,22 @@ export default function SalesVariantPricingModule() {
     } : emptyVariant(productId))
 
     const linkedPackaging = row?.packaging_material_id ? packagingById.get(row.packaging_material_id) : undefined
-    setPackagingQuery(linkedPackaging?.material_name ?? (row?.packaging_material_id ? '' : row?.variant_name ?? ''))
+    setPackagingQuery(linkedPackaging?.material_name ?? '')
     setPackagingOpen(false)
+    setOverrideDrafts(row ? terms.filter((term) => term.variant_id === row.id).map((term) => {
+      const rates: Record<string, string> = {}
+      for (const rate of term.agent_rates ?? []) rates[rate.person_id] = String(rate.settlement_rate_per_kg ?? 0)
+      return {
+        key: term.id || draftKey(),
+        term_id: term.id,
+        client_id: term.client_id,
+        unit_price: String(term.unit_price ?? row.default_unit_price ?? 0),
+        moq_quantity: String(term.moq_quantity ?? row.moq_quantity ?? 0),
+        active: term.active !== false,
+        note: term.note ?? '',
+        agent_rates: rates,
+      }
+    }) : [])
     setVariantModal(true)
   }
 
@@ -258,67 +265,82 @@ export default function SalesVariantPricingModule() {
     setPackagingOpen(false)
   }
 
-  async function saveVariant() {
+  function addOverride() {
+    const used = new Set(overrideDrafts.map((row) => row.client_id).filter(Boolean))
+    const nextClient = clients.find((row) => row.status === 'active' && !used.has(row.id))
+    if (!nextClient) {
+      setError(clients.some((row) => row.status === 'active') ? '추가할 수 있는 거래처가 더 없습니다.' : '활성 거래처가 없습니다. 먼저 거래처 관리에서 등록해 주세요.')
+      return
+    }
+    setError('')
+    setOverrideDrafts((current) => [...current, {
+      key: draftKey(),
+      client_id: nextClient.id,
+      unit_price: variantForm.default_unit_price || '0',
+      moq_quantity: variantForm.moq_quantity || '0',
+      active: true,
+      note: '',
+      agent_rates: {},
+    }])
+  }
+
+  function patchOverride(key: string, patch: Partial<OverrideDraft>) {
+    setOverrideDrafts((current) => current.map((row) => row.key === key ? { ...row, ...patch } : row))
+  }
+
+  function removeDraft(key: string) {
+    setOverrideDrafts((current) => current.filter((row) => row.key !== key))
+  }
+
+  async function saveVariantBundle() {
     setSaving(true)
     setError('')
     setNotice('')
     try {
-      await post('save_variant', {
+      if (!variantForm.product_id) throw new Error('제품을 선택해 주세요.')
+      if (!variantForm.packaging_material_id) throw new Error('부재료 관리에 등록된 포장재를 선택해 주세요.')
+
+      const clientIds = overrideDrafts.map((row) => row.client_id).filter(Boolean)
+      if (new Set(clientIds).size !== clientIds.length) throw new Error('같은 거래처의 예외조건을 두 번 등록할 수 없습니다.')
+      for (const row of overrideDrafts) {
+        if (!row.client_id) throw new Error('거래처별 예외조건의 거래처를 선택해 주세요.')
+        if (row.active && Number(row.unit_price || 0) <= 0) {
+          throw new Error(`${clientById.get(row.client_id)?.company_name || '거래처'}의 예외 판매단가를 확인해 주세요.`)
+        }
+      }
+
+      const result = await post('save_variant', {
         ...variantForm,
         unit_weight_g: Number(variantForm.unit_weight_g || 0),
         box_units: Number(variantForm.box_units || 0),
         default_unit_price: Number(variantForm.default_unit_price || 0),
         moq_quantity: Number(variantForm.moq_quantity || 0),
       }, variantId)
+      const savedVariantId = String(result.variant?.id ?? variantId)
+      if (!savedVariantId) throw new Error('저장된 판매규격 ID를 확인하지 못했습니다.')
+
+      for (const row of overrideDrafts) {
+        if (!row.term_id && !row.active) continue
+        await post('save_client_variant_term', {
+          client_id: row.client_id,
+          variant_id: savedVariantId,
+          unit_price: Number(row.unit_price || 0),
+          moq_quantity: Number(row.moq_quantity || 0),
+          active: row.active,
+          note: row.note,
+          agent_rates: Object.entries(row.agent_rates).map(([person_id, settlement_rate_per_kg]) => ({
+            person_id,
+            settlement_rate_per_kg: Number(settlement_rate_per_kg || 0),
+          })),
+        })
+      }
+
+      const activeOverrides = overrideDrafts.filter((row) => row.active).length
       setVariantModal(false)
-      setNotice(variantId ? '판매규격을 수정했습니다.' : '판매규격을 추가했습니다.')
+      setNotice(`${variantId ? '판매규격 및 단가를 수정' : '판매규격 및 단가를 추가'}했습니다.${activeOverrides ? ` 거래처 예외조건 ${activeOverrides}건도 함께 적용했습니다.` : ''}`)
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '판매규격 저장에 실패했습니다.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function openTerm(variant: Variant) {
-    if (!selectedClientId) {
-      setError('거래처를 먼저 선택해 주세요.')
-      return
-    }
-    const existing = termByKey.get(`${selectedClientId}:${variant.id}`)
-    const rates: Record<string, string> = {}
-    for (const row of existing?.agent_rates ?? []) rates[row.person_id] = String(row.settlement_rate_per_kg ?? 0)
-    setTermForm({
-      client_id: selectedClientId,
-      variant_id: variant.id,
-      unit_price: String(existing?.unit_price ?? variant.default_unit_price ?? 0),
-      moq_quantity: String(existing?.moq_quantity ?? variant.moq_quantity ?? 0),
-      active: existing?.active !== false,
-      note: existing?.note ?? '',
-      agent_rates: rates,
-    })
-    setTermModal(true)
-  }
-
-  async function saveTerm() {
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      await post('save_client_variant_term', {
-        ...termForm,
-        unit_price: Number(termForm.unit_price || 0),
-        moq_quantity: Number(termForm.moq_quantity || 0),
-        agent_rates: Object.entries(termForm.agent_rates).map(([person_id, settlement_rate_per_kg]) => ({
-          person_id,
-          settlement_rate_per_kg: Number(settlement_rate_per_kg || 0),
-        })),
-      })
-      setTermModal(false)
-      setNotice('거래처별 규격 단가와 영업 정산단가를 저장했습니다.')
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '거래처 단가 저장에 실패했습니다.')
+      setError(e instanceof Error ? e.message : '판매규격 및 단가 저장에 실패했습니다.')
     } finally {
       setSaving(false)
     }
@@ -326,7 +348,7 @@ export default function SalesVariantPricingModule() {
 
   if (loading) {
     return <main className="min-h-screen bg-[#071426] px-5 py-8 text-slate-100">
-      <div className="mx-auto max-w-[1600px] rounded-3xl border border-slate-700 bg-[#0b1b30] p-16 text-center text-slate-400">판매규격·단가 데이터를 불러오는 중입니다.</div>
+      <div className="mx-auto max-w-[1600px] rounded-3xl border border-slate-700 bg-[#0b1b30] p-16 text-center text-slate-400">제품 규격 단가 데이터를 불러오는 중입니다.</div>
     </main>
   }
 
@@ -335,9 +357,9 @@ export default function SalesVariantPricingModule() {
       <header className="rounded-3xl border border-slate-700 bg-[#0b1b30] p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-black text-emerald-300">MONI SALES PRICING V4</p>
-            <h1 className="mt-1 text-3xl font-black">판매규격·단가</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">생산 제품은 하나로 유지하고, 판매할 때 필요한 포장재·판매단위·가격을 제품별로 관리합니다.</p>
+            <p className="text-sm font-black text-emerald-300">MONI PRODUCT SPEC PRICING</p>
+            <h1 className="mt-1 text-3xl font-black">제품 규격 단가</h1>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">제품별 기본 판매규격과 기본단가를 한 곳에서 관리합니다. 특정 거래처만 가격·MOQ가 다르면 해당 규격 카드의 예외조건으로 추가하고, 예외가 없으면 기본단가가 자동 적용됩니다.</p>
           </div>
           <button type="button" onClick={() => void load()} className={secondaryButton}>새로고침</button>
         </div>
@@ -348,18 +370,18 @@ export default function SalesVariantPricingModule() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Summary label="판매 대상 제품" value={`${products.length}개`} />
-        <Summary label="판매규격" value={`${variants.length}개`} note="제품 하나에 여러 포장재 가능" tone="success" />
-        <Summary label="다중규격 제품" value={`${multiVariantCount}개`} />
-        <Summary label="기본단가 미설정" value={`${missingPrice}개`} tone={missingPrice ? 'warning' : 'success'} />
+        <Summary label="판매규격 및 단가" value={`${variants.length}개`} note="제품 하나에 여러 포장 형태 가능" tone="success" />
+        <Summary label="거래처 예외조건" value={`${activeOverrideCount}건`} note="예외가 없으면 기본단가 자동 적용" />
+        <Summary label="기본단가 미설정" value={`${missingPrice}개`} note={`다중규격 제품 ${multiVariantCount}개`} tone={missingPrice ? 'warning' : 'success'} />
       </div>
 
       <section className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-900/55">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700 p-5">
           <div>
-            <h2 className="text-xl font-black">제품별 판매규격</h2>
-            <p className="mt-1 text-sm text-slate-400">판매규격에 사용할 포장재는 `부재료 관리`에 등록된 활성 부재료에서 선택합니다.</p>
+            <h2 className="text-xl font-black">제품별 판매규격 및 단가</h2>
+            <p className="mt-1 text-sm text-slate-400">포장재는 `부재료 관리`에 등록된 활성 부재료에서 선택합니다. 가격만 다른 거래처는 새 규격을 만들지 말고 기존 규격의 거래처 예외조건을 사용합니다.</p>
           </div>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="제품·포장재 검색" className="w-full max-w-[300px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="제품·포장재·규격 검색" className="w-full max-w-[320px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500" />
         </div>
 
         <div className="divide-y divide-slate-800">
@@ -374,17 +396,18 @@ export default function SalesVariantPricingModule() {
                   </div>
                   <div className="mt-1 text-xs text-slate-500">{product.product_spec || '제품 규격 정보 없음'} · 판매규격 {rows.length}개</div>
                 </div>
-                <button type="button" onClick={() => openVariant(product.id)} className={primaryButton}>+ 규격 추가</button>
+                <button type="button" onClick={() => openVariant(product.id)} className={primaryButton}>+ 판매규격 및 단가 추가</button>
               </div>
 
               <div className="mt-4 grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
                 {rows.map((row) => {
                   const packaging = row.packaging_material_id ? packagingById.get(row.packaging_material_id) : undefined
+                  const activeTerms = terms.filter((term) => term.variant_id === row.id && term.active)
                   return <button key={row.id} type="button" onClick={() => openVariant(product.id, row)} className={`rounded-2xl border p-4 text-left transition hover:border-slate-500 ${row.active ? 'border-slate-700 bg-slate-950/35' : 'border-slate-800 bg-slate-950/20 opacity-50'}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="font-black text-white">{row.variant_name} {row.is_default && <span className="ml-1 rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-300">기본</span>}</div>
-                        <div className="mt-1 text-xs text-slate-500">{packaging?.spec ? `포장재 규격 ${packaging.spec} · ` : ''}{variantSpec(row)}</div>
+                        <div className="mt-1 text-xs text-slate-500">{packaging?.material_code ? `${packaging.material_code} · ` : ''}{packaging?.spec ? `포장재 규격 ${packaging.spec} · ` : ''}{variantSpec(row)}</div>
                       </div>
                       <span className={row.active ? 'text-xs text-emerald-300' : 'text-xs text-slate-500'}>{row.active ? '사용' : '중지'}</span>
                     </div>
@@ -392,62 +415,28 @@ export default function SalesVariantPricingModule() {
                       <div><span className="text-slate-500">기본단가</span><div className="font-black text-emerald-200">{money(row.default_unit_price)} / {unitLabel(row.sales_unit)}</div></div>
                       <div><span className="text-slate-500">MOQ</span><div className="font-bold">{qty(row.moq_quantity)} {unitLabel(row.sales_unit)}</div></div>
                     </div>
+                    <div className="mt-4 border-t border-slate-800 pt-3">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-bold text-slate-400">거래처 예외조건</span>
+                        <span className={activeTerms.length ? 'font-black text-amber-300' : 'text-slate-500'}>{activeTerms.length ? `${activeTerms.length}건` : '없음 · 기본단가 사용'}</span>
+                      </div>
+                      {activeTerms.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">
+                        {activeTerms.slice(0, 4).map((term) => <span key={term.id} className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-2 py-1 text-[11px] text-amber-100">{clientById.get(term.client_id)?.company_name || '거래처'} · {money(term.unit_price)}</span>)}
+                        {activeTerms.length > 4 && <span className="px-2 py-1 text-[11px] text-slate-500">+{activeTerms.length - 4}</span>}
+                      </div>}
+                    </div>
                   </button>
                 })}
-                {!rows.length && <div className="rounded-2xl border border-dashed border-slate-700 p-5 text-sm text-slate-500">판매규격이 없습니다.</div>}
+                {!rows.length && <div className="rounded-2xl border border-dashed border-slate-700 p-5 text-sm text-slate-500">판매규격 및 단가가 없습니다.</div>}
               </div>
             </div>
           })}
+          {!visibleProducts.length && <div className="p-12 text-center text-slate-500">검색되는 제품 또는 판매규격이 없습니다.</div>}
         </div>
-      </section>
-
-      <section className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-900/55">
-        <div className="border-b border-slate-700 p-5">
-          <h2 className="text-xl font-black">거래처별 판매단가</h2>
-          <p className="mt-1 text-sm text-slate-400">기본단가와 다른 납품단가가 있는 경우에만 거래처별로 덮어씁니다. 영업 프리랜서 원/kg 정산단가도 같은 화면에서 설정합니다.</p>
-          <div className="mt-4 max-w-[460px]">
-            <Field label="거래처">
-              <select value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)} className={inputClass}>
-                <option value="">거래처 선택</option>
-                {clients.filter((row) => row.status === 'active').map((row) => <option key={row.id} value={row.id}>{row.company_name}</option>)}
-              </select>
-            </Field>
-          </div>
-        </div>
-
-        {!clients.length
-          ? <div className="p-12 text-center text-slate-500">등록된 거래처가 없습니다. 먼저 `거래처 관리`에서 거래처를 등록하면 거래처별 단가를 설정할 수 있습니다.</div>
-          : !selectedClientId
-            ? <div className="p-12 text-center text-slate-500">거래처를 선택해 주세요.</div>
-            : <div className="overflow-x-auto">
-              <table className="min-w-[1100px] w-full text-sm">
-                <thead className="bg-slate-800 text-slate-400">
-                  <tr>{['제품', '판매규격', '기본단가', '거래처단가', 'MOQ', '영업 정산단가', '상태', '관리'].map((label) => <th key={label} className="px-4 py-3 text-left">{label}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {variants.filter((row) => row.active).map((variant) => {
-                    const product = productById.get(variant.product_id)
-                    const term = termByKey.get(`${selectedClientId}:${variant.id}`)
-                    const packaging = variant.packaging_material_id ? packagingById.get(variant.packaging_material_id) : undefined
-                    return <tr key={variant.id} className="border-t border-slate-800">
-                      <td className="px-4 py-3 font-bold">{product?.product_name || '제품'}</td>
-                      <td className="px-4 py-3"><b>{variant.variant_name}</b><div className="text-xs text-slate-500">{packaging?.spec ? `${packaging.spec} · ` : ''}{variantSpec(variant)}</div></td>
-                      <td className="px-4 py-3">{money(variant.default_unit_price)} / {unitLabel(variant.sales_unit)}</td>
-                      <td className="px-4 py-3 font-black text-emerald-300">{term ? `${money(term.unit_price)} / ${unitLabel(variant.sales_unit)}` : '기본단가 사용'}</td>
-                      <td className="px-4 py-3">{qty(term?.moq_quantity ?? variant.moq_quantity)} {unitLabel(variant.sales_unit)}</td>
-                      <td className="px-4 py-3">{term?.agent_rates.length ? term.agent_rates.map((rate) => <div key={rate.person_id}>{personById.get(rate.person_id)?.name || '담당자'} · <b>{money(rate.settlement_rate_per_kg)}/kg</b></div>) : <span className="text-slate-500">없음</span>}</td>
-                      <td className="px-4 py-3">{term ? (term.active ? <span className="text-emerald-300">사용</span> : <span className="text-slate-500">중지</span>) : <span className="text-blue-300">기본</span>}</td>
-                      <td className="px-4 py-3"><button type="button" onClick={() => openTerm(variant)} className={secondaryButton}>{term ? '수정' : '거래처 가격 설정'}</button></td>
-                    </tr>
-                  })}
-                </tbody>
-              </table>
-            </div>}
-        {selectedClient && <div className="border-t border-slate-800 px-5 py-3 text-xs text-slate-500">{selectedClient.company_name} 연결 영업 프리랜서 {selectedClient.assigned_person_ids.length}명 · 연결된 사람만 정산단가를 지정할 수 있습니다.</div>}
       </section>
     </div>
 
-    {variantModal && <Modal title={variantId ? '판매규격 수정' : '판매규격 추가'} onClose={() => setVariantModal(false)}>
+    {variantModal && <Modal title={variantId ? '판매규격 및 단가 수정' : '판매규격 및 단가 추가'} onClose={() => setVariantModal(false)}>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="제품">
           <select value={variantForm.product_id} disabled={Boolean(variantId)} onChange={(e) => setVariantForm((current) => ({ ...current, product_id: e.target.value }))} className={inputClass}>
@@ -456,22 +445,22 @@ export default function SalesVariantPricingModule() {
           </select>
         </Field>
 
-        <Field label="포장재">
+        <Field label="포장재 · 부재료에서 선택">
           <div className="relative">
             <input
               value={packagingQuery}
               onFocus={() => setPackagingOpen(true)}
-              onBlur={() => window.setTimeout(() => setPackagingOpen(false), 120)}
+              onBlur={() => window.setTimeout(() => setPackagingOpen(false), 140)}
               onChange={(e) => {
                 setPackagingQuery(e.target.value)
                 setVariantForm((current) => ({ ...current, packaging_material_id: '' }))
                 setPackagingOpen(true)
               }}
-              placeholder="부재료명을 입력해 검색"
+              placeholder="부재료명·코드·규격을 입력해 검색"
               autoComplete="off"
               className={inputClass}
             />
-            {packagingOpen && <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 max-h-60 overflow-y-auto rounded-xl border border-slate-600 bg-[#0b1728] p-1 shadow-2xl">
+            {packagingOpen && <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 max-h-72 overflow-y-auto rounded-xl border border-slate-600 bg-[#0b1728] p-1 shadow-2xl">
               {packagingResults.map((row) => <button
                 key={row.id}
                 type="button"
@@ -479,8 +468,11 @@ export default function SalesVariantPricingModule() {
                 onClick={() => choosePackaging(row)}
                 className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-slate-800"
               >
-                <div className="text-sm font-black text-white">{row.material_name}</div>
-                <div className="mt-0.5 text-xs text-slate-400">{row.spec || '규격 미등록'}{row.material_type ? ` · ${row.material_type}` : ''}</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-black text-white">{row.material_name}</div>
+                  {row.material_code && <div className="text-[11px] text-slate-500">{row.material_code}</div>}
+                </div>
+                <div className="mt-0.5 text-xs text-slate-400">{row.spec || '규격 미등록'}{row.material_type ? ` · ${row.material_type}` : ''}{row.ingredient_type ? ` · ${row.ingredient_type}` : ''}</div>
               </button>)}
               {!packagingResults.length && <div className="px-3 py-4 text-center text-xs text-slate-500">검색되는 활성 부재료가 없습니다.</div>}
             </div>}
@@ -497,7 +489,7 @@ export default function SalesVariantPricingModule() {
 
         <Field label="포장재 규격">
           <div className="min-h-[42px] rounded-xl border border-slate-700 bg-slate-950/55 px-3 py-2.5 text-sm font-bold text-slate-200">
-            {selectedPackaging?.spec || (variantForm.packaging_material_id ? '규격 미등록' : '포장재를 선택하면 규격정보가 표시됩니다.')}
+            {selectedPackaging?.spec || (variantForm.packaging_material_id ? '규격 미등록' : '포장재를 선택하면 부재료 등록 규격이 표시됩니다.')}
           </div>
         </Field>
 
@@ -513,7 +505,7 @@ export default function SalesVariantPricingModule() {
           <input type="number" min="0" value={variantForm.default_unit_price} onChange={(e) => setVariantForm((current) => ({ ...current, default_unit_price: e.target.value }))} className={inputClass} />
         </Field>
 
-        <Field label={`MOQ(${unitLabel(variantForm.sales_unit)})`}>
+        <Field label={`기본 MOQ(${unitLabel(variantForm.sales_unit)})`}>
           <input type="number" min="0" value={variantForm.moq_quantity} onChange={(e) => setVariantForm((current) => ({ ...current, moq_quantity: e.target.value }))} className={inputClass} />
         </Field>
 
@@ -527,44 +519,71 @@ export default function SalesVariantPricingModule() {
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={variantForm.active} onChange={(e) => setVariantForm((current) => ({ ...current, active: e.target.checked }))} /> 판매 사용</label>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3">
-        <button type="button" onClick={() => setVariantModal(false)} className={secondaryButton}>취소</button>
-        <button type="button" disabled={saving || !variantForm.packaging_material_id} onClick={() => void saveVariant()} className={primaryButton}>저장</button>
-      </div>
-    </Modal>}
+      <section className="mt-7 rounded-2xl border border-slate-700 bg-slate-950/30">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-700 p-5">
+          <div>
+            <h3 className="font-black text-white">거래처별 예외 규격·단가 <span className="ml-1 text-xs font-medium text-slate-500">선택사항</span></h3>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">같은 포장규격인데 특정 거래처만 가격 또는 MOQ가 다를 때만 추가합니다. 등록하지 않은 거래처는 위 기본단가와 기본 MOQ를 자동 사용합니다. 실제 포장 형태가 다르면 별도 판매규격 카드로 추가하세요.</p>
+          </div>
+          <button type="button" onClick={addOverride} className={secondaryButton}>+ 거래처 예외 추가</button>
+        </div>
 
-    {termModal && <Modal title="거래처별 판매조건" onClose={() => setTermModal(false)} maxWidth="max-w-4xl">
-      {(() => {
-        const variant = variants.find((row) => row.id === termForm.variant_id)
-        const product = variant ? productById.get(variant.product_id) : undefined
-        const assigned = selectedClient?.assigned_person_ids ?? []
-        return <>
-          <div className="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
-            <b>{product?.product_name} · {variant?.variant_name}</b>
-            <div className="mt-1 text-sm text-slate-500">기본 {money(variant?.default_unit_price)} / {variant ? unitLabel(variant.sales_unit) : ''}</div>
-          </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <Field label="거래처 판매단가"><input type="number" min="0" value={termForm.unit_price} onChange={(e) => setTermForm((current) => ({ ...current, unit_price: e.target.value }))} className={inputClass} /></Field>
-            <Field label="거래처 MOQ"><input type="number" min="0" value={termForm.moq_quantity} onChange={(e) => setTermForm((current) => ({ ...current, moq_quantity: e.target.value }))} className={inputClass} /></Field>
-            <Field label="비고"><input value={termForm.note} onChange={(e) => setTermForm((current) => ({ ...current, note: e.target.value }))} className={inputClass} /></Field>
-            <label className="mt-7 flex items-center gap-2 text-sm"><input type="checkbox" checked={termForm.active} onChange={(e) => setTermForm((current) => ({ ...current, active: e.target.checked }))} /> 이 거래처에 판매 사용</label>
-          </div>
-          <div className="mt-6 border-t border-slate-700 pt-5">
-            <h3 className="font-black">영업 프리랜서 정산단가</h3>
-            <p className="mt-1 text-xs text-slate-500">거래처 관리에서 연결된 영업 프리랜서만 표시합니다. 단위는 원/kg입니다.</p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              {assigned.map((id) => <Field key={id} label={`${personById.get(id)?.name || '담당자'} (원/kg)`}>
-                <input type="number" min="0" value={termForm.agent_rates[id] ?? ''} onChange={(e) => setTermForm((current) => ({ ...current, agent_rates: { ...current.agent_rates, [id]: e.target.value } }))} className={inputClass} />
-              </Field>)}
-              {!assigned.length && <div className="text-sm text-amber-300">연결된 영업 프리랜서가 없습니다.</div>}
-            </div>
-          </div>
-          <div className="mt-6 flex justify-end gap-3">
-            <button type="button" onClick={() => setTermModal(false)} className={secondaryButton}>취소</button>
-            <button type="button" disabled={saving} onClick={() => void saveTerm()} className={primaryButton}>저장</button>
-          </div>
-        </>
-      })()}
+        {!overrideDrafts.length
+          ? <div className="p-6 text-center text-sm text-slate-500">등록된 거래처 예외조건이 없습니다. 모든 거래처에 기본단가가 적용됩니다.</div>
+          : <div className="space-y-3 p-4">
+            {overrideDrafts.map((draft, index) => {
+              const client = clientById.get(draft.client_id)
+              const assignedPeople = (client?.assigned_person_ids ?? [])
+                .map((personId) => personById.get(personId))
+                .filter((person): person is Person => Boolean(person && person.status === 'active'))
+              const usedByOther = new Set(overrideDrafts.filter((row) => row.key !== draft.key).map((row) => row.client_id))
+              return <div key={draft.key} className={`rounded-2xl border p-4 ${draft.active ? 'border-amber-500/25 bg-amber-500/[0.035]' : 'border-slate-800 bg-slate-950/30 opacity-70'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm font-black text-white">예외조건 {index + 1}{draft.term_id ? <span className="ml-2 text-[11px] font-medium text-slate-500">저장된 조건</span> : <span className="ml-2 text-[11px] font-medium text-blue-300">새 조건</span>}</div>
+                  {!draft.term_id
+                    ? <button type="button" onClick={() => removeDraft(draft.key)} className="text-xs font-bold text-red-300 hover:text-red-200">입력 삭제</button>
+                    : <button type="button" onClick={() => patchOverride(draft.key, { active: !draft.active })} className="text-xs font-bold text-slate-300 hover:text-white">{draft.active ? '예외 사용 중지 · 기본단가 적용' : '예외 다시 사용'}</button>}
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <Field label="거래처">
+                    <select value={draft.client_id} disabled={Boolean(draft.term_id)} onChange={(e) => patchOverride(draft.key, { client_id: e.target.value, agent_rates: {} })} className={inputClass}>
+                      <option value="">거래처 선택</option>
+                      {clients.filter((row) => row.status === 'active' || row.id === draft.client_id).map((row) => <option key={row.id} value={row.id} disabled={usedByOther.has(row.id)}>{row.company_name}{row.status !== 'active' ? ' · 거래중지' : ''}</option>)}
+                    </select>
+                  </Field>
+                  <Field label={`예외 판매단가(원/${unitLabel(variantForm.sales_unit)})`}>
+                    <input type="number" min="0" disabled={!draft.active} value={draft.unit_price} onChange={(e) => patchOverride(draft.key, { unit_price: e.target.value })} className={inputClass} />
+                  </Field>
+                  <Field label={`예외 MOQ(${unitLabel(variantForm.sales_unit)})`}>
+                    <input type="number" min="0" disabled={!draft.active} value={draft.moq_quantity} onChange={(e) => patchOverride(draft.key, { moq_quantity: e.target.value })} className={inputClass} />
+                  </Field>
+                  <Field label="예외조건 비고">
+                    <input disabled={!draft.active} value={draft.note} onChange={(e) => patchOverride(draft.key, { note: e.target.value })} placeholder="선택 입력" className={inputClass} />
+                  </Field>
+                </div>
+
+                {assignedPeople.length > 0 && <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <div className="text-xs font-bold text-slate-400">이 거래처 연결 영업담당 정산단가 · 원/kg</div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {assignedPeople.map((person) => <Field key={person.id} label={person.name}>
+                      <input type="number" min="0" disabled={!draft.active} value={draft.agent_rates[person.id] ?? ''} onChange={(e) => patchOverride(draft.key, { agent_rates: { ...draft.agent_rates, [person.id]: e.target.value } })} placeholder="0" className={inputClass} />
+                    </Field>)}
+                  </div>
+                </div>}
+
+                <div className="mt-3 text-xs text-slate-500">{draft.active
+                  ? `${client?.company_name || '선택 거래처'}에만 예외조건이 적용됩니다. 다른 거래처는 기본단가를 사용합니다.`
+                  : `${client?.company_name || '선택 거래처'} 예외조건은 중지 상태로 저장되며 기본단가가 적용됩니다.`}</div>
+              </div>
+            })}
+          </div>}
+      </section>
+
+      <div className="mt-6 flex justify-end gap-3">
+        <button type="button" onClick={() => setVariantModal(false)} disabled={saving} className={secondaryButton}>취소</button>
+        <button type="button" onClick={() => void saveVariantBundle()} disabled={saving} className={primaryButton}>{saving ? '저장 중…' : '저장'}</button>
+      </div>
     </Modal>}
   </main>
 }
