@@ -6,7 +6,6 @@ import MoniMobileBusyRecovery from '@/components/MoniMobileBusyRecovery'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileContinuityGuard from '@/components/MoniMobileContinuityGuard'
 import MoniMobileCrudCards from '@/components/MoniMobileCrudCards'
-import MoniMobileCrudCatalogEnhancer from '@/components/MoniMobileCrudCatalogEnhancer'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
@@ -28,20 +27,11 @@ export const viewport: Viewport = {
 
 export default async function MoniMobilePage() {
   const session = await getSessionFromCookies()
-
-  if (!session) {
-    return <AllowanceLogin />
-  }
-
-  if (session.role === 'freelancer') {
-    redirect('/freelancer')
-  }
+  if (!session) return <AllowanceLogin />
+  if (session.role === 'freelancer') redirect('/freelancer')
 
   return (
-    <main
-      data-moni-mobile-chat
-      className="fixed inset-0 z-[1000] flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#f7fcfb] text-[#173b52]"
-    >
+    <main data-moni-mobile-chat className="fixed inset-0 z-[1000] flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#f7fcfb] text-[#173b52]">
       <MoniMobileRuntimeGuard />
       <MoniMobileAnswerActions />
       <MoniMobileUxPolish />
@@ -55,7 +45,6 @@ export default async function MoniMobilePage() {
       <MoniMobileThinkingCharacterMotionPatch />
       <MoniMobileVoiceCanvasWave />
       <MoniMobileCrudCards />
-      <MoniMobileCrudCatalogEnhancer />
       <MoniMobileChat />
     </main>
   )
