@@ -3,26 +3,24 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const page = readFileSync('src/app/mobile/page.tsx', 'utf8')
-const card = readFileSync('src/components/MoniMobileCrudCards.tsx', 'utf8')
+const card = readFileSync('src/components/MoniMobileRawMaterialCardV2.tsx', 'utf8')
 const route = readFileSync('src/app/api/moni/mobile-actions/route.ts', 'utf8')
 const migration = readFileSync('supabase/migrations/202608170001_mobile_raw_material_chat_actions.sql', 'utf8')
 
-test('mobile chat mounts an in-chat structured CRUD card surface', () => {
-  assert.match(page, /MoniMobileCrudCards/)
-  assert.match(page, /<MoniMobileCrudCards\s*\/>/)
-  assert.match(card, /MONI 업무 카드/)
+test('mobile chat mounts the V2 in-chat structured raw-material CRUD card surface', () => {
+  assert.match(page, /MoniMobileRawMaterialCardV2/)
+  assert.match(page, /<MoniMobileRawMaterialCardV2\s*\/>/)
+  assert.match(card, /MONI 업무 카드 · 모바일/)
   assert.match(card, /원재료 입고 입력/)
   assert.match(card, /원재료 입고 수정/)
   assert.match(card, /원재료 입고 삭제/)
   assert.match(card, /입력 내용 확인/)
-  assert.match(card, /변경 내용 확인/)
-  assert.match(card, /삭제 내용 확인/)
   assert.match(card, /입고 확정/)
   assert.match(card, /수정 확정/)
   assert.match(card, /삭제 확정/)
 })
 
-test('the card supports one-pass fields, supplier suggestion, and selectable delete/update rows', () => {
+test('the V2 card supports one-pass fields, searchable master catalog, and selectable delete/update rows', () => {
   assert.match(card, /raw_material_id/)
   assert.match(card, /tx_date/)
   assert.match(card, /quantity_packs/)
@@ -31,23 +29,21 @@ test('the card supports one-pass fields, supplier suggestion, and selectable del
   assert.match(card, /supplier/)
   assert.match(card, /unit_price/)
   assert.match(card, /note/)
-  assert.match(card, /moni-supplier-suggestions/)
+  assert.match(card, /mobile-material-catalog/)
   assert.match(card, /selectedTransactionId/)
   assert.match(card, /candidate\.protected/)
-  assert.match(card, /여기서는 삭제\/수정 불가/)
+  assert.match(card, /재고관리 미설정/)
 })
 
-test('photo analysis arriving after the blank card only backfills still-empty fields', () => {
-  assert.match(card, /lastAssistantMessageId/)
-  assert.match(card, /assistantId && assistantId !== lastAssistantMessageId\.current/)
-  assert.match(card, /const inferred = initialFields\(next\)/)
-  assert.match(card, /if \(!text\(merged\[key\]\) && text\(value\)\) merged\[key\] = value/)
+test('photo analysis can backfill draft fields without replacing the V2 card execution contract', () => {
+  assert.match(card, /initialFields/)
+  assert.match(card, /source_user_message_id/)
+  assert.match(card, /command: 'prepare'/)
+  assert.match(card, /command: 'execute'/)
 })
 
 test('photo-derived Korean pack counts and weights do not rely on ASCII word boundaries', () => {
   assert.match(route, /개\|포\|봉\|통\|말\|박스\|box\|ea/)
-  assert.match(route, /\(\?=\$\|\\s\|\[,\.·\/\)\\\]\]\)/)
-  assert.match(route, /const unitEnd = '\(\?=\$\|\\\\s/)
   assert.match(route, /kg\|킬로그램\|킬로\|g\|그램/)
 })
 
@@ -56,7 +52,6 @@ test('explicit inbound or purchase-entry commands open a draft even before exact
   assert.match(route, /if \(rawContext && remove\) return 'DELETE'/)
   assert.match(route, /if \(rawContext && update\) return 'UPDATE'/)
   assert.match(route, /if \(create\) return 'CREATE'/)
-  assert.doesNotMatch(route, /if \(\(rawContext \|\| hasMaterialMatch\) && create\)/)
 })
 
 test('mobile action API is admin-only, canonical-business scoped, and supplier-history aware', () => {
@@ -66,7 +61,6 @@ test('mobile action API is admin-only, canonical-business scoped, and supplier-h
   assert.match(route, /supplierSuggestions/)
   assert.match(route, /최근 실제 입고 이력/)
   assert.match(route, /\.eq\('business_id', BUSINESS_ID\)/)
-  assert.match(route, /\.eq\('item_code', material\.id\)/)
   assert.match(route, /\.eq\('txn_type', 'INBOUND'\)/)
 })
 

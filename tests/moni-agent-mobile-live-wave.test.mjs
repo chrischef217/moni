@@ -25,8 +25,8 @@ test('THINKING waveform pulses from the same heartbeat event instead of an indep
   assert.doesNotMatch(liveWave, /@keyframes moniThinkingWave/)
 })
 
-test('heartbeat is raised near button-feedback output while retaining a limiter and rounded waveform', () => {
-  assert.match(heartbeat, /master\.gain\.value = 0\.98/)
+test('heartbeat keeps the approved 10x output while retaining a limiter and rounded waveform', () => {
+  assert.match(heartbeat, /master\.gain\.value = 9\.8/)
   assert.match(heartbeat, /limiter\.threshold\.value = -5/)
   assert.match(heartbeat, /limiter\.ratio\.value = 12/)
   assert.match(heartbeat, /peak: 0\.90/)

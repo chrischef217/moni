@@ -21,18 +21,20 @@ test('first mobile turn bootstraps and persists a thread before the long agent r
   assert.match(threadRoute, /status', 'ACTIVE'/)
 })
 
-test('text raw-material CRUD turns end immediately in the structured card path without starting the agent runtime', () => {
-  assert.match(continuity, /if \(operation && attachmentCount === 0\)/)
+test('all text PC business mutation turns end immediately in the structured card path without starting the agent runtime', () => {
+  assert.match(continuity, /classifyMobileBusinessIntent/)
+  assert.match(continuity, /classifyMobileExtendedIntent/)
+  assert.match(continuity, /const textCardIntent = coreIntent \|\| extendedIntent/)
+  assert.match(continuity, /if \(textCardIntent && attachmentCount === 0\)/)
   assert.match(continuity, /\/api\/moni\/mobile-action-start/)
-  assert.match(actionStart, /MONI_MOBILE_ACTION_CARD_V1/)
-  assert.match(actionStart, /원재료 입고 입력 카드를 열었습니다/)
-  assert.match(actionStart, /원재료 입고 수정 카드를 열었습니다/)
-  assert.match(actionStart, /원재료 입고 삭제 카드를 열었습니다/)
+  assert.match(actionStart, /classifyMobileBusinessIntent/)
+  assert.match(actionStart, /classifyMobileExtendedIntent/)
+  assert.match(actionStart, /structured_action_card: true/)
   assert.doesNotMatch(actionStart, /runMoniConversationAgent/)
 })
 
-test('photo CRUD can hand control to the card as soon as the card is ready while analysis continues', () => {
-  assert.match(continuity, /operation && attachmentCount > 0/)
+test('photo transaction mutations can hand control to the card as soon as the card is ready while analysis continues', () => {
+  assert.match(continuity, /coreIntent && attachmentCount > 0/)
   assert.match(continuity, /matchingActionCard/)
   assert.match(continuity, /Promise\.race/)
   assert.match(continuity, /structured_action_card: true/)
@@ -52,7 +54,7 @@ test('background recovery never resubmits the business command', () => {
   const helperEnd = continuity.indexOf('async function matchingActionCard', helperStart)
   const helperBody = continuity.slice(helperStart, helperEnd)
   const recoveryStart = continuity.indexOf('async function recoverFinishedTurn')
-  const recoveryEnd = continuity.indexOf('function cardReadyText', recoveryStart)
+  const recoveryEnd = continuity.indexOf('export default function MoniMobileContinuityGuard', recoveryStart)
   const recoveryBody = continuity.slice(recoveryStart, recoveryEnd)
   assert.match(helperBody, /agent-runtime\?thread_id=/)
   assert.match(recoveryBody, /agent-status\?thread_id=/)
