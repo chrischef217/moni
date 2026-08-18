@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return NextResponse.json({
       ok: false,
-      error: error instanceof Error ? error.message : '판매규격·단가 데이터를 불러오지 못했습니다.',
+      error: error instanceof Error ? error.message : '제품 규격 단가 데이터를 불러오지 못했습니다.',
     }, { status: 500 })
   }
 }
@@ -97,23 +97,25 @@ export async function POST(request: NextRequest) {
 
     if (action === 'save_variant') {
       const productId = text(data.product_id)
+      const variantName = text(data.variant_name)
       const packagingMaterialId = text(data.packaging_material_id)
       const salesUnit = SALES_UNITS.has(text(data.sales_unit)) ? text(data.sales_unit) : 'kg'
 
       if (!productId) throw new Error('제품을 선택해 주세요.')
-      if (!packagingMaterialId) throw new Error('포장재를 선택해 주세요.')
+      if (!variantName) throw new Error('판매규격을 입력해 주세요.')
 
-      const [productResult, packagingResult] = await Promise.all([
-        client.from('products').select('id,product_name,product_type').eq('id', productId).single(),
-        client.from('packaging_materials').select('id,material_name,material_code,spec,material_type,ingredient_type,is_active').eq('id', packagingMaterialId).maybeSingle(),
-      ])
+      const productResult = await client.from('products').select('id,product_name,product_type').eq('id', productId).single()
       if (productResult.error) throw new Error(productResult.error.message)
       if (text(productResult.data.product_type) === '반제품') throw new Error('반제품은 판매규격으로 등록할 수 없습니다.')
-      if (packagingResult.error) throw new Error(packagingResult.error.message)
-      if (!packagingResult.data || packagingResult.data.is_active === false) throw new Error('선택한 포장재가 없거나 현재 비활성 상태입니다.')
 
-      const variantName = text(packagingResult.data.material_name)
-      if (!variantName) throw new Error('선택한 포장재의 부재료명을 확인해 주세요.')
+      if (packagingMaterialId) {
+        const packagingResult = await client.from('packaging_materials')
+          .select('id,material_name,material_code,spec,material_type,ingredient_type,is_active')
+          .eq('id', packagingMaterialId)
+          .maybeSingle()
+        if (packagingResult.error) throw new Error(packagingResult.error.message)
+        if (!packagingResult.data || packagingResult.data.is_active === false) throw new Error('선택한 부재료 포장재가 없거나 현재 비활성 상태입니다.')
+      }
 
       const unitWeightG = qty(data.unit_weight_g) > 0 ? qty(data.unit_weight_g) : null
       const boxUnits = qty(data.box_units) > 0 ? qty(data.box_units) : null
@@ -124,7 +126,7 @@ export async function POST(request: NextRequest) {
       const payload = {
         business_id: BUSINESS_ID,
         product_id: productId,
-        packaging_material_id: packagingMaterialId,
+        packaging_material_id: packagingMaterialId || null,
         variant_name: variantName,
         sales_unit: salesUnit,
         unit_weight_g: unitWeightG,
@@ -145,7 +147,7 @@ export async function POST(request: NextRequest) {
         result = await client.from('sales_product_variants').insert(payload).select('*').single()
       }
       if (result.error) {
-        if (result.error.code === '23505') throw new Error('이 제품에는 같은 포장재가 이미 판매규격으로 등록되어 있습니다.')
+        if (result.error.code === '23505') throw new Error('이 제품에는 같은 판매규격명이 이미 등록되어 있습니다.')
         throw new Error(result.error.message)
       }
 
