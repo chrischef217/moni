@@ -8,6 +8,7 @@ import MoniMobileBusinessCatalogGuard from '@/components/MoniMobileBusinessCatal
 import MoniMobileBusinessExecuteGuard from '@/components/MoniMobileBusinessExecuteGuard'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileContinuityGuard from '@/components/MoniMobileContinuityGuard'
+import MoniMobileExtendedFormCard from '@/components/MoniMobileExtendedFormCard'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
@@ -58,6 +59,7 @@ export default async function MoniMobilePage() {
       <MoniMobileVoiceCanvasWave />
       <MoniMobileRawMaterialCardV2 />
       <MoniMobileBusinessCards />
+      <MoniMobileExtendedFormCard />
       <MoniMobileChat />
     </main>
   )
