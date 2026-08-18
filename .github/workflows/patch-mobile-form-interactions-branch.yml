@@ -1,0 +1,146 @@
+name: Patch Mobile Form Interaction Branch
+
+on:
+  push:
+    branches: ["fix/mobile-form-interaction-stability"]
+    paths:
+      - ".github/workflows/patch-mobile-form-interactions-branch.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-form-interaction-stability
+          fetch-depth: 0
+
+      - name: Apply interaction fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def sub1(path, pattern, repl, label, flags=0):
+              text = path.read_text(encoding='utf-8')
+              new, count = re.subn(pattern, repl, text, count=1, flags=flags)
+              if count != 1:
+                  raise SystemExit(f'{path}: {label}: expected one match, found {count}')
+              path.write_text(new, encoding='utf-8')
+
+          # CHAT: structured text writes must not enter THINKING UI and should use direct card start when thread exists.
+          chat = Path('src/components/MoniMobileChat.tsx')
+          sub1(chat,
+               r"(import \{ moniBrowserDb \} from '@/lib/moni/browser-db'\n)",
+               r"\1import { classifyMobileBusinessIntent } from '@/lib/moni/mobile-business-intents'\nimport { classifyMobileExtendedIntent } from '@/lib/moni/mobile-extended-intents'\n",
+               'intent imports')
+          sub1(chat, r"(  const \[sending, setSending\] = useState\(false\)\n)", r"\1  const [structuredSubmitting, setStructuredSubmitting] = useState(false)\n", 'structured state')
+          sub1(chat,
+               r"  const status = error \? 'issue' : sending \? 'thinking' : listening \? 'listening' : 'live'\n  const statusLabel = error \? 'ISSUE' : sending \? 'THINKING' : listening \? 'LISTENING' : 'LIVE'",
+               "  const status = error ? 'issue' : sending && !structuredSubmitting ? 'thinking' : listening ? 'listening' : 'live'\n  const statusLabel = error ? 'ISSUE' : sending && !structuredSubmitting ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'",
+               'status suppression')
+          sub1(chat,
+               r"(    const displayQuestion = \[rawQuestion, photos\.length \? `📷 사진 \$\{photos\.length\}장 첨부` : ''\]\.filter\(Boolean\)\.join\('\\n\\n'\)\n)",
+               r"\1    const structuredRequest = photos.length === 0 && Boolean(classifyMobileBusinessIntent(rawQuestion) || classifyMobileExtendedIntent(rawQuestion))\n",
+               'structured request detection')
+          sub1(chat,
+               r"    setEstimatedSeconds\(estimated\)\n    setSending\(true\)",
+               "    setEstimatedSeconds(estimated)\n    setStructuredSubmitting(structuredRequest)\n    setSending(true)\n    window.dispatchEvent(new CustomEvent('moni:user-turn-start', { detail: { structured: structuredRequest } }))",
+               'turn start event')
+
+          text = chat.read_text(encoding='utf-8')
+          start = text.index('  async function send(raw: string) {')
+          end = text.index('\n  function submit(', start)
+          head, block, tail = text[:start], text[start:end], text[end:]
+          old = "const response = await fetch('/api/moni/agent-runtime', {"
+          if block.count(old) != 1:
+              raise SystemExit(f'{chat}: send fetch target expected once, got {block.count(old)}')
+          block = block.replace(old, "const response = await fetch(structuredRequest && threadId ? '/api/moni/mobile-action-start' : '/api/moni/agent-runtime', {", 1)
+          old_finally = "      sendInFlightRef.current = false\n      setSending(false)"
+          if block.count(old_finally) != 1:
+              raise SystemExit(f'{chat}: send finally expected once, got {block.count(old_finally)}')
+          block = block.replace(old_finally, "      sendInFlightRef.current = false\n      setStructuredSubmitting(false)\n      setSending(false)", 1)
+          text = head + block + tail
+          expected = "{sending ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}"
+          if text.count(expected) != 2:
+              raise SystemExit(f'{chat}: thinking indicator expected twice, got {text.count(expected)}')
+          text = text.replace(expected, "{sending && !structuredSubmitting ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}")
+          chat.write_text(text, encoding='utf-8')
+
+          helper = """
+function isEditingCardHost(selector: string) {
+  const host = document.querySelector<HTMLElement>(selector)
+  const active = document.activeElement
+  return Boolean(host && active instanceof HTMLElement && host.contains(active))
+}
+"""
+
+          # EXTENDED PC FORMS: fix nested component remount, polling focus loss, stale card resurrection, and labels.
+          ext = Path('src/components/MoniMobileExtendedFormCard.tsx')
+          sub1(ext, r"(const norm = .*?\n)", lambda m: m.group(1) + helper + "\nfunction prepareButtonLabel(operation: string) {\n  if (operation === 'UPDATE') return '변경 내용 확인'\n  if (operation === 'DELETE') return '삭제 내용 확인'\n  if (operation === 'DEACTIVATE') return '비활성화 내용 확인'\n  if (operation === 'ADJUST') return '조정 내용 확인'\n  if (operation === 'REVERSE') return '취소 내용 확인'\n  if (operation === 'RECEIVE') return '수금 내용 확인'\n  if (operation === 'SET_DUE' || operation === 'SET_RULE' || operation === 'SET_TARGET' || operation === 'CLEAR_TARGET') return '설정 내용 확인'\n  return '입력 내용 확인'\n}\n", 'extended helpers')
+          sub1(ext, r"(  const sourceRef = useRef\(''\)\n)", r"\1  const activeCardSourceRef = useRef('')\n  const suppressedSourceRef = useRef('')\n", 'extended refs')
+          sub1(ext,
+               r"      const next = \(payload\.card \|\| null\) as Card \| null\n      setCard\(next\)",
+               "      const next = (payload.card || null) as Card | null\n      if (isEditingCardHost('[data-moni-pc-form-card-host=\"true\"]')) return\n      if (next?.source_user_message_id && suppressedSourceRef.current === next.source_user_message_id) return\n      if (next?.source_user_message_id && suppressedSourceRef.current && suppressedSourceRef.current !== next.source_user_message_id) suppressedSourceRef.current = ''\n      activeCardSourceRef.current = next?.source_user_message_id || ''\n      setCard(next)",
+               'extended refresh guard')
+          sub1(ext,
+               r"    const timer = window\.setInterval\(\(\) => void refresh\(\), 900\)\n    void refresh\(\)\n    return \(\) => \{ window\.clearInterval\(timer\); node\.remove\(\) \}",
+               "    const hideStaleCard = () => {\n      suppressedSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideStaleCard)\n    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.removeEventListener('moni:user-turn-start', hideStaleCard); window.clearInterval(timer); node.remove() }",
+               'extended stale listener')
+          sub1(ext, r"  function CandidateList\(\) \{", "  function renderCandidateList() {", 'candidate renderer')
+          sub1(ext, r"  function InputField\(\{ item \}: \{ item: FieldSchema \}\) \{", "  function renderInputField(item: FieldSchema) {", 'input renderer')
+          sub1(ext, r"        <CandidateList/>", "        {renderCandidateList()}", 'candidate call')
+          sub1(ext, r"<InputField item=\{item\}/>", "{renderInputField(item)}", 'input call')
+          sub1(ext, r"\{busy\?'확인 중…':'변경 내용 확인'\}", "{busy?'확인 중…':prepareButtonLabel(card.operation)}", 'button label')
+
+          # BUSINESS CARD FORMS: protect focused inputs and suppress the previous unfinished card on a new turn.
+          biz = Path('src/components/MoniMobileBusinessCards.tsx')
+          sub1(biz, r"(const normalize = .*?\n)", lambda m: m.group(1) + helper, 'business helper')
+          sub1(biz, r"(  const sourceRef = useRef\(''\)\n)", r"\1  const activeCardSourceRef = useRef('')\n  const suppressedSourceRef = useRef('')\n", 'business refs')
+          sub1(biz,
+               r"      const next = \(payload\.card \|\| null\) as Card \| null\n      setCard\(next\)",
+               "      const next = (payload.card || null) as Card | null\n      if (isEditingCardHost('[data-moni-business-card-host=\"true\"]')) return\n      if (next?.source_user_message_id && suppressedSourceRef.current === next.source_user_message_id) return\n      if (next?.source_user_message_id && suppressedSourceRef.current && suppressedSourceRef.current !== next.source_user_message_id) suppressedSourceRef.current = ''\n      activeCardSourceRef.current = next?.source_user_message_id || ''\n      setCard(next)",
+               'business refresh guard')
+          sub1(biz,
+               r"    const observer = new MutationObserver\(place\)\n    observer\.observe\(root, \{ childList: true, subtree: true \}\)\n    const timer = window\.setInterval\(\(\) => void refresh\(\), 900\)\n    void refresh\(\)\n    return \(\) => \{ observer\.disconnect\(\); window\.clearInterval\(timer\); cardHost\.remove\(\) \}",
+               "    const hideStaleCard = () => {\n      suppressedSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideStaleCard)\n    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const timer = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.removeEventListener('moni:user-turn-start', hideStaleCard); observer.disconnect(); window.clearInterval(timer); cardHost.remove() }",
+               'business stale listener')
+
+          # RAW MATERIAL CARD: same focus/stale protection.
+          raw = Path('src/components/MoniMobileRawMaterialCardV2.tsx')
+          sub1(raw, r"(const normalize = .*?\n)", lambda m: m.group(1) + helper, 'raw helper')
+          sub1(raw, r"(  const sourceRef = useRef\(''\)\n)", r"\1  const activeCardSourceRef = useRef('')\n  const suppressedSourceRef = useRef('')\n", 'raw refs')
+          sub1(raw,
+               r"      const next = \(payload\.card \|\| null\) as ActionCard \| null\n      setCard\(next\)",
+               "      const next = (payload.card || null) as ActionCard | null\n      if (isEditingCardHost('[data-moni-raw-material-v2-host=\"true\"]')) return\n      if (next?.source_user_message_id && suppressedSourceRef.current === next.source_user_message_id) return\n      if (next?.source_user_message_id && suppressedSourceRef.current && suppressedSourceRef.current !== next.source_user_message_id) suppressedSourceRef.current = ''\n      activeCardSourceRef.current = next?.source_user_message_id || ''\n      setCard(next)",
+               'raw refresh guard')
+          sub1(raw,
+               r"    const observer = new MutationObserver\(place\)\n    observer\.observe\(root, \{ childList: true, subtree: true \}\)\n    const interval = window\.setInterval\(\(\) => void refresh\(\), 900\)\n    void refresh\(\)\n    return \(\) => \{ observer\.disconnect\(\); window\.clearInterval\(interval\); cardHost\.remove\(\) \}",
+               "    const hideStaleCard = () => {\n      suppressedSourceRef.current = activeCardSourceRef.current\n      setCard(null)\n      setError('')\n    }\n    window.addEventListener('moni:user-turn-start', hideStaleCard)\n    const observer = new MutationObserver(place)\n    observer.observe(root, { childList: true, subtree: true })\n    const interval = window.setInterval(() => void refresh(), 900)\n    void refresh()\n    return () => { window.removeEventListener('moni:user-turn-start', hideStaleCard); observer.disconnect(); window.clearInterval(interval); cardHost.remove() }",
+               'raw stale listener')
+
+          # Extended assistant copy: operation-specific button wording.
+          intents = Path('src/lib/moni/mobile-extended-intents.ts')
+          sub1(intents,
+               r"  return `\$\{labels\[intent\.domain\]\} 입력 카드를 열었습니다\. 현재 PC 업무폼과 같은 기준으로 값을 확인·수정한 뒤 ‘변경 내용 확인’을 눌러 주세요\.`",
+               "  const actionLabel = intent.operation === 'UPDATE' ? '변경 내용 확인'\n    : intent.operation === 'DELETE' ? '삭제 내용 확인'\n      : intent.operation === 'DEACTIVATE' ? '비활성화 내용 확인'\n        : intent.operation === 'ADJUST' ? '조정 내용 확인'\n          : intent.operation === 'REVERSE' ? '취소 내용 확인'\n            : intent.operation === 'RECEIVE' ? '수금 내용 확인'\n              : intent.operation === 'SET_DUE' || intent.operation === 'SET_RULE' || intent.operation === 'SET_TARGET' || intent.operation === 'CLEAR_TARGET' ? '설정 내용 확인'\n                : '입력 내용 확인'\n  return `${labels[intent.domain]} 입력 카드를 열었습니다. 현재 PC 업무폼과 같은 기준으로 값을 확인·수정한 뒤 ‘${actionLabel}’을 눌러 주세요.`",
+               'assistant wording')
+
+          # Regression tests included in the patch branch.
+          test = Path('tests/moni-mobile-form-interaction-stability.test.mjs')
+          test.write_text("""import test from 'node:test'\nimport assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\n\nconst chat = readFileSync('src/components/MoniMobileChat.tsx', 'utf8')\nconst extended = readFileSync('src/components/MoniMobileExtendedFormCard.tsx', 'utf8')\nconst business = readFileSync('src/components/MoniMobileBusinessCards.tsx', 'utf8')\nconst raw = readFileSync('src/components/MoniMobileRawMaterialCardV2.tsx', 'utf8')\nconst intents = readFileSync('src/lib/moni/mobile-extended-intents.ts', 'utf8')\n\ntest('structured text writes bypass thinking UI', () => {\n  assert.match(chat, /structuredRequest && threadId \? '\\/api\\/moni\\/mobile-action-start'/)\n  assert.match(chat, /sending && !structuredSubmitting \? 'thinking'/)\n  assert.match(chat, /sending && !structuredSubmitting \? <ThinkingIndicator/)\n})\n\ntest('extended inputs do not remount on each parent render', () => {\n  assert.match(extended, /function renderInputField\(item: FieldSchema\)/)\n  assert.doesNotMatch(extended, /function InputField\(/)\n  assert.doesNotMatch(extended, /<InputField/)\n})\n\ntest('all card families guard focused inputs from polling replacement', () => {\n  for (const source of [extended, business, raw]) {\n    assert.match(source, /document\.activeElement/)\n    assert.match(source, /isEditingCardHost/)\n  }\n})\n\ntest('all card families suppress stale prior cards after a new turn', () => {\n  for (const source of [extended, business, raw]) {\n    assert.match(source, /moni:user-turn-start/)\n    assert.match(source, /suppressedSourceRef/)\n  }\n})\n\ntest('CREATE and UPDATE use different confirmation wording', () => {\n  assert.match(extended, /return '입력 내용 확인'/)\n  assert.match(extended, /operation === 'UPDATE'\) return '변경 내용 확인'/)\n  assert.match(intents, /'입력 내용 확인'/)\n  assert.match(intents, /'변경 내용 확인'/)\n})\n""", encoding='utf-8')
+          PY
+
+      - name: Commit patch to branch
+        shell: bash
+        run: |
+          git config user.name "MONI PMO Interaction Patch"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/components/MoniMobileChat.tsx src/components/MoniMobileExtendedFormCard.tsx src/components/MoniMobileBusinessCards.tsx src/components/MoniMobileRawMaterialCardV2.tsx src/lib/moni/mobile-extended-intents.ts tests/moni-mobile-form-interaction-stability.test.mjs
+          git commit -m "Stabilize mobile form interactions"
+          git push origin HEAD:fix/mobile-form-interaction-stability
