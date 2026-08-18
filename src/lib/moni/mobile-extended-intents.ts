@@ -160,5 +160,6 @@ export function mobileExtendedCardText(intent: MobileExtendedIntent) {
     business_activity: '영업활동',
     business_work_log: '근무·작업시간',
   }
-  return `${labels[intent.domain]} 입력 카드를 열었습니다. 현재 PC 업무폼과 같은 기준으로 값을 확인·수정한 뒤 ‘변경 내용 확인’을 눌러 주세요.`
+  const actionLabel = intent.operation === 'UPDATE' ? '변경 내용 확인' : intent.operation === 'DELETE' ? '삭제 내용 확인' : intent.operation === 'DEACTIVATE' ? '비활성화 내용 확인' : intent.operation === 'ADJUST' ? '조정 내용 확인' : intent.operation === 'REVERSE' ? '취소 내용 확인' : intent.operation === 'RECEIVE' ? '수금 내용 확인' : intent.operation === 'SET_DUE' || intent.operation === 'SET_RULE' || intent.operation === 'SET_TARGET' || intent.operation === 'CLEAR_TARGET' ? '설정 내용 확인' : '입력 내용 확인'
+  return `${labels[intent.domain]} 입력 카드를 열었습니다. 현재 PC 업무폼과 같은 기준으로 값을 확인·수정한 뒤 ‘${actionLabel}’을 눌러 주세요.`
 }

@@ -28,6 +28,13 @@ const normalize = (value: unknown) => text(value).normalize('NFKC').toLowerCase(
 const kg = (grams: unknown) => `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 3 }).format(number(grams) / 1000)}kg`
 const won = (value: unknown) => `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(number(value))}원`
 
+
+function cardHasFocus(selector: string) {
+  const host = document.querySelector<HTMLElement>(selector)
+  const active = document.activeElement
+  return Boolean(host && active instanceof HTMLElement && host.contains(active))
+}
+
 function domainTitle(domain: Domain, operation: Operation) {
   if (domain === 'packaging_inbound') return operation === 'CREATE' ? '부재료 입고 입력' : operation === 'UPDATE' ? '부재료 입고 수정' : '부재료 입고 삭제'
   if (domain === 'production_plan') return operation === 'CREATE' ? '생산계획 입력' : operation === 'UPDATE' ? '생산계획 수정' : '생산계획 삭제'
@@ -61,6 +68,8 @@ export default function MoniMobileBusinessCards() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const sourceRef = useRef('')
+  const activeCardSourceRef = useRef('')
+  const suppressedCardSourceRef = useRef('')
   const threadId = () => text(window.localStorage.getItem(THREAD_KEY))
 
   const refresh = useCallback(async () => {
@@ -71,6 +80,11 @@ export default function MoniMobileBusinessCards() {
       const payload = await response.json()
       if (!response.ok || !payload.ok) return
       const next = (payload.card || null) as Card | null
+      if (cardHasFocus('[data-moni-business-card-host="true"]')) return
+      const nextSource = next?.source_user_message_id || ''
+      if (nextSource && suppressedCardSourceRef.current === nextSource) return
+      if (nextSource && suppressedCardSourceRef.current && suppressedCardSourceRef.current !== nextSource) suppressedCardSourceRef.current = ''
+      activeCardSourceRef.current = nextSource
       setCard(next)
       if (next?.stage === 'draft') {
         const key = `${next.source_user_message_id}:${next.domain}:${next.operation}`
@@ -97,11 +111,17 @@ export default function MoniMobileBusinessCards() {
       setHost(cardHost)
     }
     place()
+    const hideCardForNewTurn = () => {
+      suppressedCardSourceRef.current = activeCardSourceRef.current
+      setCard(null)
+      setError('')
+    }
+    window.addEventListener('moni:user-turn-start', hideCardForNewTurn)
     const observer = new MutationObserver(place)
     observer.observe(root, { childList: true, subtree: true })
     const timer = window.setInterval(() => void refresh(), 900)
     void refresh()
-    return () => { observer.disconnect(); window.clearInterval(timer); cardHost.remove() }
+    return () => { window.removeEventListener('moni:user-turn-start', hideCardForNewTurn); observer.disconnect(); window.clearInterval(timer); cardHost.remove() }
   }, [refresh])
 
   const options = card?.options || {}

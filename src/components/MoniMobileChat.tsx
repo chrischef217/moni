@@ -4,6 +4,8 @@ import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } fr
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { moniBrowserDb } from '@/lib/moni/browser-db'
+import { classifyMobileBusinessIntent } from '@/lib/moni/mobile-business-intents'
+import { classifyMobileExtendedIntent } from '@/lib/moni/mobile-extended-intents'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 type Reply = { ok?: boolean; text?: string; error?: string; code?: string; thread_id?: string }
@@ -239,6 +241,7 @@ export default function MoniMobileChat() {
   const [threadId, setThreadId] = useState('')
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [structuredSubmitting, setStructuredSubmitting] = useState(false)
   const [thinkingSeconds, setThinkingSeconds] = useState(0)
   const [estimatedSeconds, setEstimatedSeconds] = useState(DEFAULT_ETA.general)
   const [error, setError] = useState('')
@@ -265,8 +268,8 @@ export default function MoniMobileChat() {
   const pendingPhotosRef = useRef<PendingPhoto[]>([])
   const sendInFlightRef = useRef(false)
 
-  const status = error ? 'issue' : sending ? 'thinking' : listening ? 'listening' : 'live'
-  const statusLabel = error ? 'ISSUE' : sending ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'
+  const status = error ? 'issue' : sending && !structuredSubmitting ? 'thinking' : listening ? 'listening' : 'live'
+  const statusLabel = error ? 'ISSUE' : sending && !structuredSubmitting ? 'THINKING' : listening ? 'LISTENING' : 'LIVE'
 
   function replacePendingPhotos(next: PendingPhoto[]) {
     pendingPhotosRef.current = next
@@ -658,10 +661,13 @@ export default function MoniMobileChat() {
     sendInFlightRef.current = true
     const questionForAgent = rawQuestion || '첨부한 사진을 확인해줘.'
     const displayQuestion = [rawQuestion, photos.length ? `📷 사진 ${photos.length}장 첨부` : ''].filter(Boolean).join('\n\n')
+    const structuredRequest = photos.length === 0 && Boolean(classifyMobileBusinessIntent(rawQuestion) || classifyMobileExtendedIntent(rawQuestion))
     const kind = requestKind(questionForAgent)
     const estimated = readEstimatedSeconds(kind)
     const startedAt = Date.now()
     setEstimatedSeconds(estimated)
+    setStructuredSubmitting(structuredRequest)
+    window.dispatchEvent(new CustomEvent('moni:user-turn-start', { detail: { structured: structuredRequest } }))
     setSending(true)
     setError('')
     setInput('')
@@ -669,7 +675,7 @@ export default function MoniMobileChat() {
     setMessages((current) => [...current, { role: 'user', content: displayQuestion }])
     playCue('sent')
     try {
-      const response = await fetch('/api/moni/agent-runtime', {
+      const response = await fetch(structuredRequest && threadId ? '/api/moni/mobile-action-start' : '/api/moni/agent-runtime', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -712,6 +718,7 @@ export default function MoniMobileChat() {
       playCue('error')
     } finally {
       sendInFlightRef.current = false
+      setStructuredSubmitting(false)
       setSending(false)
     }
   }
@@ -758,7 +765,7 @@ export default function MoniMobileChat() {
             <div className="mx-auto max-w-[92%] rounded-2xl border border-[#d8e8e4] bg-white px-4 py-3 text-sm leading-6 text-[#263f4d] shadow-[0_5px_18px_rgba(23,59,82,0.035)]">
               {restoring ? '이전 대화를 불러오고 있습니다…' : '무엇이든 말씀하세요. 필요한 두배 데이터를 확인하고 답하겠습니다.'}
             </div>
-            {sending ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}
+            {sending && !structuredSubmitting ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}
           </div>
         ) : (
           <div className="space-y-4">
@@ -771,7 +778,7 @@ export default function MoniMobileChat() {
                   : message.content}
               </div>
             ))}
-            {sending ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}
+            {sending && !structuredSubmitting ? <ThinkingIndicator seconds={thinkingSeconds} estimatedSeconds={estimatedSeconds} /> : null}
           </div>
         )}
       </div>
