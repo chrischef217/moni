@@ -27,6 +27,11 @@ const THREAD_KEY = 'moni-global-agent-thread-v11'
 const txt = (value: unknown) => String(value ?? '').trim()
 const norm = (value: unknown) => txt(value).normalize('NFKC').toLocaleLowerCase('ko-KR').replace(/\s+/g, '')
 
+function pickSchemaValues(schema: FieldSchema[], values: Record<string, any> | undefined) {
+  const allowed = new Set(schema.map((item) => item.key))
+  return Object.fromEntries(Object.entries(values || {}).filter(([key]) => allowed.has(key)))
+}
+
 function SearchSelect({ value, options, disabled, onChange }: { value: string; options: Opt[]; disabled?: boolean; onChange: (value: string) => void }) {
   const selected = options.find((row) => row.value === value)
   const [query, setQuery] = useState(selected?.label || '')
@@ -65,8 +70,9 @@ export default function MoniMobileExtendedFormCard() {
         const key = `${next.source_user_message_id}:${next.domain}:${next.operation}`
         if (sourceRef.current !== key) {
           sourceRef.current = key
-          const initial = Object.fromEntries((next.schema || []).map((item) => [item.key, item.value ?? '']))
-          setFields({ ...initial, ...(next.defaults || {}) })
+          const schema = next.schema || []
+          const initial = Object.fromEntries(schema.map((item) => [item.key, item.value ?? '']))
+          setFields({ ...initial, ...pickSchemaValues(schema, next.defaults) })
           setTargetId('')
           setError('')
         }
@@ -91,8 +97,9 @@ export default function MoniMobileExtendedFormCard() {
 
   function setField(key: string, value: any) { setFields((current) => ({ ...current, [key]: value })) }
   function chooseCandidate(row: Candidate) {
+    if (!card) return
     setTargetId(row.id)
-    setFields((current) => ({ ...current, ...(row.values || {}) }))
+    setFields((current) => ({ ...current, ...pickSchemaValues(card.schema || [], row.values) }))
     setError('')
   }
 
