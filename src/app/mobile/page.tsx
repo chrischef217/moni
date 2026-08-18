@@ -9,6 +9,7 @@ import MoniMobileContinuityGuard from '@/components/MoniMobileContinuityGuard'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
+import MoniMobileRawCardRouteGuard from '@/components/MoniMobileRawCardRouteGuard'
 import MoniMobileRawMaterialCardV2 from '@/components/MoniMobileRawMaterialCardV2'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
 import MoniMobileThinkingCharacterMotion from '@/components/MoniMobileThinkingCharacterMotion'
@@ -28,7 +29,6 @@ export const viewport: Viewport = {
 
 export default async function MoniMobilePage() {
   const session = await getSessionFromCookies()
-
   if (!session) return <AllowanceLogin />
   if (session.role === 'freelancer') redirect('/freelancer')
 
@@ -43,6 +43,7 @@ export default async function MoniMobilePage() {
       <MoniMobileInteractionPolish />
       <MoniMobileThinkingCopyFix />
       <MoniMobileBusyRecovery />
+      <MoniMobileRawCardRouteGuard />
       <MoniMobileContinuityGuard />
       <MoniMobileHeartbeatBoost />
       <MoniMobileLiveWave />
