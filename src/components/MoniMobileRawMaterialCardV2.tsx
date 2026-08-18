@@ -72,6 +72,13 @@ const formatG = (value: unknown) => {
 }
 const formatWon = (value: unknown) => `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(Number(value || 0))}원`
 
+
+function cardHasFocus(selector: string) {
+  const host = document.querySelector<HTMLElement>(selector)
+  const active = document.activeElement
+  return Boolean(host && active instanceof HTMLElement && host.contains(active))
+}
+
 function title(operation: Operation) {
   return operation === 'CREATE' ? '원재료 입고 입력' : operation === 'UPDATE' ? '원재료 입고 수정' : '원재료 입고 삭제'
 }
@@ -117,6 +124,7 @@ export default function MoniMobileRawMaterialCardV2() {
       const payload = await response.json()
       if (!response.ok || !payload.ok) return
       const next = (payload.card || null) as ActionCard | null
+      if (cardHasFocus('[data-moni-raw-material-v2-host="true"]')) return
       setCard(next)
       if (next?.stage === 'draft') {
         const key = `${next.source_user_message_id}:${next.operation}`

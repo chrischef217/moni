@@ -27,6 +27,24 @@ const THREAD_KEY = 'moni-global-agent-thread-v11'
 const txt = (value: unknown) => String(value ?? '').trim()
 const norm = (value: unknown) => txt(value).normalize('NFKC').toLocaleLowerCase('ko-KR').replace(/\s+/g, '')
 
+function prepareButtonLabel(operation: string) {
+  if (operation === 'UPDATE') return '변경 내용 확인'
+  if (operation === 'DELETE') return '삭제 내용 확인'
+  if (operation === 'DEACTIVATE') return '비활성화 내용 확인'
+  if (operation === 'ADJUST') return '조정 내용 확인'
+  if (operation === 'REVERSE') return '취소 내용 확인'
+  if (operation === 'RECEIVE') return '수금 내용 확인'
+  if (operation === 'SET_DUE' || operation === 'SET_RULE' || operation === 'SET_TARGET' || operation === 'CLEAR_TARGET') return '설정 내용 확인'
+  return '입력 내용 확인'
+}
+
+
+function cardHasFocus(selector: string) {
+  const host = document.querySelector<HTMLElement>(selector)
+  const active = document.activeElement
+  return Boolean(host && active instanceof HTMLElement && host.contains(active))
+}
+
 function pickSchemaValues(schema: FieldSchema[], values: Record<string, any> | undefined) {
   const allowed = new Set(schema.map((item) => item.key))
   return Object.fromEntries(Object.entries(values || {}).filter(([key]) => allowed.has(key)))
@@ -65,6 +83,7 @@ export default function MoniMobileExtendedFormCard() {
       const payload = await response.json()
       if (!response.ok || !payload.ok) return
       const next = (payload.card || null) as Card | null
+      if (cardHasFocus('[data-moni-pc-form-card-host="true"]')) return
       setCard(next)
       if (next?.stage === 'draft') {
         const key = `${next.source_user_message_id}:${next.domain}:${next.operation}`
@@ -155,7 +174,7 @@ export default function MoniMobileExtendedFormCard() {
     return <div className="moni-pc-section"><span className="moni-pc-label">기존 기록 선택 <b>필수</b></span><div className="moni-pc-candidates">{rows.length ? rows.map((row) => <button key={row.id} type="button" className={targetId===row.id?'selected':''} onClick={() => chooseCandidate(row)}><span className="radio"/><span><b>{row.label}</b><small>{row.id}</small></span></button>) : <div className="empty">선택할 기존 기록이 없습니다.</div>}</div></div>
   }
 
-  function InputField({ item }: { item: FieldSchema }) {
+  function renderInputField(item: FieldSchema) {
     const value = fields[item.key]
     if (item.type === 'select') return <SearchSelect value={txt(value)} options={item.options || []} disabled={busy} onChange={(next) => setField(item.key,next)}/>
     if (item.type === 'checkbox') return <button type="button" disabled={busy} className={`moni-pc-toggle ${Boolean(value)?'on':''}`} onClick={() => setField(item.key,!Boolean(value))}><span/>{Boolean(value)?'예':'아니오'}</button>
@@ -170,10 +189,10 @@ export default function MoniMobileExtendedFormCard() {
       {card.stage === 'draft' && <>
         <p className="moni-pc-help">PC 화면과 같은 저장 기준입니다. 필요한 값을 확인·수정한 뒤 미리보기를 만드세요.</p>
         <CandidateList/>
-        <div className="moni-pc-grid">{(card.schema || []).map((item) => <label key={item.key} className={item.type==='textarea'?'wide':''}><span className="moni-pc-label">{item.label}{item.required?<b>필수</b>:null}</span><InputField item={item}/></label>)}</div>
+        <div className="moni-pc-grid">{(card.schema || []).map((item) => <label key={item.key} className={item.type==='textarea'?'wide':''}><span className="moni-pc-label">{item.label}{item.required?<b>필수</b>:null}</span>{renderInputField(item)}</label>)}</div>
         {(card.warnings || []).map((warning) => <div key={warning} className="moni-pc-warning">{warning}</div>)}
         {error ? <div className="moni-pc-error">{error}</div> : null}
-        <button type="button" disabled={busy} className="moni-pc-primary" onClick={() => void prepare()}>{busy?'확인 중…':'변경 내용 확인'}</button>
+        <button type="button" disabled={busy} className="moni-pc-primary" onClick={() => void prepare()}>{busy?'확인 중…':prepareButtonLabel(card.operation)}</button>
       </>}
       {card.stage === 'confirmation' && <>
         <div className="moni-pc-confirm"><b>실행 전 최종 확인</b><p>{card.preview_text}</p>{(card.warnings || []).map((warning)=><small key={warning}>⚠ {warning}</small>)}</div>

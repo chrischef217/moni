@@ -28,6 +28,13 @@ const normalize = (value: unknown) => text(value).normalize('NFKC').toLowerCase(
 const kg = (grams: unknown) => `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 3 }).format(number(grams) / 1000)}kg`
 const won = (value: unknown) => `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(number(value))}원`
 
+
+function cardHasFocus(selector: string) {
+  const host = document.querySelector<HTMLElement>(selector)
+  const active = document.activeElement
+  return Boolean(host && active instanceof HTMLElement && host.contains(active))
+}
+
 function domainTitle(domain: Domain, operation: Operation) {
   if (domain === 'packaging_inbound') return operation === 'CREATE' ? '부재료 입고 입력' : operation === 'UPDATE' ? '부재료 입고 수정' : '부재료 입고 삭제'
   if (domain === 'production_plan') return operation === 'CREATE' ? '생산계획 입력' : operation === 'UPDATE' ? '생산계획 수정' : '생산계획 삭제'
@@ -71,6 +78,7 @@ export default function MoniMobileBusinessCards() {
       const payload = await response.json()
       if (!response.ok || !payload.ok) return
       const next = (payload.card || null) as Card | null
+      if (cardHasFocus('[data-moni-business-card-host="true"]')) return
       setCard(next)
       if (next?.stage === 'draft') {
         const key = `${next.source_user_message_id}:${next.domain}:${next.operation}`
