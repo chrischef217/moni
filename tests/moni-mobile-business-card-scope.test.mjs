@@ -1,25 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 
 const page = readFileSync('src/app/mobile/page.tsx', 'utf8')
 const productCatalog = readFileSync('src/app/api/moni/mobile-product-catalog/route.ts', 'utf8')
-const productGuard = readFileSync('src/components/MoniMobileBusinessCatalogGuard.tsx', 'utf8')
-const packagingRoute = readFileSync('src/app/api/moni/mobile-packaging-actions/route.ts', 'utf8')
-const packagingGuard = readFileSync('src/components/MoniMobilePackagingRouteGuard.tsx', 'utf8')
+const businessRoute = readFileSync('src/app/api/moni/mobile-business-actions/route.ts', 'utf8')
+const extendedRoute = readFileSync('src/app/api/moni/mobile-extended-actions/route.ts', 'utf8')
 
-test('mobile product selection is constrained to the canonical business id', () => {
+test('mobile product and packaging selection are constrained to canonical business id', () => {
   assert.match(productCatalog, /BUSINESS_ID = '20220523011'/)
   assert.match(productCatalog, /\.eq\('business_id', BUSINESS_ID\)/)
-  assert.match(productGuard, /allowedProductIds/)
-  assert.match(page, /MoniMobileBusinessCatalogGuard/)
+  assert.match(businessRoute, /from\('products'\).*eq\('business_id', BUSINESS_ID\)/s)
+  assert.match(businessRoute, /from\('packaging_materials'\).*eq\('business_id', BUSINESS_ID\)/s)
+  assert.match(extendedRoute, /const BUSINESS_ID = '20220523011'/)
 })
 
-test('legacy default compatibility is isolated to packaging data only', () => {
-  assert.match(packagingRoute, /PACKAGING_BUSINESS_IDS = \[BUSINESS_ID, 'default'\]/)
-  assert.match(packagingRoute, /mobile_packaging_inbound/)
-  assert.match(packagingRoute, /부재료 영역에만 적용/)
-  assert.match(packagingGuard, /domain === 'packaging_inbound'/)
-  assert.match(page, /MoniMobilePackagingRouteGuard/)
+test('legacy default compatibility routes are removed from the mobile runtime', () => {
+  assert.doesNotMatch(page, /MoniMobileBusinessCatalogGuard/)
+  assert.doesNotMatch(page, /MoniMobilePackagingRouteGuard/)
+  assert.equal(existsSync('src/components/MoniMobileBusinessCatalogGuard.tsx'), false)
+  assert.equal(existsSync('src/components/MoniMobilePackagingRouteGuard.tsx'), false)
+  assert.equal(existsSync('src/app/api/moni/mobile-packaging-actions/route.ts'), false)
+  assert.doesNotMatch(businessRoute, /PACKAGING_BUSINESS_IDS/)
+  assert.doesNotMatch(extendedRoute, /PACKAGING_BUSINESS_ID\s*=\s*'default'/)
   assert.doesNotMatch(productCatalog, /'default'/)
 })
