@@ -3,13 +3,13 @@ import { redirect } from 'next/navigation'
 import AllowanceLogin from '@/components/AllowanceLogin'
 import MoniMobileAnswerActions from '@/components/MoniMobileAnswerActions'
 import MoniMobileBusyRecovery from '@/components/MoniMobileBusyRecovery'
+import MoniMobileBusinessCards from '@/components/MoniMobileBusinessCards'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileContinuityGuard from '@/components/MoniMobileContinuityGuard'
-import MoniMobileCrudCards from '@/components/MoniMobileCrudCards'
-import MoniMobileCrudCatalogEnhancer from '@/components/MoniMobileCrudCatalogEnhancer'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
+import MoniMobileRawMaterialCardV2 from '@/components/MoniMobileRawMaterialCardV2'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
 import MoniMobileThinkingCharacterMotion from '@/components/MoniMobileThinkingCharacterMotion'
 import MoniMobileThinkingCharacterMotionPatch from '@/components/MoniMobileThinkingCharacterMotionPatch'
@@ -29,13 +29,8 @@ export const viewport: Viewport = {
 export default async function MoniMobilePage() {
   const session = await getSessionFromCookies()
 
-  if (!session) {
-    return <AllowanceLogin />
-  }
-
-  if (session.role === 'freelancer') {
-    redirect('/freelancer')
-  }
+  if (!session) return <AllowanceLogin />
+  if (session.role === 'freelancer') redirect('/freelancer')
 
   return (
     <main
@@ -54,8 +49,8 @@ export default async function MoniMobilePage() {
       <MoniMobileThinkingCharacterMotion />
       <MoniMobileThinkingCharacterMotionPatch />
       <MoniMobileVoiceCanvasWave />
-      <MoniMobileCrudCards />
-      <MoniMobileCrudCatalogEnhancer />
+      <MoniMobileRawMaterialCardV2 />
+      <MoniMobileBusinessCards />
       <MoniMobileChat />
     </main>
   )
