@@ -2,6 +2,7 @@
 
 import { useLayoutEffect } from 'react'
 import { classifyMobileBusinessIntent, mobileBusinessCardText, type MobileBusinessIntent } from '@/lib/moni/mobile-business-intents'
+import { classifyMobileExtendedIntent } from '@/lib/moni/mobile-extended-intents'
 
 const THREAD_KEY = 'moni-global-agent-thread-v11'
 const RECOVERY_TIMEOUT_MS = 4 * 60_000
@@ -115,24 +116,27 @@ export default function MoniMobileContinuityGuard() {
 
       const body: AgentBody = { ...parsed, thread_id: threadId }
       const expectedUser = expectedStoredUserText(body)
-      const intent = classifyMobileBusinessIntent(normalize(body.message))
+      const currentText = normalize(body.message)
+      const coreIntent = classifyMobileBusinessIntent(currentText)
+      const extendedIntent = coreIntent ? null : classifyMobileExtendedIntent(currentText)
+      const textCardIntent = coreIntent || extendedIntent
       const attachmentCount = Array.isArray(body.attachment_ids) ? body.attachment_ids.length : 0
 
-      // Text-only business mutations should end the assistant turn immediately and open the card.
-      if (intent && attachmentCount === 0) {
+      // All text-only PC business mutations end the assistant turn immediately and open the matching card.
+      if (textCardIntent && attachmentCount === 0) {
         return originalFetch('/api/moni/mobile-action-start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' })
       }
 
       const requestInit: RequestInit = { ...init, body: JSON.stringify(body), keepalive: true }
       const actual = originalFetch(input, requestInit).then((response) => ({ type: 'response' as const, response })).catch((error) => ({ type: 'error' as const, error }))
 
-      // Photo analysis may fill fields later. As soon as the server-side card exists, stop THINKING and let the card own the next step.
-      if (intent && attachmentCount > 0) {
+      // Photo-assisted card racing remains on the proven transaction-card path; extended PC forms are text-first.
+      if (coreIntent && attachmentCount > 0) {
         const cardRace = (async () => {
           const deadline = Date.now() + 25_000
           while (Date.now() < deadline) {
-            const card = await matchingActionCard(originalFetch, threadId, expectedUser, intent)
-            if (card) return syntheticSuccess(mobileBusinessCardText(intent), threadId, { structured_action_card: true, domain: intent.domain, operation: intent.operation })
+            const card = await matchingActionCard(originalFetch, threadId, expectedUser, coreIntent)
+            if (card) return syntheticSuccess(mobileBusinessCardText(coreIntent), threadId, { structured_action_card: true, domain: coreIntent.domain, operation: coreIntent.operation })
             await new Promise((resolve) => window.setTimeout(resolve, 320))
           }
           return null
