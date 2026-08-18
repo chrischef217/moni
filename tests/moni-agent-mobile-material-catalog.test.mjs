@@ -36,7 +36,7 @@ test('selected material prefills linked supplier, pack weight and operational pa
   assert.match(card, /supplier: material\.default_supplier \|\| ''/)
   assert.match(card, /packing_weight_g: material\.packing_weight_g \? String\(material\.packing_weight_g\) : ''/)
   assert.match(card, /unit_price: material\.unit_price \? String\(material\.unit_price\) : ''/)
-  assert.match(card, /이번 입고 건에서 자유롭게 수정/)
+  assert.match(card, /이번 입고의 매입처·포장중량·단가는 자유롭게 수정할 수 있습니다/)
 })
 
 test('actual inbound tool contract excludes stock reconciliation from received-material rankings', () => {
