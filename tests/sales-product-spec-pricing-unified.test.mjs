@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 const pricing = fs.readFileSync('src/components/SalesVariantPricingModule.tsx', 'utf8')
+const pricingApi = fs.readFileSync('src/app/api/moni/sales-pricing-v4/route.ts', 'utf8')
 const shell = fs.readFileSync('src/components/BusinessManagementIntegratedShell.tsx', 'utf8')
 const menu = fs.readFileSync('src/components/SalesManagementMenuController.tsx', 'utf8')
 const orders = fs.readFileSync('src/app/api/moni/sales-orders-v4/route.ts', 'utf8')
@@ -16,16 +17,27 @@ test('product spec pricing is the single sales pricing surface', () => {
   assert.match(shell, /<SalesVariantPricingModule key="sales-pricing-v4" \/>/)
 })
 
+test('sales spec name stays separate from optional packaging material', () => {
+  assert.match(pricing, /Field label="판매규격"/)
+  assert.match(pricing, /variant_name: row\.variant_name/)
+  assert.match(pricing, /포장재 규격 · 부재료 관리에서 선택/)
+  assert.match(pricingApi, /const variantName = text\(data\.variant_name\)/)
+  assert.match(pricingApi, /packaging_material_id: packagingMaterialId \|\| null/)
+  assert.match(pricingApi, /variant_name: variantName/)
+  assert.doesNotMatch(pricingApi, /variantName\s*=\s*text\(packagingResult\.data\.material_name\)/)
+})
+
 test('packaging material is searchable from registered active secondary materials', () => {
   assert.match(pricing, /부재료명·코드·규격을 입력해 검색/)
   assert.match(pricing, /packagingMaterials\.filter\(\(row\) => row\.is_active !== false\)/)
   assert.match(pricing, /row\.material_code/)
   assert.match(pricing, /row\.spec/)
   assert.match(pricing, /choosePackaging\(row\)/)
+  assert.match(pricing, /clearPackaging/)
 })
 
 test('client exceptions are managed inside each product variant modal', () => {
-  assert.match(pricing, /거래처별 예외 규격·단가/)
+  assert.match(pricing, /거래처별 예외 판매조건/)
   assert.match(pricing, /\+ 거래처 예외 추가/)
   assert.match(pricing, /save_client_variant_term/)
   assert.match(pricing, /variant_id: savedVariantId/)
