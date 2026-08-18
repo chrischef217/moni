@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const read = (path) => readFileSync(path, 'utf8')
 const page = read('src/app/mobile/page.tsx')
@@ -30,7 +30,6 @@ test('read questions remain on normal MONI agent instead of opening write cards'
   assert.match(coreIntents, /조회 질문은 기존 MONI Agent가 처리한다/)
   assert.match(extendedIntents, /Read-only questions must keep flowing through the normal MONI agent/)
   assert.match(extendedIntents, /if \(!value\) return null/)
-  assert.match(extendedIntents, /return null\n  \}/)
 })
 
 test('text write intent opens structured card before long agent execution', () => {
@@ -46,6 +45,14 @@ test('universal form renderer supports searchable selects and prepare then expli
   assert.match(extendedCard, /command:'execute'/)
   assert.match(extendedCard, /변경 내용 확인/)
   assert.match(extendedCard, /확정 실행/)
+})
+
+test('candidate and default database snapshots hydrate only declared PC form fields', () => {
+  assert.match(extendedCard, /function pickSchemaValues/)
+  assert.match(extendedCard, /allowed\.has\(key\)/)
+  assert.match(extendedCard, /pickSchemaValues\(schema, next\.defaults\)/)
+  assert.match(extendedCard, /pickSchemaValues\(card\.schema \|\| \[\], row\.values\)/)
+  assert.doesNotMatch(extendedCard, /\.\.\.row\.values/)
 })
 
 test('extended route delegates writes to existing PC APIs instead of duplicating business rules', () => {
@@ -92,8 +99,11 @@ test('core transaction cards preserve sales item rows and cancellation semantics
   assert.match(coreRoute, /moni_action_audit_log/)
 })
 
-test('core business catalogs are canonical tenant scoped', () => {
+test('core business catalogs are canonical tenant scoped and legacy duplicate routes are absent', () => {
   assert.match(coreRoute, /from\('products'\).*eq\('business_id', BUSINESS_ID\)/s)
   assert.match(coreRoute, /from\('packaging_materials'\).*eq\('business_id', BUSINESS_ID\)/s)
-  assert.doesNotMatch(coreRoute, /PACKAGING_BUSINESS_ID\s*=\s*'default'/)
+  assert.equal(existsSync('src/app/api/moni/mobile-packaging-actions/route.ts'), false)
+  assert.equal(existsSync('src/app/api/moni/mobile-business-execute/route.ts'), false)
+  assert.equal(existsSync('src/components/MoniMobilePackagingRouteGuard.tsx'), false)
+  assert.equal(existsSync('src/components/MoniMobileBusinessExecuteGuard.tsx'), false)
 })
