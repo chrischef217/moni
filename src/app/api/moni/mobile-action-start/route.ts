@@ -3,6 +3,7 @@ import { getSessionFromRequest } from '@/lib/allowance/session'
 import { assertSafeUserRequest } from '@/lib/moni/agent/guardrails'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import { classifyMobileBusinessIntent, mobileBusinessCardText } from '@/lib/moni/mobile-business-intents'
+import { classifyMobileExtendedIntent, mobileExtendedCardText } from '@/lib/moni/mobile-extended-intents'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,8 +35,9 @@ export async function POST(request: NextRequest) {
     if (attachmentIds.length) return NextResponse.json({ ok: false, error: '사진이 포함된 요청은 사진 분석 경로를 사용해야 합니다.' }, { status: 422 })
 
     assertSafeUserRequest(rawMessage)
-    const intent = classifyMobileBusinessIntent(rawMessage)
-    if (!intent) return NextResponse.json({ ok: false, code: 'NOT_MOBILE_CARD_INTENT', error: '모바일 업무 카드 요청이 아닙니다.' }, { status: 422 })
+    const businessIntent = classifyMobileBusinessIntent(rawMessage)
+    const extendedIntent = businessIntent ? null : classifyMobileExtendedIntent(rawMessage)
+    if (!businessIntent && !extendedIntent) return NextResponse.json({ ok: false, code: 'NOT_MOBILE_CARD_INTENT', error: '모바일 업무 카드 요청이 아닙니다.' }, { status: 422 })
 
     const threadId = text(body.thread_id, 80)
     if (!threadId) return NextResponse.json({ ok: false, error: 'MONI 대화방이 준비되지 않았습니다.' }, { status: 400 })
@@ -53,12 +55,21 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString()
     const userMessage = await db.from('moni_ai_messages').insert({ business_id: BUSINESS_ID, thread_id: threadId, role: 'user', content: rawMessage, page_context: page }).select('id').single()
     if (userMessage.error) throw new Error(userMessage.error.message)
-    const finalText = mobileBusinessCardText(intent)
-    const assistantMessage = await db.from('moni_ai_messages').insert({ business_id: BUSINESS_ID, thread_id: threadId, role: 'assistant', content: finalText, page_context: page, provider: 'moni-system', model: 'MONI_MOBILE_BUSINESS_CARD_V2' }).select('id').single()
+    const finalText = businessIntent ? mobileBusinessCardText(businessIntent) : mobileExtendedCardText(extendedIntent!)
+    const assistantMessage = await db.from('moni_ai_messages').insert({
+      business_id: BUSINESS_ID,
+      thread_id: threadId,
+      role: 'assistant',
+      content: finalText,
+      page_context: page,
+      provider: 'moni-system',
+      model: businessIntent ? 'MONI_MOBILE_BUSINESS_CARD_V2' : 'MONI_MOBILE_PC_FORM_CARD_V1',
+    }).select('id').single()
     if (assistantMessage.error) throw new Error(assistantMessage.error.message)
     const update = await db.from('moni_ai_threads').update({ title: threadResult.data.title || rawMessage.replace(/\s+/g, ' ').slice(0, 80), current_page: page, updated_at: now, last_message_at: now }).eq('id', threadId).eq('business_id', BUSINESS_ID)
     if (update.error) throw new Error(update.error.message)
 
+    const intent = businessIntent || extendedIntent!
     return NextResponse.json({
       ok: true,
       text: finalText,
@@ -68,7 +79,7 @@ export async function POST(request: NextRequest) {
       structured_action_card: true,
       domain: intent.domain,
       operation: intent.operation,
-      agent_runtime: 'MONI_MOBILE_BUSINESS_CARD_V2',
+      agent_runtime: businessIntent ? 'MONI_MOBILE_BUSINESS_CARD_V2' : 'MONI_MOBILE_PC_FORM_CARD_V1',
     }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : '모바일 업무 카드를 시작하지 못했습니다.' }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
