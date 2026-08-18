@@ -142,7 +142,7 @@ export default function MoniMobileRawMaterialCardV2() {
     const place = () => {
       const scroller = root.querySelector<HTMLElement>('header + div')
       if (!scroller) return
-      if (cardHost.parentElement !== scroller || scroller.lastElementChild !== cardHost) scroller.appendChild(cardHost)
+      if (cardHost.parentElement !== scroller) scroller.appendChild(cardHost)
       setHost(cardHost)
     }
     place()
