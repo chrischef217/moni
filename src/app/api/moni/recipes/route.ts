@@ -18,6 +18,44 @@ function toNumber(value: unknown): number | null {
   return null
 }
 
+async function resolveFoodTypeId(
+  supabase: ReturnType<typeof createMoniServiceRoleClient>,
+  requestedId: string,
+  foodTypeName: string,
+) {
+  if (requestedId) {
+    const byId = await supabase
+      .from('food_type_master')
+      .select('id')
+      .eq('id', requestedId)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
+      .maybeSingle()
+    if (byId.error) throw new Error(byId.error.message || '식품유형 ID 검증 실패')
+    if (byId.data?.id) return String(byId.data.id)
+  }
+
+  const found = await supabase
+    .from('food_type_master')
+    .select('id')
+    .eq('type_name', foodTypeName)
+    .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
+    .maybeSingle()
+  if (found.error) throw new Error(found.error.message || '식품유형 조회 실패')
+  if (found.data?.id) return String(found.data.id)
+
+  const inserted = await supabase
+    .from('food_type_master')
+    .insert({
+      type_name: foodTypeName,
+      unit: 'g',
+      business_id: CANONICAL_MONI_BUSINESS_ID,
+    })
+    .select('id')
+    .single()
+  if (inserted.error) throw new Error(inserted.error.message || '식품유형 생성 실패')
+  return String(inserted.data.id)
+}
+
 async function fetchProductAndMaterialOptions() {
   const supabase = createMoniServiceRoleClient()
   const [productsResult, rawMaterialsResult] = await Promise.all([
@@ -81,19 +119,32 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     const productId = toText(body?.product_id)
     const productName = toText(body?.product_name)
-    const foodTypeId = toText(body?.food_type_id)
+    const requestedFoodTypeId = toText(body?.food_type_id)
     const foodTypeName = toText(body?.food_type_name)
     const ingredientType = toText(body?.ingredient_type) || '원재료'
     const ratioPercent = toNumber(body?.ratio_percent)
 
-    if (!productId || !productName || !foodTypeId || !foodTypeName || ratioPercent === null) {
+    if (!productId || !productName || !foodTypeName || ratioPercent === null) {
       return NextResponse.json({ ok: false, error: '제품, 식품유형, 배합비율을 입력해 주세요.' }, { status: 400 })
+    }
+    if (ratioPercent < 0) {
+      return NextResponse.json({ ok: false, error: '배합비율은 0 이상이어야 합니다.' }, { status: 400 })
     }
 
     const supabase = createMoniServiceRoleClient()
+    const product = await supabase
+      .from('products')
+      .select('id,product_name')
+      .eq('id', productId)
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
+      .maybeSingle()
+    if (product.error) throw new Error(product.error.message || '제품 확인 실패')
+    if (!product.data) return NextResponse.json({ ok: false, error: '제품을 찾을 수 없습니다.' }, { status: 404 })
+
+    const foodTypeId = await resolveFoodTypeId(supabase, requestedFoodTypeId, foodTypeName)
     const payload = {
       product_id: productId,
-      product_name: productName,
+      product_name: product.data.product_name || productName,
       food_type_id: foodTypeId,
       food_type_name: foodTypeName,
       ingredient_type: ingredientType,
@@ -164,33 +215,7 @@ export async function PUT(request: NextRequest) {
     const savedIds: string[] = []
 
     for (const row of parsedRows) {
-      let foodTypeId = row.food_type_id
-      if (!foodTypeId) {
-        const found = await supabase
-          .from('food_type_master')
-          .select('id, type_name')
-          .eq('type_name', row.food_type_name)
-          .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
-          .maybeSingle()
-        if (found.error) throw new Error(found.error.message || '식품유형 조회 실패')
-
-        if (found.data?.id) {
-          foodTypeId = String(found.data.id)
-        } else {
-          const inserted = await supabase
-            .from('food_type_master')
-            .insert({
-              type_name: row.food_type_name,
-              unit: 'g',
-              business_id: businessId,
-            })
-            .select('id')
-            .single()
-          if (inserted.error) throw new Error(inserted.error.message || '식품유형 생성 실패')
-          foodTypeId = String(inserted.data.id)
-        }
-      }
-
+      const foodTypeId = await resolveFoodTypeId(supabase, row.food_type_id, row.food_type_name)
       const payload = {
         product_id: productId,
         product_name: productName,
