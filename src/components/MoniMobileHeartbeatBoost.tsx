@@ -55,7 +55,7 @@ export default function MoniMobileHeartbeatBoost() {
           limiter.release.value = 0.12
 
           master = context.createGain()
-          master.gain.value = 0.98
+          master.gain.value = 9.8
           limiter.connect(master)
           master.connect(context.destination)
         }
