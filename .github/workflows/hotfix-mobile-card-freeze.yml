@@ -1,0 +1,138 @@
+name: Hotfix MONI Mobile Card Freeze
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/hotfix-mobile-card-freeze.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: moni-mobile-freeze-hotfix
+  cancel-in-progress: false
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: prj_6FPUpj6cyTSCktMHpp3luh142XFr
+
+jobs:
+  hotfix-test-commit-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch conflicting card-host observers
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          files = [
+              Path('src/components/MoniMobileRawMaterialCardV2.tsx'),
+              Path('src/components/MoniMobileBusinessCards.tsx'),
+          ]
+          old = "if (cardHost.parentElement !== scroller || scroller.lastElementChild !== cardHost) scroller.appendChild(cardHost)"
+          new = "if (cardHost.parentElement !== scroller) scroller.appendChild(cardHost)"
+
+          for path in files:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one unstable host-placement expression, found {count}')
+              path.write_text(text.replace(old, new), encoding='utf-8')
+              print(f'patched {path}')
+          PY
+
+      - name: Add regression test for host stability
+        shell: bash
+        run: |
+          cat > tests/moni-mobile-card-host-stability.test.mjs <<'EOF'
+          import test from 'node:test'
+          import assert from 'node:assert/strict'
+          import { readFileSync } from 'node:fs'
+
+          const raw = readFileSync('src/components/MoniMobileRawMaterialCardV2.tsx', 'utf8')
+          const business = readFileSync('src/components/MoniMobileBusinessCards.tsx', 'utf8')
+
+          test('mobile card hosts never fight to become the last scroller child', () => {
+            for (const source of [raw, business]) {
+              assert.doesNotMatch(source, /scroller\.lastElementChild\s*!==\s*cardHost/)
+              assert.match(source, /if \(cardHost\.parentElement !== scroller\) scroller\.appendChild\(cardHost\)/)
+            }
+          })
+          EOF
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run focused freeze regression
+        run: node --test tests/moni-mobile-card-host-stability.test.mjs
+
+      - name: Run MONI agent regression
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: build-only-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: build-only-service-role-key
+          ALLOWANCE_ENCRYPTION_KEY: build-only-allowance-encryption-key-32
+          MONI_BUSINESS_ID: "20220523011"
+          MONI_MCP_ENABLED: "false"
+          MONI_PUBLIC_BASE_URL: https://moni-sigma.vercel.app
+        run: |
+          npm run prebuild
+          npm run test:agent
+
+      - name: Commit hotfix to main
+        shell: bash
+        run: |
+          git config user.name "MONI PMO Hotfix"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/components/MoniMobileRawMaterialCardV2.tsx src/components/MoniMobileBusinessCards.tsx tests/moni-mobile-card-host-stability.test.mjs
+          git commit -m "Fix mobile card observer freeze"
+          git push origin HEAD:main
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Link MONI Vercel project
+        shell: bash
+        run: |
+          mkdir -p .vercel
+          cat > .vercel/project.json <<JSON
+          {"orgId":"${VERCEL_ORG_ID}","projectId":"${VERCEL_PROJECT_ID}"}
+          JSON
+
+      - name: Pull production environment
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build fixed production artifact
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy fixed artifact to Production
+        id: deploy
+        shell: bash
+        run: |
+          set -o pipefail
+          DEPLOY_URL=$(vercel deploy --prebuilt --archive=tgz --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "deployment_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+          echo "Deployment URL: ${DEPLOY_URL}"
+
+      - name: Production smoke test
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location --max-time 30 "${{ steps.deploy.outputs.deployment_url }}/mobile" >/dev/null
+          curl --fail --silent --show-error --location --max-time 30 "https://moni-sigma.vercel.app/mobile" >/dev/null
+          echo "MONI mobile hotfix production smoke passed."
