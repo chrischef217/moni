@@ -1,0 +1,89 @@
+name: Deploy MONI Production via GitHub Actions
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/deploy-moni-vercel.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moni-production-fallback-deploy
+  cancel-in-progress: false
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: prj_6FPUpj6cyTSCktMHpp3luh142XFr
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Show source revision
+        run: |
+          echo "Deploying commit $(git rev-parse HEAD)"
+          git log -1 --oneline
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run MONI regression gate
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: build-only-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: build-only-service-role-key
+          ALLOWANCE_ENCRYPTION_KEY: build-only-allowance-encryption-key-32
+          MONI_BUSINESS_ID: "20220523011"
+          MONI_MCP_ENABLED: "false"
+          MONI_PUBLIC_BASE_URL: https://moni-sigma.vercel.app
+        run: |
+          npm run prebuild
+          npm run test:agent
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Link MONI Vercel project
+        run: |
+          mkdir -p .vercel
+          cat > .vercel/project.json <<JSON
+          {"orgId":"${VERCEL_ORG_ID}","projectId":"${VERCEL_PROJECT_ID}"}
+          JSON
+
+      - name: Pull production environment
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build production artifact in GitHub Actions
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy prebuilt artifact to Production
+        id: deploy
+        shell: bash
+        run: |
+          set -o pipefail
+          DEPLOY_URL=$(vercel deploy --prebuilt --archive=tgz --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "deployment_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+          echo "Deployment URL: ${DEPLOY_URL}"
+
+      - name: Verify deployed revision and Production endpoint
+        run: |
+          echo "Expected source SHA: $(git rev-parse HEAD)"
+          curl --fail --silent --show-error --location --max-time 30 "${{ steps.deploy.outputs.deployment_url }}/mobile" >/dev/null
+          curl --fail --silent --show-error --location --max-time 30 "https://moni-sigma.vercel.app/mobile" >/dev/null
+          echo "MONI production smoke check passed."
