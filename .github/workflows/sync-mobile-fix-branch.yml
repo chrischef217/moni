@@ -1,0 +1,27 @@
+name: Sync Mobile Fix Branch With Main
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/sync-mobile-fix-branch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-form-interaction-stability
+          fetch-depth: 0
+      - name: Merge latest main into fix branch
+        shell: bash
+        run: |
+          git config user.name "MONI PMO Branch Sync"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit origin/main
+          git push origin HEAD:fix/mobile-form-interaction-stability
