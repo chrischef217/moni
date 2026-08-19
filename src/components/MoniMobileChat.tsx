@@ -675,7 +675,7 @@ export default function MoniMobileChat() {
     setMessages((current) => [...current, { role: 'user', content: displayQuestion }])
     playCue('sent')
     try {
-      const response = await fetch(structuredRequest && threadId ? '/api/moni/mobile-action-start' : '/api/moni/agent-runtime', {
+      const response = await fetch(structuredRequest ? '/api/moni/mobile-action-start' : '/api/moni/agent-runtime', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
