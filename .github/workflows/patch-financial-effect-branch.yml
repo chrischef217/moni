@@ -1,0 +1,81 @@
+# trigger: financial effect branch patch
+name: Patch Financial Effect Branch
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/patch-financial-effect-branch.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-financial-effect-previews
+          fetch-depth: 0
+      - name: Wire V3 adapter and canonical inventory filters
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          card = Path('src/components/MoniMobileExtendedFormCard.tsx')
+          s = card.read_text(encoding='utf-8')
+          old_endpoint = '/api/moni/mobile-extended-actions'
+          count = s.count(old_endpoint)
+          if count != 3:
+              raise SystemExit(f'expected 3 legacy extended endpoints, found {count}')
+          s = s.replace(old_endpoint, '/api/moni/mobile-extended-actions-v3')
+          if s.count('<CandidateList/>') != 1:
+              raise SystemExit(f'expected one nested CandidateList mount, found {s.count("<CandidateList/>")}')
+          s = s.replace('<CandidateList/>', '{CandidateList()}', 1)
+          old_completed = "{card.stage==='completed' && <div className=\"moni-pc-complete\"><span>✓</span><div><b>처리 완료</b><p>업무가 PC 기준과 동일하게 반영되었습니다.</p></div></div>}"
+          new_completed = "{card.stage==='completed' && <div className=\"moni-pc-complete\"><span>✓</span><div><b>{card.result?.verified === false ? '처리 완료 · 검증 확인 필요' : '처리 완료'}</b><p style={{whiteSpace:'pre-wrap'}}>{card.preview_text || '업무가 PC 기준과 동일하게 반영되었습니다.'}</p>{card.result?.verified === false && <p>저장 결과 검증 경고를 확인해 주세요.</p>}</div></div>}"
+          if s.count(old_completed) != 1:
+              raise SystemExit('completed card expression did not match exactly')
+          s = s.replace(old_completed, new_completed, 1)
+          card.write_text(s, encoding='utf-8')
+
+          inv = Path('src/app/api/moni/finished-goods-inventory/route.ts')
+          x = inv.read_text(encoding='utf-8')
+          old_products = ".select('id,product_name,product_code,product_spec,product_type,weight_g,is_active,business_id')\n        .order('product_name'"
+          new_products = ".select('id,product_name,product_code,product_spec,product_type,weight_g,is_active,business_id')\n        .eq('business_id', BUSINESS_ID)\n        .order('product_name'"
+          if x.count(old_products) != 1:
+              raise SystemExit('products canonical patch target not found')
+          x = x.replace(old_products, new_products, 1)
+          old_prod = ".from('production_records')\n          .select('*')\n          .order('work_date'"
+          new_prod = ".from('production_records')\n          .select('*')\n          .eq('business_id', BUSINESS_ID)\n          .order('work_date'"
+          if x.count(old_prod) != 1:
+              raise SystemExit('production canonical patch target not found')
+          x = x.replace(old_prod, new_prod, 1)
+          inv.write_text(x, encoding='utf-8')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Build patched branch
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: build-only-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: build-only-service-role-key
+          ALLOWANCE_ENCRYPTION_KEY: build-only-allowance-encryption-key-32
+          MONI_BUSINESS_ID: "20220523011"
+          MONI_MCP_ENABLED: "false"
+          MONI_PUBLIC_BASE_URL: https://moni-sigma.vercel.app
+        run: npm run build
+      - name: Commit target branch patch
+        run: |
+          git config user.name "MONI PMO Patch"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/components/MoniMobileExtendedFormCard.tsx src/app/api/moni/finished-goods-inventory/route.ts
+          git commit -m "Wire financial V3 adapter and canonical inventory reads"
+          git push origin HEAD:fix/mobile-financial-effect-previews
