@@ -1,0 +1,42 @@
+# trigger: patch V2 legacy delegation request typing
+name: Patch Mobile Sales V2 Type
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/patch-mobile-sales-v2-type.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-sales-statement-workflow
+          fetch-depth: 0
+      - name: Patch NextRequest delegation type
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/app/api/moni/mobile-business-actions-v2/route.ts')
+          s=p.read_text(encoding='utf-8')
+          old='legacyPOST(copy)'
+          count=s.count(old)
+          if count < 1:
+              raise SystemExit(f'expected legacyPOST(copy), found {count}')
+          s=s.replace(old, 'legacyPOST(copy as NextRequest)')
+          p.write_text(s, encoding='utf-8')
+          print('patched', count, 'legacy delegations')
+          PY
+      - name: Commit target branch patch
+        run: |
+          git config user.name "MONI PMO Patch"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/app/api/moni/mobile-business-actions-v2/route.ts
+          git commit -m "Fix mobile sales V2 legacy request typing"
+          git push origin HEAD:fix/mobile-sales-statement-workflow
