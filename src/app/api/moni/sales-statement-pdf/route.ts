@@ -81,11 +81,12 @@ export async function GET(request: NextRequest) {
     })
 
     const filename = `${safeFilename(text(order.statement_number) || 'MONI_Sales_Statement')}.pdf`
+    const disposition = request.nextUrl.searchParams.get('mode') === 'inline' ? 'inline' : 'attachment'
     return new Response(Uint8Array.from(pdf), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `${disposition}; filename="${filename}"`,
         'Cache-Control': 'private, no-store, max-age=0',
         'X-Content-Type-Options': 'nosniff',
       },
