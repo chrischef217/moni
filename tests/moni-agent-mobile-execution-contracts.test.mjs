@@ -40,7 +40,7 @@ test('work-log before snapshot uses the same canonical table as the PC API', () 
 })
 
 test('work-log create update and delete reuse the PC business-management API', () => {
-  assert.match(mobileRoute, /domain==='business_work_log'[\s\S]*?operation==='CREATE'[\s\S]*?entity:'work_logs'/)
+  assert.match(mobileRoute, /domain==='business_work_log'[\s\S]*?const entity='work_logs'[\s\S]*?operation==='CREATE'[\s\S]*?'POST'[\s\S]*?\{entity,data:fields\}/)
   assert.match(mobileRoute, /domain==='business_work_log'[\s\S]*?operation==='DELETE'[\s\S]*?business-management\?entity=\$\{entity\}&id=/)
   assert.match(mobileRoute, /domain==='business_work_log'[\s\S]*?'PATCH'[\s\S]*?\{entity,id:targetId,data:fields\}/)
 })
