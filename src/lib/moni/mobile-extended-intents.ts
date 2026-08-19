@@ -50,6 +50,16 @@ function hasExplicitWriteCue(value: string) {
     || has(value, /(?:으로|로)\s*(?:해줘|해주세요|해 줘|바꿔|맞춰)/)
 }
 
+function supportsDeactivation(domain: MobileExtendedDomain) {
+  return ['product_master', 'raw_material_master', 'packaging_master', 'sales_client', 'sales_pricing', 'business_person'].includes(domain)
+}
+
+function safeMutation(domain: MobileExtendedDomain, value: string) {
+  const op = mutation(value)
+  if (op === 'DEACTIVATE' && !supportsDeactivation(domain)) return null
+  return op
+}
+
 export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent | null {
   const value = compact(raw)
   if (!value) return null
@@ -78,22 +88,22 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
   }
 
   if (has(value, /(?:판매규격|판매\s*규격|제품\s*단가|판매\s*단가|거래처별\s*단가|예외\s*단가|MOQ)/)) {
-    const op = mutation(value)
+    const op = safeMutation('sales_pricing', value)
     return op || writeCue ? { domain: 'sales_pricing', operation: op || 'UPDATE' } : null
   }
 
   if (has(value, /(?:거래처|고객사)/) && !has(value, /(?:판매|매출|수금|입금|미수|영업기회|상담|활동)/)) {
-    const op = mutation(value)
+    const op = safeMutation('sales_client', value)
     return op ? { domain: 'sales_client', operation: op } : null
   }
 
   if (has(value, /(?:영업기회|파이프라인)/)) {
-    const op = mutation(value)
+    const op = safeMutation('business_opportunity', value)
     return op ? { domain: 'business_opportunity', operation: op } : null
   }
 
   if (has(value, /(?:영업활동|상담기록|상담\s*기록|활동기록)/)) {
-    const op = mutation(value)
+    const op = safeMutation('business_activity', value)
     return op ? { domain: 'business_activity', operation: op } : null
   }
 
@@ -102,12 +112,12 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
     // Employee and sales-freelancer time must not be silently written into that ledger.
     if (has(value, /(?:직원)/)
         || (has(value, /(?:영업)/) && has(value, /(?:프리랜서)/) && !has(value, /(?:생산)/))) return null
-    const op = mutation(value)
+    const op = safeMutation('business_work_log', value)
     return op ? { domain: 'business_work_log', operation: op } : null
   }
 
   if (has(value, /(?:프리랜서|인력|직원)/) && writeCue) {
-    const op = mutation(value)
+    const op = safeMutation('business_person', value)
     return op ? { domain: 'business_person', operation: op } : null
   }
 
@@ -118,28 +128,28 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
   }
 
   if (has(value, /(?:생산단위|생산\s*단위)/)) {
-    const op = mutation(value)
+    const op = safeMutation('production_unit', value)
     return op ? { domain: 'production_unit', operation: op } : null
   }
 
   if (has(value, /(?:레시피|배합비|배합\s*비율)/)) {
-    const op = mutation(value)
+    const op = safeMutation('recipe', value)
     return op ? { domain: 'recipe', operation: op } : null
   }
 
   // Inbound/transaction requests are intentionally left to the existing V2 transaction cards.
   if (has(value, /(?:원재료|원료)/) && !has(value, /(?:입고|매입|수불|재고조정)/)) {
-    const op = mutation(value)
+    const op = safeMutation('raw_material_master', value)
     return op ? { domain: 'raw_material_master', operation: op } : null
   }
 
   if (has(value, /(?:부재료|포장재|포장\s*자재)/) && !has(value, /(?:입고|매입|수불)/)) {
-    const op = mutation(value)
+    const op = safeMutation('packaging_master', value)
     return op ? { domain: 'packaging_master', operation: op } : null
   }
 
   if (has(value, /(?:제품\s*마스터|제품\s*등록|제품\s*정보|품목\s*등록|품목\s*정보|제품\s*추가|품목\s*추가)/)) {
-    const op = mutation(value)
+    const op = safeMutation('product_master', value)
     return op ? { domain: 'product_master', operation: op } : null
   }
 
