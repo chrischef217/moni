@@ -1,4 +1,4 @@
-# trigger: observable fallback deploy for mobile sales statement workflow
+# trigger: diagnose fallback deploy for mobile sales statement workflow
 name: Deploy MONI Production via GitHub Actions
 
 on:
@@ -26,6 +26,8 @@ jobs:
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
       deployment_url: ${{ steps.deploy.outputs.deployment_url }}
+      failure_stage: ${{ steps.diagnose.outputs.failure_stage }}
+      failure_message: ${{ steps.diagnose.outputs.failure_message }}
     steps:
       - name: Checkout exact main
         uses: actions/checkout@v4
@@ -52,6 +54,8 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Run MONI regression gate
+        id: regression
+        continue-on-error: true
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: build-only-anon-key
@@ -60,41 +64,100 @@ jobs:
           MONI_BUSINESS_ID: "20220523011"
           MONI_MCP_ENABLED: "false"
           MONI_PUBLIC_BASE_URL: https://moni-sigma.vercel.app
+        shell: bash
         run: |
-          npm run prebuild
-          npm run test:agent
+          set -o pipefail
+          (npm run prebuild && npm run test:agent) 2>&1 | tee /tmp/regression.log
 
       - name: Install Vercel CLI
-        run: npm install --global vercel@latest
+        if: steps.regression.outcome == 'success'
+        id: cli
+        continue-on-error: true
+        shell: bash
+        run: npm install --global vercel@latest 2>&1 | tee /tmp/cli.log
 
       - name: Link MONI Vercel project
+        if: steps.regression.outcome == 'success' && steps.cli.outcome == 'success'
+        id: link
+        continue-on-error: true
+        shell: bash
         run: |
           mkdir -p .vercel
           cat > .vercel/project.json <<JSON
           {"orgId":"${VERCEL_ORG_ID}","projectId":"${VERCEL_PROJECT_ID}"}
           JSON
+          cat .vercel/project.json | tee /tmp/link.log
 
       - name: Pull production environment
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Build production artifact in GitHub Actions
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Deploy prebuilt artifact to Production
-        id: deploy
+        if: steps.link.outcome == 'success'
+        id: pull
+        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
-          DEPLOY_URL=$(vercel deploy --prebuilt --archive=tgz --prod --token=${{ secrets.VERCEL_TOKEN }})
-          echo "deployment_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
-          echo "Deployment URL: ${DEPLOY_URL}"
+          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | tee /tmp/pull.log
+
+      - name: Build production artifact in GitHub Actions
+        if: steps.pull.outcome == 'success'
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | tee /tmp/build.log
+
+      - name: Deploy prebuilt artifact to Production
+        if: steps.build.outcome == 'success'
+        id: deploy
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          OUTPUT_FILE=/tmp/deploy.log
+          if DEPLOY_URL=$(vercel deploy --prebuilt --archive=tgz --prod --token=${{ secrets.VERCEL_TOKEN }} 2> >(tee "$OUTPUT_FILE" >&2)); then
+            echo "deployment_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+            echo "Deployment URL: ${DEPLOY_URL}"
+          else
+            exit 1
+          fi
 
       - name: Verify deployed revision and Production endpoint
+        if: steps.deploy.outcome == 'success'
+        id: smoke
+        continue-on-error: true
+        shell: bash
         run: |
-          echo "Expected source SHA: $(git rev-parse HEAD)"
-          curl --fail --silent --show-error --location --max-time 30 "${{ steps.deploy.outputs.deployment_url }}/mobile" >/dev/null
-          curl --fail --silent --show-error --location --max-time 30 "https://moni-sigma.vercel.app/mobile" >/dev/null
-          echo "MONI production smoke check passed."
+          set -o pipefail
+          echo "Expected source SHA: $(git rev-parse HEAD)" | tee /tmp/smoke.log
+          curl --fail --silent --show-error --location --max-time 30 "${{ steps.deploy.outputs.deployment_url }}/mobile" 2>&1 | tee -a /tmp/smoke.log >/dev/null
+          curl --fail --silent --show-error --location --max-time 30 "https://moni-sigma.vercel.app/mobile" 2>&1 | tee -a /tmp/smoke.log >/dev/null
+          echo "MONI production smoke check passed." | tee -a /tmp/smoke.log
+
+      - name: Diagnose pipeline result
+        id: diagnose
+        if: always()
+        shell: bash
+        run: |
+          STAGE="success"
+          LOG=""
+          if [ "${{ steps.regression.outcome }}" != "success" ]; then STAGE="regression"; LOG=/tmp/regression.log;
+          elif [ "${{ steps.cli.outcome }}" != "success" ]; then STAGE="cli"; LOG=/tmp/cli.log;
+          elif [ "${{ steps.link.outcome }}" != "success" ]; then STAGE="link"; LOG=/tmp/link.log;
+          elif [ "${{ steps.pull.outcome }}" != "success" ]; then STAGE="pull"; LOG=/tmp/pull.log;
+          elif [ "${{ steps.build.outcome }}" != "success" ]; then STAGE="build"; LOG=/tmp/build.log;
+          elif [ "${{ steps.deploy.outcome }}" != "success" ]; then STAGE="deploy"; LOG=/tmp/deploy.log;
+          elif [ "${{ steps.smoke.outcome }}" != "success" ]; then STAGE="smoke"; LOG=/tmp/smoke.log;
+          fi
+          MESSAGE=""
+          if [ -n "$LOG" ] && [ -f "$LOG" ]; then MESSAGE=$(tail -n 12 "$LOG" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | cut -c1-1800); fi
+          echo "failure_stage=${STAGE}" >> "$GITHUB_OUTPUT"
+          echo "failure_message=${MESSAGE}" >> "$GITHUB_OUTPUT"
+          echo "stage=${STAGE}"
+          echo "message=${MESSAGE}"
+
+      - name: Fail workflow if pipeline failed
+        if: steps.diagnose.outputs.failure_stage != 'success'
+        run: exit 1
 
   report:
     if: always()
@@ -113,6 +176,8 @@ jobs:
           DEPLOY_RESULT: ${{ needs.deploy.result }}
           SOURCE_SHA: ${{ needs.deploy.outputs.source_sha }}
           DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
+          FAILURE_STAGE: ${{ needs.deploy.outputs.failure_stage }}
+          FAILURE_MESSAGE: ${{ needs.deploy.outputs.failure_message }}
         run: |
           CURRENT_SHA=$(git rev-parse HEAD)
           SOURCE="${SOURCE_SHA:-$CURRENT_SHA}"
@@ -126,6 +191,8 @@ jobs:
           result: ${DEPLOY_RESULT}
           source_sha: ${SOURCE}
           deployment_url: ${DEPLOYMENT_URL}
+          failure_stage: ${FAILURE_STAGE}
+          failure_message: ${FAILURE_MESSAGE}
           workflow: Deploy MONI Production via GitHub Actions
           EOF
           git add MONI_DEPLOY_STATUS.md
