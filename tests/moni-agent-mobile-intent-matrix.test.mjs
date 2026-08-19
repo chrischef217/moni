@@ -25,7 +25,10 @@ const businessCases = [
   ['생산 작업지시 수정해줘', { domain: 'production_work', operation: 'UPDATE' }],
   ['생산완료 처리해줘', { domain: 'production_work', operation: 'COMPLETE' }],
   ['생산확정 처리해줘', { domain: 'production_work', operation: 'CONFIRM' }],
-  ['거래명세표 만들어줘', { domain: 'sales_order', operation: 'CREATE' }],
+  ['거래명세표 만들어줘', { domain: 'sales_statement', operation: 'CREATE' }],
+  ['거래명세표 입력해야해', { domain: 'sales_statement', operation: 'CREATE' }],
+  ['방금 생성한 거래건의 거래명세표를 보여줘', { domain: 'sales_statement', operation: 'SHOW' }],
+  ['매출 등록해줘', { domain: 'sales_order', operation: 'CREATE' }],
   ['판매 취소해줘', { domain: 'sales_order', operation: 'CANCEL' }],
   ['매입 등록해줘', { domain: 'purchase', operation: 'CREATE' }],
   ['매입대금 지급해줘', { domain: 'payment', operation: 'CREATE' }],
@@ -73,6 +76,12 @@ test('read-only questions do not accidentally open write cards', () => {
     assert.equal(business.classifyMobileBusinessIntent(input), null, `business: ${input}`)
     assert.equal(extended.classifyMobileExtendedIntent(input), null, `extended: ${input}`)
   }
+})
+
+test('statement read intent is explicitly read-only rather than a mutation', () => {
+  const intent = business.classifyMobileBusinessIntent('방금 생성한 거래건의 거래명세표를 보여줘')
+  assert.deepEqual(intent, { domain: 'sales_statement', operation: 'SHOW' })
+  assert.notEqual(intent?.operation, 'CREATE')
 })
 
 test('business card prepare button and guidance use operation-specific wording', () => {
