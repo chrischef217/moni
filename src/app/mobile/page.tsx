@@ -13,6 +13,7 @@ import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
 import MoniMobileRawCardRouteGuard from '@/components/MoniMobileRawCardRouteGuard'
 import MoniMobileRawMaterialCardV2 from '@/components/MoniMobileRawMaterialCardV2'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
+import MoniMobileSalesStatementCard from '@/components/MoniMobileSalesStatementCard'
 import MoniMobileThinkingCharacterMotion from '@/components/MoniMobileThinkingCharacterMotion'
 import MoniMobileThinkingCharacterMotionPatch from '@/components/MoniMobileThinkingCharacterMotionPatch'
 import MoniMobileThinkingCopyFix from '@/components/MoniMobileThinkingCopyFix'
@@ -53,6 +54,7 @@ export default async function MoniMobilePage() {
       <MoniMobileVoiceCanvasWave />
       <MoniMobileRawMaterialCardV2 />
       <MoniMobileBusinessCards />
+      <MoniMobileSalesStatementCard />
       <MoniMobileExtendedFormCard />
       <MoniMobileChat />
     </main>
