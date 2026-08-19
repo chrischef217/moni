@@ -7,9 +7,11 @@ import MoniMobileBusinessCards from '@/components/MoniMobileBusinessCards'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileContinuityGuard from '@/components/MoniMobileContinuityGuard'
 import MoniMobileExtendedFormCard from '@/components/MoniMobileExtendedFormCard'
+import MoniMobileFormSafetyStyles from '@/components/MoniMobileFormSafetyStyles'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
+import MoniMobilePurchaseCardV2 from '@/components/MoniMobilePurchaseCardV2'
 import MoniMobileRawCardRouteGuard from '@/components/MoniMobileRawCardRouteGuard'
 import MoniMobileRawMaterialCardV2 from '@/components/MoniMobileRawMaterialCardV2'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
@@ -39,6 +41,7 @@ export default async function MoniMobilePage() {
       data-moni-mobile-chat
       className="fixed inset-0 z-[1000] flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#f7fcfb] text-[#173b52]"
     >
+      <MoniMobileFormSafetyStyles />
       <MoniMobileRuntimeGuard />
       <MoniMobileAnswerActions />
       <MoniMobileUxPolish />
@@ -55,6 +58,7 @@ export default async function MoniMobilePage() {
       <MoniMobileRawMaterialCardV2 />
       <MoniMobileBusinessCards />
       <MoniMobileSalesStatementCard />
+      <MoniMobilePurchaseCardV2 />
       <MoniMobileExtendedFormCard />
       <MoniMobileChat />
     </main>
