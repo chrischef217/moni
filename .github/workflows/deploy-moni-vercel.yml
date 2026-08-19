@@ -1,4 +1,4 @@
-# trigger: deploy mobile sales statement workflow after PR #194
+# trigger: observable fallback deploy for mobile sales statement workflow
 name: Deploy MONI Production via GitHub Actions
 
 on:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: moni-production-fallback-deploy
@@ -23,6 +23,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+      deployment_url: ${{ steps.deploy.outputs.deployment_url }}
     steps:
       - name: Checkout exact main
         uses: actions/checkout@v4
@@ -31,8 +34,12 @@ jobs:
           fetch-depth: 1
 
       - name: Show source revision
+        id: source
+        shell: bash
         run: |
-          echo "Deploying commit $(git rev-parse HEAD)"
+          SHA=$(git rev-parse HEAD)
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "Deploying commit ${SHA}"
           git log -1 --oneline
 
       - name: Setup Node
@@ -88,3 +95,39 @@ jobs:
           curl --fail --silent --show-error --location --max-time 30 "${{ steps.deploy.outputs.deployment_url }}/mobile" >/dev/null
           curl --fail --silent --show-error --location --max-time 30 "https://moni-sigma.vercel.app/mobile" >/dev/null
           echo "MONI production smoke check passed."
+
+  report:
+    if: always()
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository credentials
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Publish fallback deploy status branch
+        shell: bash
+        env:
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          SOURCE_SHA: ${{ needs.deploy.outputs.source_sha }}
+          DEPLOYMENT_URL: ${{ needs.deploy.outputs.deployment_url }}
+        run: |
+          CURRENT_SHA=$(git rev-parse HEAD)
+          SOURCE="${SOURCE_SHA:-$CURRENT_SHA}"
+          git config user.name "MONI Deploy Status"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan moni-deploy-status-tmp
+          git rm -rf . >/dev/null 2>&1 || true
+          cat > MONI_DEPLOY_STATUS.md <<EOF
+          # MONI fallback deploy status
+
+          result: ${DEPLOY_RESULT}
+          source_sha: ${SOURCE}
+          deployment_url: ${DEPLOYMENT_URL}
+          workflow: Deploy MONI Production via GitHub Actions
+          EOF
+          git add MONI_DEPLOY_STATUS.md
+          git commit -m "Record MONI fallback deploy status"
+          git push --force origin HEAD:refs/heads/moni-deploy-status
