@@ -119,7 +119,7 @@ async function calculate(inputSource: Record<string, any>): Promise<Calc> {
   const authoritative = {
     supplier_id: text(supplier.id), supplier_name: text(supplier.company_name), supplier_tax_type: supplierTaxType,
     purchase_date: purchaseDate, receipt_date: receiptDate, purchase_category: category,
-    material_id: text(material.id), material_name: text(material.item_name || material.material_name), quantity, unit,
+    material_id: text(material.id), material_name: text('item_name' in material ? material.item_name : material.material_name), quantity, unit,
     unit_price: pricing.unitPrice, master_price: pricing.masterPrice, packing_weight_g: pricing.packingWeightG,
     supply_amount: pricing.supplyAmount, vat_amount: vatAmount, total_amount: totalAmount, due_date: dueDate,
     planned_payment_method: paymentMethod,
