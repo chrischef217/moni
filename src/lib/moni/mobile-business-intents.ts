@@ -37,12 +37,15 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
     || has(text, /(?:등록|입력|기록|작성|처리|반영).*(?:입고|매입)/)
 
   // 거래명세표는 매출 입력과 별도 업무 목적이다.
-  // 작성 요청은 판매 저장 후 명세표를 제공하고, 보기 요청은 어떤 쓰기 카드도 열지 않는다.
+  // 문장 다른 곳의 "생성한 거래건" 같은 과거 서술을 명세표 생성 명령으로 오인하지 않는다.
   if (has(text, /거래\s*명세(?:표)?/)) {
-    const statementWrite = has(text, /(입력|작성|발행|생성|만들|등록|새로)/)
-    const statementShow = has(text, /(보여|열어|띄워|확인|조회|다시\s*봐|출력|pdf|PDF)/)
-    if (statementShow && !statementWrite && !update && !cancel && !remove) return { domain: 'sales_statement', operation: 'SHOW' }
+    const statementWrite = has(text, /거래\s*명세(?:표)?(?:를|을|은|는|이|가)?\s*(?:입력|작성|발행|생성|만들|등록|새로)/)
+      || has(text, /(?:입력|작성|발행|생성|만들|등록)\s*(?:할|해야|해|해서|하고|하자|해줘|해주세요)?\s*(?:거래\s*명세(?:표)?)/)
+    const statementShow = has(text, /거래\s*명세(?:표)?(?:를|을|은|는|이|가)?\s*(?:보여|열어|띄워|확인|조회|다시\s*봐|출력)/)
+      || has(text, /(?:보여|열어|띄워|확인|조회|출력).*(?:거래\s*명세(?:표)?)/)
+      || has(text, /(?:거래\s*명세(?:표)?).*(?:pdf|PDF)/)
     if (statementWrite) return { domain: 'sales_statement', operation: 'CREATE' }
+    if (statementShow && !update && !cancel && !remove) return { domain: 'sales_statement', operation: 'SHOW' }
     return null
   }
 
