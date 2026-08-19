@@ -21,8 +21,9 @@ test('all three mobile card families protect focused inputs from polling replace
   }
 })
 
-test('structured text business writes bypass visible THINKING and heartbeat state', () => {
-  assert.match(chat, /structuredRequest && threadId \? '\/api\/moni\/mobile-action-start' : '\/api\/moni\/agent-runtime'/)
+test('structured text business writes bypass visible THINKING and heartbeat state from the first turn', () => {
+  assert.match(chat, /structuredRequest \? '\/api\/moni\/mobile-action-start' : '\/api\/moni\/agent-runtime'/)
+  assert.doesNotMatch(chat, /structuredRequest && threadId \? '\/api\/moni\/mobile-action-start'/)
   assert.match(chat, /sending && !structuredSubmitting \? 'thinking'/)
   assert.match(chat, /sending && !structuredSubmitting \? <ThinkingIndicator/)
 })
