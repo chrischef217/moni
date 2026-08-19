@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from('packaging_materials')
       .select('*')
+      .eq('business_id', CANONICAL_MONI_BUSINESS_ID)
       .order('material_name', { ascending: true })
     if (error) throw new Error(error.message || '부재료 목록 조회에 실패했습니다.')
 

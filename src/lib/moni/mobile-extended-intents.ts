@@ -97,14 +97,14 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
     return op ? { domain: 'business_activity', operation: op } : null
   }
 
-  if (has(value, /(?:프리랜서|인력|직원)/) && writeCue) {
-    const op = mutation(value)
-    return op ? { domain: 'business_person', operation: op } : null
-  }
-
   if (has(value, /(?:작업시간|근무시간|작업일지|근무일지)/) && has(value, /(?:프리랜서|생산|인력|근무|작업)/) && writeCue) {
     const op = mutation(value)
     return op ? { domain: 'business_work_log', operation: op } : null
+  }
+
+  if (has(value, /(?:프리랜서|인력|직원)/) && writeCue) {
+    const op = mutation(value)
+    return op ? { domain: 'business_person', operation: op } : null
   }
 
   // The current PC sanitation page creates inspection logs; it does not expose edit/delete.
