@@ -149,7 +149,11 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
     return op ? { domain: 'packaging_master', operation: op } : null
   }
 
-  if (has(value, /(?:제품\s*마스터|제품\s*등록|제품\s*정보|품목\s*등록|품목\s*정보|제품\s*추가|품목\s*추가)/)) {
+  // Natural product-master language should work without forcing the user to say "제품 정보".
+  // Keep business operations (sales, inventory, pricing, recipe, production etc.) out of this fallback.
+  if (has(value, /(?:제품|품목)/)
+      && writeCue
+      && !has(value, /(?:판매|납품|거래명세|매출|재고|제품\s*단가|판매\s*단가|판매규격|가격|레시피|배합|생산단위|생산\s*단위|생산계획|생산\s*계획|작업지시|생산지시|생산완료|생산확정|원재료|원료|부재료|포장재|매입|구매|수금|입금|미수|지급|결제)/)) {
     const op = safeMutation('product_master', value)
     return op ? { domain: 'product_master', operation: op } : null
   }
