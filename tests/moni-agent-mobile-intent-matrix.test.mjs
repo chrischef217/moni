@@ -52,7 +52,7 @@ const extendedCases = [
   ['영업기회 등록해줘', { domain: 'business_opportunity', operation: 'CREATE' }],
   ['영업활동 기록해줘', { domain: 'business_activity', operation: 'CREATE' }],
   ['프리랜서 작업시간 입력해줘', { domain: 'business_work_log', operation: 'CREATE' }],
-  ['직원 근무시간 수정해줘', { domain: 'business_work_log', operation: 'UPDATE' }],
+  ['생산 프리랜서 근무시간 수정해줘', { domain: 'business_work_log', operation: 'UPDATE' }],
 ]
 
 test('business transaction commands route to the intended mobile card', () => {
