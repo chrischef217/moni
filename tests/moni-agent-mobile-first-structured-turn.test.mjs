@@ -6,9 +6,12 @@ const chat = readFileSync('src/components/MoniMobileChat.tsx', 'utf8')
 const startRoute = readFileSync('src/app/api/moni/mobile-action-start/route.ts', 'utf8')
 const intents = readFileSync('src/lib/moni/mobile-business-intents.ts', 'utf8')
 
-test('sales statement create language is recognized as a structured sales write', () => {
-  assert.match(intents, /\(판매\|납품\|거래명세\|매출\)/)
-  assert.match(intents, /domain: 'sales_order', operation: 'CREATE'/)
+test('sales statement creation is a distinct structured write, not an ordinary sales synonym', () => {
+  assert.match(intents, /\| 'sales_statement'/)
+  assert.match(intents, /domain: 'sales_statement', operation: 'CREATE'/)
+  assert.match(intents, /domain: 'sales_statement', operation: 'SHOW'/)
+  assert.match(intents, /\(판매\|납품\|매출\)/)
+  assert.doesNotMatch(intents, /\(판매\|납품\|거래명세\|매출\)/)
 })
 
 test('structured writes use mobile action start even before a local thread exists', () => {
