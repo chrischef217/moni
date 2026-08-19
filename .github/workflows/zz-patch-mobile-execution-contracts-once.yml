@@ -1,6 +1,6 @@
 name: One-shot Mobile Execution Contract Patch
 
-# Triggered after workflow registration on the default branch.
+# Trigger run after workflow registration on the default branch.
 on:
   push:
     branches: ["main"]
