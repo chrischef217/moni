@@ -4,6 +4,7 @@ export type MobileBusinessDomain =
   | 'production_plan'
   | 'production_work'
   | 'sales_order'
+  | 'sales_statement'
   | 'purchase'
   | 'payment'
 
@@ -14,6 +15,7 @@ export type MobileBusinessOperation =
   | 'CANCEL'
   | 'COMPLETE'
   | 'CONFIRM'
+  | 'SHOW'
 
 export type MobileBusinessIntent = {
   domain: MobileBusinessDomain
@@ -30,9 +32,19 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
   const remove = has(text, /(삭제|지워|제거|없애)/)
   const update = has(text, /(수정|변경|정정|고쳐|바꿔|업데이트)/)
   const cancel = has(text, /(취소|철회)/)
-  const create = has(text, /(등록|입력|작성|추가|잡아|잡아줘|처리|반영|생성|만들어|발행|해줘|해주세요|해 줘)/)
+  const create = has(text, /(등록|입력|작성|추가|잡아|잡아줘|처리|반영|생성|만들어|발행)/)
   const inboundWrite = has(text, /(?:입고|매입).*(?:등록|입력|기록|작성|처리|반영|잡아|해줘|해주세요|해 줘)/)
     || has(text, /(?:등록|입력|기록|작성|처리|반영).*(?:입고|매입)/)
+
+  // 거래명세표는 매출 입력과 별도 업무 목적이다.
+  // 작성 요청은 판매 저장 후 명세표를 제공하고, 보기 요청은 어떤 쓰기 카드도 열지 않는다.
+  if (has(text, /거래\s*명세(?:표)?/)) {
+    const statementWrite = has(text, /(입력|작성|발행|생성|만들|등록|새로)/)
+    const statementShow = has(text, /(보여|열어|띄워|확인|조회|다시\s*봐|출력|pdf|PDF)/)
+    if (statementShow && !statementWrite && !update && !cancel && !remove) return { domain: 'sales_statement', operation: 'SHOW' }
+    if (statementWrite) return { domain: 'sales_statement', operation: 'CREATE' }
+    return null
+  }
 
   // 조회 질문은 기존 MONI Agent가 처리한다. 카드 라우팅은 명확한 쓰기 의도가 있을 때만 허용한다.
   // 단순 "재고 수정/삭제"는 과거 입고기록 UPDATE/DELETE가 아니다. 입고/수불을 명시한 경우만 거래카드를 연다.
@@ -72,10 +84,10 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
     return null
   }
 
-  if (has(text, /(판매|납품|거래명세|매출)/) && !has(text, /(판매단가|판매규격|가격 설정)/)) {
+  if (has(text, /(판매|납품|매출)/) && !has(text, /(판매단가|판매규격|가격 설정)/)) {
     if (cancel || remove) return { domain: 'sales_order', operation: 'CANCEL' }
     if (update) return { domain: 'sales_order', operation: 'UPDATE' }
-    if (create || has(text, /(판매등록|납품등록|거래명세).*(?:발행|생성|작성)/)) return { domain: 'sales_order', operation: 'CREATE' }
+    if (create || has(text, /(판매등록|납품등록|매출등록)/)) return { domain: 'sales_order', operation: 'CREATE' }
     return null
   }
 
@@ -100,10 +112,12 @@ export function mobileBusinessCardText(intent: MobileBusinessIntent) {
     production_plan: '생산계획',
     production_work: '생산 작업',
     sales_order: '판매',
+    sales_statement: '거래명세표',
     purchase: '매입',
     payment: '지급',
   }
-  const op = intent.operation === 'CREATE' ? '입력' : intent.operation === 'UPDATE' ? '수정' : intent.operation === 'DELETE' || intent.operation === 'CANCEL' ? '취소·삭제' : intent.operation === 'COMPLETE' ? '완료' : '확정'
+  if (intent.domain === 'sales_statement' && intent.operation === 'SHOW') return '이 대화에서 가장 최근에 생성한 거래건의 거래명세표를 불러옵니다.'
+  const op = intent.operation === 'CREATE' ? (intent.domain === 'sales_statement' ? '작성' : '입력') : intent.operation === 'UPDATE' ? '수정' : intent.operation === 'DELETE' || intent.operation === 'CANCEL' ? '취소·삭제' : intent.operation === 'COMPLETE' ? '완료' : '확정'
   const actionLabel = intent.operation === 'CREATE' ? '입력 내용 확인' : intent.operation === 'UPDATE' ? '변경 내용 확인' : intent.operation === 'DELETE' ? '삭제 내용 확인' : intent.operation === 'CANCEL' ? '취소 내용 확인' : intent.operation === 'COMPLETE' ? '완료 내용 확인' : '확정 내용 확인'
   return `${labels[intent.domain]} ${op} 카드를 열었습니다. 필요한 값을 확인·수정한 뒤 ‘${actionLabel}’을 눌러 주세요.`
 }
