@@ -138,12 +138,13 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
   }
 
   // Inbound/transaction requests are intentionally left to the existing V2 transaction cards.
-  if (has(value, /(?:원재료|원료)/) && !has(value, /(?:입고|매입|수불|재고조정)/)) {
+  // Bare inventory language is not a material-master mutation and must not rewrite receipt history or stock fields.
+  if (has(value, /(?:원재료|원료)/) && !has(value, /(?:입고|매입|수불|재고)/)) {
     const op = safeMutation('raw_material_master', value)
     return op ? { domain: 'raw_material_master', operation: op } : null
   }
 
-  if (has(value, /(?:부재료|포장재|포장\s*자재)/) && !has(value, /(?:입고|매입|수불)/)) {
+  if (has(value, /(?:부재료|포장재|포장\s*자재)/) && !has(value, /(?:입고|매입|수불|재고)/)) {
     const op = safeMutation('packaging_master', value)
     return op ? { domain: 'packaging_master', operation: op } : null
   }

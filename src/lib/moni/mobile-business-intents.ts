@@ -35,14 +35,15 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
     || has(text, /(?:등록|입력|기록|작성|처리|반영).*(?:입고|매입)/)
 
   // 조회 질문은 기존 MONI Agent가 처리한다. 카드 라우팅은 명확한 쓰기 의도가 있을 때만 허용한다.
-  if (has(text, /(부재료|포장재|부자재)/) && has(text, /(입고|수불|재고)/)) {
+  // 단순 "재고 수정/삭제"는 과거 입고기록 UPDATE/DELETE가 아니다. 입고/수불을 명시한 경우만 거래카드를 연다.
+  if (has(text, /(부재료|포장재|부자재)/) && has(text, /(입고|수불)/)) {
     if (remove) return { domain: 'packaging_inbound', operation: 'DELETE' }
     if (update) return { domain: 'packaging_inbound', operation: 'UPDATE' }
     if (inboundWrite) return { domain: 'packaging_inbound', operation: 'CREATE' }
     return null
   }
 
-  if (has(text, /(원재료|원료)/) && has(text, /(입고|매입|수불|재고)/)) {
+  if (has(text, /(원재료|원료)/) && has(text, /(입고|매입|수불)/)) {
     if (remove) return { domain: 'raw_material_inbound', operation: 'DELETE' }
     if (update) return { domain: 'raw_material_inbound', operation: 'UPDATE' }
     if (inboundWrite) return { domain: 'raw_material_inbound', operation: 'CREATE' }
