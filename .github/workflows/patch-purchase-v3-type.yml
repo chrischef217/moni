@@ -1,4 +1,4 @@
-# trigger: purchase v3 union narrowing
+# trigger: purchase v3 union narrowing retry
 name: Patch Purchase V3 Type
 
 on:
