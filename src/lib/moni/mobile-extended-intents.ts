@@ -68,8 +68,10 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
   // An extended card opens only when the user clearly asks to mutate a PC business form.
   const writeCue = hasExplicitWriteCue(value)
 
-  if (has(value, /(?:완제품|제품)\s*재고.*(?:조정|실사)|(?:재고조정|실사재고).*(?:완제품|제품)/)
-      && (writeCue || has(value, /(?:조정|실사)\s*(?:해줘|해주세요|해 줘|해라)/))) {
+  const finishedGoodsStock = has(value, /(?:완제품|제품)\s*재고|재고.*(?:완제품|제품)/)
+  if (finishedGoodsStock
+      && (has(value, /(?:조정|실사|수정|변경|정정|고쳐|바꿔|맞춰|보정)/)
+        || has(value, /(?:으로|로)\s*(?:해줘|해주세요|해 줘|바꿔|맞춰)/))) {
     return { domain: 'finished_goods_adjustment', operation: 'ADJUST' }
   }
 
