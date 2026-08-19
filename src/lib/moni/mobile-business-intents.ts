@@ -32,7 +32,7 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
   const remove = has(text, /(삭제|지워|제거|없애)/)
   const update = has(text, /(수정|변경|정정|고쳐|바꿔|업데이트)/)
   const cancel = has(text, /(취소|철회)/)
-  const create = has(text, /(등록|입력|작성|추가|잡아|잡아줘|처리|반영|생성|만들어|발행)/)
+  const create = has(text, /(등록|입력|작성|추가|잡아|잡아줘|처리|반영|생성|만들어|발행|해줘|해주세요|해 줘)/)
   const inboundWrite = has(text, /(?:입고|매입).*(?:등록|입력|기록|작성|처리|반영|잡아|해줘|해주세요|해 줘)/)
     || has(text, /(?:등록|입력|기록|작성|처리|반영).*(?:입고|매입)/)
 
