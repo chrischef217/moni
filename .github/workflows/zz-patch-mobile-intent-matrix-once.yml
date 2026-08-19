@@ -1,5 +1,6 @@
 name: One-shot Mobile Intent Matrix Branch Patch
 
+# Triggered once after workflow registration on default branch.
 on:
   push:
     branches: ["main"]
