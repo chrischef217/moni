@@ -97,7 +97,11 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
     return op ? { domain: 'business_activity', operation: op } : null
   }
 
-  if (has(value, /(?:작업시간|근무시간|작업일지|근무일지)/) && has(value, /(?:프리랜서|생산|인력|근무|작업)/) && writeCue) {
+  if (has(value, /(?:작업시간|근무시간|작업일지|근무일지)/) && writeCue) {
+    // The current PC work-log form is specifically for production freelancers.
+    // Employee and sales-freelancer time must not be silently written into that ledger.
+    if (has(value, /(?:직원)/)
+        || (has(value, /(?:영업)/) && has(value, /(?:프리랜서)/) && !has(value, /(?:생산)/))) return null
     const op = mutation(value)
     return op ? { domain: 'business_work_log', operation: op } : null
   }
