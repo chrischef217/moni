@@ -368,7 +368,7 @@ export async function POST(request: NextRequest) {
     if (command === 'prepare') {
       const domain = text(body.domain, 60) as MobileBusinessDomain
       const operation = text(body.operation, 30) as MobileBusinessOperation
-      if (!((domain === 'sales_statement' || domain === 'sales_order') && operation === 'CREATE')) return legacyPOST(copy)
+      if (!((domain === 'sales_statement' || domain === 'sales_order') && operation === 'CREATE')) return legacyPOST(copy as NextRequest)
       const sourceUserId = text(body.source_user_message_id, 100)
       if (!uuidLike(sourceUserId)) throw new Error('원본 사용자 요청을 확인할 수 없습니다.')
       const exchange = await latestExchange(threadId, auth.session.loginId)
@@ -393,10 +393,10 @@ export async function POST(request: NextRequest) {
         if (new Date(confirmation.data.expires_at).getTime() < Date.now()) throw new Error('승인 시간이 만료되었습니다. 입력 카드를 다시 열어 주세요.')
         return NextResponse.json({ ok: true, result: await executeSalesCreate(request, auth.session, threadId, confirmation.data) })
       }
-      return legacyPOST(copy)
+      return legacyPOST(copy as NextRequest)
     }
 
-    return legacyPOST(copy)
+    return legacyPOST(copy as NextRequest)
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : '모바일 판매 업무를 처리하지 못했습니다.' }, { status: 400 })
   }
