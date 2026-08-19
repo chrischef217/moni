@@ -39,13 +39,26 @@ export async function POST(request: NextRequest) {
     const extendedIntent = businessIntent ? null : classifyMobileExtendedIntent(rawMessage)
     if (!businessIntent && !extendedIntent) return NextResponse.json({ ok: false, code: 'NOT_MOBILE_CARD_INTENT', error: '모바일 업무 카드 요청이 아닙니다.' }, { status: 422 })
 
-    const threadId = text(body.thread_id, 80)
-    if (!threadId) return NextResponse.json({ ok: false, error: 'MONI 대화방이 준비되지 않았습니다.' }, { status: 400 })
+    let threadId = text(body.thread_id, 80)
     const page = cleanPage(body.page)
     const db = createMoniServiceRoleClient()
-    const threadResult = await db.from('moni_ai_threads').select('id,title,status').eq('id', threadId).eq('business_id', BUSINESS_ID).eq('user_login_id', session.loginId).eq('status', 'ACTIVE').maybeSingle()
-    if (threadResult.error) throw new Error(threadResult.error.message)
-    if (!threadResult.data) return NextResponse.json({ ok: false, error: 'MONI 대화방을 확인할 수 없습니다.' }, { status: 404 })
+    let threadResult: any
+    if (threadId) {
+      threadResult = await db.from('moni_ai_threads').select('id,title,status').eq('id', threadId).eq('business_id', BUSINESS_ID).eq('user_login_id', session.loginId).eq('status', 'ACTIVE').maybeSingle()
+      if (threadResult.error) throw new Error(threadResult.error.message)
+      if (!threadResult.data) return NextResponse.json({ ok: false, error: 'MONI 대화방을 확인할 수 없습니다.' }, { status: 404 })
+    } else {
+      const createdThread = await db.from('moni_ai_threads').insert({
+        business_id: BUSINESS_ID,
+        user_login_id: session.loginId,
+        user_display_name: session.displayName,
+        user_role: session.role,
+        current_page: page,
+      }).select('id,title,status').single()
+      if (createdThread.error) throw new Error(createdThread.error.message)
+      threadId = createdThread.data.id
+      threadResult = { data: createdThread.data, error: null }
+    }
 
     const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString()
     const running = await db.from('moni_ai_agent_runs').select('id').eq('business_id', BUSINESS_ID).eq('thread_id', threadId).eq('status', 'RUNNING').gte('started_at', staleBefore).limit(1).maybeSingle()
