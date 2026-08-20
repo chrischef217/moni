@@ -1,0 +1,41 @@
+name: Patch PC Statement Output
+on:
+  push:
+    branches: ["main"]
+    paths: [".github/workflows/patch-pc-statement-output.yml"]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/pc-vendor-ledgers-statement-restore
+          fetch-depth: 0
+      - name: Replace legacy popup statement function
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          path=Path('src/components/SalesOrderV4Module.tsx')
+          s=path.read_text(encoding='utf-8')
+          pattern=r"  function printStatement\(row: Order\) \{.*?\n  \}\n\n  function printOrder\(row: Order\) \{"
+          replacement="""  function printStatement(row: Order) {
+    window.open(`/sales-management/orders/${encodeURIComponent(row.id)}/statement?auto=1`, '_blank')
+  }
+
+  function printOrder(row: Order) {"""
+          out,count=re.subn(pattern,replacement,s,flags=re.S)
+          if count!=1:
+              raise SystemExit(f'expected 1 printStatement block, found {count}')
+          path.write_text(out,encoding='utf-8')
+          PY
+      - name: Commit branch patch
+        run: |
+          git config user.name "MONI PMO Patch"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/components/SalesOrderV4Module.tsx
+          git commit -m "Route domestic statement output to approved print view"
+          git push origin HEAD:fix/pc-vendor-ledgers-statement-restore
