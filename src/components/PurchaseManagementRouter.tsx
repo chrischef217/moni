@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import PurchaseDesignConsistencyController from '@/components/PurchaseDesignConsistencyController'
 import PurchaseFinancialManagementModule from '@/components/PurchaseFinancialManagementModule'
 import PurchaseReceiptManagementModule from '@/components/PurchaseReceiptManagementModule'
+import CounterpartyManagementUnified from '@/components/CounterpartyManagementUnified'
 import type { ReceiptView } from '@/components/purchase-receipts/types'
 
 function currentView(fallback: string): ReceiptView {
@@ -31,9 +32,11 @@ export default function PurchaseManagementRouter({ initialView }: { initialView:
   return (
     <>
       <PurchaseDesignConsistencyController />
-      {view === 'purchases'
-        ? <PurchaseReceiptManagementModule onNavigate={navigate} />
-        : <PurchaseFinancialManagementModule view={view} onNavigate={navigate} />}
+      {view === 'suppliers'
+        ? <CounterpartyManagementUnified kind="purchase" />
+        : view === 'purchases'
+          ? <PurchaseReceiptManagementModule onNavigate={navigate} />
+          : <PurchaseFinancialManagementModule view={view} onNavigate={navigate} />}
     </>
   )
 }
