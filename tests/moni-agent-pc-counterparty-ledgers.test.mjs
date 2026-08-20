@@ -59,7 +59,8 @@ test('statement payload is canonical and output action routes to restored view',
   assert.match(statementApi, /sales_receipts/)
   assert.match(statementApi, /company_profile/)
   assert.match(enhancer, /sales-management\/orders\/\$\{encodeURIComponent\(String\(selected\.id\)\)\}\/statement\?auto=1/)
-  assert.match(enhancer, /document\.addEventListener\('click',printCapture,true\)/)
+  assert.match(enhancer, /document\.addEventListener\('click',clickCapture,true\)/)
+  assert.match(enhancer, /if\(exactText\(target\)!=='출력'\)return/)
 })
 
 test('mixed supplier history is not guessed inside UI or ledger code', () => {
