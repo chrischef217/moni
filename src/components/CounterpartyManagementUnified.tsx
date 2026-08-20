@@ -118,7 +118,7 @@ export default function CounterpartyManagementUnified({ kind }: { kind:Kind }) {
   function openLedger(row:Party) { setLedgerParty(row); setLedgerSearch(''); setLedgerPage(1); setLedger(null); void loadLedger(row,1,'') }
   useEffect(() => { if (ledgerParty) void loadLedger(ledgerParty,ledgerPage,ledgerSearch) }, [ledgerPage])
 
-  const activeCount = parties.filter((row) => String(row.status).toUpperCase() === 'ACTIVE').length + parties.filter((row) => row.status === 'active').length
+  const activeCount = parties.filter((row) => String(row.status).toUpperCase() === 'ACTIVE').length
   const missingContact = parties.filter((row) => !row.phone && !row.email).length
   const title = isPurchase ? '매입처 관리' : '매출처 관리'
 
