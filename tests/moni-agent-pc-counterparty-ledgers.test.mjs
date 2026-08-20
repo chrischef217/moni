@@ -19,6 +19,8 @@ test('purchase and sales counterparty directories share one management component
   assert.match(unified, /매출처 관리/)
   assert.match(unified, /매입내역/)
   assert.match(unified, /매출내역/)
+  assert.match(unified, /const activeCount = parties\.filter\(\(row\) => String\(row\.status\)\.toUpperCase\(\) === 'ACTIVE'\)\.length/)
+  assert.doesNotMatch(unified, /activeCount[^\n]*\+ parties\.filter/)
 })
 
 test('counterparty ledger is searchable and paginated account-book data', () => {
