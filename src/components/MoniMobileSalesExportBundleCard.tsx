@@ -188,7 +188,7 @@ export default function MoniMobileSalesExportBundleCard() {
   }
 
   const result = card?.result?.result || card?.result || {}
-  const document = result?.document || {}
+  const exportDocument = result?.document || {}
 
   return createPortal(<>
     <style>{`
@@ -238,7 +238,7 @@ export default function MoniMobileSalesExportBundleCard() {
       </> : null}
       {card?.stage === 'completed' ? <>
         <div className="moni-export-help"><b>처리 완료.</b> 같은 수출 document를 기준으로 Invoice·Packing List를 생성하고 판매관리와 동기화해 거래명세표까지 만들었습니다.</div>
-        <div className="moni-export-preview">Invoice: {txt(document.invoice_no) || '-'}\nPacking List: {txt(document.packing_list_no) || '-'}\n거래명세번호: {txt(result.statement_number) || '-'}</div>
+        <div className="moni-export-preview">Invoice: {txt(exportDocument.invoice_no) || '-'}\nPacking List: {txt(exportDocument.packing_list_no) || '-'}\n거래명세번호: {txt(result.statement_number) || '-'}</div>
         <div className="moni-export-links">
           {result.statement_url ? <a href={result.statement_url} target="_blank" rel="noreferrer">거래명세표 보기</a> : null}
           {result.invoice_url ? <a href={result.invoice_url} target="_blank" rel="noreferrer">Commercial Invoice 보기</a> : null}
