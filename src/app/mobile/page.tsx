@@ -15,6 +15,7 @@ import MoniMobilePurchaseCardV2 from '@/components/MoniMobilePurchaseCardV2'
 import MoniMobileRawCardRouteGuard from '@/components/MoniMobileRawCardRouteGuard'
 import MoniMobileRawMaterialCardV2 from '@/components/MoniMobileRawMaterialCardV2'
 import MoniMobileRuntimeGuard from '@/components/MoniMobileRuntimeGuard'
+import MoniMobileSalesExportBundleCard from '@/components/MoniMobileSalesExportBundleCard'
 import MoniMobileSalesStatementCard from '@/components/MoniMobileSalesStatementCard'
 import MoniMobileThinkingCharacterMotion from '@/components/MoniMobileThinkingCharacterMotion'
 import MoniMobileThinkingCharacterMotionPatch from '@/components/MoniMobileThinkingCharacterMotionPatch'
@@ -58,6 +59,7 @@ export default async function MoniMobilePage() {
       <MoniMobileRawMaterialCardV2 />
       <MoniMobileBusinessCards />
       <MoniMobileSalesStatementCard />
+      <MoniMobileSalesExportBundleCard />
       <MoniMobilePurchaseCardV2 />
       <MoniMobileExtendedFormCard />
       <MoniMobileChat />
