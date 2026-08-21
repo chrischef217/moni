@@ -33,7 +33,7 @@ test('bundle route reads recent conversation context instead of only the final c
   assert.match(route, /\.limit\(24\)/)
   assert.match(route, /extractMobileSalesExportContext/)
   assert.match(route, /history: history\.map/)
-  assert.match(extractor, /recent.*대화/i)
+  assert.match(extractor, /\[최근 대화\]/)
   assert.match(extractor, /제품 ID, 거래처 ID, 수출품목 설정 ID를 만들거나 추측하지 마세요/)
   assert.match(extractor, /사용자가 정정한 내용이 있으면 사용자 최신 내용을 우선/)
 })
