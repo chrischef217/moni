@@ -56,8 +56,9 @@ test('kg or ea quantities are converted to cartons only when canonical packing d
   assert.match(route, /CTN 수량 또는 포장단위 확인/)
 })
 
-test('prepare requires canonical destination, export product settings, positive cartons, and single currency', () => {
+test('prepare requires canonical destination, sales-client linkage, export product settings, positive cartons, and single currency', () => {
   assert.match(route, /수출처\(Consignee\)를 선택해 주세요/)
+  assert.match(route, /판매관리 매출처와 연결되지 않았습니다/)
   assert.match(route, /공식 수출품목을 선택해 주세요/)
   assert.match(route, /CTN 수량을 1 이상 입력해 주세요/)
   assert.match(route, /모든 수출품목 통화를 하나로 통일해 주세요/)
