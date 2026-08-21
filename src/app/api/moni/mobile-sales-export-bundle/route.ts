@@ -136,6 +136,7 @@ function hydrateContext(extracted: MobileSalesExportContext, meta: Awaited<Retur
   const missing: string[] = []
   const unresolved: any[] = []
   if (!consignee) missing.push(extracted.consignee_query ? `수출처 “${extracted.consignee_query}”를 등록된 수출처와 정확히 매칭` : '수출처(Consignee)')
+  else if (!text(consignee.sales_client_id, 120)) missing.push(`수출처 “${text(consignee.company_name, 220)}”의 판매관리 매출처 연결`)
 
   const items = extracted.items.map((row, index) => {
     const setting = exactExportProduct(row.name, row.specification, meta.export_products)
@@ -199,7 +200,7 @@ async function draftCard(threadId: string, sourceUserId: string, currentMessage:
     unresolved_items: hydrated.unresolved,
     extracted_context: extracted,
     options: {
-      destinations: meta.destinations.map((row: any) => ({ id: text(row.id, 120), label: text(row.company_name, 220), sub: [text(row.country, 100), text(row.address, 200)].filter(Boolean).join(' · ') })),
+      destinations: meta.destinations.map((row: any) => ({ id: text(row.id, 120), label: text(row.company_name, 220), sub: [text(row.country, 100), text(row.address, 200)].filter(Boolean).join(' · '), sales_client_id: text(row.sales_client_id, 120) })),
       export_products: meta.export_products.map((row: any) => ({ id: text(row.id, 120), label: text(productSnapshot(row)?.product_name || row.english_name, 220), sub: [text(productSnapshot(row)?.product_spec, 160), text(row.english_name, 180), `${text(row.currency, 10)} ${money(row.default_unit_price)}`, `${Math.trunc(num(row.units_per_carton))} EA/CTN`, `${num(row.net_weight_kg)}kg/CTN`].filter(Boolean).join(' · '), meta: row })),
     },
   }
@@ -208,6 +209,7 @@ async function draftCard(threadId: string, sourceUserId: string, currentMessage:
 function canonicalPayload(fields: Record<string, any>, meta: Awaited<ReturnType<typeof metadata>>) {
   const destination = meta.destinations.find((row: any) => text(row.id) === text(fields.consignee_id))
   if (!destination) throw new Error('수출처(Consignee)를 선택해 주세요.')
+  if (!text(destination.sales_client_id, 120)) throw new Error('선택한 수출처가 판매관리 매출처와 연결되지 않았습니다. PC 수출처 관리에서 매출처 연결을 먼저 설정해 주세요.')
   if (!validDate(fields.document_date)) throw new Error('문서 날짜를 확인해 주세요.')
   const rawItems = Array.isArray(fields.items) ? fields.items : []
   if (!rawItems.length) throw new Error('수출 품목을 한 개 이상 입력해 주세요.')
@@ -358,21 +360,23 @@ export async function GET(request: NextRequest) {
     const threadId = text(request.nextUrl.searchParams.get('thread_id'), 80)
     if (!threadId) return NextResponse.json({ ok: true, card: null }, { headers: { 'Cache-Control': 'no-store' } })
     const context = await loadThreadContext(threadId, auth.session!.loginId)
-    if (!context.currentUser) return NextResponse.json({ ok: true, card: null }, { headers: { 'Cache-Control': 'no-store' } })
-    const intent = classifyMobileBusinessIntent(context.currentUser.content)
+    const currentUser = context.currentUser
+    if (!currentUser) return NextResponse.json({ ok: true, card: null }, { headers: { 'Cache-Control': 'no-store' } })
+    const currentUserId = text(currentUser.id, 100)
+    const intent = classifyMobileBusinessIntent(currentUser.content)
     if (!intent || intent.domain !== 'sales_export_bundle' || intent.operation !== 'CREATE') return NextResponse.json({ ok: true, card: null }, { headers: { 'Cache-Control': 'no-store' } })
 
     const db = createMoniServiceRoleClient()
     const confirmations = await db.from('moni_action_confirmations').select('*').eq('business_id', BUSINESS_ID).eq('requested_by_login_id', auth.session!.loginId).eq('source_client_id', `moni-mobile:${threadId}`).eq('action_domain', ACTION_DOMAIN).order('created_at', { ascending: false }).limit(20)
     if (confirmations.error) throw new Error(confirmations.error.message)
-    const confirmation = (confirmations.data ?? []).find((row: any) => text(row?.payload?.source_user_message_id, 100) === text(context.currentUser.id, 100))
+    const confirmation = (confirmations.data ?? []).find((row: any) => text(row?.payload?.source_user_message_id, 100) === currentUserId)
     if (confirmation) {
       const status = text(confirmation.status, 30)
       const stage = status === 'PENDING' || status === 'EXECUTING' ? 'confirmation' : status === 'EXECUTED' ? 'completed' : status === 'FAILED' ? 'failed' : 'confirmation'
-      return NextResponse.json({ ok: true, card: { stage, domain: 'sales_export_bundle', operation: 'CREATE', source_user_message_id: context.currentUser.id, confirmation_id: confirmation.id, preview_text: confirmation.preview_text, warnings: confirmation.warnings || [], result: confirmation.result_snapshot, error: confirmation.error_message, busy: status === 'EXECUTING' } }, { headers: { 'Cache-Control': 'no-store' } })
+      return NextResponse.json({ ok: true, card: { stage, domain: 'sales_export_bundle', operation: 'CREATE', source_user_message_id: currentUserId, confirmation_id: confirmation.id, preview_text: confirmation.preview_text, warnings: confirmation.warnings || [], result: confirmation.result_snapshot, error: confirmation.error_message, busy: status === 'EXECUTING' } }, { headers: { 'Cache-Control': 'no-store' } })
     }
 
-    const card = await draftCard(threadId, text(context.currentUser.id, 100), text(context.currentUser.content, 6000), context.history)
+    const card = await draftCard(threadId, currentUserId, text(currentUser.content, 6000), context.history)
     return NextResponse.json({ ok: true, card }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : '대화 기반 수출 문서 준비에 실패했습니다.' }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
