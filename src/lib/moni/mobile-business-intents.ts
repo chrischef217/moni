@@ -5,6 +5,7 @@ export type MobileBusinessDomain =
   | 'production_work'
   | 'sales_order'
   | 'sales_statement'
+  | 'sales_export_bundle'
   | 'purchase'
   | 'payment'
 
@@ -35,6 +36,12 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
   const create = has(text, /(등록|입력|작성|추가|잡아|잡아줘|처리|반영|생성|만들어|발행|해줘|해주세요|해 줘)/)
   const inboundWrite = has(text, /(?:입고|매입).*(?:등록|입력|기록|작성|처리|반영|잡아|해줘|해주세요|해 줘)/)
     || has(text, /(?:등록|입력|기록|작성|처리|반영).*(?:입고|매입)/)
+
+  // 거래명세표 + Commercial Invoice/Packing List를 함께 요청하면 하나의 수출 문서 번들로 처리한다.
+  // 거래명세표 분기보다 먼저 판단해야 복합 요청이 빈 국내 판매 카드로 축소되지 않는다.
+  const hasExportDocs = has(text, /(commercial\s*invoice|invoice|인보이스|packing\s*list|packinglist|패킹\s*리스트|패킹리스트)/i)
+  const exportBundleWrite = hasExportDocs && (create || has(text, /(거래\s*명세(?:표)?|수출|export|문서|서류)/i))
+  if (exportBundleWrite && !remove && !cancel && !update) return { domain: 'sales_export_bundle', operation: 'CREATE' }
 
   // 거래명세표는 매출 입력과 별도 업무 목적이다.
   // 문장 다른 곳의 "생성한 거래건" 같은 과거 서술을 명세표 생성 명령으로 오인하지 않는다.
@@ -116,10 +123,12 @@ export function mobileBusinessCardText(intent: MobileBusinessIntent) {
     production_work: '생산 작업',
     sales_order: '판매',
     sales_statement: '거래명세표',
+    sales_export_bundle: '거래명세표 + 수출 Invoice + Packing List',
     purchase: '매입',
     payment: '지급',
   }
   if (intent.domain === 'sales_statement' && intent.operation === 'SHOW') return '이 대화에서 가장 최근에 생성한 거래건의 거래명세표를 불러옵니다.'
+  if (intent.domain === 'sales_export_bundle') return '앞 대화에서 이미 제공한 품목·수량·수출정보를 자동으로 불러와 거래명세표 + Commercial Invoice + Packing List 생성 준비를 합니다. 이미 말한 값은 다시 입력시키지 않고, 정확히 확인이 필요한 값만 표시합니다.'
   const op = intent.operation === 'CREATE' ? (intent.domain === 'sales_statement' ? '작성' : '입력') : intent.operation === 'UPDATE' ? '수정' : intent.operation === 'DELETE' || intent.operation === 'CANCEL' ? '취소·삭제' : intent.operation === 'COMPLETE' ? '완료' : '확정'
   const actionLabel = intent.operation === 'CREATE' ? '입력 내용 확인' : intent.operation === 'UPDATE' ? '변경 내용 확인' : intent.operation === 'DELETE' ? '삭제 내용 확인' : intent.operation === 'CANCEL' ? '취소 내용 확인' : intent.operation === 'COMPLETE' ? '완료 내용 확인' : '확정 내용 확인'
   return `${labels[intent.domain]} ${op} 카드를 열었습니다. 필요한 값을 확인·수정한 뒤 ‘${actionLabel}’을 눌러 주세요.`
