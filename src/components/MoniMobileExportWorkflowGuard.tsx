@@ -79,6 +79,7 @@ export default function MoniMobileExportWorkflowGuard() {
   useLayoutEffect(() => {
     const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
     if (!root) return
+    const chatRoot = root
 
     const originalFetch = window.fetch.bind(window)
     let exportTurn = false
@@ -92,7 +93,7 @@ export default function MoniMobileExportWorkflowGuard() {
     }
 
     function ensureProgress() {
-      const scroller = root.querySelector<HTMLElement>('header + div')
+      const scroller = chatRoot.querySelector<HTMLElement>('header + div')
       if (!scroller) return
       if (!progressNode) {
         progressNode = document.createElement('div')
@@ -113,27 +114,27 @@ export default function MoniMobileExportWorkflowGuard() {
       exportTurn = true
       exportWaiting = true
       startedAt = Date.now()
-      hideGenericCard(root, true)
-      hideExportAck(root, true)
-      setHeaderThinking(root, true)
+      hideGenericCard(chatRoot, true)
+      hideExportAck(chatRoot, true)
+      setHeaderThinking(chatRoot, true)
       ensureProgress()
     }
 
     function finishWaiting() {
       exportWaiting = false
-      setHeaderThinking(root, false)
+      setHeaderThinking(chatRoot, false)
       removeProgress()
-      hideGenericCard(root, true)
-      hideExportAck(root, true)
+      hideGenericCard(chatRoot, true)
+      hideExportAck(chatRoot, true)
     }
 
     function endExportTurn() {
       exportTurn = false
       exportWaiting = false
-      setHeaderThinking(root, false)
+      setHeaderThinking(chatRoot, false)
       removeProgress()
-      hideGenericCard(root, false)
-      hideExportAck(root, false)
+      hideGenericCard(chatRoot, false)
+      hideExportAck(chatRoot, false)
     }
 
     const wrappedFetch: typeof window.fetch = async (input, init) => {
@@ -155,15 +156,15 @@ export default function MoniMobileExportWorkflowGuard() {
 
     const timer = window.setInterval(() => {
       if (!exportTurn) return
-      hideGenericCard(root, true)
-      hideExportAck(root, true)
-      const cardReady = Boolean(root.querySelector(EXPORT_CARD))
+      hideGenericCard(chatRoot, true)
+      hideExportAck(chatRoot, true)
+      const cardReady = Boolean(chatRoot.querySelector(EXPORT_CARD))
       if (cardReady) {
         if (exportWaiting) finishWaiting()
         return
       }
       if (exportWaiting) {
-        setHeaderThinking(root, true)
+        setHeaderThinking(chatRoot, true)
         ensureProgress()
       }
     }, 220)
@@ -172,10 +173,10 @@ export default function MoniMobileExportWorkflowGuard() {
       window.clearInterval(timer)
       window.removeEventListener('moni:user-turn-start', onUserTurnStart)
       if (window.fetch === wrappedFetch) window.fetch = originalFetch
-      setHeaderThinking(root, false)
+      setHeaderThinking(chatRoot, false)
       removeProgress()
-      hideGenericCard(root, false)
-      hideExportAck(root, false)
+      hideGenericCard(chatRoot, false)
+      hideExportAck(chatRoot, false)
     }
   }, [])
 
