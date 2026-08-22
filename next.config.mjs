@@ -15,7 +15,7 @@ const nextConfig = {
       },
       {
         source: '/api/moni/mobile-sales-export-bundle',
-        destination: '/api/moni/mobile-sales-export-bundle-v2',
+        destination: '/api/moni/mobile-sales-export-bundle-v3',
       },
     ]
   },
