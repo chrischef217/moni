@@ -67,6 +67,17 @@ function inferredCartons(row: any, setting: any) {
   return ''
 }
 
+function cartonExplanation(row: any, setting: any) {
+  const quantity = num(row?.source_quantity)
+  const unit = txt(row?.source_unit).toUpperCase()
+  const cartons = Math.trunc(num(row?.cartons))
+  if (cartons < 1 || quantity <= 0) return ''
+  if (unit === 'KG' && num(setting?.net_weight_kg) > 0) return `${quantity} KG ÷ ${num(setting.net_weight_kg)}kg/CTN = ${cartons} CTN`
+  if (unit === 'EA' && num(setting?.units_per_carton) > 0) return `${quantity} EA ÷ ${Math.trunc(num(setting.units_per_carton))}EA/CTN = ${cartons} CTN`
+  if (unit === 'CTN' || unit === 'BOX') return `대화 수량 ${quantity} ${unit} → ${cartons} CTN`
+  return ''
+}
+
 export default function MoniMobileSalesExportBundleCard() {
   const [host, setHost] = useState<HTMLElement | null>(null)
   const [card, setCard] = useState<Card | null>(null)
@@ -137,6 +148,7 @@ export default function MoniMobileSalesExportBundleCard() {
   const destinations: SearchOption[] = (card?.options?.destinations || []).map((row: any) => ({ id: txt(row.id), label: txt(row.label), sub: txt(row.sub), meta: row }))
   const exportProducts: SearchOption[] = (card?.options?.export_products || []).map((row: any) => ({ id: txt(row.id), label: txt(row.label), sub: txt(row.sub), meta: row.meta }))
   const items = Array.isArray(fields.items) ? fields.items : []
+  const unresolvedItems = Array.isArray(card?.unresolved_items) ? card.unresolved_items : []
   const missingNow: string[] = []
   if (!txt(fields.consignee_id)) missingNow.push('수출처(Consignee)')
   items.forEach((row: any, index: number) => {
@@ -158,6 +170,8 @@ export default function MoniMobileSalesExportBundleCard() {
       unit_price: setting.default_unit_price ?? '',
       price_overridden: false,
       price_override_reason: '',
+      match_mode: 'user_selected',
+      matched_label: option.label,
     })
   }
 
@@ -199,6 +213,7 @@ export default function MoniMobileSalesExportBundleCard() {
       .moni-export-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:12px}.moni-export-field{min-width:0}.moni-export-field.wide{grid-column:1/-1}.moni-export-field>span{display:block;margin:0 0 5px;font-size:11px;font-weight:800;color:#526f78}.moni-export-field input{box-sizing:border-box;width:100%;min-width:0;border:1px solid #d6e4e1;border-radius:12px;padding:11px 12px;font-size:13px;color:#173b52;background:#fff;outline:none}.moni-export-field input:focus{border-color:#2da88f;box-shadow:0 0 0 2px rgba(45,168,143,.1)}
       .moni-export-search{position:relative;min-width:0}.moni-export-search>input{box-sizing:border-box;width:100%;min-width:0;border:1px solid #d6e4e1;border-radius:12px;padding:11px 12px;font-size:13px}.moni-export-options{position:absolute;z-index:1900;left:0;right:0;top:calc(100% + 5px);max-height:260px;overflow:auto;border:1px solid #cbded9;border-radius:13px;background:#fff;padding:5px;box-shadow:0 14px 32px rgba(23,59,82,.18)}.moni-export-options .count,.moni-export-options .empty{padding:7px 9px;font-size:10px;color:#789099}.moni-export-options button{display:block;width:100%;border:0;border-radius:9px;background:#fff;padding:9px;text-align:left;color:#173b52}.moni-export-options button:active{background:#edf8f5}.moni-export-options button small{display:block;margin-top:3px;color:#789099;font-size:10px;line-height:1.4}
       .moni-export-item{margin-top:10px;border:1px solid #dce9e6;border-radius:16px;padding:12px;background:#fbfefd}.moni-export-source{margin-bottom:9px;font-size:12px;line-height:1.5;color:#48646d}.moni-export-source b{color:#173b52}.moni-export-actions{display:flex;gap:8px;margin-top:14px}.moni-export-primary{width:100%;border:0;border-radius:13px;background:#17977f;color:#fff;padding:13px;font-weight:900;font-size:13px}.moni-export-primary:disabled{opacity:.38}.moni-export-error{margin-top:10px;border:1px solid #f0b7b0;background:#fff2f0;border-radius:12px;padding:10px 11px;color:#b42318;font-size:12px;font-weight:800;line-height:1.5}.moni-export-preview{white-space:pre-wrap;margin-top:12px;border:1px solid #d9e8e4;background:#f7fbfa;border-radius:14px;padding:12px;font-size:12px;line-height:1.65}.moni-export-links{display:grid;gap:8px;margin-top:12px}.moni-export-links a{display:block;text-decoration:none;border:1px solid #b9dcd4;border-radius:12px;padding:11px 12px;color:#14745f;font-size:12px;font-weight:900;background:#f4fbf9}
+      .moni-export-auto{margin-top:8px;border:1px solid #bfe5d8;background:#effaf6;border-radius:12px;padding:9px 10px;color:#17745f;font-size:11px;line-height:1.5}.moni-export-auto b{font-weight:900}.moni-export-calc{margin-top:5px;color:#5c7a84;font-size:10.5px;font-weight:800}.moni-export-suggestions{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.moni-export-suggestions>span{width:100%;font-size:10px;font-weight:900;color:#9a6810}.moni-export-suggestions button{border:1px solid #e6c06b;border-radius:999px;background:#fff8e7;padding:7px 10px;color:#825600;font-size:11px;font-weight:900;text-align:left}.moni-export-suggestions button small{display:block;margin-top:2px;color:#8b7a55;font-size:9px;font-weight:700}
       @media(max-width:520px){.moni-export-grid{grid-template-columns:minmax(0,1fr)}.moni-export-field.wide{grid-column:auto}.moni-export-card{padding:15px;border-radius:20px}}
     `}</style>
     <section className="moni-export-card">
@@ -206,20 +221,29 @@ export default function MoniMobileSalesExportBundleCard() {
       <h3>거래명세표 + Invoice + Packing List</h3>
       {loading && !card ? <div className="moni-export-help">앞 대화에서 이미 입력한 품목·수량·수출정보를 읽어 공식 마스터와 매칭하고 있습니다. 빈 폼을 다시 만들지 않습니다.</div> : null}
       {card?.stage === 'draft' ? <>
-        <div className="moni-export-help">앞 대화에서 확인 가능한 값은 자동으로 채웠습니다. <b>이미 말한 값은 다시 입력할 필요가 없습니다.</b> 정확히 매칭되지 않거나 포장단위가 부족한 항목만 아래에서 확인하세요.</div>
-        {missingNow.length ? <div className="moni-export-missing"><b>추가 확인이 필요한 값</b>{missingNow.map((row) => <div key={row}>• {row}</div>)}</div> : <div className="moni-export-missing" style={{ borderColor: '#b8dfd2', background: '#f0fbf7', color: '#17745f' }}><b>대화값 자동입력 완료</b>필수값이 모두 채워졌습니다. 아래 내용을 확인한 뒤 미리보기를 만들면 됩니다.</div>}
+        <div className="moni-export-help">MONI가 대화값을 공식 수출 마스터와 먼저 맞춰 넣습니다. <b>자동추천이 맞으면 그대로 두고, 틀린 항목만 검색해서 바꾸면 됩니다.</b></div>
+        {missingNow.length ? <div className="moni-export-missing"><b>추가 확인이 필요한 값</b>{missingNow.map((row) => <div key={row}>• {row}</div>)}</div> : <div className="moni-export-missing" style={{ borderColor: '#b8dfd2', background: '#f0fbf7', color: '#17745f' }}><b>자동완성 완료</b>수출처·공식 품목·CTN까지 모두 채웠습니다. 틀린 값이 있으면 해당 항목만 눌러 수정하세요.</div>}
         <div className="moni-export-grid">
           <label className="moni-export-field"><span>문서일</span><input type="date" value={txt(fields.document_date)} onChange={(event) => updateField('document_date', event.target.value)} /></label>
-          <div className="moni-export-field"><span>수출처(Consignee)</span><SearchSelect value={txt(fields.consignee_id)} options={destinations} placeholder="수출처 검색" onSelect={(option) => updateField('consignee_id', option.id)} /></div>
+          <div className="moni-export-field"><span>수출처(Consignee)</span><SearchSelect value={txt(fields.consignee_id)} options={destinations} placeholder="수출처 검색" onSelect={(option) => updateField('consignee_id', option.id)} />{txt(fields.consignee_id) ? <div className="moni-export-auto"><b>자동추천</b> · {destinations.find((row) => row.id === txt(fields.consignee_id))?.label || '선택된 수출처'}<br />틀리면 검색창을 눌러 다른 수출처를 선택하세요.</div> : null}</div>
         </div>
         <div style={{ marginTop: 14, fontSize: 12, fontWeight: 900 }}>수출 품목</div>
-        {items.map((row: any, index: number) => <div className="moni-export-item" key={`${index}:${txt(row.source_query)}`}>
-          <div className="moni-export-source"><b>{index + 1}. 대화에서 추출:</b> {txt(row.source_query) || '품목명 미확인'}{row.source_specification ? ` · ${txt(row.source_specification)}` : ''}{row.source_quantity ? ` · ${txt(row.source_quantity)} ${txt(row.source_unit)}` : ''}</div>
-          <div className="moni-export-grid">
-            <div className="moni-export-field"><span>공식 수출품목</span><SearchSelect value={txt(row.export_product_setting_id)} options={exportProducts} placeholder="공식 제품 검색" onSelect={(option) => chooseProduct(index, option)} /></div>
-            <label className="moni-export-field"><span>수량(CTN)</span><input inputMode="numeric" type="number" min="1" value={txt(row.cartons)} onChange={(event) => updateItem(index, { cartons: event.target.value })} /></label>
+        {items.map((row: any, index: number) => {
+          const selected = exportProducts.find((option) => option.id === txt(row.export_product_setting_id))
+          const unresolved = unresolvedItems.find((item: any) => Number(item?.index) === index)
+          const suggestions: SearchOption[] = Array.isArray(unresolved?.suggestions) ? unresolved.suggestions.map((item: any) => ({ id: txt(item.id), label: txt(item.label), sub: txt(item.sub), meta: exportProducts.find((option) => option.id === txt(item.id))?.meta })) : []
+          const explanation = cartonExplanation(row, selected?.meta)
+          return <div className="moni-export-item" key={`${index}:${txt(row.source_query)}`}>
+            <div className="moni-export-source"><b>{index + 1}. 대화에서 추출:</b> {txt(row.source_query) || '품목명 미확인'}{row.source_specification ? ` · ${txt(row.source_specification)}` : ''}{row.source_quantity ? ` · ${txt(row.source_quantity)} ${txt(row.source_unit)}` : ''}</div>
+            <div className="moni-export-grid">
+              <div className="moni-export-field"><span>공식 수출품목</span><SearchSelect value={txt(row.export_product_setting_id)} options={exportProducts} placeholder="공식 제품 검색" onSelect={(option) => chooseProduct(index, option)} />
+                {selected ? <div className="moni-export-auto"><b>{row.match_mode === 'user_selected' ? '사용자 선택' : '자동추천'}</b> · {selected.label}<br />틀리면 검색창을 눌러 다른 공식 제품을 선택하세요.{explanation ? <div className="moni-export-calc">CTN 자동계산 · {explanation}</div> : null}</div> : null}
+                {!selected && suggestions.length ? <div className="moni-export-suggestions"><span>가까운 공식 제품 추천 — 맞는 제품을 누르세요.</span>{suggestions.map((suggestion) => <button type="button" key={suggestion.id} onClick={() => chooseProduct(index, suggestion)}>{suggestion.label}{suggestion.sub ? <small>{suggestion.sub}</small> : null}</button>)}</div> : null}
+              </div>
+              <label className="moni-export-field"><span>수량(CTN)</span><input inputMode="numeric" type="number" min="1" value={txt(row.cartons)} onChange={(event) => updateItem(index, { cartons: event.target.value })} />{explanation ? <div className="moni-export-calc">{explanation}</div> : null}</label>
+            </div>
           </div>
-        </div>)}
+        })}
         <details style={{ marginTop: 12 }}><summary style={{ fontSize: 12, fontWeight: 900, cursor: 'pointer' }}>추가 수출조건 보기/수정</summary><div className="moni-export-grid">
           <label className="moni-export-field"><span>Incoterm</span><input value={txt(fields.incoterm)} onChange={(event) => updateField('incoterm', event.target.value)} /></label>
           <label className="moni-export-field"><span>Final Destination</span><input value={txt(fields.final_destination)} onChange={(event) => updateField('final_destination', event.target.value)} /></label>
