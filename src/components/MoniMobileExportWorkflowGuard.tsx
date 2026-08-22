@@ -5,7 +5,7 @@ import { classifyMobileBusinessIntent } from '@/lib/moni/mobile-business-intents
 
 const EXPORT_ACK_PREFIX = '앞 대화에서 이미 제공한 품목·수량·수출정보를 자동으로 불러와'
 const GENERIC_CARD_HOST = '[data-moni-business-card-host="true"]'
-const EXPORT_CARD = '.moni-sales-export-bundle-host .moni-export-card'
+const EXPORT_DRAFT_READY = '.moni-sales-export-bundle-host .moni-export-card .moni-export-actions'
 
 function requestPath(input: RequestInfo | URL) {
   const raw = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
@@ -26,13 +26,20 @@ function requestMessage(input: RequestInfo | URL, init?: RequestInit) {
   }
 }
 
+function stageForElapsed(seconds: number) {
+  if (seconds < 8) return 'normal'
+  if (seconds < 15) return 'grace'
+  if (seconds < 25) return 'detail-1'
+  if (seconds < 40) return 'detail-2'
+  return 'apology'
+}
+
 function setHeaderThinking(root: HTMLElement, thinking: boolean) {
   const liveState = root.querySelector<HTMLElement>('.moni-live-state')
   const character = root.querySelector<HTMLElement>('.moni-mobile-character')
 
   if (thinking) {
     root.dataset.moniExportWorkflowThinking = 'true'
-    root.dataset.moniThinkingStage = root.dataset.moniThinkingStage || 'normal'
     if (liveState) {
       liveState.classList.remove('moni-live-state-live', 'moni-live-state-issue', 'moni-live-state-listening')
       liveState.classList.add('moni-live-state-thinking')
@@ -102,12 +109,13 @@ export default function MoniMobileExportWorkflowGuard() {
         scroller.appendChild(progressNode)
       }
       const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+      chatRoot.dataset.moniThinkingStage = stageForElapsed(seconds)
       const phase = seconds < 3
         ? '대화에서 수출처·품목·수량을 읽고 있습니다.'
         : seconds < 7
           ? '공식 수출 마스터와 가장 가까운 값을 추천하고 있습니다.'
-          : '포장단위와 CTN 수량을 계산하고 있습니다.'
-      progressNode.innerHTML = `<div style="box-sizing:border-box;max-width:720px;margin:0 auto;border:1px solid #d8e8e4;border-radius:18px;background:#fff;padding:13px 14px;color:#607d8d;box-shadow:0 5px 18px rgba(23,59,82,.05)"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px"><b style="color:#456b79">MONI가 수출 문서를 자동완성 중</b><span style="letter-spacing:3px;color:#e55757;font-weight:900">♥ ♥</span></div><div style="margin-top:5px;color:#bd3d3d;font-size:12px;font-weight:900">두근두근 · ${seconds}초</div><div style="margin-top:3px;color:#78909a;font-size:11px;line-height:1.55">${phase}</div></div>`
+          : '포장단위와 CTN 수량을 계산하고 입력칸을 완성하고 있습니다.'
+      progressNode.innerHTML = `<div style="box-sizing:border-box;max-width:720px;margin:0 auto;border:1px solid #d8e8e4;border-radius:18px;background:#fff;padding:13px 14px;color:#607d8d;box-shadow:0 5px 18px rgba(23,59,82,.05)"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px"><b style="color:#456b79">MONI THINKING</b><span style="color:#78909a;font-weight:800">${seconds}초</span></div><div style="margin-top:5px;color:#587b89;font-size:11px;line-height:1.55">${phase}</div></div>`
     }
 
     function startExportTurn() {
@@ -158,8 +166,8 @@ export default function MoniMobileExportWorkflowGuard() {
       if (!exportTurn) return
       hideGenericCard(chatRoot, true)
       hideExportAck(chatRoot, true)
-      const cardReady = Boolean(chatRoot.querySelector(EXPORT_CARD))
-      if (cardReady) {
+      const draftReady = Boolean(chatRoot.querySelector(EXPORT_DRAFT_READY))
+      if (draftReady) {
         if (exportWaiting) finishWaiting()
         return
       }
