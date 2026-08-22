@@ -118,15 +118,29 @@ function suggestionRows(query: unknown, specification: unknown, options: any[]) 
   }))
 }
 
+function blankItemRow() {
+  return {
+    source_query: '',
+    source_specification: '',
+    source_quantity: '',
+    source_unit: '',
+    export_product_setting_id: '',
+    cartons: '',
+    unit_price: '',
+    match_mode: 'manual_required',
+  }
+}
+
 function normalizeDraft(card: any) {
   const fields = { ...(card?.fields || {}) }
   const options = Array.isArray(card?.options?.export_products) ? card.options.export_products : []
-  const sourceRows = Array.isArray(fields.items) ? fields.items : []
+  const rawSourceRows = Array.isArray(fields.items) ? fields.items : []
+  const sourceRows = rawSourceRows.length ? rawSourceRows : [blankItemRow()]
 
   const matchedRows = sourceRows.map((row: any) => {
     const existing = options.find((option: any) => txt(option?.id, 120) === txt(row?.export_product_setting_id, 120)) || null
     const selected = existing || uniqueStrongMatch(row?.source_query, row?.source_specification, options)
-    if (!selected) return { ...row, export_product_setting_id: '', match_mode: 'unresolved' }
+    if (!selected) return { ...row, export_product_setting_id: '', match_mode: row?.match_mode || 'unresolved' }
     const setting = selected?.meta || {}
     const cartons = inferredCartons(row, setting)
     return {
@@ -154,7 +168,9 @@ function normalizeDraft(card: any) {
   items.forEach((row: any, index: number) => {
     if (!txt(row?.export_product_setting_id, 120)) {
       const suggestions = suggestionRows(row?.source_query, row?.source_specification, options)
-      missing.push(`${index + 1}번째 품목 “${txt(row?.source_query, 220)}”의 공식 수출품목 확인`)
+      missing.push(row?.source_query
+        ? `${index + 1}번째 품목 “${txt(row?.source_query, 220)}”의 공식 수출품목 확인`
+        : `${index + 1}번째 수출품목 선택`)
       unresolved.push({
         index,
         query: txt(row?.source_query, 220),
@@ -164,10 +180,9 @@ function normalizeDraft(card: any) {
         suggestions,
       })
     } else if (num(row?.cartons) < 1) {
-      missing.push(`${index + 1}번째 ${txt(row?.source_query, 220)}의 CTN 수량 또는 포장단위 확인`)
+      missing.push(`${index + 1}번째 ${txt(row?.source_query, 220) || '수출품목'}의 CTN 수량 또는 포장단위 확인`)
     }
   })
-  if (!items.length) missing.push('수출 품목과 수량')
 
   const extracted = { ...(card?.extracted_context || {}) }
   if (Array.isArray(extracted.items)) {
