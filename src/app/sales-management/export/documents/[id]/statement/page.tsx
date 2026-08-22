@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import ExportSalesStatementPrintView from '@/components/ExportSalesStatementPrintView'
+import ExportStatementBalanceEnhancer from '@/components/ExportStatementBalanceEnhancer'
 import ExportStatementPaymentAccountEnhancer from '@/components/ExportStatementPaymentAccountEnhancer'
 import ExportStatementVatLabelEnhancer from '@/components/ExportStatementVatLabelEnhancer'
 import { getSessionFromCookies } from '@/lib/allowance/session'
@@ -18,6 +19,7 @@ export default async function ExportTransactionStatementPage({
   if (session.role !== 'admin') redirect('/freelancer')
 
   return <>
+    <ExportStatementBalanceEnhancer id={params.id} />
     <ExportStatementPaymentAccountEnhancer />
     <ExportStatementVatLabelEnhancer />
     <ExportSalesStatementPrintView id={params.id} autoPrint={searchParams?.auto === '1'} />
