@@ -86,6 +86,23 @@ function uniqueDestinationMatch(query: unknown, options: any[]) {
   return byCountry.length === 1 ? byCountry[0] : null
 }
 
+function uniqueDestinationFromContext(extracted: any, options: any[]) {
+  const consigneeQuery = txt(extracted?.consignee_query, 300)
+  const finalDestination = txt(extracted?.final_destination, 240)
+
+  const direct = uniqueDestinationMatch(consigneeQuery, options)
+  if (direct) return direct
+
+  const combined = [consigneeQuery, finalDestination].filter(Boolean).join(' ')
+  const byCombinedContext = uniqueDestinationMatch(combined, options)
+  if (byCombinedContext) return byCombinedContext
+
+  const byDestinationOnly = uniqueDestinationMatch(finalDestination, options)
+  if (byDestinationOnly) return byDestinationOnly
+
+  return null
+}
+
 function inferredCartons(row: any, setting: any) {
   const explicit = Math.trunc(num(row?.cartons))
   if (explicit > 0) return explicit
@@ -130,7 +147,7 @@ function normalizeDraft(card: any) {
   const extracted = card?.extracted_context || {}
 
   if (!txt(fields.consignee_id)) {
-    const matchedDestination = uniqueDestinationMatch(extracted?.consignee_query, destinations)
+    const matchedDestination = uniqueDestinationFromContext(extracted, destinations)
     if (matchedDestination) {
       fields.consignee_id = txt(matchedDestination.id, 120)
       if (!txt(fields.final_destination)) fields.final_destination = txt(matchedDestination.sub, 180).split(' · ')[0]
