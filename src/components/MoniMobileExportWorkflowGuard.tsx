@@ -5,6 +5,7 @@ import { classifyMobileBusinessIntent } from '@/lib/moni/mobile-business-intents
 
 const EXPORT_ACK_PREFIX = '앞 대화에서 이미 제공한 품목·수량·수출정보를 자동으로 불러와'
 const GENERIC_CARD_HOST = '[data-moni-business-card-host="true"]'
+const EXPORT_CARD_HOST = '[data-moni-sales-export-bundle-host="true"]'
 const EXPORT_DRAFT_READY = '.moni-sales-export-bundle-host .moni-export-card .moni-export-actions'
 
 function requestPath(input: RequestInfo | URL) {
@@ -90,6 +91,11 @@ function hideGenericCard(root: HTMLElement, hide: boolean) {
   if (host) host.style.display = hide ? 'none' : ''
 }
 
+function hideExportCard(root: HTMLElement, hide: boolean) {
+  const host = root.querySelector<HTMLElement>(EXPORT_CARD_HOST)
+  if (host) host.style.display = hide ? 'none' : ''
+}
+
 function hideExportAck(root: HTMLElement, hide: boolean) {
   root.querySelectorAll<HTMLElement>('.moni-markdown').forEach((markdown) => {
     const content = String(markdown.textContent || '').trim()
@@ -110,6 +116,8 @@ export default function MoniMobileExportWorkflowGuard() {
     let exportWaiting = false
     let startedAt = 0
     let progressNode: HTMLDivElement | null = null
+
+    hideExportCard(chatRoot, true)
 
     function removeProgress() {
       progressNode?.remove()
@@ -145,6 +153,7 @@ export default function MoniMobileExportWorkflowGuard() {
       exportTurn = true
       exportWaiting = true
       startedAt = Date.now()
+      hideExportCard(chatRoot, false)
       hideGenericCard(chatRoot, true)
       hideExportAck(chatRoot, true)
       setHeaderThinking(chatRoot, true)
@@ -155,6 +164,7 @@ export default function MoniMobileExportWorkflowGuard() {
       exportWaiting = false
       setHeaderThinking(chatRoot, false)
       removeProgress()
+      hideExportCard(chatRoot, false)
       hideGenericCard(chatRoot, true)
       hideExportAck(chatRoot, true)
     }
@@ -164,6 +174,7 @@ export default function MoniMobileExportWorkflowGuard() {
       exportWaiting = false
       setHeaderThinking(chatRoot, false)
       removeProgress()
+      hideExportCard(chatRoot, true)
       hideGenericCard(chatRoot, false)
       hideExportAck(chatRoot, false)
     }
@@ -186,7 +197,11 @@ export default function MoniMobileExportWorkflowGuard() {
     window.addEventListener('moni:user-turn-start', onUserTurnStart)
 
     const timer = window.setInterval(() => {
-      if (!exportTurn) return
+      if (!exportTurn) {
+        hideExportCard(chatRoot, true)
+        return
+      }
+      hideExportCard(chatRoot, false)
       hideGenericCard(chatRoot, true)
       hideExportAck(chatRoot, true)
       const draftReady = Boolean(chatRoot.querySelector(EXPORT_DRAFT_READY))
@@ -206,6 +221,7 @@ export default function MoniMobileExportWorkflowGuard() {
       if (window.fetch === wrappedFetch) window.fetch = originalFetch
       setHeaderThinking(chatRoot, false)
       removeProgress()
+      hideExportCard(chatRoot, false)
       hideGenericCard(chatRoot, false)
       hideExportAck(chatRoot, false)
     }
