@@ -42,12 +42,10 @@ export default function MoniMobileExportThinkingBridge() {
   const startedAtRef = useRef(0)
   const exportTurnRef = useRef(false)
   const activeRef = useRef(false)
-  const rootRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
     if (!root) return
-    rootRef.current = root
     const scroller = root.querySelector<HTMLElement>('header + div')
     if (!scroller) return
 
@@ -118,13 +116,10 @@ export default function MoniMobileExportThinkingBridge() {
       const message = latestUserMessage(root)
       const intent = classifyMobileBusinessIntent(message)
       if (intent?.domain === 'sales_export_bundle') {
-        if (cardReady()) {
-          exportTurnRef.current = true
-          hideGenericCard(true)
-          stopThinking()
-        } else if (!activeRef.current) {
-          beginExportThinking()
-        }
+        exportTurnRef.current = true
+        hideGenericCard(true)
+        if (cardReady()) stopThinking()
+        else if (!activeRef.current) beginExportThinking()
         return true
       }
       exportTurnRef.current = false
@@ -144,7 +139,10 @@ export default function MoniMobileExportThinkingBridge() {
 
     const observer = new MutationObserver(() => {
       if (exportTurnRef.current) hideGenericCard(true)
-      if (activeRef.current && Date.now() - startedAtRef.current >= 400 && cardReady()) stopThinking()
+      if (activeRef.current) {
+        syncHeader(true)
+        if (Date.now() - startedAtRef.current >= 400 && cardReady()) stopThinking()
+      }
     })
     observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] })
 
