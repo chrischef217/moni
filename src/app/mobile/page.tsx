@@ -7,7 +7,6 @@ import MoniMobileBusinessCards from '@/components/MoniMobileBusinessCards'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileContinuityGuard from '@/components/MoniMobileContinuityGuard'
 import MoniMobileExtendedFormCard from '@/components/MoniMobileExtendedFormCard'
-import MoniMobileExportThinkingBridge from '@/components/MoniMobileExportThinkingBridge'
 import MoniMobileFormSafetyStyles from '@/components/MoniMobileFormSafetyStyles'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
@@ -57,7 +56,6 @@ export default async function MoniMobilePage() {
       <MoniMobileThinkingCharacterMotion />
       <MoniMobileThinkingCharacterMotionPatch />
       <MoniMobileVoiceCanvasWave />
-      <MoniMobileExportThinkingBridge />
       <MoniMobileRawMaterialCardV2 />
       <MoniMobileBusinessCards />
       <MoniMobileSalesStatementCard />
