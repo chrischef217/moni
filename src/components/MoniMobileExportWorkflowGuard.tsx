@@ -26,12 +26,25 @@ function requestMessage(input: RequestInfo | URL, init?: RequestInit) {
   }
 }
 
-function stageForElapsed(seconds: number) {
-  if (seconds < 8) return 'normal'
-  if (seconds < 15) return 'grace'
-  if (seconds < 25) return 'detail-1'
-  if (seconds < 40) return 'detail-2'
-  return 'apology'
+function elapsedText(seconds: number) {
+  const minutes = Math.floor(seconds / 60)
+  const remain = seconds % 60
+  return `${minutes}분 ${String(remain).padStart(2, '0')}초`
+}
+
+function phaseText(seconds: number) {
+  if (seconds < 5) return '앞 대화에서 품목·수량·수출정보를 읽고 있습니다.'
+  if (seconds < 12) return '등록된 수출처와 공식 수출품목을 대조하고 있습니다.'
+  if (seconds < 20) return '포장단위와 CTN 수량을 계산하고 있습니다.'
+  return '자동 입력값과 확인이 필요한 항목을 최종 정리하고 있습니다.'
+}
+
+function thinkingStage(seconds: number) {
+  if (seconds >= 90) return 'apology'
+  if (seconds >= 60) return 'detail-2'
+  if (seconds >= 30) return 'detail-1'
+  if (seconds >= 15) return 'grace'
+  return 'normal'
 }
 
 function setHeaderThinking(root: HTMLElement, thinking: boolean) {
@@ -105,17 +118,23 @@ export default function MoniMobileExportWorkflowGuard() {
       if (!progressNode) {
         progressNode = document.createElement('div')
         progressNode.dataset.moniExportWorkflowProgress = 'true'
-        progressNode.style.cssText = 'box-sizing:border-box;width:100%;padding:8px 14px 12px;pointer-events:none;'
+        progressNode.className = 'moni-export-thinking-host'
+        progressNode.style.cssText = 'box-sizing:border-box;width:100%;max-width:100%;padding:8px 14px 12px;pointer-events:none;'
         scroller.appendChild(progressNode)
       }
+
       const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
-      chatRoot.dataset.moniThinkingStage = stageForElapsed(seconds)
-      const phase = seconds < 3
-        ? '대화에서 수출처·품목·수량을 읽고 있습니다.'
-        : seconds < 7
-          ? '공식 수출 마스터와 가장 가까운 값을 추천하고 있습니다.'
-          : '포장단위와 CTN 수량을 계산하고 입력칸을 완성하고 있습니다.'
-      progressNode.innerHTML = `<div style="box-sizing:border-box;max-width:720px;margin:0 auto;border:1px solid #d8e8e4;border-radius:18px;background:#fff;padding:13px 14px;color:#607d8d;box-shadow:0 5px 18px rgba(23,59,82,.05)"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px"><b style="color:#456b79">MONI THINKING</b><span style="color:#78909a;font-weight:800">${seconds}초</span></div><div style="margin-top:5px;color:#587b89;font-size:11px;line-height:1.55">${phase}</div></div>`
+      chatRoot.dataset.moniThinkingStage = thinkingStage(seconds)
+      progressNode.innerHTML = `
+        <div class="moni-export-thinking-indicator moni-live-state-thinking" role="status" aria-live="polite" style="box-sizing:border-box;width:100%;max-width:720px;margin:0 auto;border:1px solid #d8e8e4;border-radius:18px;background:#fff;padding:13px 14px;color:#607d8d;box-shadow:0 5px 18px rgba(23,59,82,.05)">
+          <div class="moni-export-thinking-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;color:#456b79;font-size:12px">
+            <b>MONI가 수출 문서 입력값을 준비 중</b>
+            <span style="letter-spacing:3px;color:#3584e4;font-weight:900;animation:moniExportThinkingDots 1.1s ease-in-out infinite">•••</span>
+          </div>
+          <div class="moni-export-thinking-time" style="margin-top:5px;color:#bd3d3d;font-size:12px;font-weight:900">경과 시간 · ${elapsedText(seconds)}</div>
+          <div class="moni-export-thinking-phase" style="margin-top:3px;color:#78909a;font-size:11px;line-height:1.55">${phaseText(seconds)}</div>
+          <style>@keyframes moniExportThinkingDots{0%,100%{opacity:.35}50%{opacity:1}}</style>
+        </div>`
     }
 
     function startExportTurn() {
