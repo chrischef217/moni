@@ -78,6 +78,21 @@ function cartonExplanation(row: any, setting: any) {
   return ''
 }
 
+function emptyItem() {
+  return {
+    source_query: '',
+    source_specification: '',
+    source_quantity: '',
+    source_unit: '',
+    export_product_setting_id: '',
+    cartons: '',
+    unit_price: '',
+    price_overridden: false,
+    price_override_reason: '',
+    match_mode: 'user_added',
+  }
+}
+
 export default function MoniMobileSalesExportBundleCard() {
   const [host, setHost] = useState<HTMLElement | null>(null)
   const [card, setCard] = useState<Card | null>(null)
@@ -161,6 +176,16 @@ export default function MoniMobileSalesExportBundleCard() {
   function updateItem(index: number, patch: Record<string, any>) {
     setFields((current) => ({ ...current, items: (Array.isArray(current.items) ? current.items : []).map((row: any, rowIndex: number) => rowIndex === index ? { ...row, ...patch } : row) }))
   }
+  function addItem() {
+    setFields((current) => ({ ...current, items: [...(Array.isArray(current.items) ? current.items : []), emptyItem()] }))
+  }
+  function removeItem(index: number) {
+    setFields((current) => {
+      const currentItems = Array.isArray(current.items) ? current.items : []
+      if (currentItems.length <= 1) return current
+      return { ...current, items: currentItems.filter((_: any, rowIndex: number) => rowIndex !== index) }
+    })
+  }
   function chooseProduct(index: number, option: SearchOption) {
     const setting = option.meta || {}
     const current = items[index] || {}
@@ -212,7 +237,7 @@ export default function MoniMobileSalesExportBundleCard() {
       .moni-export-missing{margin:12px 0;border:1px solid #f2cf85;background:#fff9e8;border-radius:14px;padding:11px 12px;color:#8a5a00;font-size:12px;line-height:1.55}.moni-export-missing b{display:block;margin-bottom:4px}
       .moni-export-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:12px}.moni-export-field{min-width:0}.moni-export-field.wide{grid-column:1/-1}.moni-export-field>span{display:block;margin:0 0 5px;font-size:11px;font-weight:800;color:#526f78}.moni-export-field input{box-sizing:border-box;width:100%;min-width:0;border:1px solid #d6e4e1;border-radius:12px;padding:11px 12px;font-size:13px;color:#173b52;background:#fff;outline:none}.moni-export-field input:focus{border-color:#2da88f;box-shadow:0 0 0 2px rgba(45,168,143,.1)}
       .moni-export-search{position:relative;min-width:0}.moni-export-search>input{box-sizing:border-box;width:100%;min-width:0;border:1px solid #d6e4e1;border-radius:12px;padding:11px 12px;font-size:13px}.moni-export-options{position:absolute;z-index:1900;left:0;right:0;top:calc(100% + 5px);max-height:260px;overflow:auto;border:1px solid #cbded9;border-radius:13px;background:#fff;padding:5px;box-shadow:0 14px 32px rgba(23,59,82,.18)}.moni-export-options .count,.moni-export-options .empty{padding:7px 9px;font-size:10px;color:#789099}.moni-export-options button{display:block;width:100%;border:0;border-radius:9px;background:#fff;padding:9px;text-align:left;color:#173b52}.moni-export-options button:active{background:#edf8f5}.moni-export-options button small{display:block;margin-top:3px;color:#789099;font-size:10px;line-height:1.4}
-      .moni-export-item{margin-top:10px;border:1px solid #dce9e6;border-radius:16px;padding:12px;background:#fbfefd}.moni-export-source{margin-bottom:9px;font-size:12px;line-height:1.5;color:#48646d}.moni-export-source b{color:#173b52}.moni-export-actions{display:flex;gap:8px;margin-top:14px}.moni-export-primary{width:100%;border:0;border-radius:13px;background:#17977f;color:#fff;padding:13px;font-weight:900;font-size:13px}.moni-export-primary:disabled{opacity:.38}.moni-export-error{margin-top:10px;border:1px solid #f0b7b0;background:#fff2f0;border-radius:12px;padding:10px 11px;color:#b42318;font-size:12px;font-weight:800;line-height:1.5}.moni-export-preview{white-space:pre-wrap;margin-top:12px;border:1px solid #d9e8e4;background:#f7fbfa;border-radius:14px;padding:12px;font-size:12px;line-height:1.65}.moni-export-links{display:grid;gap:8px;margin-top:12px}.moni-export-links a{display:block;text-decoration:none;border:1px solid #b9dcd4;border-radius:12px;padding:11px 12px;color:#14745f;font-size:12px;font-weight:900;background:#f4fbf9}
+      .moni-export-item{margin-top:10px;border:1px solid #dce9e6;border-radius:16px;padding:12px;background:#fbfefd}.moni-export-item-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}.moni-export-source{min-width:0;font-size:12px;line-height:1.5;color:#48646d}.moni-export-source b{color:#173b52}.moni-export-remove{flex:0 0 auto;border:1px solid #e4cac6;border-radius:999px;background:#fff7f5;padding:5px 9px;color:#a4473b;font-size:10px;font-weight:900}.moni-export-add{display:flex;width:100%;align-items:center;justify-content:center;gap:6px;margin-top:10px;border:1px dashed #81c7b8;border-radius:13px;background:#f2fbf8;padding:11px;color:#14745f;font-size:12px;font-weight:900}.moni-export-add:active{background:#e5f7f1}.moni-export-actions{display:flex;gap:8px;margin-top:14px}.moni-export-primary{width:100%;border:0;border-radius:13px;background:#17977f;color:#fff;padding:13px;font-weight:900;font-size:13px}.moni-export-primary:disabled{opacity:.38}.moni-export-error{margin-top:10px;border:1px solid #f0b7b0;background:#fff2f0;border-radius:12px;padding:10px 11px;color:#b42318;font-size:12px;font-weight:800;line-height:1.5}.moni-export-preview{white-space:pre-wrap;margin-top:12px;border:1px solid #d9e8e4;background:#f7fbfa;border-radius:14px;padding:12px;font-size:12px;line-height:1.65}.moni-export-links{display:grid;gap:8px;margin-top:12px}.moni-export-links a{display:block;text-decoration:none;border:1px solid #b9dcd4;border-radius:12px;padding:11px 12px;color:#14745f;font-size:12px;font-weight:900;background:#f4fbf9}
       .moni-export-auto{margin-top:8px;border:1px solid #bfe5d8;background:#effaf6;border-radius:12px;padding:9px 10px;color:#17745f;font-size:11px;line-height:1.5}.moni-export-auto b{font-weight:900}.moni-export-calc{margin-top:5px;color:#5c7a84;font-size:10.5px;font-weight:800}.moni-export-suggestions{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.moni-export-suggestions>span{width:100%;font-size:10px;font-weight:900;color:#9a6810}.moni-export-suggestions button{border:1px solid #e6c06b;border-radius:999px;background:#fff8e7;padding:7px 10px;color:#825600;font-size:11px;font-weight:900;text-align:left}.moni-export-suggestions button small{display:block;margin-top:2px;color:#8b7a55;font-size:9px;font-weight:700}
       @media(max-width:520px){.moni-export-grid{grid-template-columns:minmax(0,1fr)}.moni-export-field.wide{grid-column:auto}.moni-export-card{padding:15px;border-radius:20px}}
     `}</style>
@@ -234,7 +259,10 @@ export default function MoniMobileSalesExportBundleCard() {
           const suggestions: SearchOption[] = Array.isArray(unresolved?.suggestions) ? unresolved.suggestions.map((item: any) => ({ id: txt(item.id), label: txt(item.label), sub: txt(item.sub), meta: exportProducts.find((option) => option.id === txt(item.id))?.meta })) : []
           const explanation = cartonExplanation(row, selected?.meta)
           return <div className="moni-export-item" key={`${index}:${txt(row.source_query)}`}>
-            <div className="moni-export-source"><b>{index + 1}. 대화에서 추출:</b> {txt(row.source_query) || '품목명 미확인'}{row.source_specification ? ` · ${txt(row.source_specification)}` : ''}{row.source_quantity ? ` · ${txt(row.source_quantity)} ${txt(row.source_unit)}` : ''}</div>
+            <div className="moni-export-item-head">
+              <div className="moni-export-source">{txt(row.source_query) ? <><b>{index + 1}. 대화에서 추출:</b> {txt(row.source_query)}{row.source_specification ? ` · ${txt(row.source_specification)}` : ''}{row.source_quantity ? ` · ${txt(row.source_quantity)} ${txt(row.source_unit)}` : ''}</> : <b>{index + 1}. 직접 입력 품목</b>}</div>
+              {items.length > 1 ? <button className="moni-export-remove" type="button" onClick={() => removeItem(index)}>삭제</button> : null}
+            </div>
             <div className="moni-export-grid">
               <div className="moni-export-field"><span>공식 수출품목</span><SearchSelect value={txt(row.export_product_setting_id)} options={exportProducts} placeholder="공식 제품 검색" onSelect={(option) => chooseProduct(index, option)} />
                 {selected ? <div className="moni-export-auto"><b>{row.match_mode === 'user_selected' ? '사용자 선택' : '자동추천'}</b> · {selected.label}<br />틀리면 검색창을 눌러 다른 공식 제품을 선택하세요.{explanation ? <div className="moni-export-calc">CTN 자동계산 · {explanation}</div> : null}</div> : null}
@@ -244,6 +272,7 @@ export default function MoniMobileSalesExportBundleCard() {
             </div>
           </div>
         })}
+        <button className="moni-export-add" type="button" onClick={addItem}><span aria-hidden="true">＋</span><span>품목 추가</span></button>
         <details style={{ marginTop: 12 }}><summary style={{ fontSize: 12, fontWeight: 900, cursor: 'pointer' }}>추가 수출조건 보기/수정</summary><div className="moni-export-grid">
           <label className="moni-export-field"><span>Incoterm</span><input value={txt(fields.incoterm)} onChange={(event) => updateField('incoterm', event.target.value)} /></label>
           <label className="moni-export-field"><span>Final Destination</span><input value={txt(fields.final_destination)} onChange={(event) => updateField('final_destination', event.target.value)} /></label>
