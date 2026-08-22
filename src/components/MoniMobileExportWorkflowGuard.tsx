@@ -47,6 +47,10 @@ function thinkingStage(seconds: number) {
   return 'normal'
 }
 
+function statusLabel(liveState: HTMLElement | null) {
+  return liveState?.querySelector<HTMLElement>(':scope > span:not(.moni-live-dot):not([data-moni-live-wave])') || null
+}
+
 function setHeaderThinking(root: HTMLElement, thinking: boolean) {
   const liveState = root.querySelector<HTMLElement>('.moni-live-state')
   const character = root.querySelector<HTMLElement>('.moni-mobile-character')
@@ -56,7 +60,7 @@ function setHeaderThinking(root: HTMLElement, thinking: boolean) {
     if (liveState) {
       liveState.classList.remove('moni-live-state-live', 'moni-live-state-issue', 'moni-live-state-listening')
       liveState.classList.add('moni-live-state-thinking')
-      const label = liveState.querySelector<HTMLElement>('span:last-child')
+      const label = statusLabel(liveState)
       if (label) label.textContent = 'THINKING'
     }
     if (character) {
@@ -72,7 +76,7 @@ function setHeaderThinking(root: HTMLElement, thinking: boolean) {
   if (liveState?.classList.contains('moni-live-state-thinking')) {
     liveState.classList.remove('moni-live-state-thinking')
     liveState.classList.add('moni-live-state-live')
-    const label = liveState.querySelector<HTMLElement>('span:last-child')
+    const label = statusLabel(liveState)
     if (label) label.textContent = 'LIVE'
   }
   if (character?.classList.contains('moni-mobile-character-thinking')) {
