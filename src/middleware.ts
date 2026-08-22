@@ -14,7 +14,6 @@ const BODY_TENANT_GUARD_EXEMPT_PATHS = new Set([
 // Keep this exception exact so ordinary Agent/admin/business endpoints never bypass MONI login.
 const SESSION_EXEMPT_PATHS = new Set([
   '/api/moni/agent-evals/canary',
-  '/api/moni/internal-repair-20260823',
 ])
 
 function requiresMoniSession(pathname: string) {
