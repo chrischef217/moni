@@ -24,8 +24,9 @@ test('V2 safety adapter keeps deterministic canonical matching and exact carton 
   assert.match(adapterV2, /Math\.abs\(ratio - Math\.round\(ratio\)\) < 0\.000001/)
 })
 
-test('V3 matching strips parenthetical conversation notes and the 두배 prefix before ranking official products', () => {
-  assert.match(adapterV3, /replace\(\/\\\([^\)]\*\\\)\|\\\[[^\]]\*\\\]\|\\\{[^}]*\\\}\/g/)
+test('V3 matching strips conversational notes and the 두배 prefix before ranking official products', () => {
+  assert.match(adapterV3, /const withoutNotes = txt\(value\)\.replace/)
+  assert.match(adapterV3, /const normalized = norm\(withoutNotes\)/)
   assert.match(adapterV3, /normalized\.startsWith\('두배'\) \? normalized\.slice\(2\)/)
   assert.match(adapterV3, /function scoreCandidate/)
   assert.match(adapterV3, /if \(first\.score >= 130\) return first\.option/)
