@@ -7,6 +7,7 @@ const LEGACY_BUSINESS_ID = 'default'
 const BODY_TENANT_GUARD_EXEMPT_PATHS = new Set([
   '/api/moni/agent-chat',
   '/api/moni/agent-runtime',
+  '/api/moni/agent-runtime-v2',
   '/api/moni/agent-files',
 ])
 
@@ -133,9 +134,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (pathname === '/api/moni/agent-chat') {
+  if (pathname === '/api/moni/agent-chat' || pathname === '/api/moni/agent-runtime') {
     const rewritten = request.nextUrl.clone()
-    rewritten.pathname = '/api/moni/agent-runtime'
+    rewritten.pathname = '/api/moni/agent-runtime-v2'
     return NextResponse.rewrite(rewritten)
   }
 
