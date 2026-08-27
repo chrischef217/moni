@@ -18,6 +18,10 @@ const nextConfig = {
           source: '/api/moni/mobile-sales-export-bundle',
           destination: '/api/moni/mobile-sales-export-bundle-v3',
         },
+        {
+          source: '/api/moni/sales-orders-v4',
+          destination: '/api/moni/sales-orders-v6',
+        },
       ],
       afterFiles: [],
       fallback: [],
