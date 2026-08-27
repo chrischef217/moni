@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { usePathname, useSearchParams } from 'next/navigation'
+import AllowanceSessionKeepAlive from '@/components/AllowanceSessionKeepAlive'
 
 const LegacyAdminRuntime = dynamic(() => import('@/components/LegacyAdminRuntime'), { ssr: false })
 const MonthlyProductionRuntime = dynamic(() => import('@/components/MonthlyProductionRuntime'), { ssr: false })
@@ -19,6 +20,7 @@ export default function AdminRouteRuntime() {
 
   return (
     <>
+      <AllowanceSessionKeepAlive />
       {legacyHome && <LegacyAdminRuntime />}
       {monthlyProduction && <MonthlyProductionRuntime />}
       {productionSurface && <ProductionGlassThemeController />}
