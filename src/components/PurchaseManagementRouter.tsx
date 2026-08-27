@@ -18,6 +18,12 @@ export default function PurchaseManagementRouter({ initialView }: { initialView:
 
   useEffect(() => {
     const sync = () => setView(currentView(initialView))
+
+    // Next.js router.push() can update searchParams on the same route without
+    // emitting a native popstate event. Sync immediately whenever the server
+    // supplies a new initialView so the content always follows the highlighted
+    // purchase submenu instead of keeping the first mounted view.
+    sync()
     window.addEventListener('popstate', sync)
     return () => window.removeEventListener('popstate', sync)
   }, [initialView])
