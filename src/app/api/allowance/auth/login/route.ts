@@ -40,6 +40,9 @@ export async function POST(request: NextRequest) {
     const token = await createSecureAllowanceSession(user)
     const response = NextResponse.json({ ok: true, user }, { status: 200 })
 
+    // Intentionally omit maxAge/expires: this is a browser-session cookie.
+    // MONI stays signed in while the browser session is alive instead of
+    // expiring at a fixed 30-minute wall clock from login.
     response.cookies.set({
       name: SESSION_COOKIE_NAME,
       value: token,
@@ -47,7 +50,6 @@ export async function POST(request: NextRequest) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 60 * 30,
     })
 
     const postLoginTarget = postLoginTargetFromReferer(request)
