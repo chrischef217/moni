@@ -5,7 +5,11 @@ import type { AllowanceRole, AllowanceSessionUser } from '@/types/allowance'
 
 const USERS_TABLE = 'allowance_platform_users'
 const SESSIONS_TABLE = 'allowance_platform_sessions'
-const SESSION_MINUTES = 30
+// Server-side backstop. While MONI is open, the client keep-alive refreshes this
+// expiry periodically. The browser auth cookie itself is a session cookie, so a
+// normal browser shutdown still ends the local login without an arbitrary
+// 30-minute cutoff during the workday.
+const SESSION_MINUTES = 24 * 60
 
 export const SESSION_COOKIE_NAME = 'moni_allowance_session'
 
