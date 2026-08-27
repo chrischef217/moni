@@ -22,6 +22,10 @@ const nextConfig = {
           source: '/api/moni/sales-orders-v4',
           destination: '/api/moni/sales-orders-v6',
         },
+        {
+          source: '/api/moni/sales-return-credit',
+          destination: '/api/moni/sales-return-credit-v2',
+        },
       ],
       afterFiles: [],
       fallback: [],
