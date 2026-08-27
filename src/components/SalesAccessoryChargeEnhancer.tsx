@@ -21,6 +21,7 @@ function visibleOrders(payload:any):OrderLite[]{return Array.isArray(payload?.or
 export default function SalesAccessoryChargeEnhancer(){
   useEffect(()=>{
     let stopped=false
+    let observerFrame=0
     let latestOrders:OrderLite[]=[]
     let chargesByOrder:Record<string,Charge[]>={}
     let editingOrderId=''
@@ -89,7 +90,8 @@ export default function SalesAccessoryChargeEnhancer(){
       const finalSupply=productSupply+feeSupply
       const finalVat=finalSupply*Math.max(0,vatRate)/100
       const summary=box.querySelector<HTMLElement>('[data-moni-accessory-summary]')
-      if(summary)summary.textContent=`기타비용 ${money(feeSupply)} · 예상 최종 공급가액 ${money(finalSupply)} · 예상 합계 ${money(finalSupply+finalVat)}`
+      const nextSummary=`기타비용 ${money(feeSupply)} · 예상 최종 공급가액 ${money(finalSupply)} · 예상 합계 ${money(finalSupply+finalVat)}`
+      if(summary&&summary.textContent!==nextSummary)summary.textContent=nextSummary
     }
     function addChargeRow(modal:HTMLElement,seed?:Partial<Charge>){
       const box=feeContainer(modal);const tbody=box?.querySelector<HTMLTableSectionElement>('tbody');if(!box||!tbody)return
@@ -141,10 +143,29 @@ export default function SalesAccessoryChargeEnhancer(){
     document.addEventListener('click',clickCapture,true)
     document.addEventListener('input',inputCapture,true)
 
-    const observer=new MutationObserver(()=>{if(stopped)return;annotateRows();enhanceModal();const modal=productModal();if(modal)updateFeeSummary(modal)})
-    observer.observe(document.body,{childList:true,subtree:true,characterData:true})
+    // Only react to structural DOM changes. The previous observer also watched
+    // character-data and recalculated the summary from its own callback. Updating
+    // summary text then generated another mutation, which could create a feedback
+    // loop and freeze the Chrome renderer on the sales screen.
+    const observer=new MutationObserver(()=>{
+      if(stopped||observerFrame)return
+      observerFrame=window.requestAnimationFrame(()=>{
+        observerFrame=0
+        if(stopped)return
+        annotateRows()
+        enhanceModal()
+      })
+    })
+    observer.observe(document.body,{childList:true,subtree:true})
     annotateRows();enhanceModal()
-    return()=>{stopped=true;observer.disconnect();document.removeEventListener('click',clickCapture,true);document.removeEventListener('input',inputCapture,true);if(window.fetch===wrappedFetch)window.fetch=originalFetch}
+    return()=>{
+      stopped=true
+      observer.disconnect()
+      if(observerFrame)window.cancelAnimationFrame(observerFrame)
+      document.removeEventListener('click',clickCapture,true)
+      document.removeEventListener('input',inputCapture,true)
+      if(window.fetch===wrappedFetch)window.fetch=originalFetch
+    }
   },[])
   return null
 }
