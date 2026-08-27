@@ -35,6 +35,14 @@ export async function GET(request: NextRequest) {
     if (orderError) throw new Error(orderError.message)
     if (!order) return NextResponse.json({ ok: false, error: '판매 거래를 찾을 수 없습니다.' }, { status: 404 })
 
+    const sourceType = text(order.source_type, 30).toUpperCase()
+    if (sourceType === 'RETURN' || sourceType === 'CREDIT') {
+      const url = request.nextUrl.clone()
+      url.pathname = `/sales-management/orders/${encodeURIComponent(orderId)}/statement`
+      url.search = request.nextUrl.searchParams.get('mode') === 'inline' ? '' : '?auto=1'
+      return NextResponse.redirect(url)
+    }
+
     const [{ data: items, error: itemError }, { data: client, error: clientError }, { data: profile, error: profileError }] = await Promise.all([
       supabase.from('sales_order_items').select('*').eq('order_id', orderId).order('sort_order').order('created_at'),
       order.client_id
