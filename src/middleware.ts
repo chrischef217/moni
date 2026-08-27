@@ -140,6 +140,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(rewritten)
   }
 
+  if (pathname === '/api/moni/sales-orders-v4') {
+    const rewritten = request.nextUrl.clone()
+    rewritten.pathname = '/api/moni/sales-orders-v5'
+    return NextResponse.rewrite(rewritten)
+  }
+
   if (pathname === '/api/moni/receivables') {
     const rewritten = request.nextUrl.clone()
     rewritten.pathname = '/api/moni/receivables-v2'
