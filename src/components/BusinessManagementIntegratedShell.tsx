@@ -6,6 +6,7 @@ import SalesOperationsV2Module from '@/components/SalesOperationsV2Module'
 import SalesReceivablesModule from '@/components/SalesReceivablesModule'
 import SalesVariantPricingModule from '@/components/SalesVariantPricingModule'
 import SalesOrderV4Module from '@/components/SalesOrderV4Module'
+import SalesReturnCreditModule from '@/components/SalesReturnCreditModule'
 import SalesOrderV4ExportEnhancer from '@/components/SalesOrderV4ExportEnhancer'
 import SalesOrderClientSearchEnhancer from '@/components/SalesOrderClientSearchEnhancer'
 import SalesStatementsUnifiedEnhancer from '@/components/SalesStatementsUnifiedEnhancer'
@@ -62,7 +63,7 @@ export default function BusinessManagementIntegratedShell({ initialTab, initialV
   let salesManagementContent = <SalesOperationsV2Module key={`sales-management-${initialView}`} initialView={initialView} />
   if (clientsView) salesManagementContent = <CounterpartyManagementUnified key="sales-clients-unified" kind="sales" />
   if (pricingView) salesManagementContent = <SalesVariantPricingModule key="sales-pricing-v4" />
-  if (salesV4View) salesManagementContent = <><SalesOrderV4ExportEnhancer /><SalesOrderClientSearchEnhancer /><SalesStatementsUnifiedEnhancer /><SalesOrderV4Module key={`sales-orders-v4-${initialView}`} mode="sales" /></>
+  if (salesV4View) salesManagementContent = <><SalesOrderV4ExportEnhancer /><SalesOrderClientSearchEnhancer /><SalesStatementsUnifiedEnhancer /><SalesReturnCreditModule /><SalesOrderV4Module key={`sales-orders-v4-${initialView}`} mode="sales" /></>
   if (receivablesView) salesManagementContent = <SalesReceivablesModule key="sales-receivables" />
 
   return <div data-business-management-shell data-sales-management-shell={initialTab==='salesManagement'?'true':undefined} data-purchase-management-shell={purchaseView?'true':undefined} data-regular-employee-shell={regularEmployeeView?'true':undefined}>
