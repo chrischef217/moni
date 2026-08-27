@@ -140,6 +140,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(rewritten)
   }
 
+  if (pathname === '/api/moni/receivables') {
+    const rewritten = request.nextUrl.clone()
+    rewritten.pathname = '/api/moni/receivables-v2'
+    return NextResponse.rewrite(rewritten)
+  }
+
+  if (pathname === '/api/moni/finished-goods-inventory') {
+    const rewritten = request.nextUrl.clone()
+    rewritten.pathname = '/api/moni/finished-goods-inventory-v2'
+    return NextResponse.rewrite(rewritten)
+  }
+
   if (/^\/api\/moni\/production-records\/[^/]+\/pdf$/.test(pathname)) {
     if (request.nextUrl.searchParams.get('format') === 'json') {
       return NextResponse.next()
