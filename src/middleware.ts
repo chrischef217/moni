@@ -140,6 +140,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(rewritten)
   }
 
+  // The mobile form component intentionally uses the stable endpoint. Route it to
+  // the V2 compatibility layer so CREATE/UPDATE/DELETE parity fixes are always live.
+  if (pathname === '/api/moni/mobile-extended-actions') {
+    const rewritten = request.nextUrl.clone()
+    rewritten.pathname = '/api/moni/mobile-extended-actions-v2'
+    return NextResponse.rewrite(rewritten)
+  }
+
   if (pathname === '/api/moni/sales-orders-v4') {
     const rewritten = request.nextUrl.clone()
     rewritten.pathname = '/api/moni/sales-orders-v5'
