@@ -68,7 +68,6 @@ for (const required of [
 if (!conversationTools.includes('같은 턴의 prepare→execute는 금지')) failures.push('write tools must enforce separate-turn approval')
 if (!conversationTools.includes('user_confirmation_text: context.currentUserText')) failures.push('execution approval text must come from the actual current user message')
 
-// MONI self-knowledge must be deterministic, centralized, and deployment-gated.
 if (!memory.includes("rpc('search_moni_capabilities'")) failures.push('thread memory must prefetch MONI capabilities from the registry RPC')
 if (!memory.includes('capabilityPrefetch')) failures.push('thread memory must carry server-prefetched capability results')
 if (!memory.includes('[MONI 기능 레지스트리 자동조회 · 서버 prefetch]')) failures.push('agent instructions must receive prefetched capability evidence')
@@ -84,7 +83,6 @@ if (!capabilityMigration.includes('run_moni_capability_coverage_audit')) failure
 if (!capabilityMigration.includes('SALES_STATEMENT_MANAGEMENT')) failures.push('capability SSOT migration must cover sales statements')
 if (!capabilityMigration.includes('ADMIN_COMPANY_SETTINGS')) failures.push('capability SSOT migration must cover administrator company settings')
 
-// Mobile V4 closes the remaining mobile parity gaps without bypassing the approved write workflow.
 for (const domain of [
   'production_daily',
   'quality_management',
@@ -109,11 +107,11 @@ for (const table of ['moni_quotes', 'moni_sales_tax_invoices', 'moni_hr_required
 for (const safety of ['moni_action_confirmations', 'moni_action_audit_log', "command==='prepare'", "command==='execute'", 'source_user_message_id']) {
   if (!mobileV4Route.includes(safety)) failures.push(`mobile V4 route missing approval/audit contract: ${safety}`)
 }
-if (!mobileV4Route.includes("'/api/moni/sales-orders-v6'")) failures.push('mobile V4 accessory charges must reuse the canonical sales-orders-v6 API')
-if (!mobileV4Route.includes("'/api/moni/business-management'")) failures.push('mobile V4 settlement writes must reuse the canonical business-management API')
+if (!mobileV4Route.includes('/api/moni/sales-orders-v6')) failures.push('mobile V4 accessory charges must reuse the canonical sales-orders-v6 API')
+if (!mobileV4Route.includes('/api/moni/business-management')) failures.push('mobile V4 settlement writes must reuse the canonical business-management API')
 if (!mobileV4Route.includes('analyzeDocument')) failures.push('mobile V4 financial audit must reuse the canonical audit engine')
-if (!mobileV4Route.includes("'/api/moni/intelligence?month=")) failures.push('mobile V4 Intelligence must reuse the canonical intelligence endpoint')
-if (!mobileV4Card.includes("data.moniV4Active = 'true'")) failures.push('mobile V4 card must suppress colliding legacy cards while active')
+if (!mobileV4Route.includes('/api/moni/intelligence?month=')) failures.push('mobile V4 Intelligence must reuse the canonical intelligence endpoint')
+if (!mobileV4Card.includes("dataset.moniV4Active = 'true'")) failures.push('mobile V4 card must suppress colliding legacy cards while active')
 if (!mobilePage.includes('MoniMobileCapabilityV4')) failures.push('mobile page must mount the V4 capability card')
 if (!middleware.includes("url.pathname = '/api/moni/mobile-extended-actions-v3'")) failures.push('mobile V3 parity rewrite must remain active alongside V4')
 
