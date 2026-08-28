@@ -24,7 +24,7 @@ requireText(middleware, "url.pathname='/api/moni/mobile-management-center-v2'", 
 for (const domain of ['sales_statement_history','export_document_history','official_document_history','tax_control']) requireText(intents, `'${domain}'`, `missing management intent ${domain}`)
 requireText(direct, 'MONI_MOBILE_MANAGEMENT_CENTER_V1', 'management direct turn runtime marker is missing')
 requireText(direct, 'moni_ai_messages', 'management direct turn must preserve conversation messages')
-requireText(api, "'/api/moni/financial-control?month=", 'tax management must reuse canonical PC financial-control read API')
+requireText(api, '/api/moni/financial-control?month=', 'tax management must reuse canonical PC financial-control read API')
 requireText(api, "'set_settlement_due_date'", 'tax management must support settlement due-date parity')
 requireText(api, "'mark_settlement_paid'", 'tax management must support settlement paid parity')
 requireText(api, "'reverse_settlement_payment'", 'tax management must support settlement payment reversal parity')
