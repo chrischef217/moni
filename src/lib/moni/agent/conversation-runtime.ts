@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { Agent, run, startOpenAIConversationsSession } from '@openai/agents'
+import { resolveDirectCapabilityHowTo } from '@/lib/moni/agent/capability-direct'
 import { createMoniConversationTools } from '@/lib/moni/agent/conversation-tools'
 import type { MoniAgentToolContext } from '@/lib/moni/agent/context-types'
 import type { PinnedProjectContext, ThreadMemory } from '@/lib/moni/agent/memory'
@@ -360,6 +361,103 @@ export async function runMoniConversationAgent(input: Input): Promise<MoniConver
   }
 
   let conversationId = text(input.conversationId, 200)
+
+  const directCapability = resolveDirectCapabilityHowTo({
+    message: input.currentUserText,
+    page: input.context.page,
+    role: input.context.session.role,
+    candidates: input.threadMemory.capabilityPrefetch,
+  })
+  if (directCapability) {
+    try {
+      if (!conversationId) conversationId = await startOpenAIConversationsSession()
+      const toolName = 'search_moni_capabilities_prefetch'
+      const toolPayload = {
+        feature_id: directCapability.candidate.featureId,
+        feature_name: directCapability.candidate.featureName,
+        category: directCapability.candidate.category,
+        pc_path: directCapability.candidate.pcPath,
+        mobile_support: directCapability.candidate.mobileSupport,
+        mobile_path: directCapability.candidate.mobilePath,
+        action_hint: directCapability.candidate.actionHint,
+        caveats: directCapability.candidate.caveats,
+        permissions: directCapability.candidate.permissions,
+        source_reference: directCapability.candidate.sourceReference,
+        match_score: directCapability.candidate.matchScore,
+        confidence_gap: directCapability.confidenceGap,
+      }
+      const serialized = JSON.stringify(toolPayload)
+      const now = new Date().toISOString()
+      await input.context.supabase.from('moni_ai_tool_runs').insert({
+        business_id: input.context.businessId,
+        agent_run_id: runRow.id,
+        thread_id: input.context.threadId,
+        message_id: input.context.messageId,
+        step_no: 1,
+        tool_name: toolName,
+        tool_arguments: { query: text(input.currentUserText, 500), source: 'server_prefetch' },
+        status: 'COMPLETED',
+        result_summary: {
+          preview: serialized.slice(0, 10_000),
+          truncated: serialized.length > 10_000,
+          output_bytes: Buffer.byteLength(serialized, 'utf8'),
+        },
+        duration_ms: 0,
+        finished_at: now,
+      })
+      const usage = { requests: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+      await input.context.supabase.from('moni_ai_agent_runs').update({
+        status: 'COMPLETED',
+        step_count: 1,
+        tool_call_count: 1,
+        finished_at: now,
+        request_count: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+        latency_ms: Date.now() - startedAt,
+        usage,
+        metadata: {
+          state_mode: 'DIRECT_CAPABILITY_REGISTRY',
+          conversation_id: conversationId,
+          direct_capability_answer: true,
+          feature_id: directCapability.candidate.featureId,
+          match_score: directCapability.candidate.matchScore,
+          confidence_gap: directCapability.confidenceGap,
+          canonical_business_id: input.context.businessId,
+          separate_turn_write_approval: true,
+        },
+      }).eq('id', runRow.id)
+      return {
+        text: directCapability.answer,
+        conversationId,
+        agentRunId: runRow.id,
+        stepCount: 1,
+        toolCallCount: 1,
+        toolsUsed: [toolName],
+        usage,
+      }
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : 'MONI 기능 레지스트리 직접 응답 실패'
+      await input.context.supabase.from('moni_ai_agent_runs').update({
+        status: 'FAILED',
+        step_count: 1,
+        tool_call_count: 1,
+        error_message: rawMessage.slice(0, 2000),
+        finished_at: new Date().toISOString(),
+        latency_ms: Date.now() - startedAt,
+        metadata: {
+          state_mode: 'DIRECT_CAPABILITY_REGISTRY',
+          conversation_id: conversationId || null,
+          direct_capability_answer: true,
+          feature_id: directCapability.candidate.featureId,
+          separate_turn_write_approval: true,
+        },
+      }).eq('id', runRow.id)
+      throw new Error(rawMessage)
+    }
+  }
+
   const forceRecentProductTrend = isRecentProductTrendFollowupRequest(
     input.currentUserText,
     input.context.session.role,
