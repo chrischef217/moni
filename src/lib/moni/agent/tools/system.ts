@@ -10,7 +10,7 @@ export const systemToolDefinitions: MoniToolDefinition[] = [
   },
   {
     name: 'get_company_context',
-    description: 'MONI의 확정 의사결정, 운영 원칙, PMO 기준과 장기 프로젝트 문맥을 검색한다.',
+    description: 'MONI의 확정 의사결정·운영 원칙·PMO 문맥뿐 아니라 MONI 자체 기능, 메뉴 위치, 사용법, 입력 위치를 검색한다. 사용자가 “어디서 해?”, “어떻게 바꿔?”, “무슨 메뉴야?”, “단가/가격/등록/수정은 어디서?”처럼 MONI 사용법을 묻는 경우에는 추측하지 말고 반드시 이 도구를 먼저 호출한다. query에는 사용자의 긴 문장 전체가 아니라 핵심 기능명/업무명(예: “원재료 단가”, “택배비”, “반품”, “매입 입고”)을 넣는다.',
     parameters: z.object({
       query: z.string().trim().min(1).max(200).optional(),
       limit: z.number().int().min(1).max(20).optional(),
