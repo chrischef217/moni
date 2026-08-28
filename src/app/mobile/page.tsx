@@ -13,6 +13,7 @@ import MoniMobileFormSafetyStyles from '@/components/MoniMobileFormSafetyStyles'
 import MoniMobileHeartbeatBoost from '@/components/MoniMobileHeartbeatBoost'
 import MoniMobileInteractionPolish from '@/components/MoniMobileInteractionPolish'
 import MoniMobileLiveWave from '@/components/MoniMobileLiveWave'
+import MoniMobileManagementCenter from '@/components/MoniMobileManagementCenter'
 import MoniMobilePurchaseCardV2 from '@/components/MoniMobilePurchaseCardV2'
 import MoniMobileRawCardRouteGuard from '@/components/MoniMobileRawCardRouteGuard'
 import MoniMobileRawMaterialCardV2 from '@/components/MoniMobileRawMaterialCardV2'
@@ -67,6 +68,7 @@ export default async function MoniMobilePage() {
       <MoniMobilePurchaseCardV2 />
       <MoniMobileExtendedFormCard />
       <MoniMobileCapabilityV4 />
+      <MoniMobileManagementCenter />
       <MoniMobileTurnHygieneGuard />
       <MoniMobileChat />
     </main>
