@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs'
 
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'))
 const prebuild = String(packageJson.scripts?.prebuild || '')
-const runtimeRoute = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const runtimeWrapper = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const runtimeBase = readFileSync('src/app/api/moni/agent-runtime/base-route.ts', 'utf8')
+const runtimeRoute = `${runtimeWrapper}\n${runtimeBase}`
+const directPriceLookup = readFileSync('src/lib/moni/agent/direct-price-lookup.ts', 'utf8')
 const conversationRuntime = readFileSync('src/lib/moni/agent/conversation-runtime.ts', 'utf8')
 const conversationTools = readFileSync('src/lib/moni/agent/conversation-tools.ts', 'utf8')
 const memory = readFileSync('src/lib/moni/agent/memory.ts', 'utf8')
@@ -20,6 +23,26 @@ if (!runtimeRoute.includes("agent_runtime: 'MONI_OPENAI_CONVERSATIONS_V1'")) fai
 if (!runtimeRoute.includes('runMoniConversationAgent')) failures.push('agent-runtime must call runMoniConversationAgent')
 if (!runtimeRoute.includes('openai_conversation_id')) failures.push('agent-runtime must persist the OpenAI conversation id')
 if (!runtimeRoute.includes("conversation_state: 'SERVER_MANAGED'")) failures.push('agent-runtime must report server-managed conversation state')
+if (!runtimeWrapper.includes("POST as basePOST") || !runtimeWrapper.includes('return basePOST(request)')) failures.push('agent-runtime wrapper must delegate non-direct requests to the preserved base runtime')
+if (!runtimeWrapper.includes('tryDirectPriceLookup')) failures.push('agent-runtime wrapper must run deterministic direct price lookup before model inference')
+
+for (const required of [
+  'raw_material_mapping',
+  'raw_material_transactions',
+  'raw_materials',
+  'purchases',
+  'products',
+  'sales_product_settings',
+  'sales_product_variants',
+  'compactName',
+  'DIRECT_PRICE_LOOKUP_V1',
+  'direct_price_lookup',
+]) {
+  if (!directPriceLookup.includes(required)) failures.push(`direct price lookup missing required contract: ${required}`)
+}
+if (!directPriceLookup.includes("/(가격|단가|얼마)/")) failures.push('direct price lookup must recognize basic price-language intent')
+if (!directPriceLookup.includes('raw_material') || !directPriceLookup.includes('product')) failures.push('direct price lookup must distinguish raw materials from finished products')
+if (!directPriceLookup.includes('verification_status')) failures.push('direct raw-material pricing must preserve purchase data-quality status')
 
 if (!conversationRuntime.includes('startOpenAIConversationsSession')) failures.push('conversation runtime must create OpenAI Conversations sessions')
 if (!conversationRuntime.includes('conversationId')) failures.push('conversation runtime must pass conversationId to the Agents SDK')
