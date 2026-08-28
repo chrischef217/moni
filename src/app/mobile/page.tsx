@@ -4,6 +4,7 @@ import AllowanceLogin from '@/components/AllowanceLogin'
 import MoniMobileAnswerActions from '@/components/MoniMobileAnswerActions'
 import MoniMobileBusyRecovery from '@/components/MoniMobileBusyRecovery'
 import MoniMobileBusinessCards from '@/components/MoniMobileBusinessCards'
+import MoniMobileCapabilityV4 from '@/components/MoniMobileCapabilityV4'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileContinuityGuard from '@/components/MoniMobileContinuityGuard'
 import MoniMobileExtendedFormCard from '@/components/MoniMobileExtendedFormCard'
@@ -65,6 +66,7 @@ export default async function MoniMobilePage() {
       <MoniMobileSalesExportBundleCard />
       <MoniMobilePurchaseCardV2 />
       <MoniMobileExtendedFormCard />
+      <MoniMobileCapabilityV4 />
       <MoniMobileTurnHygieneGuard />
       <MoniMobileChat />
     </main>
