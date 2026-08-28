@@ -64,8 +64,6 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
   const value = compact(raw)
   if (!value) return null
 
-  // Read-only questions must keep flowing through the normal MONI agent.
-  // An extended card opens only when the user clearly asks to mutate a PC business form.
   const writeCue = hasExplicitWriteCue(value)
 
   const finishedGoodsStock = has(value, /(?:완제품|제품)\s*재고|재고.*(?:완제품|제품)/)
@@ -110,20 +108,18 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
   }
 
   if (has(value, /(?:작업시간|근무시간|작업일지|근무일지)/) && writeCue) {
-    // The current PC work-log form is specifically for production freelancers.
-    // Employee and sales-freelancer time must not be silently written into that ledger.
     if (has(value, /(?:직원)/)
         || (has(value, /(?:영업)/) && has(value, /(?:프리랜서)/) && !has(value, /(?:생산)/))) return null
     const op = safeMutation('business_work_log', value)
     return op ? { domain: 'business_work_log', operation: op } : null
   }
 
-  if (has(value, /(?:프리랜서|인력|직원)/) && writeCue) {
+  const v4HrWorkflow = /(?:정산|수당|필수\s*서류|인사\s*서류|계약서\s*파일|신분증\s*파일|통장\s*파일)/
+  if (has(value, /(?:프리랜서|인력|직원)/) && writeCue && !has(value, v4HrWorkflow)) {
     const op = safeMutation('business_person', value)
     return op ? { domain: 'business_person', operation: op } : null
   }
 
-  // The current PC sanitation page creates inspection logs; it does not expose edit/delete.
   if (has(value, /(?:위생점검|위생\s*점검|위생일지|위생\s*일지)/)
       && has(value, /(?:등록|입력|작성|기록|추가|신규|생성)/)) {
     return { domain: 'sanitation', operation: 'CREATE' }
@@ -139,8 +135,6 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
     return op ? { domain: 'recipe', operation: op } : null
   }
 
-  // Inbound/transaction requests are intentionally left to the existing V2 transaction cards.
-  // Bare inventory language is not a material-master mutation and must not rewrite receipt history or stock fields.
   if (has(value, /(?:원재료|원료)/) && !has(value, /(?:입고|매입|수불|재고)/)) {
     const op = safeMutation('raw_material_master', value)
     return op ? { domain: 'raw_material_master', operation: op } : null
@@ -151,8 +145,6 @@ export function classifyMobileExtendedIntent(raw: string): MobileExtendedIntent 
     return op ? { domain: 'packaging_master', operation: op } : null
   }
 
-  // Natural product-master language should work without forcing the user to say "제품 정보".
-  // Keep business operations (sales, inventory, pricing, recipe, production etc.) out of this fallback.
   if (has(value, /(?:제품|품목)/)
       && writeCue
       && !has(value, /(?:판매|납품|거래명세|매출|재고|제품\s*단가|판매\s*단가|판매규격|가격|레시피|배합|생산단위|생산\s*단위|생산계획|생산\s*계획|작업지시|생산지시|생산완료|생산확정|원재료|원료|부재료|포장재|매입|구매|수금|입금|미수|지급|결제)/)) {

@@ -46,8 +46,10 @@ export async function middleware(request: NextRequest) {
     if (hasForeignTenantQuery(request) || (await hasForeignTenantBody(request))) return foreignTenantResponse()
   }
   if (pathname === '/api/moni/agent-chat' || pathname === '/api/moni/agent-runtime') { const url=request.nextUrl.clone(); url.pathname='/api/moni/agent-runtime-v2'; return NextResponse.rewrite(url) }
+  if (pathname === '/api/moni/mobile-capability-v4') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-capability-v5'; return NextResponse.rewrite(url) }
+  if (pathname === '/api/moni/production-daily') { const url=request.nextUrl.clone(); url.pathname='/api/moni/production-daily-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-business-actions') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-business-actions-v3'; return NextResponse.rewrite(url) }
-  if (pathname === '/api/moni/mobile-extended-actions') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-extended-actions-v3'; return NextResponse.rewrite(url) }
+  if (pathname === '/api/moni/mobile-extended-actions') { const url=request.nextUrl.clone(); url.pathname = '/api/moni/mobile-extended-actions-v3'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/sales-orders-v4') { const url=request.nextUrl.clone(); url.pathname='/api/moni/sales-orders-v5'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/receivables') { const url=request.nextUrl.clone(); url.pathname='/api/moni/receivables-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/finished-goods-inventory') { const url=request.nextUrl.clone(); url.pathname='/api/moni/finished-goods-inventory-v2'; return NextResponse.rewrite(url) }

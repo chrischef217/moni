@@ -32,10 +32,11 @@ export const AUDIT_CATEGORIES = [
 ] as const
 
 export type AuditCategoryKey = (typeof AUDIT_CATEGORIES)[number]['key']
+export type AuditCategoryMeta = (typeof AUDIT_CATEGORIES)[number]
 
 export const AUDIT_CATEGORY_META = Object.fromEntries(
   AUDIT_CATEGORIES.map((category) => [category.key, category]),
-) as Record<AuditCategoryKey, (typeof AUDIT_CATEGORIES)[number]>
+) as Record<string, AuditCategoryMeta>
 
 export const AUDIT_PROMPTS: Record<AuditCategoryKey, string> = {
   tax: `한국 세무 전문가로서 두배(사업자번호 123-38-14284, 대표 배순애) 세금 문서를 분석.
