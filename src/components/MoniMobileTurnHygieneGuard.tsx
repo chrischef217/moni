@@ -134,6 +134,7 @@ async function sanitizeAnswerResponse(response: Response) {
 
 function resetTurnPresentation(root: HTMLElement) {
   // A new question always starts at the calm/normal stage, never at the previous turn's overtime stage.
+  root.dataset.moniTurnResetPending = 'true'
   root.dataset.moniThinkingStage = 'normal'
   root.dataset.moniHeartbeatStage = 'normal'
   root.dataset.moniHeartbeatOvertime = 'false'
@@ -142,9 +143,8 @@ function resetTurnPresentation(root: HTMLElement) {
   root.querySelectorAll<HTMLElement>('div[role="status"]').forEach((panel) => {
     if (!(panel.textContent || '').includes('MONI가 확인 중')) return
     panel.dataset.moniThinkingStage = 'normal'
-    panel.dataset.moniAdaptiveProgress = 'true'
-    panel.dataset.moniProgressMain = '질문을 확인하고 있습니다.'
-    panel.dataset.moniProgressDetail = '필요한 데이터를 처음부터 확인하고 있습니다.'
+    delete panel.dataset.moniProgressMain
+    delete panel.dataset.moniProgressDetail
   })
 
   const character = root.querySelector<HTMLElement>('.moni-mobile-character')
@@ -156,6 +156,17 @@ function resetTurnPresentation(root: HTMLElement) {
     character.style.removeProperty('--moni-hop-r')
     character.style.removeProperty('--moni-hop-scale')
   }
+}
+
+function releaseResetGateWhenFresh(root: HTMLElement) {
+  if (root.dataset.moniTurnResetPending !== 'true') return
+  const panel = Array.from(root.querySelectorAll<HTMLElement>('div[role="status"]'))
+    .find((node) => (node.textContent || '').includes('MONI가 확인 중'))
+  if (!panel) return
+
+  const main = String(panel.dataset.moniProgressMain || '').trim()
+  const stage = String(panel.dataset.moniThinkingStage || root.dataset.moniThinkingStage || '')
+  if (main && stage === 'normal') delete root.dataset.moniTurnResetPending
 }
 
 export default function MoniMobileTurnHygieneGuard() {
@@ -173,10 +184,28 @@ export default function MoniMobileTurnHygieneGuard() {
       return sanitizeAnswerResponse(response)
     }) as typeof window.fetch
 
-    const onUserTurnStart = () => resetTurnPresentation(root)
+    let resetFallbackTimer: number | null = null
+    const onUserTurnStart = () => {
+      if (resetFallbackTimer !== null) window.clearTimeout(resetFallbackTimer)
+      resetTurnPresentation(root)
+      resetFallbackTimer = window.setTimeout(() => {
+        resetFallbackTimer = null
+        if (!root.querySelector('.moni-live-state-thinking')) delete root.dataset.moniTurnResetPending
+      }, 1500)
+    }
     window.addEventListener(USER_TURN_START_EVENT, onUserTurnStart)
 
+    const observer = new MutationObserver(() => releaseResetGateWhenFresh(root))
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['data-moni-progress-main', 'data-moni-thinking-stage'],
+      childList: true,
+      subtree: true,
+    })
+
     return () => {
+      observer.disconnect()
+      if (resetFallbackTimer !== null) window.clearTimeout(resetFallbackTimer)
       window.removeEventListener(USER_TURN_START_EVENT, onUserTurnStart)
       window.fetch = originalFetch as typeof window.fetch
     }
@@ -187,6 +216,10 @@ export default function MoniMobileTurnHygieneGuard() {
       /* Never flash the previous turn's raw ETA/overtime text while the adaptive card initializes. */
       [data-moni-mobile-chat] div[role="status"]:has(.moni-thinking-dot) > div:not(:first-child):not([data-moni-progress-lines="true"]) {
         display: none !important;
+      }
+
+      [data-moni-mobile-chat][data-moni-turn-reset-pending="true"] [data-moni-progress-lines="true"] {
+        visibility: hidden !important;
       }
     `}</style>
   )
