@@ -2,7 +2,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { analyzeDocument, AUDIT_MODEL, type AnalyzeDocumentFile } from '@/app/audit/lib/analyzeDocument'
-import { AUDIT_CATEGORY_META, isAuditCategory } from '@/app/audit/lib/prompts'
+import { AUDIT_CATEGORY_META, isAuditCategory, type AuditCategoryKey } from '@/app/audit/lib/prompts'
 import { addAuditRecord, saveAuditFile } from '@/app/audit/lib/storage'
 import type { AuditAnalyzeResponse, AuditRecord, AuditStoredFile } from '@/app/audit/lib/types'
 
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   const recordId = randomUUID()
   const createdAt = new Date().toISOString()
   let storedFiles: AuditStoredFile[] = []
-  let recordCategory = 'etc' as keyof typeof AUDIT_CATEGORY_META
+  let recordCategory: AuditCategoryKey = 'etc'
 
   try {
     const formData = await request.formData()
