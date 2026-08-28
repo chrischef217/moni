@@ -11,8 +11,6 @@ const BODY_TENANT_GUARD_EXEMPT_PATHS = new Set([
   '/api/moni/agent-files',
 ])
 
-// The live-eval canary is authenticated by its own short-lived, one-time capability token.
-// Keep this exception exact so ordinary Agent/admin/business endpoints never bypass MONI login.
 const SESSION_EXEMPT_PATHS = new Set([
   '/api/moni/agent-evals/canary',
 ])
@@ -34,7 +32,6 @@ async function hasForeignTenantBody(request: NextRequest) {
   if (BODY_TENANT_GUARD_EXEMPT_PATHS.has(request.nextUrl.pathname)) return false
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method.toUpperCase())) return false
   if (!String(request.headers.get('content-type') || '').toLowerCase().includes('application/json')) return false
-
   const payload = await request.clone().json().catch(() => null)
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
   if (!Object.prototype.hasOwnProperty.call(payload, 'business_id')) return false
@@ -42,16 +39,7 @@ async function hasForeignTenantBody(request: NextRequest) {
 }
 
 function foreignTenantResponse() {
-  return NextResponse.json(
-    { ok: false, error: '허용되지 않은 사업자 범위입니다.' },
-    {
-      status: 403,
-      headers: {
-        'Cache-Control': 'no-store',
-        'X-MONI-Tenant': 'rejected',
-      },
-    },
-  )
+  return NextResponse.json({ ok: false, error: '허용되지 않은 사업자 범위입니다.' }, { status: 403, headers: { 'Cache-Control': 'no-store', 'X-MONI-Tenant': 'rejected' } })
 }
 
 function isMobileBrowser(request: NextRequest) {
@@ -64,61 +52,21 @@ async function verifyMoniSession(request: NextRequest) {
   const sessionUrl = request.nextUrl.clone()
   sessionUrl.pathname = SESSION_CHECK_PATH
   sessionUrl.search = ''
-
   try {
-    const response = await fetch(sessionUrl, {
-      method: 'GET',
-      headers: {
-        cookie: request.headers.get('cookie') || '',
-      },
-      cache: 'no-store',
-      redirect: 'manual',
-    })
-
+    const response = await fetch(sessionUrl, { method: 'GET', headers: { cookie: request.headers.get('cookie') || '' }, cache: 'no-store', redirect: 'manual' })
     if (response.ok) return null
-
     if (response.status === 401 || response.status === 403) {
-      return NextResponse.json(
-        { ok: false, error: 'MONI 로그인이 필요합니다.' },
-        {
-          status: 401,
-          headers: {
-            'Cache-Control': 'no-store',
-            'X-MONI-Auth': 'required',
-          },
-        },
-      )
+      return NextResponse.json({ ok: false, error: 'MONI 로그인이 필요합니다.' }, { status: 401, headers: { 'Cache-Control': 'no-store', 'X-MONI-Auth': 'required' } })
     }
-
-    return NextResponse.json(
-      { ok: false, error: 'MONI 인증 상태를 확인할 수 없습니다.' },
-      {
-        status: 503,
-        headers: {
-          'Cache-Control': 'no-store',
-          'X-MONI-Auth': 'unavailable',
-        },
-      },
-    )
+    return NextResponse.json({ ok: false, error: 'MONI 인증 상태를 확인할 수 없습니다.' }, { status: 503, headers: { 'Cache-Control': 'no-store', 'X-MONI-Auth': 'unavailable' } })
   } catch {
-    return NextResponse.json(
-      { ok: false, error: 'MONI 인증 상태를 확인할 수 없습니다.' },
-      {
-        status: 503,
-        headers: {
-          'Cache-Control': 'no-store',
-          'X-MONI-Auth': 'unavailable',
-        },
-      },
-    )
+    return NextResponse.json({ ok: false, error: 'MONI 인증 상태를 확인할 수 없습니다.' }, { status: 503, headers: { 'Cache-Control': 'no-store', 'X-MONI-Auth': 'unavailable' } })
   }
 }
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
-  // Mobile is an AI-first product surface, not a responsive copy of the PC dashboard.
-  // Entering the root URL on a phone must land on the dedicated conversation shell.
   if (pathname === '/' && isMobileBrowser(request)) {
     const mobileUrl = request.nextUrl.clone()
     mobileUrl.pathname = '/mobile'
@@ -128,10 +76,7 @@ export async function middleware(request: NextRequest) {
   if (requiresMoniSession(pathname)) {
     const denied = await verifyMoniSession(request)
     if (denied) return denied
-
-    if (hasForeignTenantQuery(request) || (await hasForeignTenantBody(request))) {
-      return foreignTenantResponse()
-    }
+    if (hasForeignTenantQuery(request) || (await hasForeignTenantBody(request))) return foreignTenantResponse()
   }
 
   if (pathname === '/api/moni/agent-chat' || pathname === '/api/moni/agent-runtime') {
@@ -140,11 +85,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(rewritten)
   }
 
-  // The mobile form component intentionally uses the stable endpoint. Route it to
-  // the V2 compatibility layer so CREATE/UPDATE/DELETE parity fixes are always live.
+  // Stable mobile form endpoint always points to the newest PC-mutation parity layer.
   if (pathname === '/api/moni/mobile-extended-actions') {
     const rewritten = request.nextUrl.clone()
-    rewritten.pathname = '/api/moni/mobile-extended-actions-v2'
+    rewritten.pathname = '/api/moni/mobile-extended-actions-v3'
     return NextResponse.rewrite(rewritten)
   }
 
@@ -167,10 +111,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (/^\/api\/moni\/production-records\/[^/]+\/pdf$/.test(pathname)) {
-    if (request.nextUrl.searchParams.get('format') === 'json') {
-      return NextResponse.next()
-    }
-
+    if (request.nextUrl.searchParams.get('format') === 'json') return NextResponse.next()
     const rewritten = request.nextUrl.clone()
     rewritten.pathname = rewritten.pathname.replace(/\/pdf$/, '/print-pdf')
     return NextResponse.rewrite(rewritten)
@@ -179,9 +120,4 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next()
 }
 
-export const config = {
-  matcher: [
-    '/',
-    '/api/moni/:path*',
-  ],
-}
+export const config = { matcher: ['/', '/api/moni/:path*'] }
