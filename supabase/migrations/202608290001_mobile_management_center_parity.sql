@@ -9,7 +9,7 @@ where business_id = '20220523011' and feature_id = 'SALES_STATEMENT_MANAGEMENT';
 update public.moni_capability_registry
 set mobile_support = 'ASK_MONI',
     mobile_path = array['모바일 MONI','관리센터','수출서류 전체 이력'],
-    action_hint = '기간·상태·수출처/문서번호로 검색 후 Invoice·Packing List·연결 거래명세표 열기',
+    action_hint = '기간·상태·수출처/문서번호 검색, Invoice·Packing List·연결 거래명세표 열기, 출고확정·취소·삭제를 확인 후 실행',
     source_reference = 'src/components/MoniMobileManagementCenter.tsx',
     updated_at = now()
 where business_id = '20220523011' and feature_id = 'EXPORT_DOCUMENT_MANAGEMENT';
