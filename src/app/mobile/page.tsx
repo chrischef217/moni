@@ -21,6 +21,7 @@ import MoniMobileSalesStatementCard from '@/components/MoniMobileSalesStatementC
 import MoniMobileThinkingCharacterMotion from '@/components/MoniMobileThinkingCharacterMotion'
 import MoniMobileThinkingCharacterMotionPatch from '@/components/MoniMobileThinkingCharacterMotionPatch'
 import MoniMobileThinkingCopyFix from '@/components/MoniMobileThinkingCopyFix'
+import MoniMobileTurnHygieneGuard from '@/components/MoniMobileTurnHygieneGuard'
 import MoniMobileUxPolish from '@/components/MoniMobileUxPolish'
 import MoniMobileVoiceCanvasWave from '@/components/MoniMobileVoiceCanvasWave'
 import { getSessionFromCookies } from '@/lib/allowance/session'
@@ -64,6 +65,7 @@ export default async function MoniMobilePage() {
       <MoniMobileSalesExportBundleCard />
       <MoniMobilePurchaseCardV2 />
       <MoniMobileExtendedFormCard />
+      <MoniMobileTurnHygieneGuard />
       <MoniMobileChat />
     </main>
   )
