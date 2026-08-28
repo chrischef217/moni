@@ -8,6 +8,7 @@ const BODY_TENANT_GUARD_EXEMPT_PATHS = new Set([
   '/api/moni/agent-chat',
   '/api/moni/agent-runtime',
   '/api/moni/agent-runtime-v2',
+  '/api/moni/agent-runtime-v3',
   '/api/moni/agent-files',
 ])
 const SESSION_EXEMPT_PATHS = new Set(['/api/moni/agent-evals/canary'])
@@ -45,7 +46,9 @@ export async function middleware(request: NextRequest) {
     const denied = await verifyMoniSession(request); if (denied) return denied
     if (hasForeignTenantQuery(request) || (await hasForeignTenantBody(request))) return foreignTenantResponse()
   }
-  if (pathname === '/api/moni/agent-chat' || pathname === '/api/moni/agent-runtime') { const url=request.nextUrl.clone(); url.pathname='/api/moni/agent-runtime-v2'; return NextResponse.rewrite(url) }
+  if (pathname === '/api/moni/agent-chat' || pathname === '/api/moni/agent-runtime') { const url=request.nextUrl.clone(); url.pathname='/api/moni/agent-runtime-v3'; return NextResponse.rewrite(url) }
+  if (pathname === '/api/moni/mobile-action-start') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-action-start-v2'; return NextResponse.rewrite(url) }
+  if (pathname === '/api/moni/mobile-management-center') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-management-center-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-capability-v4') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-capability-v6'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/production-daily') { const url=request.nextUrl.clone(); url.pathname='/api/moni/production-daily-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-business-actions') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-business-actions-v3'; return NextResponse.rewrite(url) }
