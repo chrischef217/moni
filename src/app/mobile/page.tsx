@@ -24,6 +24,7 @@ import MoniMobileSalesStatementCard from '@/components/MoniMobileSalesStatementC
 import MoniMobileThinkingCharacterMotion from '@/components/MoniMobileThinkingCharacterMotion'
 import MoniMobileThinkingCharacterMotionPatch from '@/components/MoniMobileThinkingCharacterMotionPatch'
 import MoniMobileThinkingCopyFix from '@/components/MoniMobileThinkingCopyFix'
+import MoniMobileTurnBoundaryReset from '@/components/MoniMobileTurnBoundaryReset'
 import MoniMobileTurnHygieneGuard from '@/components/MoniMobileTurnHygieneGuard'
 import MoniMobileUxPolish from '@/components/MoniMobileUxPolish'
 import MoniMobileVoiceCanvasWave from '@/components/MoniMobileVoiceCanvasWave'
@@ -72,6 +73,7 @@ export default async function MoniMobilePage() {
       <MoniMobileCapabilityV4 />
       <MoniMobileManagementCenter />
       <MoniMobileTurnHygieneGuard />
+      <MoniMobileTurnBoundaryReset />
       <MoniMobileChat />
     </main>
   )
