@@ -36,6 +36,7 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
   const create = has(text, /(등록|입력|작성|추가|잡아|잡아줘|처리|반영|생성|만들어|발행|해줘|해주세요|해 줘)/)
   const inboundWrite = has(text, /(?:입고|매입).*(?:등록|입력|기록|작성|처리|반영|잡아|해줘|해주세요|해 줘)/)
     || has(text, /(?:등록|입력|기록|작성|처리|반영).*(?:입고|매입)/)
+  const v4SalesSpecial = /(택배비|배송비|운임|포장비|팔레트비|기타\s*비용|기타비용|세금\s*계산서|세금계산서|견적서|영업\s*(?:수당|커미션)\s*정산|영업\s*정산서)/
 
   // 거래명세표 + Commercial Invoice/Packing List를 함께 요청하면 하나의 수출 문서 번들로 처리한다.
   // 거래명세표 분기보다 먼저 판단해야 복합 요청이 빈 국내 판매 카드로 축소되지 않는다.
@@ -44,7 +45,6 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
   if (exportBundleWrite && !remove && !cancel && !update) return { domain: 'sales_export_bundle', operation: 'CREATE' }
 
   // 거래명세표는 매출 입력과 별도 업무 목적이다.
-  // 문장 다른 곳의 "생성한 거래건" 같은 과거 서술을 명세표 생성 명령으로 오인하지 않는다.
   if (has(text, /거래\s*명세(?:표)?/)) {
     const statementWrite = has(text, /거래\s*명세(?:표)?(?:를|을|은|는|이|가)?\s*(?:입력|작성|발행|생성|만들|등록|새로)/)
       || has(text, /(?:입력|작성|발행|생성|만들|등록)\s*(?:할|해야|해|해서|하고|하자|해줘|해주세요)?\s*(?:거래\s*명세(?:표)?)/)
@@ -57,7 +57,6 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
   }
 
   // 조회 질문은 기존 MONI Agent가 처리한다. 카드 라우팅은 명확한 쓰기 의도가 있을 때만 허용한다.
-  // 단순 "재고 수정/삭제"는 과거 입고기록 UPDATE/DELETE가 아니다. 입고/수불을 명시한 경우만 거래카드를 연다.
   if (has(text, /(부재료|포장재|부자재)/) && has(text, /(입고|수불)/)) {
     if (remove) return { domain: 'packaging_inbound', operation: 'DELETE' }
     if (update) return { domain: 'packaging_inbound', operation: 'UPDATE' }
@@ -94,7 +93,7 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
     return null
   }
 
-  if (has(text, /(판매|납품|매출)/) && !has(text, /(판매단가|판매규격|가격 설정)/)) {
+  if (has(text, /(판매|납품|매출)/) && !has(text, /(판매단가|판매규격|가격 설정)/) && !has(text, v4SalesSpecial)) {
     if (cancel || remove) return { domain: 'sales_order', operation: 'CANCEL' }
     if (update) return { domain: 'sales_order', operation: 'UPDATE' }
     if (create || has(text, /(판매등록|납품등록|매출등록)/)) return { domain: 'sales_order', operation: 'CREATE' }
