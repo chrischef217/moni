@@ -1,0 +1,52 @@
+import { readFileSync } from 'node:fs'
+
+const read = (path) => readFileSync(path, 'utf8')
+const page = read('src/app/mobile/page.tsx')
+const middleware = read('src/middleware.ts')
+const intents = read('src/lib/moni/mobile-management-center-intents.ts')
+const direct = read('src/lib/moni/mobile-management-direct.ts')
+const api = read('src/app/api/moni/mobile-management-center/route.ts')
+const apiV2 = read('src/app/api/moni/mobile-management-center-v2/route.ts')
+const component = read('src/components/MoniMobileManagementCenter.tsx')
+const collision = read('src/components/MoniMobileManagementCollisionStyles.tsx')
+const printRoute = read('src/app/api/moni/official-documents/[id]/print/route.ts')
+const migration = read('supabase/migrations/202608290001_mobile_management_center_parity.sql')
+
+const failures = []
+const requireText = (source, token, message) => { if (!source.includes(token)) failures.push(message) }
+const forbidText = (source, token, message) => { if (source.includes(token)) failures.push(message) }
+
+requireText(page, 'MoniMobileManagementCenter', 'mobile page must mount the management center')
+requireText(page, 'MoniMobileManagementCollisionStyles', 'mobile page must mount management collision styles')
+requireText(middleware, "url.pathname='/api/moni/agent-runtime-v3'", 'agent runtime must route through management-aware V3')
+requireText(middleware, "url.pathname='/api/moni/mobile-action-start-v2'", 'structured action start must route through management-aware V2')
+requireText(middleware, "url.pathname='/api/moni/mobile-management-center-v2'", 'management center must route through hardened V2')
+for (const domain of ['sales_statement_history','export_document_history','official_document_history','tax_control']) requireText(intents, `'${domain}'`, `missing management intent ${domain}`)
+requireText(direct, 'MONI_MOBILE_MANAGEMENT_CENTER_V1', 'management direct turn runtime marker is missing')
+requireText(direct, 'moni_ai_messages', 'management direct turn must preserve conversation messages')
+requireText(api, "'/api/moni/financial-control?month=", 'tax management must reuse canonical PC financial-control read API')
+requireText(api, "'set_settlement_due_date'", 'tax management must support settlement due-date parity')
+requireText(api, "'mark_settlement_paid'", 'tax management must support settlement paid parity')
+requireText(api, "'reverse_settlement_payment'", 'tax management must support settlement payment reversal parity')
+requireText(api, 'CANONICAL_PC_FINANCIAL_CONTROL_API_SUCCESS', 'tax management execution must verify canonical PC API success')
+requireText(api, 'moni_action_confirmations', 'tax management writes must use confirmation records')
+requireText(api, 'moni_action_audit_log', 'tax management writes must preserve audit logs')
+requireText(apiV2, "select('id,document_date,status,invoice_no,packing_list_no,consignee_id,consignee_snapshot,bill_to,incoterm,final_destination,sales_order_id,created_at'", 'export history must use real export_documents columns')
+forbidText(apiV2, 'transaction_statement_number', 'hardened export history must not query a nonexistent transaction_statement_number column')
+forbidText(apiV2, 'total_amount,currency', 'hardened export history must not query nonexistent export document totals')
+requireText(component, '총 {history.total.toLocaleString', 'history UI must expose total count and pagination')
+requireText(component, "action === 'mark_settlement_paid'", 'tax UI must expose settlement payment actions')
+requireText(component, "command:'query'", 'management UI must query only on explicit/initial targeted requests')
+requireText(collision, '.moni-sales-statement-host', 'management center must suppress the legacy statement card when active')
+requireText(printRoute, "session.role !== 'admin'", 'official document print must require admin authorization')
+requireText(printRoute, 'window.print()', 'official document print must expose native print/PDF action')
+requireText(printRoute, "'Cache-Control':'private, no-store, max-age=0'", 'official document print must not be cached')
+for (const feature of ['SALES_STATEMENT_MANAGEMENT','EXPORT_DOCUMENT_MANAGEMENT','DOCUMENT_OFFICIAL_MANAGEMENT','FINANCIAL_CONTROL_TAX']) requireText(migration, feature, `capability registry migration missing ${feature}`)
+requireText(migration, "mobile_support = 'ASK_MONI'", 'management capabilities must be marked ASK_MONI')
+
+if (failures.length) {
+  console.error('MONI mobile management center verification failed:')
+  for (const failure of failures) console.error(`- ${failure}`)
+  process.exit(1)
+}
+console.log('MONI mobile management center verification passed.')
