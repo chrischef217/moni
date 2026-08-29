@@ -33,9 +33,12 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
   const remove = has(text, /(삭제|지워|제거|없애)/)
   const update = has(text, /(수정|변경|정정|고쳐|바꿔|업데이트)/)
   const cancel = has(text, /(취소|철회)/)
-  const create = has(text, /(등록|입력|작성|추가|잡아|잡아줘|처리|반영|생성|만들어|발행|해줘|해주세요|해 줘)/)
-  const inboundWrite = has(text, /(?:입고|매입).*(?:등록|입력|기록|작성|처리|반영|잡아|해줘|해주세요|해 줘)/)
+  // Generic courtesy endings such as "해줘" are not write intent by themselves.
+  // Read requests like "작업지시서 내역 리스트업 좀 해줘" must stay on the Agent read path.
+  const create = has(text, /(등록|입력|작성|추가|잡아|잡아줘|처리|반영|생성|만들어|발행)/)
+  const inboundWrite = has(text, /(?:입고|매입).*(?:등록|입력|기록|작성|처리|반영|잡아)/)
     || has(text, /(?:등록|입력|기록|작성|처리|반영).*(?:입고|매입)/)
+    || has(text, /(?:입고|매입)\s*(?:해줘|해주세요|해 줘)$/)
   const v4SalesSpecial = /(택배비|배송비|운임|포장비|팔레트비|기타\s*비용|기타비용|세금\s*계산서|세금계산서|견적서|영업\s*(?:수당|커미션)\s*정산|영업\s*정산서)/
 
   // 거래명세표 + Commercial Invoice/Packing List를 함께 요청하면 하나의 수출 문서 번들로 처리한다.
@@ -74,7 +77,7 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
   if (has(text, /(생산계획|월간 생산계획|생산 계획)/)) {
     if (remove || cancel) return { domain: 'production_plan', operation: 'DELETE' }
     if (update) return { domain: 'production_plan', operation: 'UPDATE' }
-    if (create || has(text, /(계획 잡|계획 세|계획해|계획 짜)/)) return { domain: 'production_plan', operation: 'CREATE' }
+    if (create || has(text, /(계획 잡|계획 세|계획해|계획 짜)/) || has(text, /(?:생산계획|생산 계획)\s*(?:해줘|해주세요|해 줘)$/)) return { domain: 'production_plan', operation: 'CREATE' }
     return null
   }
 
@@ -89,25 +92,25 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
   if (has(text, /(작업지시|생산지시|생산 작업)/)) {
     if (cancel || remove) return { domain: 'production_work', operation: 'CANCEL' }
     if (update) return { domain: 'production_work', operation: 'UPDATE' }
-    if (create || has(text, /(?:작업지시|생산지시).*(?:발행|만들|생성)/)) return { domain: 'production_work', operation: 'CREATE' }
+    if (create || has(text, /(?:작업지시|생산지시).*(?:발행|만들|생성)/) || has(text, /(?:작업지시(?:서)?|생산지시)\s*(?:해줘|해주세요|해 줘)$/)) return { domain: 'production_work', operation: 'CREATE' }
     return null
   }
 
   if (has(text, /(판매|납품|매출)/) && !has(text, /(판매단가|판매규격|가격 설정)/) && !has(text, v4SalesSpecial)) {
     if (cancel || remove) return { domain: 'sales_order', operation: 'CANCEL' }
     if (update) return { domain: 'sales_order', operation: 'UPDATE' }
-    if (create || has(text, /(판매등록|납품등록|매출등록)/)) return { domain: 'sales_order', operation: 'CREATE' }
+    if (create || has(text, /(판매등록|납품등록|매출등록)/) || has(text, /(?:판매|납품|매출)\s*(?:해줘|해주세요|해 줘)$/)) return { domain: 'sales_order', operation: 'CREATE' }
     return null
   }
 
   if (has(text, /(지급|결제|대금 지급|매입대금)/) && !has(text, /(매입처)/)) {
-    if (create || has(text, /(?:지급|결제).*(?:등록|처리|실행|반영)/)) return { domain: 'payment', operation: 'CREATE' }
+    if (create || has(text, /(?:지급|결제).*(?:등록|처리|실행|반영)/) || has(text, /(?:지급|결제)\s*(?:해줘|해주세요|해 줘)$/)) return { domain: 'payment', operation: 'CREATE' }
     return null
   }
 
   if (has(text, /(매입|구매)/) && !has(text, /(원재료.*입고|원료.*입고)/)) {
     if (cancel || remove) return { domain: 'purchase', operation: 'CANCEL' }
-    if (create || has(text, /(매입등록|구매등록)/)) return { domain: 'purchase', operation: 'CREATE' }
+    if (create || has(text, /(매입등록|구매등록)/) || has(text, /(?:매입|구매)\s*(?:해줘|해주세요|해 줘)$/)) return { domain: 'purchase', operation: 'CREATE' }
     return null
   }
 
