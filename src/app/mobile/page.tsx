@@ -7,6 +7,7 @@ import MoniMobileBusinessCards from '@/components/MoniMobileBusinessCards'
 import MoniMobileCapabilityV4 from '@/components/MoniMobileCapabilityV4'
 import MoniMobileChat from '@/components/MoniMobileChat'
 import MoniMobileContinuityGuard from '@/components/MoniMobileContinuityGuard'
+import MoniMobileDocumentSaveUX from '@/components/MoniMobileDocumentSaveUX'
 import MoniMobileExtendedFormCard from '@/components/MoniMobileExtendedFormCard'
 import MoniMobileExportWorkflowGuard from '@/components/MoniMobileExportWorkflowGuard'
 import MoniMobileFormSafetyStyles from '@/components/MoniMobileFormSafetyStyles'
@@ -54,6 +55,7 @@ export default async function MoniMobilePage() {
       <MoniMobileRuntimeGuard />
       <MoniMobileVoiceTouchGuard />
       <MoniMobileAnswerActions />
+      <MoniMobileDocumentSaveUX />
       <MoniMobileUxPolish />
       <MoniMobileInteractionPolish />
       <MoniMobileThinkingCopyFix />
