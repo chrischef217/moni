@@ -124,11 +124,13 @@ export default function MoniMobileVoiceTouchGuard() {
 
       let GuardedRecognition: RecognitionConstructor | null = null
       if (BaseRecognition) {
+        const RecognitionClass: RecognitionConstructor = BaseRecognition
+
         class VoiceRecognitionGuard implements RecognitionLike {
           private inner: RecognitionLike
 
           constructor() {
-            this.inner = new BaseRecognition()
+            this.inner = new RecognitionClass()
           }
 
           get continuous() { return this.inner.continuous }
