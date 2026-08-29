@@ -1,0 +1,1 @@
+Preview verification at code head `9a1de0eef7067692fb4deee7439bcead7b0c2e7a` passed all prebuild gates, 3/3 read-routing tests, TypeScript/Next build, and `/mobile` HTTP 200. Subsequent commits in this branch are documentation-only verification notes/scripts and do not change runtime source.

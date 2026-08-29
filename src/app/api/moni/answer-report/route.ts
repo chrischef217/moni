@@ -19,6 +19,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
+const DOCUMENT_TABLE_WIDTH_DXA = 9200
 const text = (value: unknown, max = 20000) => String(value ?? '').trim().slice(0, max)
 
 type ReportBody = { thread_id?: string; assistant_message_id?: string }
@@ -43,7 +44,7 @@ function tableBlock(rows: string[][]) {
   const cleanRows = rows.filter((row) => !row.every((cell) => /^:?-{3,}:?$/.test(cell)))
   const columnCount = Math.max(1, ...cleanRows.map((row) => row.length))
   return new Table({
-    width: { size: '100%', type: WidthType.PERCENTAGE },
+    width: { size: DOCUMENT_TABLE_WIDTH_DXA, type: WidthType.DXA },
     rows: cleanRows.map((row, rowIndex) => new TableRow({
       tableHeader: rowIndex === 0,
       children: Array.from({ length: columnCount }, (_, columnIndex) => new TableCell({
@@ -199,9 +200,9 @@ export async function POST(request: NextRequest) {
           }),
           new Paragraph({ text: '질문', heading: HeadingLevel.HEADING_1, spacing: { before: 100, after: 90 } }),
           new Table({
-            width: { size: '100%', type: WidthType.PERCENTAGE },
+            width: { size: DOCUMENT_TABLE_WIDTH_DXA, type: WidthType.DXA },
             rows: [new TableRow({ children: [new TableCell({
-              width: { size: '100%', type: WidthType.PERCENTAGE },
+              width: { size: DOCUMENT_TABLE_WIDTH_DXA, type: WidthType.DXA },
               shading: { fill: 'F0F8F6' },
               margins: { top: 120, bottom: 120, left: 140, right: 140 },
               children: [new Paragraph({
@@ -229,6 +230,7 @@ export async function POST(request: NextRequest) {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(bodyBytes.byteLength),
         'Cache-Control': 'no-store',
       },
     })

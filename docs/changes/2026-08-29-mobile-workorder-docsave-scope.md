@@ -1,0 +1,1 @@
+Runtime scope: `src/lib/moni/mobile-business-intents.ts`, `src/app/api/moni/answer-report/route.ts`, `src/components/MoniMobileDocumentSaveUX.tsx`, `src/app/mobile/page.tsx`, plus regression gates/tests. Other files in this change-note directory are documentation only.
