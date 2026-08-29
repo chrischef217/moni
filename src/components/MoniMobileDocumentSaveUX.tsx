@@ -108,14 +108,16 @@ export default function MoniMobileDocumentSaveUX() {
 
         if (response.body) {
           const reader = response.body.getReader()
-          const chunks: Uint8Array[] = []
+          const chunks: ArrayBuffer[] = []
           let received = 0
           let fallbackProgress = 35
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
             if (!value) continue
-            chunks.push(value)
+            const copied = new Uint8Array(value.byteLength)
+            copied.set(value)
+            chunks.push(copied.buffer)
             received += value.byteLength
             const nextProgress = contentLength > 0
               ? Math.min(94, 35 + Math.round((received / contentLength) * 59))
