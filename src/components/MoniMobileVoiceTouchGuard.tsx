@@ -78,6 +78,7 @@ export default function MoniMobileVoiceTouchGuard() {
   useLayoutEffect(() => {
     const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
     if (!root) return
+    const chatRoot = root
 
     let disposed = false
     let cleanupInstalled: (() => void) | null = null
@@ -96,7 +97,7 @@ export default function MoniMobileVoiceTouchGuard() {
 
       let expectVoiceFallback = false
       let expectationResetTimer: number | null = null
-      let voiceWasActive = Boolean(root.querySelector(VOICE_TARGET_SELECTOR))
+      let voiceWasActive = Boolean(chatRoot.querySelector(VOICE_TARGET_SELECTOR))
       let releaseTimer: number | null = null
 
       // RuntimeGuard historically stretches every 900ms timeout to 30 seconds
@@ -154,7 +155,7 @@ export default function MoniMobileVoiceTouchGuard() {
           set onspeechend(value: (() => void) | null | undefined) { this.inner.onspeechend = value }
 
           start() {
-            root.dataset.moniVoiceInteractionReady = 'false'
+            chatRoot.dataset.moniVoiceInteractionReady = 'false'
             this.inner.start()
           }
 
@@ -195,22 +196,22 @@ export default function MoniMobileVoiceTouchGuard() {
       }
 
       const scheduleRelease = () => {
-        window.requestAnimationFrame(() => releaseInteractionSurface(root))
+        window.requestAnimationFrame(() => releaseInteractionSurface(chatRoot))
         if (releaseTimer !== null) priorClearTimeout(releaseTimer)
         releaseTimer = priorSetTimeout(() => {
           releaseTimer = null
-          releaseInteractionSurface(root)
+          releaseInteractionSurface(chatRoot)
         }, 180)
       }
 
       const syncVoiceState = () => {
-        const voiceActive = Boolean(root.querySelector(VOICE_TARGET_SELECTOR))
+        const voiceActive = Boolean(chatRoot.querySelector(VOICE_TARGET_SELECTOR))
         if (voiceWasActive && !voiceActive) scheduleRelease()
         voiceWasActive = voiceActive
       }
 
       const observer = new MutationObserver(syncVoiceState)
-      observer.observe(root, { childList: true, subtree: true })
+      observer.observe(chatRoot, { childList: true, subtree: true })
       syncVoiceState()
 
       cleanupInstalled = () => {
