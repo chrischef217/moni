@@ -11,8 +11,11 @@ const checks = [
   [ux.includes('문서 보기'), 'document save UX must expose a document view button'],
   [ux.includes("response.body.getReader()"), 'document save UX must track streamed download progress'],
   [route.includes("'Content-Length': String(bodyBytes.byteLength)"), 'answer report must expose content length'],
-  [route.includes('DOCUMENT_TABLE_WIDTH_DXA'), 'answer report must use stable document table width'],
-  [route.includes('WidthType.DXA'), 'answer report must avoid collapsed percentage tables in mobile viewers'],
+  [route.includes('function tableBlocks'), 'answer report must convert markdown tables to paragraph records'],
+  [route.includes('Some Android DOCX viewers collapse Word tables'), 'answer report must document the Android viewer compatibility reason'],
+  [!route.includes('new Table('), 'answer report must not emit Word tables that collapse in Android viewers'],
+  [!route.includes('TableCell'), 'answer report must not depend on table cells for question or answer layout'],
+  [route.includes("shading: { fill: 'F0F8F6' }"), 'question block must use a full-width paragraph treatment'],
 ]
 
 const failed = checks.filter(([ok]) => !ok)
