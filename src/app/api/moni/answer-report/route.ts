@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   HeadingLevel,
   Packer,
   Paragraph,
-  Table,
-  TableCell,
-  TableRow,
   TextRun,
-  WidthType,
 } from 'docx'
 import { getSessionFromRequest } from '@/lib/allowance/session'
 import { createMoniServiceRoleClient } from '@/lib/moni/db'
@@ -19,11 +16,10 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()
-const DOCUMENT_TABLE_WIDTH_DXA = 9200
 const text = (value: unknown, max = 20000) => String(value ?? '').trim().slice(0, max)
 
 type ReportBody = { thread_id?: string; assistant_message_id?: string }
-type ReportBlock = Paragraph | Table
+type ReportBlock = Paragraph
 
 function cleanInlineMarkdown(value: string) {
   return value
@@ -40,27 +36,57 @@ function parseTableLine(line: string) {
   return line.trim().replace(/^\||\|$/g, '').split('|').map((cell) => cleanInlineMarkdown(cell.trim()))
 }
 
-function tableBlock(rows: string[][]) {
+/**
+ * Some Android DOCX viewers collapse Word tables into 1-character-wide columns even
+ * when fixed DXA widths are supplied. Answer documents are primarily consumed on
+ * mobile, so markdown tables are rendered as full-width paragraph records instead.
+ * This preserves every header/value pair while avoiding viewer-specific table layout.
+ */
+function tableBlocks(rows: string[][]): Paragraph[] {
   const cleanRows = rows.filter((row) => !row.every((cell) => /^:?-{3,}:?$/.test(cell)))
-  const columnCount = Math.max(1, ...cleanRows.map((row) => row.length))
-  return new Table({
-    width: { size: DOCUMENT_TABLE_WIDTH_DXA, type: WidthType.DXA },
-    rows: cleanRows.map((row, rowIndex) => new TableRow({
-      tableHeader: rowIndex === 0,
-      children: Array.from({ length: columnCount }, (_, columnIndex) => new TableCell({
-        shading: rowIndex === 0 ? { fill: 'EAF3F1' } : undefined,
-        margins: { top: 80, bottom: 80, left: 90, right: 90 },
-        children: [new Paragraph({
-          children: [new TextRun({
-            text: row[columnIndex] || '',
-            bold: rowIndex === 0,
-            color: rowIndex === 0 ? '173B52' : '263F4D',
-            size: rowIndex === 0 ? 20 : 19,
-          })],
-          spacing: { after: 0 },
-        })],
-      })),
-    })),
+  if (!cleanRows.length) return []
+
+  const headers = cleanRows[0]
+  const bodyRows = cleanRows.slice(1)
+  if (!bodyRows.length) {
+    return [new Paragraph({
+      children: [new TextRun({ text: headers.join(' · '), bold: true, size: 20, color: '173B52' })],
+      shading: { fill: 'EEF7F5' },
+      indent: { left: 160, right: 160 },
+      spacing: { before: 60, after: 110, line: 300 },
+    })]
+  }
+
+  return bodyRows.map((row, rowIndex) => {
+    const children: TextRun[] = [
+      new TextRun({ text: `${rowIndex + 1}. `, bold: true, size: 20, color: '16866F' }),
+    ]
+
+    headers.forEach((header, columnIndex) => {
+      if (columnIndex > 0) children.push(new TextRun({ text: '   ·   ', size: 18, color: '94A8B0' }))
+      children.push(new TextRun({
+        text: `${header || `항목 ${columnIndex + 1}`}: `,
+        bold: true,
+        size: 19,
+        color: '173B52',
+      }))
+      children.push(new TextRun({
+        text: row[columnIndex] || '-',
+        size: 19,
+        color: '263F4D',
+      }))
+    })
+
+    return new Paragraph({
+      children,
+      shading: { fill: rowIndex % 2 === 0 ? 'F7FBFA' : 'FFFFFF' },
+      border: {
+        bottom: { style: BorderStyle.SINGLE, size: 4, color: 'D9E7E4', space: 5 },
+      },
+      indent: { left: 120, right: 120 },
+      spacing: { before: 80, after: 90, line: 300 },
+      keepLines: true,
+    })
   })
 }
 
@@ -83,8 +109,7 @@ function answerBlocks(markdown: string) {
         rows.push(parseTableLine(lines[index]))
         index += 1
       }
-      const filtered = rows.filter((row) => !row.every((cell) => /^:?-{3,}:?$/.test(cell)))
-      if (filtered.length) blocks.push(tableBlock(filtered))
+      blocks.push(...tableBlocks(rows))
       blocks.push(new Paragraph({ text: '', spacing: { after: 70 } }))
       continue
     }
@@ -199,19 +224,16 @@ export async function POST(request: NextRequest) {
             children: [new TextRun({ text: `두배 · ${stamp.display}`, color: '64748B', size: 18 })],
           }),
           new Paragraph({ text: '질문', heading: HeadingLevel.HEADING_1, spacing: { before: 100, after: 90 } }),
-          new Table({
-            width: { size: DOCUMENT_TABLE_WIDTH_DXA, type: WidthType.DXA },
-            rows: [new TableRow({ children: [new TableCell({
-              width: { size: DOCUMENT_TABLE_WIDTH_DXA, type: WidthType.DXA },
-              shading: { fill: 'F0F8F6' },
-              margins: { top: 120, bottom: 120, left: 140, right: 140 },
-              children: [new Paragraph({
-                children: [new TextRun({ text: questionText, bold: true, color: '173B52', size: 21 })],
-                spacing: { after: 0, line: 300 },
-              })],
-            })] })],
+          new Paragraph({
+            children: [new TextRun({ text: questionText, bold: true, color: '173B52', size: 21 })],
+            shading: { fill: 'F0F8F6' },
+            border: {
+              left: { style: BorderStyle.SINGLE, size: 10, color: '72B9AA', space: 10 },
+              bottom: { style: BorderStyle.SINGLE, size: 3, color: 'DCEBE7', space: 8 },
+            },
+            indent: { left: 180, right: 180 },
+            spacing: { before: 40, after: 160, line: 310 },
           }),
-          new Paragraph({ text: '', spacing: { after: 100 } }),
           new Paragraph({ text: 'MONI 답변', heading: HeadingLevel.HEADING_1, spacing: { before: 140, after: 100 } }),
           ...answerBlocks(answerText),
           new Paragraph({
