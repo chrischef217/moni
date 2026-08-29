@@ -28,6 +28,7 @@ import MoniMobileTurnBoundaryReset from '@/components/MoniMobileTurnBoundaryRese
 import MoniMobileTurnHygieneGuard from '@/components/MoniMobileTurnHygieneGuard'
 import MoniMobileUxPolish from '@/components/MoniMobileUxPolish'
 import MoniMobileVoiceCanvasWave from '@/components/MoniMobileVoiceCanvasWave'
+import MoniMobileVoiceTouchGuard from '@/components/MoniMobileVoiceTouchGuard'
 import { getSessionFromCookies } from '@/lib/allowance/session'
 
 export const dynamic = 'force-dynamic'
@@ -51,6 +52,7 @@ export default async function MoniMobilePage() {
       <MoniMobileFormSafetyStyles />
       <MoniMobileManagementCollisionStyles />
       <MoniMobileRuntimeGuard />
+      <MoniMobileVoiceTouchGuard />
       <MoniMobileAnswerActions />
       <MoniMobileUxPolish />
       <MoniMobileInteractionPolish />
