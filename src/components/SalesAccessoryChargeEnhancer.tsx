@@ -77,21 +77,51 @@ export default function SalesAccessoryChargeEnhancer(){
       return Array.from(modal.querySelectorAll<HTMLTableElement>('table')).find(table=>Array.from(table.querySelectorAll('th')).some(th=>text(th.textContent)==='제품 · 판매규격'))||null
     }
     function feeContainer(modal:HTMLElement){return modal.querySelector<HTMLElement>('[data-moni-accessory-container]')}
+    function vatRateFromModal(modal:HTMLElement){
+      const vatLabel=Array.from(modal.querySelectorAll<HTMLElement>('span')).find(node=>text(node.textContent)==='부가세율(%)')
+      return Math.max(0,Number(vatLabel?.parentElement?.querySelector<HTMLInputElement>('input')?.value||0))
+    }
+    function syncBaseSummary(modal:HTMLElement,finalSupply:number,finalVat:number,finalTotal:number){
+      const box=feeContainer(modal);if(!box)return
+      let node=box.nextElementSibling as HTMLElement|null
+      for(let depth=0;node&&depth<5;depth+=1,node=node.nextElementSibling as HTMLElement|null){
+        const cards=Array.from(node.children).filter((child):child is HTMLElement=>child instanceof HTMLElement)
+        if(cards.length<3)continue
+        const byLabel=(label:string)=>cards.find(card=>text(card.firstElementChild?.textContent)===label)
+        const supplyCard=byLabel('공급가액');const vatCard=byLabel('부가세');const totalCard=byLabel('합계')
+        if(!supplyCard||!vatCard||!totalCard)continue
+        const setValue=(card:HTMLElement,value:number)=>{
+          const valueNode=card.querySelector<HTMLElement>('.text-2xl')||(card.children[1] instanceof HTMLElement?card.children[1] as HTMLElement:null)
+          if(valueNode&&valueNode.textContent!==money(value))valueNode.textContent=money(value)
+        }
+        setValue(supplyCard,finalSupply);setValue(vatCard,finalVat);setValue(totalCard,finalTotal)
+        node.dataset.moniAccessoryFinalSummary='true'
+        return
+      }
+    }
     function updateFeeSummary(modal:HTMLElement){
       const box=feeContainer(modal);if(!box)return
       const rows=Array.from(box.querySelectorAll<HTMLElement>('[data-moni-accessory-row]'))
-      const feeSupply=rows.reduce((sum,row)=>sum+Number(row.querySelector<HTMLInputElement>('[data-charge-quantity]')?.value||0)*Number(row.querySelector<HTMLInputElement>('[data-charge-price]')?.value||0),0)
+      const vatRate=vatRateFromModal(modal)
+      let feeSupply=0
+      rows.forEach(row=>{
+        const lineSupply=Number(row.querySelector<HTMLInputElement>('[data-charge-quantity]')?.value||0)*Number(row.querySelector<HTMLInputElement>('[data-charge-price]')?.value||0)
+        feeSupply+=lineSupply
+        const vatNode=row.querySelector<HTMLElement>('[data-charge-vat]')
+        if(vatNode)vatNode.textContent=`VAT 별도 ${money(lineSupply*vatRate/100)} (${vatRate.toLocaleString('ko-KR',{maximumFractionDigits:2})}%)`
+      })
       const table=productTable(modal)
       const productSupply=table?Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr')).reduce((sum,row)=>{
         const cells=row.querySelectorAll<HTMLTableCellElement>('td');return cells.length>6?sum+parseMoney(cells[6].textContent):sum
       },0):0
-      const vatLabel=Array.from(modal.querySelectorAll<HTMLElement>('span')).find(node=>text(node.textContent)==='부가세율(%)')
-      const vatRate=Number(vatLabel?.parentElement?.querySelector<HTMLInputElement>('input')?.value||0)
       const finalSupply=productSupply+feeSupply
-      const finalVat=finalSupply*Math.max(0,vatRate)/100
+      const feeVat=feeSupply*vatRate/100
+      const finalVat=finalSupply*vatRate/100
+      const finalTotal=finalSupply+finalVat
       const summary=box.querySelector<HTMLElement>('[data-moni-accessory-summary]')
-      const nextSummary=`기타비용 ${money(feeSupply)} · 예상 최종 공급가액 ${money(finalSupply)} · 예상 합계 ${money(finalSupply+finalVat)}`
+      const nextSummary=`기타비용 공급가액 ${money(feeSupply)} · 기타비용 VAT ${money(feeVat)} · 최종 공급가액 ${money(finalSupply)} · 최종 VAT ${money(finalVat)} · 최종 합계 ${money(finalTotal)}`
       if(summary&&summary.textContent!==nextSummary)summary.textContent=nextSummary
+      syncBaseSummary(modal,finalSupply,finalVat,finalTotal)
     }
     function addChargeRow(modal:HTMLElement,seed?:Partial<Charge>){
       const box=feeContainer(modal);const tbody=box?.querySelector<HTMLTableSectionElement>('tbody');if(!box||!tbody)return
@@ -100,10 +130,14 @@ export default function SalesAccessoryChargeEnhancer(){
       const name=mkInput('data-charge-name',String(seed?.product_name||'택배비'),'예: 택배비')
       const quantity=mkInput('data-charge-quantity',String(seed?.quantity??1),'1','number');quantity.min='0';quantity.step='0.001'
       const unit=mkInput('data-charge-unit',String(seed?.unit||'건'),'건')
-      const price=mkInput('data-charge-price',String(seed?.unit_price??''),'금액','number');price.min='0'
-      const amount=document.createElement('div');amount.className='font-black text-emerald-700';const refreshAmount=()=>{amount.textContent=money(Number(quantity.value||0)*Number(price.value||0));updateFeeSummary(modal)};quantity.addEventListener('input',refreshAmount);price.addEventListener('input',refreshAmount);refreshAmount()
+      const price=mkInput('data-charge-price',String(seed?.unit_price??''),'부가세 제외 금액','number');price.min='0'
+      const amountWrap=document.createElement('div')
+      const amount=document.createElement('div');amount.className='font-black text-emerald-700'
+      const vat=document.createElement('div');vat.dataset.chargeVat='true';vat.className='mt-1 text-[11px] font-bold text-slate-500'
+      amountWrap.append(amount,vat)
+      const refreshAmount=()=>{amount.textContent=money(Number(quantity.value||0)*Number(price.value||0));updateFeeSummary(modal)};quantity.addEventListener('input',refreshAmount);price.addEventListener('input',refreshAmount);refreshAmount()
       const remove=document.createElement('button');remove.type='button';remove.textContent='삭제';remove.className='text-sm font-bold text-red-500 underline';remove.onclick=()=>{tr.remove();updateFeeSummary(modal)}
-      const cells=[name,quantity,unit,price,amount,remove].map(content=>{const td=document.createElement('td');td.className='px-3 py-3';td.append(content);return td});tr.append(...cells);tbody.appendChild(tr);updateFeeSummary(modal)
+      const cells=[name,quantity,unit,price,amountWrap,remove].map(content=>{const td=document.createElement('td');td.className='px-3 py-3';td.append(content);return td});tr.append(...cells);tbody.appendChild(tr);updateFeeSummary(modal)
     }
     function enhanceModal(){
       const modal=productModal();if(!modal||modal.dataset.moniAccessoryEnhanced==='true')return
@@ -116,7 +150,7 @@ export default function SalesAccessoryChargeEnhancer(){
       addProduct.insertAdjacentElement('afterend',addFee)
 
       const box=document.createElement('div');box.dataset.moniAccessoryContainer='true';box.className='mt-4 overflow-hidden rounded-2xl border border-slate-300 bg-white'
-      box.innerHTML=`<div class="flex items-center justify-between bg-slate-100 px-4 py-3"><div><b class="text-slate-800">기타비용</b><div class="mt-1 text-xs text-slate-500">택배비·운임·포장비 등. 재고·kg·MOQ에는 반영하지 않고 이 거래명세표의 금액·VAT·미수금에만 합산됩니다.</div></div></div><div class="overflow-x-auto"><table class="min-w-[760px] w-full text-sm text-slate-700"><thead class="bg-slate-50 text-slate-500"><tr><th class="px-3 py-3 text-left">항목명</th><th class="px-3 py-3 text-left">수량</th><th class="px-3 py-3 text-left">단위</th><th class="px-3 py-3 text-left">단가</th><th class="px-3 py-3 text-left">공급가액</th><th class="px-3 py-3"></th></tr></thead><tbody></tbody></table></div><div data-moni-accessory-summary class="border-t border-slate-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800">기타비용 0원</div>`
+      box.innerHTML=`<div class="flex items-center justify-between bg-slate-100 px-4 py-3"><div><b class="text-slate-800">기타비용</b><div class="mt-1 text-xs text-slate-500">택배비·운임·포장비 등. 입력 단가는 부가세 제외 공급가액 기준이며, 위의 부가세율(%)이 동일하게 적용됩니다. 재고·kg·MOQ에는 반영하지 않고 거래금액·VAT·미수금에만 합산됩니다.</div></div></div><div class="overflow-x-auto"><table class="min-w-[760px] w-full text-sm text-slate-700"><thead class="bg-slate-50 text-slate-500"><tr><th class="px-3 py-3 text-left">항목명</th><th class="px-3 py-3 text-left">수량</th><th class="px-3 py-3 text-left">단위</th><th class="px-3 py-3 text-left">단가(부가세 별도)</th><th class="px-3 py-3 text-left">공급가액 / VAT</th><th class="px-3 py-3"></th></tr></thead><tbody></tbody></table></div><div data-moni-accessory-summary class="border-t border-slate-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800">기타비용 0원</div>`
       block.insertAdjacentElement('afterend',box)
       const existing=editingOrderId?chargesByOrder[editingOrderId]||[]:[]
       existing.forEach(charge=>addChargeRow(modal,charge))
@@ -139,7 +173,12 @@ export default function SalesAccessoryChargeEnhancer(){
       if(label==='수정'&&row?.dataset.moniOrderId){editingOrderId=row.dataset.moniOrderId;window.setTimeout(enhanceModal,0);return}
       if(label==='출력'&&row?.dataset.moniOrderId&&(chargesByOrder[row.dataset.moniOrderId]?.length||0)>0){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();window.open(`/sales-management/orders/${encodeURIComponent(row.dataset.moniOrderId)}/statement?auto=1`,'_blank')}
     }
-    const inputCapture=(event:Event)=>{const input=event.target instanceof HTMLInputElement?event.target:null;if(input?.matches('[data-moni-variant-search]'))suggestFeeConversion(input)}
+    const inputCapture=(event:Event)=>{
+      const input=event.target instanceof HTMLInputElement?event.target:null
+      if(input?.matches('[data-moni-variant-search]'))suggestFeeConversion(input)
+      const modal=productModal()
+      if(input&&modal?.contains(input))window.setTimeout(()=>updateFeeSummary(modal),0)
+    }
     document.addEventListener('click',clickCapture,true)
     document.addEventListener('input',inputCapture,true)
 
@@ -154,6 +193,7 @@ export default function SalesAccessoryChargeEnhancer(){
         if(stopped)return
         annotateRows()
         enhanceModal()
+        const modal=productModal();if(modal)updateFeeSummary(modal)
       })
     })
     observer.observe(document.body,{childList:true,subtree:true})
