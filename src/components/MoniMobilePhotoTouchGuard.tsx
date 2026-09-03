@@ -3,6 +3,8 @@
 import { useEffect } from 'react'
 
 const PHOTO_BUSY_TEXT = /(사진 준비 중|사진을 안전하게 준비)/
+const PHOTO_BUSY_MAX_MS = 40_000
+const PHOTO_RECOVERY_KEY = 'moni-mobile-photo-stuck-recovery-at'
 
 function releaseInteractionSurface(root: HTMLElement) {
   root.removeAttribute('inert')
@@ -45,6 +47,32 @@ export default function MoniMobilePhotoTouchGuard() {
     if (!root) return
     let wasBusy = PHOTO_BUSY_TEXT.test(root.textContent || '')
     let releaseTimer: number | null = null
+    let stuckTimer: number | null = null
+
+    const clearStuckTimer = () => {
+      if (stuckTimer !== null) window.clearTimeout(stuckTimer)
+      stuckTimer = null
+    }
+
+    const armStuckRecovery = () => {
+      if (stuckTimer !== null) return
+      stuckTimer = window.setTimeout(() => {
+        stuckTimer = null
+        if (!PHOTO_BUSY_TEXT.test(root.textContent || '')) return
+        releaseInteractionSurface(root)
+        try {
+          const now = Date.now()
+          const last = Number(window.sessionStorage.getItem(PHOTO_RECOVERY_KEY) || 0)
+          if (last && now - last < 60_000) return
+          window.sessionStorage.setItem(PHOTO_RECOVERY_KEY, String(now))
+          // READY-but-unlinked attachments are restored by MoniMobileChat after reload,
+          // so a stalled picker/upload state cannot leave the entire composer disabled forever.
+          window.location.reload()
+        } catch {
+          window.location.reload()
+        }
+      }, PHOTO_BUSY_MAX_MS)
+    }
 
     const scheduleRelease = () => {
       window.requestAnimationFrame(() => releaseInteractionSurface(root))
@@ -57,6 +85,8 @@ export default function MoniMobilePhotoTouchGuard() {
 
     const sync = () => {
       const busy = PHOTO_BUSY_TEXT.test(root.textContent || '')
+      if (busy) armStuckRecovery()
+      else clearStuckTimer()
       if (wasBusy && !busy) scheduleRelease()
       wasBusy = busy
     }
@@ -69,6 +99,7 @@ export default function MoniMobilePhotoTouchGuard() {
     window.addEventListener('pageshow', onReturnToPage)
     document.addEventListener('visibilitychange', onVisibility)
     root.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => input.addEventListener('change', scheduleRelease))
+    sync()
     scheduleRelease()
 
     return () => {
@@ -78,6 +109,7 @@ export default function MoniMobilePhotoTouchGuard() {
       document.removeEventListener('visibilitychange', onVisibility)
       root.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => input.removeEventListener('change', scheduleRelease))
       if (releaseTimer !== null) window.clearTimeout(releaseTimer)
+      clearStuckTimer()
     }
   }, [])
   return null
