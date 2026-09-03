@@ -48,6 +48,7 @@ export async function middleware(request: NextRequest) {
   }
   if (pathname === '/api/moni/agent-chat' || pathname === '/api/moni/agent-runtime') { const url=request.nextUrl.clone(); url.pathname='/api/moni/agent-runtime-v3'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-action-start') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-action-start-v2'; return NextResponse.rewrite(url) }
+  if (pathname === '/api/moni/mobile-actions') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-actions-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-management-center') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-management-center-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-capability-v4') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-capability-v6'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/production-daily') { const url=request.nextUrl.clone(); url.pathname='/api/moni/production-daily-v2'; return NextResponse.rewrite(url) }
