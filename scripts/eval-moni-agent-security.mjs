@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 const runtime = readFileSync('src/lib/moni/agent/conversation-runtime.ts', 'utf8')
 const tools = readFileSync('src/lib/moni/agent/conversation-tools.ts', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const baseRoute = readFileSync('src/app/api/moni/agent-runtime/base-route.ts', 'utf8')
 const evalRoute = readFileSync('src/app/api/moni/agent-evals/route.ts', 'utf8')
 const canaryRoute = readFileSync('src/app/api/moni/agent-evals/canary/route.ts', 'utf8')
 const liveEval = readFileSync('src/lib/moni/agent/live-eval.ts', 'utf8')
@@ -20,10 +21,11 @@ const requireMarker = (source, marker, label) => {
   if (!source.includes(marker)) failures.push(`${label} missing: ${marker}`)
 }
 
-requireMarker(route, 'getSessionFromRequest', 'runtime authentication')
-requireMarker(route, '{ status: 401 }', 'runtime unauthenticated rejection')
-requireMarker(route, 'assertSafeUserRequest', 'prompt guardrail')
-requireMarker(route, "const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()", 'canonical business default')
+requireMarker(route, 'basePOST(request)', 'runtime delegation')
+requireMarker(baseRoute, 'getSessionFromRequest', 'runtime authentication')
+requireMarker(baseRoute, '{ status: 401 }', 'runtime unauthenticated rejection')
+requireMarker(baseRoute, 'assertSafeUserRequest', 'prompt guardrail')
+requireMarker(baseRoute, "const BUSINESS_ID = String(process.env.MONI_BUSINESS_ID || '20220523011').trim()", 'canonical business default')
 requireMarker(runtime, 'startOpenAIConversationsSession', 'OpenAI Conversations')
 requireMarker(runtime, "reasoningItemIdPolicy: 'preserve'", 'reasoning chain preservation')
 requireMarker(runtime, 'incompleteReasoningChain', 'reasoning chain recovery')
@@ -76,4 +78,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log(JSON.stringify({ ok: true, checks: 41, mode: 'security-static-v2' }, null, 2))
+console.log(JSON.stringify({ ok: true, checks: 42, mode: 'security-static-v2' }, null, 2))
