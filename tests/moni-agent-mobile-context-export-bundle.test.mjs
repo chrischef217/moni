@@ -88,7 +88,8 @@ test('completed bundle returns all final document links', () => {
 
 test('mobile bundle card is mounted and explicitly avoids blank-form re-entry', () => {
   assert.match(mobilePage, /MoniMobileSalesExportBundleCard/)
-  assert.match(card, /이미 말한 값은 다시 입력할 필요가 없습니다/)
+  assert.match(card, /앞 대화에서 이미 입력한 품목·수량·수출정보를 읽어 공식 마스터와 매칭하고 있습니다/)
+  assert.match(card, /빈 폼을 다시 만들지 않습니다/)
   assert.match(card, /대화에서 추출:/)
   assert.match(card, /부족한 값 .*개 확인 필요/)
   assert.match(card, /자동 입력 내용 확인/)

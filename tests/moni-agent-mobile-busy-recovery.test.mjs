@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import test from 'node:test'
 
 const recovery = fs.readFileSync('src/components/MoniMobileBusyRecovery.tsx', 'utf8')
-const runtime = fs.readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const runtime = fs.readFileSync('src/app/api/moni/agent-runtime/base-route.ts', 'utf8')
 const page = fs.readFileSync('src/app/mobile/page.tsx', 'utf8')
 
 test('mobile mounts active-run recovery before the chat request surface', () => {

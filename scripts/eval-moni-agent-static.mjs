@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs'
 
 const cases = JSON.parse(readFileSync('evals/moni-agent-cases.json', 'utf8'))
 const runtime = readFileSync('src/lib/moni/agent/conversation-runtime.ts', 'utf8')
-const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const routeWrapper = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const routeBase = readFileSync('src/app/api/moni/agent-runtime/base-route.ts', 'utf8')
+const route = `${routeWrapper}\n${routeBase}`
 const registry = readFileSync('src/lib/moni/agent/tools/registry.ts', 'utf8')
 const conversationTools = readFileSync('src/lib/moni/agent/conversation-tools.ts', 'utf8')
 const productionActions = readFileSync('src/lib/moni/chatgpt-production-actions.ts', 'utf8')

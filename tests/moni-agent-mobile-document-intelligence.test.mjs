@@ -5,7 +5,9 @@ import { readFileSync } from 'node:fs'
 const page = readFileSync('src/app/mobile/page.tsx', 'utf8')
 const polish = readFileSync('src/components/MoniMobileUxPolish.tsx', 'utf8')
 const mobileChat = readFileSync('src/components/MoniMobileChat.tsx', 'utf8')
-const runtime = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const runtimeWrapper = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const runtimeBase = readFileSync('src/app/api/moni/agent-runtime/base-route.ts', 'utf8')
+const runtime = `${runtimeWrapper}\n${runtimeBase}`
 const userFacing = readFileSync('src/lib/moni/agent/user-facing-text.ts', 'utf8')
 const pdfRoute = readFileSync('src/app/api/moni/answer-pdf/route.ts', 'utf8')
 const statementPdf = readFileSync('src/app/api/moni/sales-statement-pdf/route.ts', 'utf8')
@@ -109,14 +111,13 @@ test('mobile assistant completion uses a Korean voice notification instead of th
   assert.doesNotMatch(mobileChat, /playCue\('complete'\)/)
 })
 
-test('answer document save is a document, not a report, and preserves markdown tables', () => {
+test('answer document save is a document, not a report, and preserves markdown tables in a mobile-safe layout', () => {
   assert.match(docxDocument, /MONI 답변 문서/)
   assert.match(docxDocument, /MONI_Answer_/)
-  assert.match(docxDocument, /TableCell/)
-  assert.match(docxDocument, /TableRow/)
-  assert.match(docxDocument, /WidthType\.PERCENTAGE/)
-  assert.match(docxDocument, /size: '100%'/)
-  assert.match(docxDocument, /shading:/)
+  assert.match(docxDocument, /function tableBlocks\(rows: string\[\]\[\]\): Paragraph\[\]/)
+  assert.match(docxDocument, /headers\.forEach\(\(header, columnIndex\) =>/)
+  assert.match(docxDocument, /row\[columnIndex\] \|\| '-'/)
+  assert.match(docxDocument, /markdown tables are rendered as full-width paragraph records/)
   assert.doesNotMatch(docxDocument, /MONI AI 업무 보고서/)
   assert.doesNotMatch(docxDocument, /cells\.join\('  ·  '\)/)
 })
