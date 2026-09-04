@@ -28,8 +28,9 @@ test('extended mobile intent registry covers PC operational form domains', () =>
 
 test('read questions remain on normal MONI agent instead of opening write cards', () => {
   assert.match(coreIntents, /조회 질문은 기존 MONI Agent가 처리한다/)
-  assert.match(extendedIntents, /Read-only questions must keep flowing through the normal MONI agent/)
+  assert.match(extendedIntents, /const writeCue = hasExplicitWriteCue\(value\)/)
   assert.match(extendedIntents, /if \(!value\) return null/)
+  assert.match(extendedIntents, /if \(!writeCue\) return null/)
 })
 
 test('text write intent opens structured card before long agent execution', () => {
