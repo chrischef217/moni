@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const userFacing = readFileSync('src/lib/moni/agent/user-facing-text.ts', 'utf8')
-const runtimeRoute = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const runtimeRoute = readFileSync('src/app/api/moni/agent-runtime/base-route.ts', 'utf8')
 
 test('MONI user-facing status values are localized to simple Korean', () => {
   assert.ok(userFacing.includes("[/\\bPLANNED\\b/gi, '계획']"))
