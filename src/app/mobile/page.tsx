@@ -19,6 +19,7 @@ import MoniMobileManagementCollisionStyles from '@/components/MoniMobileManageme
 import MoniMobilePhotoInboundBridge from '@/components/MoniMobilePhotoInboundBridge'
 import MoniMobilePhotoRawInboundEnhancer from '@/components/MoniMobilePhotoRawInboundEnhancer'
 import MoniMobilePhotoTouchGuard from '@/components/MoniMobilePhotoTouchGuard'
+import MoniMobileSubmittedPhotoTrayGuard from '@/components/MoniMobileSubmittedPhotoTrayGuard'
 import MoniMobilePurchaseCardV2 from '@/components/MoniMobilePurchaseCardV2'
 import MoniMobileRawCardRouteGuard from '@/components/MoniMobileRawCardRouteGuard'
 import MoniMobileRawMaterialCardV2 from '@/components/MoniMobileRawMaterialCardV2'
@@ -58,6 +59,7 @@ export default async function MoniMobilePage() {
       <MoniMobileRuntimeGuard />
       <MoniMobileVoiceTouchGuard />
       <MoniMobilePhotoTouchGuard />
+      <MoniMobileSubmittedPhotoTrayGuard />
       <MoniMobilePhotoInboundBridge />
       <MoniMobilePhotoRawInboundEnhancer />
       <MoniMobileAnswerActions />
