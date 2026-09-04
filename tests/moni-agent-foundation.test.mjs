@@ -7,6 +7,7 @@ const middleware = readFileSync('src/middleware.ts', 'utf8')
 const runtime = readFileSync('src/lib/moni/agent/conversation-runtime.ts', 'utf8')
 const conversationTools = readFileSync('src/lib/moni/agent/conversation-tools.ts', 'utf8')
 const route = readFileSync('src/app/api/moni/agent-runtime/route.ts', 'utf8')
+const baseRoute = readFileSync('src/app/api/moni/agent-runtime/base-route.ts', 'utf8')
 const registry = readFileSync('src/lib/moni/agent/tools/registry.ts', 'utf8')
 const policies = readFileSync('src/lib/moni/agent/policies.ts', 'utf8')
 const memory = readFileSync('src/lib/moni/agent/memory.ts', 'utf8')
@@ -20,7 +21,7 @@ const canaryRoute = readFileSync('src/app/api/moni/agent-evals/canary/route.ts',
 const canaryMigration = readFileSync('supabase/migrations/20260804070000_add_moni_agent_eval_canary_requests.sql', 'utf8')
 
 test('prebuild verifies source without mutating TypeScript', () => {
-  assert.equal(packageJson.scripts.prebuild, 'node scripts/verify-moni-agent-source.mjs')
+  assert.match(packageJson.scripts.prebuild, /(?:^|&&\s*)node scripts\/verify-moni-agent-source\.mjs(?:\s*&&|$)/)
   assert.ok(!packageJson.scripts.prebuild.includes('patch-'))
   assert.equal(readdirSync('scripts').some((name) => /^patch-.*\.mjs$/.test(name)), false)
 })
@@ -28,7 +29,8 @@ test('prebuild verifies source without mutating TypeScript', () => {
 test('public MONI endpoint is routed only to Conversations SDK runtime', () => {
   assert.match(middleware, /\/api\/moni\/agent-chat/)
   assert.match(middleware, /\/api\/moni\/agent-runtime/)
-  assert.match(route, /runMoniConversationAgent/)
+  assert.match(route, /basePOST\(request\)/)
+  assert.match(baseRoute, /runMoniConversationAgent/)
   assert.equal(existsSync('src/app/api/moni/agent-v2/route.ts'), false)
 })
 
@@ -85,10 +87,10 @@ test('runtime is role scoped and write actions are approval gated', () => {
 
 test('persistent session and layered memory are enabled', () => {
   assert.match(runtime, /startOpenAIConversationsSession/)
-  assert.match(route, /openai_conversation_id/)
-  assert.match(route, /loadThreadMemory/)
-  assert.match(route, /loadPinnedProjectContext/)
-  assert.match(route, /maybeRefreshThreadMemory/)
+  assert.match(baseRoute, /openai_conversation_id/)
+  assert.match(baseRoute, /loadThreadMemory/)
+  assert.match(baseRoute, /loadPinnedProjectContext/)
+  assert.match(baseRoute, /maybeRefreshThreadMemory/)
   assert.match(memory, /MONI Memory Curator/)
 })
 
