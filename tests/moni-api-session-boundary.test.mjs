@@ -37,7 +37,7 @@ test('authenticated MONI APIs reject foreign business_id query scopes', () => {
   assert.match(middleware, /MONI_BUSINESS_ID = String\(process\.env\.MONI_BUSINESS_ID \|\| '20220523011'\)/)
   assert.match(middleware, /LEGACY_BUSINESS_ID = 'default'/)
   assert.match(middleware, /searchParams\.getAll\('business_id'\)/)
-  assert.match(middleware, /businessId === MONI_BUSINESS_ID \|\| businessId === LEGACY_BUSINESS_ID/)
+  assert.match(middleware, /id === '' \|\| id === MONI_BUSINESS_ID \|\| id === LEGACY_BUSINESS_ID/)
   assert.match(middleware, /X-MONI-Tenant': 'rejected'/)
   const authIndex = middleware.indexOf('verifyMoniSession(request)')
   const tenantIndex = middleware.indexOf('hasForeignTenantQuery(request)')
