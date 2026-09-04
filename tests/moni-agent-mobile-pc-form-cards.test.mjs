@@ -30,7 +30,8 @@ test('read questions remain on normal MONI agent instead of opening write cards'
   assert.match(coreIntents, /조회 질문은 기존 MONI Agent가 처리한다/)
   assert.match(extendedIntents, /const writeCue = hasExplicitWriteCue\(value\)/)
   assert.match(extendedIntents, /if \(!value\) return null/)
-  assert.match(extendedIntents, /if \(!writeCue\) return null/)
+  assert.match(extendedIntents, /return op \? \{ domain: 'sales_client', operation: op \} : null/)
+  assert.match(extendedIntents, /&& writeCue/)
 })
 
 test('text write intent opens structured card before long agent execution', () => {
