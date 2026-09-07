@@ -5,7 +5,7 @@ import { useEffect } from 'react'
 const PHOTO_BUSY_TEXT = /(사진 준비 중|사진을 안전하게 준비)/
 const PHOTO_BUSY_MAX_MS = 40_000
 const PHOTO_RECOVERY_KEY = 'moni-mobile-photo-stuck-recovery-at'
-const RELEASE_INTERVAL_MS = 700
+const RELEASE_INTERVAL_MS = 500
 
 function isIdleInteractionState(root: HTMLElement) {
   const live = Boolean(root.querySelector('.moni-live-state-live, .moni-live-state-issue'))
@@ -15,56 +15,98 @@ function isIdleInteractionState(root: HTMLElement) {
   return live && !thinking && !listening && !photoBusy
 }
 
-function releaseInteractionSurface(root: HTMLElement) {
-  root.removeAttribute('inert')
-  if (root.style.pointerEvents === 'none') root.style.removeProperty('pointer-events')
-
-  const composer = root.querySelector<HTMLElement>('[data-moni-mobile-composer]')
-  if (composer) {
-    composer.removeAttribute('inert')
-    if (composer.style.pointerEvents === 'none') composer.style.removeProperty('pointer-events')
+function forcePointerAuto(element: HTMLElement) {
+  element.removeAttribute('inert')
+  const computed = window.getComputedStyle(element)
+  if (element.style.pointerEvents === 'none' || computed.pointerEvents === 'none') {
+    element.style.setProperty('pointer-events', 'auto', 'important')
   }
+}
 
-  root.querySelectorAll<HTMLElement>('button, textarea, input, a').forEach((element) => {
+function unlockPath(target: HTMLElement, root: HTMLElement) {
+  let current: HTMLElement | null = target
+  while (current) {
+    forcePointerAuto(current)
+    if (current === root) break
+    current = current.parentElement
+  }
+}
+
+function normalizeIdleControls(root: HTMLElement) {
+  const alwaysEnabled = [
+    root.querySelector<HTMLButtonElement>('.moni-new-chat-button'),
+    root.querySelector<HTMLButtonElement>('button[aria-label="사진 첨부"]'),
+    root.querySelector<HTMLButtonElement>('button[aria-label="음성으로 입력"]'),
+    root.querySelector<HTMLTextAreaElement>('textarea'),
+  ]
+
+  alwaysEnabled.forEach((element) => {
+    if (!element) return
     element.removeAttribute('inert')
-    if (element.style.pointerEvents === 'none') element.style.removeProperty('pointer-events')
+    element.disabled = false
   })
 
-  document.body.removeAttribute('inert')
-  document.documentElement.removeAttribute('inert')
-  if (document.body.style.pointerEvents === 'none') document.body.style.removeProperty('pointer-events')
-  if (document.documentElement.style.pointerEvents === 'none') document.documentElement.style.removeProperty('pointer-events')
+  const send = root.querySelector<HTMLButtonElement>('button[aria-label="전송"]')
+  const textarea = root.querySelector<HTMLTextAreaElement>('textarea')
+  const hasPendingPhoto = Boolean(root.querySelector('button[aria-label$="첨부 취소"]'))
+  if (send && (Boolean(textarea?.value.trim()) || hasPendingPhoto)) send.disabled = false
+}
 
-  const releaseTransparentBlocker = (target: Element | null) => {
-    if (!(target instanceof HTMLElement)) return
-    const rect = target.getBoundingClientRect()
-    if (!rect.width || !rect.height) return
+function releaseBlockerAt(target: HTMLElement, root: HTMLElement) {
+  const rect = target.getBoundingClientRect()
+  if (!rect.width || !rect.height) return
 
-    const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+  unlockPath(target, root)
+
+  const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2))
+  const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2))
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const top = document.elementFromPoint(x, y)
     if (!top || top === target || target.contains(top)) return
-
-    let candidate = top instanceof HTMLElement ? top : top.parentElement
-    while (candidate && candidate !== document.body && candidate !== root) {
-      if (candidate === target || candidate.contains(target)) return
-      if (candidate.matches('[role="dialog"], [aria-modal="true"]') || candidate.querySelector('[role="dialog"], [aria-modal="true"]')) return
-
-      const style = window.getComputedStyle(candidate)
-      const box = candidate.getBoundingClientRect()
-      const coversViewport = box.width >= window.innerWidth * 0.85 && box.height >= window.innerHeight * 0.85
-      if (style.position === 'fixed' && coversViewport && style.pointerEvents !== 'none') {
-        candidate.dataset.moniPhotoReleasedBlocker = 'true'
-        candidate.style.pointerEvents = 'none'
-        return
-      }
-      candidate = candidate.parentElement
+    if (top instanceof HTMLElement && top.contains(target)) {
+      forcePointerAuto(top)
+      return
     }
-  }
 
-  releaseTransparentBlocker(root.querySelector('button[aria-label="전송"]'))
-  releaseTransparentBlocker(root.querySelector('button[aria-label="사진 첨부"]'))
-  releaseTransparentBlocker(root.querySelector('.moni-new-chat-button'))
-  releaseTransparentBlocker(root.querySelector('textarea'))
+    const candidate = top instanceof HTMLElement ? top : top.parentElement
+    if (!candidate || candidate === root || candidate === document.body || candidate === document.documentElement) return
+    if (candidate.contains(target) || target.contains(candidate)) return
+    if (candidate.matches('[role="dialog"], [aria-modal="true"]') || candidate.closest('[role="dialog"], [aria-modal="true"]')) return
+    if (candidate.closest('button, textarea, input, select, a[href]')) return
+
+    const box = candidate.getBoundingClientRect()
+    const coversPoint = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom
+    if (!coversPoint) return
+
+    candidate.dataset.moniReleasedTouchBlocker = 'true'
+    candidate.style.setProperty('pointer-events', 'none', 'important')
+  }
+}
+
+function releaseInteractionSurface(root: HTMLElement) {
+  forcePointerAuto(document.documentElement)
+  forcePointerAuto(document.body)
+  forcePointerAuto(root)
+
+  const composer = root.querySelector<HTMLElement>('[data-moni-mobile-composer]')
+  if (composer) forcePointerAuto(composer)
+
+  normalizeIdleControls(root)
+
+  const targets = [
+    root.querySelector<HTMLElement>('.moni-new-chat-button'),
+    root.querySelector<HTMLElement>('button[aria-label="사진 첨부"]'),
+    root.querySelector<HTMLElement>('button[aria-label="음성으로 입력"]'),
+    root.querySelector<HTMLElement>('button[aria-label="전송"]'),
+    root.querySelector<HTMLElement>('textarea'),
+    ...Array.from(root.querySelectorAll<HTMLElement>('.moni-answer-action')).slice(-8),
+  ].filter((target): target is HTMLElement => Boolean(target))
+
+  targets.forEach((target) => releaseBlockerAt(target, root))
+
   root.dataset.moniPhotoInteractionReady = 'true'
+  root.dataset.moniInteractionWatchdog = 'ready'
 }
 
 export default function MoniMobilePhotoTouchGuard() {
@@ -76,6 +118,7 @@ export default function MoniMobilePhotoTouchGuard() {
     let wasIdle = isIdleInteractionState(root)
     let releaseTimer: number | null = null
     let stuckTimer: number | null = null
+    let repairing = false
 
     const clearStuckTimer = () => {
       if (stuckTimer !== null) window.clearTimeout(stuckTimer)
@@ -93,8 +136,6 @@ export default function MoniMobilePhotoTouchGuard() {
           const last = Number(window.sessionStorage.getItem(PHOTO_RECOVERY_KEY) || 0)
           if (last && now - last < 60_000) return
           window.sessionStorage.setItem(PHOTO_RECOVERY_KEY, String(now))
-          // READY-but-unlinked attachments are restored by MoniMobileChat after reload,
-          // so a stalled picker/upload state cannot leave the entire composer disabled forever.
           window.location.reload()
         } catch {
           window.location.reload()
@@ -102,13 +143,23 @@ export default function MoniMobilePhotoTouchGuard() {
       }, PHOTO_BUSY_MAX_MS)
     }
 
+    const repairNow = () => {
+      if (repairing || !isIdleInteractionState(root)) return
+      repairing = true
+      try {
+        releaseInteractionSurface(root)
+      } finally {
+        repairing = false
+      }
+    }
+
     const scheduleRelease = () => {
-      window.requestAnimationFrame(() => releaseInteractionSurface(root))
+      window.requestAnimationFrame(repairNow)
       if (releaseTimer !== null) window.clearTimeout(releaseTimer)
       releaseTimer = window.setTimeout(() => {
         releaseTimer = null
-        releaseInteractionSurface(root)
-      }, 180)
+        repairNow()
+      }, 120)
     }
 
     const sync = () => {
@@ -116,7 +167,7 @@ export default function MoniMobilePhotoTouchGuard() {
       const idle = isIdleInteractionState(root)
       if (busy) armStuckRecovery()
       else clearStuckTimer()
-      if ((wasBusy && !busy) || (!wasIdle && idle)) scheduleRelease()
+      if ((wasBusy && !busy) || (!wasIdle && idle) || idle) scheduleRelease()
       wasBusy = busy
       wasIdle = idle
     }
@@ -128,11 +179,17 @@ export default function MoniMobilePhotoTouchGuard() {
       if (document.visibilityState === 'visible') recoverIfIdle()
     }
     const onPointerDown = () => {
-      if (isIdleInteractionState(root)) releaseInteractionSurface(root)
+      if (isIdleInteractionState(root)) repairNow()
     }
 
     const observer = new MutationObserver(sync)
-    observer.observe(root, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true, characterData: true })
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['class', 'style', 'inert', 'disabled'],
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
     window.addEventListener('focus', recoverIfIdle)
     window.addEventListener('pageshow', recoverIfIdle)
     document.addEventListener('visibilitychange', onVisibility)
@@ -140,9 +197,7 @@ export default function MoniMobilePhotoTouchGuard() {
     document.addEventListener('touchstart', onPointerDown, true)
     root.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => input.addEventListener('change', scheduleRelease))
 
-    const releaseInterval = window.setInterval(() => {
-      if (isIdleInteractionState(root)) releaseInteractionSurface(root)
-    }, RELEASE_INTERVAL_MS)
+    const releaseInterval = window.setInterval(repairNow, RELEASE_INTERVAL_MS)
 
     sync()
     scheduleRelease()
