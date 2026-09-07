@@ -3,6 +3,7 @@ import fs from 'node:fs'
 const read = (path) => fs.readFileSync(path, 'utf8')
 const page = read('src/app/mobile/page.tsx')
 const bridge = read('src/components/MoniMobilePhotoInboundBridge.tsx')
+const camera = read('src/components/MoniMobileCameraCaptureGuard.tsx')
 const touch = read('src/components/MoniMobilePhotoTouchGuard.tsx')
 const submittedTray = read('src/components/MoniMobileSubmittedPhotoTrayGuard.tsx')
 const enhancer = read('src/components/MoniMobilePhotoRawInboundEnhancer.tsx')
@@ -12,10 +13,17 @@ const middleware = read('src/middleware.ts')
 const migration = read('supabase/migrations/202609030001_mobile_raw_material_photo_inbound.sql')
 
 const checks = [
+  [page.includes('<MoniMobileCameraCaptureGuard />'), 'mobile page must mount Android camera picker guard'],
   [page.includes('<MoniMobilePhotoInboundBridge />'), 'mobile page must mount raw-photo bridge'],
   [page.includes('<MoniMobilePhotoTouchGuard />'), 'mobile page must mount photo touch recovery'],
   [page.includes('<MoniMobileSubmittedPhotoTrayGuard />'), 'mobile page must clear submitted photos from composer'],
   [page.includes('<MoniMobilePhotoRawInboundEnhancer />'), 'mobile page must mount raw inbound photo fields'],
+  [camera.includes("camera.accept = 'image/*'"), 'camera picker must use broad image accept token for Android native capture'],
+  [camera.includes("camera.setAttribute('capture', 'environment')"), 'camera picker must request the rear-facing native camera'],
+  [camera.includes("camera.removeAttribute('multiple')"), 'camera picker must remain a single-capture input'],
+  [camera.includes("gallery.removeAttribute('capture')"), 'gallery picker must never inherit native camera capture'],
+  [camera.includes('gallery.multiple = true'), 'gallery picker must keep multi-select behavior'],
+  [camera.includes("document.addEventListener('pointerdown', onPointerDown, true)"), 'camera attributes must be hardened before the user click opens the picker'],
   [bridge.includes("'/api/moni/mobile-photo-raw-inbound'"), 'raw-material photo turn must route to dedicated vision endpoint'],
   [bridge.includes('attachmentIds.length'), 'generic text turns must not be routed as photo inbound'],
   [route.includes('사진에서 실제로 보이는 증거'), 'vision instructions must forbid unsupported inference'],
