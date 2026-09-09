@@ -5,108 +5,94 @@ import { useEffect } from 'react'
 const PHOTO_BUSY_TEXT = /(사진 준비 중|사진을 안전하게 준비)/
 const PHOTO_BUSY_MAX_MS = 40_000
 const PHOTO_RECOVERY_KEY = 'moni-mobile-photo-stuck-recovery-at'
-const RELEASE_INTERVAL_MS = 500
+const NEW_CHAT_SELECTOR = '.moni-new-chat-button'
+const SEND_SELECTOR = 'button[aria-label="전송"]'
 
-function isIdleInteractionState(root: HTMLElement) {
+function isPhotoBusy(root: HTMLElement) {
+  return PHOTO_BUSY_TEXT.test(root.textContent || '')
+}
+
+function isSettledInteractionState(root: HTMLElement) {
   const live = Boolean(root.querySelector('.moni-live-state-live, .moni-live-state-issue'))
   const thinking = Boolean(root.querySelector('.moni-live-state-thinking'))
   const listening = Boolean(root.querySelector('[aria-label="음성 인식 상태"]'))
-  const photoBusy = PHOTO_BUSY_TEXT.test(root.textContent || '')
-  return live && !thinking && !listening && !photoBusy
+  return live && !thinking && !listening && !isPhotoBusy(root)
 }
 
-function forcePointerAuto(element: HTMLElement) {
+function clearExplicitLock(element: HTMLElement | null) {
+  if (!element) return
   element.removeAttribute('inert')
-  const computed = window.getComputedStyle(element)
-  if (element.style.pointerEvents === 'none' || computed.pointerEvents === 'none') {
-    element.style.setProperty('pointer-events', 'auto', 'important')
-  }
+  if (element.style.pointerEvents === 'none') element.style.removeProperty('pointer-events')
 }
 
-function unlockPath(target: HTMLElement, root: HTMLElement) {
-  let current: HTMLElement | null = target
-  while (current) {
-    forcePointerAuto(current)
-    if (current === root) break
-    current = current.parentElement
-  }
-}
+function releaseKnownStaleLocks(root: HTMLElement) {
+  clearExplicitLock(document.documentElement)
+  clearExplicitLock(document.body)
+  clearExplicitLock(root)
+  clearExplicitLock(root.querySelector<HTMLElement>('[data-moni-mobile-composer]'))
 
-function normalizeIdleControls(root: HTMLElement) {
-  const alwaysEnabled = [
-    root.querySelector<HTMLButtonElement>('.moni-new-chat-button'),
-    root.querySelector<HTMLButtonElement>('button[aria-label="사진 첨부"]'),
-    root.querySelector<HTMLButtonElement>('button[aria-label="음성으로 입력"]'),
-    root.querySelector<HTMLTextAreaElement>('textarea'),
-  ]
-
-  alwaysEnabled.forEach((element) => {
-    if (!element) return
-    element.removeAttribute('inert')
-    element.disabled = false
+  // Earlier recovery guards tagged blockers before setting pointer-events:none.
+  // Restore only blockers MONI itself tagged; never mutate arbitrary live UI layers.
+  root.querySelectorAll<HTMLElement>([
+    '[data-moni-released-touch-blocker="true"]',
+    '[data-moni-photo-released-blocker="true"]',
+    '[data-moni-voice-released-blocker="true"]',
+  ].join(',')).forEach((element) => {
+    if (element.style.pointerEvents === 'none') element.style.removeProperty('pointer-events')
+    delete element.dataset.moniReleasedTouchBlocker
+    delete element.dataset.moniPhotoReleasedBlocker
+    delete element.dataset.moniVoiceReleasedBlocker
   })
 
-  const send = root.querySelector<HTMLButtonElement>('button[aria-label="전송"]')
-  const textarea = root.querySelector<HTMLTextAreaElement>('textarea')
-  const hasPendingPhoto = Boolean(root.querySelector('button[aria-label$="첨부 취소"]'))
-  if (send && (Boolean(textarea?.value.trim()) || hasPendingPhoto)) send.disabled = false
+  root.dataset.moniPhotoInteractionReady = 'true'
+  root.dataset.moniInteractionWatchdog = 'passive'
 }
 
-function releaseBlockerAt(target: HTMLElement, root: HTMLElement) {
-  const rect = target.getBoundingClientRect()
-  if (!rect.width || !rect.height) return
+function rectContains(element: HTMLElement, x: number, y: number) {
+  const rect = element.getBoundingClientRect()
+  return rect.width > 0 && rect.height > 0 && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+}
 
-  unlockPath(target, root)
+function controlAtPoint(root: HTMLElement, x: number, y: number) {
+  const controls = [
+    root.querySelector<HTMLButtonElement>(NEW_CHAT_SELECTOR),
+    root.querySelector<HTMLButtonElement>(SEND_SELECTOR),
+  ].filter((item): item is HTMLButtonElement => Boolean(item))
+  return controls.find((control) => rectContains(control, x, y)) || null
+}
 
-  const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2))
-  const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2))
+function canSubmit(root: HTMLElement) {
+  const textarea = root.querySelector<HTMLTextAreaElement>('textarea')
+  const hasText = Boolean(textarea?.value.trim())
+  const hasPendingPhoto = Boolean(root.querySelector('button[aria-label$="첨부 취소"]'))
+  return hasText || hasPendingPhoto
+}
 
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const top = document.elementFromPoint(x, y)
-    if (!top || top === target || target.contains(top)) return
-    if (top instanceof HTMLElement && top.contains(target)) {
-      forcePointerAuto(top)
+function recoverCoreControl(root: HTMLElement, control: HTMLButtonElement) {
+  if (!isSettledInteractionState(root)) return false
+
+  if (control.matches(NEW_CHAT_SELECTOR)) {
+    if (control.disabled) control.disabled = false
+    return true
+  }
+
+  if (control.matches(SEND_SELECTOR) && canSubmit(root)) {
+    if (control.disabled) control.disabled = false
+    return true
+  }
+
+  return false
+}
+
+function activateRecoveredControl(control: HTMLButtonElement) {
+  if (control.matches(SEND_SELECTOR)) {
+    const form = control.closest('form')
+    if (form instanceof HTMLFormElement) {
+      form.requestSubmit(control)
       return
     }
-
-    const candidate = top instanceof HTMLElement ? top : top.parentElement
-    if (!candidate || candidate === root || candidate === document.body || candidate === document.documentElement) return
-    if (candidate.contains(target) || target.contains(candidate)) return
-    if (candidate.matches('[role="dialog"], [aria-modal="true"]') || candidate.closest('[role="dialog"], [aria-modal="true"]')) return
-    if (candidate.closest('button, textarea, input, select, a[href]')) return
-
-    const box = candidate.getBoundingClientRect()
-    const coversPoint = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom
-    if (!coversPoint) return
-
-    candidate.dataset.moniReleasedTouchBlocker = 'true'
-    candidate.style.setProperty('pointer-events', 'none', 'important')
   }
-}
-
-function releaseInteractionSurface(root: HTMLElement) {
-  forcePointerAuto(document.documentElement)
-  forcePointerAuto(document.body)
-  forcePointerAuto(root)
-
-  const composer = root.querySelector<HTMLElement>('[data-moni-mobile-composer]')
-  if (composer) forcePointerAuto(composer)
-
-  normalizeIdleControls(root)
-
-  const targets = [
-    root.querySelector<HTMLElement>('.moni-new-chat-button'),
-    root.querySelector<HTMLElement>('button[aria-label="사진 첨부"]'),
-    root.querySelector<HTMLElement>('button[aria-label="음성으로 입력"]'),
-    root.querySelector<HTMLElement>('button[aria-label="전송"]'),
-    root.querySelector<HTMLElement>('textarea'),
-    ...Array.from(root.querySelectorAll<HTMLElement>('.moni-answer-action')).slice(-8),
-  ].filter((target): target is HTMLElement => Boolean(target))
-
-  targets.forEach((target) => releaseBlockerAt(target, root))
-
-  root.dataset.moniPhotoInteractionReady = 'true'
-  root.dataset.moniInteractionWatchdog = 'ready'
+  control.click()
 }
 
 export default function MoniMobilePhotoTouchGuard() {
@@ -114,11 +100,10 @@ export default function MoniMobilePhotoTouchGuard() {
     const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
     if (!root) return
 
-    let wasBusy = PHOTO_BUSY_TEXT.test(root.textContent || '')
-    let wasIdle = isIdleInteractionState(root)
-    let releaseTimer: number | null = null
+    const supportsPointerEvents = typeof window.PointerEvent !== 'undefined'
+    let wasBusy = isPhotoBusy(root)
     let stuckTimer: number | null = null
-    let repairing = false
+    let lastSyntheticAt = 0
 
     const clearStuckTimer = () => {
       if (stuckTimer !== null) window.clearTimeout(stuckTimer)
@@ -129,8 +114,8 @@ export default function MoniMobilePhotoTouchGuard() {
       if (stuckTimer !== null) return
       stuckTimer = window.setTimeout(() => {
         stuckTimer = null
-        if (!PHOTO_BUSY_TEXT.test(root.textContent || '')) return
-        releaseInteractionSurface(root)
+        if (!isPhotoBusy(root)) return
+        releaseKnownStaleLocks(root)
         try {
           const now = Date.now()
           const last = Number(window.sessionStorage.getItem(PHOTO_RECOVERY_KEY) || 0)
@@ -143,77 +128,83 @@ export default function MoniMobilePhotoTouchGuard() {
       }, PHOTO_BUSY_MAX_MS)
     }
 
-    const repairNow = () => {
-      if (repairing || !isIdleInteractionState(root)) return
-      repairing = true
-      try {
-        releaseInteractionSurface(root)
-      } finally {
-        repairing = false
-      }
-    }
-
-    const scheduleRelease = () => {
-      window.requestAnimationFrame(repairNow)
-      if (releaseTimer !== null) window.clearTimeout(releaseTimer)
-      releaseTimer = window.setTimeout(() => {
-        releaseTimer = null
-        repairNow()
-      }, 120)
-    }
-
-    const sync = () => {
-      const busy = PHOTO_BUSY_TEXT.test(root.textContent || '')
-      const idle = isIdleInteractionState(root)
+    const syncPhotoState = () => {
+      const busy = isPhotoBusy(root)
       if (busy) armStuckRecovery()
       else clearStuckTimer()
-      if ((wasBusy && !busy) || (!wasIdle && idle) || idle) scheduleRelease()
+      if (wasBusy && !busy) window.requestAnimationFrame(() => releaseKnownStaleLocks(root))
       wasBusy = busy
-      wasIdle = idle
     }
 
-    const recoverIfIdle = () => {
-      if (isIdleInteractionState(root)) scheduleRelease()
-    }
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') recoverIfIdle()
-    }
-    const onPointerDown = () => {
-      if (isIdleInteractionState(root)) repairNow()
+    const recoverOnReturn = () => {
+      if (document.visibilityState === 'visible') window.requestAnimationFrame(() => releaseKnownStaleLocks(root))
     }
 
-    const observer = new MutationObserver(sync)
-    observer.observe(root, {
-      attributes: true,
-      attributeFilter: ['class', 'style', 'inert', 'disabled'],
-      childList: true,
-      subtree: true,
-      characterData: true,
-    })
-    window.addEventListener('focus', recoverIfIdle)
-    window.addEventListener('pageshow', recoverIfIdle)
-    document.addEventListener('visibilitychange', onVisibility)
-    document.addEventListener('pointerdown', onPointerDown, true)
-    document.addEventListener('touchstart', onPointerDown, true)
-    root.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => input.addEventListener('change', scheduleRelease))
+    const handlePointer = (event: PointerEvent) => {
+      const direct = event.target instanceof Element
+        ? event.target.closest<HTMLButtonElement>(`${NEW_CHAT_SELECTOR}, ${SEND_SELECTOR}`)
+        : null
+      const control = direct && root.contains(direct)
+        ? direct
+        : controlAtPoint(root, event.clientX, event.clientY)
+      if (!control || !recoverCoreControl(root, control)) return
 
-    const releaseInterval = window.setInterval(repairNow, RELEASE_INTERVAL_MS)
+      releaseKnownStaleLocks(root)
 
-    sync()
-    scheduleRelease()
+      // If the tap already landed on the real control, simply remove stale disabled/lock
+      // state and allow the browser/React click to continue normally. Only synthesize an
+      // activation when another layer intercepted the tap at the same screen coordinates.
+      if (direct === control) return
+
+      const now = Date.now()
+      if (now - lastSyntheticAt < 350) return
+      lastSyntheticAt = now
+      event.preventDefault()
+      event.stopPropagation()
+      window.setTimeout(() => activateRecoveredControl(control), 0)
+    }
+
+    const handleLegacyTouch = (event: TouchEvent) => {
+      if (event.touches.length !== 1) return
+      const touch = event.touches[0]
+      const control = controlAtPoint(root, touch.clientX, touch.clientY)
+      if (!control || !recoverCoreControl(root, control)) return
+      releaseKnownStaleLocks(root)
+
+      const direct = event.target instanceof Element
+        ? event.target.closest<HTMLButtonElement>(`${NEW_CHAT_SELECTOR}, ${SEND_SELECTOR}`)
+        : null
+      if (direct === control) return
+
+      const now = Date.now()
+      if (now - lastSyntheticAt < 350) return
+      lastSyntheticAt = now
+      event.preventDefault()
+      event.stopPropagation()
+      window.setTimeout(() => activateRecoveredControl(control), 0)
+    }
+
+    const observer = new MutationObserver(syncPhotoState)
+    observer.observe(root, { childList: true, subtree: true, characterData: true })
+    window.addEventListener('focus', recoverOnReturn)
+    window.addEventListener('pageshow', recoverOnReturn)
+    document.addEventListener('visibilitychange', recoverOnReturn)
+    document.addEventListener('pointerdown', handlePointer, true)
+    if (!supportsPointerEvents) document.addEventListener('touchstart', handleLegacyTouch, true)
+
+    syncPhotoState()
+    releaseKnownStaleLocks(root)
 
     return () => {
       observer.disconnect()
-      window.removeEventListener('focus', recoverIfIdle)
-      window.removeEventListener('pageshow', recoverIfIdle)
-      document.removeEventListener('visibilitychange', onVisibility)
-      document.removeEventListener('pointerdown', onPointerDown, true)
-      document.removeEventListener('touchstart', onPointerDown, true)
-      root.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => input.removeEventListener('change', scheduleRelease))
-      window.clearInterval(releaseInterval)
-      if (releaseTimer !== null) window.clearTimeout(releaseTimer)
+      window.removeEventListener('focus', recoverOnReturn)
+      window.removeEventListener('pageshow', recoverOnReturn)
+      document.removeEventListener('visibilitychange', recoverOnReturn)
+      document.removeEventListener('pointerdown', handlePointer, true)
+      if (!supportsPointerEvents) document.removeEventListener('touchstart', handleLegacyTouch, true)
       clearStuckTimer()
     }
   }, [])
+
   return null
 }
