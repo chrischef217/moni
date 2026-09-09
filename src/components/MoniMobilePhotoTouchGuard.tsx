@@ -100,6 +100,7 @@ export default function MoniMobilePhotoTouchGuard() {
     const root = document.querySelector<HTMLElement>('[data-moni-mobile-chat]')
     if (!root) return
 
+    const supportsPointerEvents = typeof window.PointerEvent !== 'undefined'
     let wasBusy = isPhotoBusy(root)
     let stuckTimer: number | null = null
     let lastSyntheticAt = 0
@@ -164,7 +165,7 @@ export default function MoniMobilePhotoTouchGuard() {
     }
 
     const handleLegacyTouch = (event: TouchEvent) => {
-      if ('PointerEvent' in window || event.touches.length !== 1) return
+      if (event.touches.length !== 1) return
       const touch = event.touches[0]
       const control = controlAtPoint(root, touch.clientX, touch.clientY)
       if (!control || !recoverCoreControl(root, control)) return
@@ -189,7 +190,7 @@ export default function MoniMobilePhotoTouchGuard() {
     window.addEventListener('pageshow', recoverOnReturn)
     document.addEventListener('visibilitychange', recoverOnReturn)
     document.addEventListener('pointerdown', handlePointer, true)
-    document.addEventListener('touchstart', handleLegacyTouch, true)
+    if (!supportsPointerEvents) document.addEventListener('touchstart', handleLegacyTouch, true)
 
     syncPhotoState()
     releaseKnownStaleLocks(root)
@@ -200,7 +201,7 @@ export default function MoniMobilePhotoTouchGuard() {
       window.removeEventListener('pageshow', recoverOnReturn)
       document.removeEventListener('visibilitychange', recoverOnReturn)
       document.removeEventListener('pointerdown', handlePointer, true)
-      document.removeEventListener('touchstart', handleLegacyTouch, true)
+      if (!supportsPointerEvents) document.removeEventListener('touchstart', handleLegacyTouch, true)
       clearStuckTimer()
     }
   }, [])
