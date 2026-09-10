@@ -51,6 +51,7 @@ export async function middleware(request: NextRequest) {
   if (pathname === '/api/moni/mobile-actions') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-actions-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-management-center') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-management-center-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-capability-v4') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-capability-v6'; return NextResponse.rewrite(url) }
+  if (pathname === '/api/moni/mobile-sales-export-bundle') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-sales-export-bundle-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/production-daily') { const url=request.nextUrl.clone(); url.pathname='/api/moni/production-daily-v2'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-business-actions') { const url=request.nextUrl.clone(); url.pathname='/api/moni/mobile-business-actions-v3'; return NextResponse.rewrite(url) }
   if (pathname === '/api/moni/mobile-extended-actions') { const url=request.nextUrl.clone(); url.pathname = '/api/moni/mobile-extended-actions-v3'; return NextResponse.rewrite(url) }
