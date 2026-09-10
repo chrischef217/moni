@@ -53,8 +53,9 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
     || (statementMention && create && (explicitExportTrade || bravoExportClient))
   if (exportBundleWrite && !remove && !cancel && !update) return { domain: 'sales_export_bundle', operation: 'CREATE' }
 
-  // 거래명세표는 매출 입력과 별도 업무 목적이다.
-  if (statementMention) {
+  // 거래명세표는 매출 입력과 별도 업무 목적이다. Explicit regex form is retained as a
+  // source-level contract because older regression tests guard this distinct routing boundary.
+  if (has(text, /거래\s*명세(?:표|서)?/)) {
     const statementWrite = has(text, /거래\s*명세(?:표|서)?(?:를|을|은|는|이|가)?\s*(?:입력|작성|발행|생성|만들|등록|새로)/)
       || has(text, /(?:입력|작성|발행|생성|만들|등록)\s*(?:할|해야|해|해서|하고|하자|해줘|해주세요)?\s*(?:거래\s*명세(?:표|서)?)/)
     const statementShow = has(text, /거래\s*명세(?:표|서)?(?:를|을|은|는|이|가)?\s*(?:보여|열어|띄워|확인|조회|다시\s*봐|출력)/)
