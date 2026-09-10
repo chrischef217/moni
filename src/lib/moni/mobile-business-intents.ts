@@ -41,19 +41,25 @@ export function classifyMobileBusinessIntent(value: unknown): MobileBusinessInte
     || has(text, /(?:입고|매입)\s*(?:해줘|해주세요|해 줘)$/)
   const v4SalesSpecial = /(택배비|배송비|운임|포장비|팔레트비|기타\s*비용|기타비용|세금\s*계산서|세금계산서|견적서|영업\s*(?:수당|커미션)\s*정산|영업\s*정산서)/
 
-  // 거래명세표 + Commercial Invoice/Packing List를 함께 요청하면 하나의 수출 문서 번들로 처리한다.
-  // 거래명세표 분기보다 먼저 판단해야 복합 요청이 빈 국내 판매 카드로 축소되지 않는다.
-  const hasExportDocs = has(text, /(commercial\s*invoice|invoice|인보이스|packing\s*list|packinglist|패킹\s*리스트|패킹리스트)/i)
-  const exportBundleWrite = hasExportDocs && (create || has(text, /(거래\s*명세(?:표)?|수출|export|문서|서류)/i))
+  // 거래명세표 + 수출서류는 하나의 원자적 모바일 번들로 처리한다.
+  // Bravo는 현재 등록된 수출처의 canonical company_name이며, 현장에서는 브라보/부라보치킨으로도 부른다.
+  // 이 거래처의 새 거래명세표 작성 요청을 국내 판매 카드로 축소하면 Invoice/Packing List 입력값이 유실되므로
+  // 거래명세표 분기보다 먼저 수출 번들로 라우팅한다. 조회/출력 요청은 기존 조회 경로를 유지한다.
+  const statementMention = has(text, /거래\s*명세(?:표|서)?/)
+  const hasExportDocs = has(text, /(commercial\s*invoice|invoice|인보이스|packing\s*list|packinglist|패킹\s*리스트|패킹리스트|수출\s*(?:자료|서류|문서)|export\s*documents?)/i)
+  const explicitExportTrade = has(text, /(수출|export|라오스|lao\s*p\.?d\.?r\.?)/i)
+  const bravoExportClient = has(text, /(bravo|브라보|부라보)(?:\s*치킨)?/i)
+  const exportBundleWrite = (hasExportDocs && (create || statementMention || explicitExportTrade))
+    || (statementMention && create && (explicitExportTrade || bravoExportClient))
   if (exportBundleWrite && !remove && !cancel && !update) return { domain: 'sales_export_bundle', operation: 'CREATE' }
 
   // 거래명세표는 매출 입력과 별도 업무 목적이다.
-  if (has(text, /거래\s*명세(?:표)?/)) {
-    const statementWrite = has(text, /거래\s*명세(?:표)?(?:를|을|은|는|이|가)?\s*(?:입력|작성|발행|생성|만들|등록|새로)/)
-      || has(text, /(?:입력|작성|발행|생성|만들|등록)\s*(?:할|해야|해|해서|하고|하자|해줘|해주세요)?\s*(?:거래\s*명세(?:표)?)/)
-    const statementShow = has(text, /거래\s*명세(?:표)?(?:를|을|은|는|이|가)?\s*(?:보여|열어|띄워|확인|조회|다시\s*봐|출력)/)
-      || has(text, /(?:보여|열어|띄워|확인|조회|출력).*(?:거래\s*명세(?:표)?)/)
-      || has(text, /(?:거래\s*명세(?:표)?).*(?:pdf|PDF)/)
+  if (statementMention) {
+    const statementWrite = has(text, /거래\s*명세(?:표|서)?(?:를|을|은|는|이|가)?\s*(?:입력|작성|발행|생성|만들|등록|새로)/)
+      || has(text, /(?:입력|작성|발행|생성|만들|등록)\s*(?:할|해야|해|해서|하고|하자|해줘|해주세요)?\s*(?:거래\s*명세(?:표|서)?)/)
+    const statementShow = has(text, /거래\s*명세(?:표|서)?(?:를|을|은|는|이|가)?\s*(?:보여|열어|띄워|확인|조회|다시\s*봐|출력)/)
+      || has(text, /(?:보여|열어|띄워|확인|조회|출력).*(?:거래\s*명세(?:표|서)?)/)
+      || has(text, /(?:거래\s*명세(?:표|서)?).*(?:pdf|PDF)/)
     if (statementWrite) return { domain: 'sales_statement', operation: 'CREATE' }
     if (statementShow && !update && !cancel && !remove) return { domain: 'sales_statement', operation: 'SHOW' }
     return null
