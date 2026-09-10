@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createMoniServiceRoleClient } from '@/lib/moni/db'
 import { GET as legacyGET, POST as legacyPOST } from '../mobile-sales-export-bundle/route'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const BUSINESS_ID = '20220523011'
 const txt = (value: unknown, max = 600) => String(value ?? '').trim().slice(0, max)
 const num = (value: unknown) => {
   const parsed = Number(String(value ?? '').replace(/,/g, ''))
@@ -64,13 +66,23 @@ const COUNTRY_RULES = [
   { query: ['중국', 'china'], country: ['china'] },
 ]
 
+function counterpartyKey(value: unknown) {
+  return norm(value)
+    .replace(/(?:라오스|laos|laopdr)/g, '')
+    .replace(/(?:브라보|부라보)(?:치킨)?/g, 'bravo')
+}
+
 function uniqueDestinationMatch(query: unknown, options: any[]) {
   const needle = norm(query)
-  if (!needle) return null
+  const counterpartyNeedle = counterpartyKey(query)
+  if (!needle && !counterpartyNeedle) return null
 
   const direct = options.filter((option) => {
     const label = norm(option?.label)
-    return needle === label || (label.length >= 3 && needle.includes(label))
+    const labelKey = counterpartyKey(option?.label)
+    return needle === label
+      || (label.length >= 3 && needle.includes(label))
+      || (counterpartyNeedle && labelKey && (counterpartyNeedle === labelKey || counterpartyNeedle.includes(labelKey) || labelKey.includes(counterpartyNeedle)))
   })
   if (direct.length === 1) return direct[0]
 
@@ -86,21 +98,33 @@ function uniqueDestinationMatch(query: unknown, options: any[]) {
   return byCountry.length === 1 ? byCountry[0] : null
 }
 
-function uniqueDestinationFromContext(extracted: any, options: any[]) {
+function uniqueDestinationFromContext(extracted: any, options: any[], sourceMessage: string) {
   const consigneeQuery = txt(extracted?.consignee_query, 300)
   const finalDestination = txt(extracted?.final_destination, 240)
 
   const direct = uniqueDestinationMatch(consigneeQuery, options)
   if (direct) return direct
 
+  const bySourceMessage = uniqueDestinationMatch(sourceMessage, options)
+  if (bySourceMessage) return bySourceMessage
+
   const combined = [consigneeQuery, finalDestination].filter(Boolean).join(' ')
   const byCombinedContext = uniqueDestinationMatch(combined, options)
   if (byCombinedContext) return byCombinedContext
 
-  const byDestinationOnly = uniqueDestinationMatch(finalDestination, options)
-  if (byDestinationOnly) return byDestinationOnly
+  return uniqueDestinationMatch(finalDestination, options)
+}
 
-  return null
+function kstDateOffset(days: number) {
+  const now = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  now.setUTCDate(now.getUTCDate() + days)
+  return now.toISOString().slice(0, 10)
+}
+
+function relativeDocumentDate(sourceMessage: string, current: unknown) {
+  if (/어제(?:\s*날짜|자로|로)?/i.test(sourceMessage)) return kstDateOffset(-1)
+  if (/오늘(?:\s*날짜|자로|로)?/i.test(sourceMessage)) return kstDateOffset(0)
+  return txt(current, 10)
 }
 
 function inferredCartons(row: any, setting: any) {
@@ -140,14 +164,31 @@ function suggestionRows(query: unknown, options: any[]) {
     .map((option) => ({ id: txt(option.id, 120), label: txt(option.label, 220), sub: txt(option.sub, 300) }))
 }
 
-function normalizeDraft(card: any) {
+async function sourceMessageForCard(card: any) {
+  const sourceId = txt(card?.source_user_message_id, 100)
+  if (!sourceId) return ''
+  const db = createMoniServiceRoleClient()
+  const result = await db.from('moni_ai_messages')
+    .select('content')
+    .eq('business_id', BUSINESS_ID)
+    .eq('id', sourceId)
+    .eq('role', 'user')
+    .maybeSingle()
+  if (result.error) return ''
+  return txt(result.data?.content, 6000)
+}
+
+async function normalizeDraft(card: any) {
   const fields = { ...(card?.fields || {}) }
   const destinations = Array.isArray(card?.options?.destinations) ? card.options.destinations : []
   const exportProducts = Array.isArray(card?.options?.export_products) ? card.options.export_products : []
   const extracted = card?.extracted_context || {}
+  const sourceMessage = await sourceMessageForCard(card)
+
+  fields.document_date = relativeDocumentDate(sourceMessage, fields.document_date)
 
   if (!txt(fields.consignee_id)) {
-    const matchedDestination = uniqueDestinationFromContext(extracted, destinations)
+    const matchedDestination = uniqueDestinationFromContext(extracted, destinations, sourceMessage)
     if (matchedDestination) {
       fields.consignee_id = txt(matchedDestination.id, 120)
       if (!txt(fields.final_destination)) fields.final_destination = txt(matchedDestination.sub, 180).split(' · ')[0]
@@ -169,6 +210,8 @@ function normalizeDraft(card: any) {
       unit_price: row?.unit_price === '' || row?.unit_price === null || row?.unit_price === undefined ? setting?.default_unit_price ?? '' : row.unit_price,
       price_overridden: false,
       price_override_reason: '',
+      match_mode: 'canonical_alias_match',
+      matched_label: txt(selected.label, 220),
     }
   })
   fields.items = items
@@ -214,6 +257,12 @@ function normalizeDraft(card: any) {
     missing_fields: [...new Set(missing)],
     unresolved_items: unresolved,
     extracted_context: { ...extracted, items: extractedItems },
+    context_resolution: {
+      mode: 'CANONICAL_MASTER_ASSISTED',
+      destination_auto_matched: Boolean(selectedDestination),
+      item_auto_matched_count: items.filter((row: any) => txt(row.export_product_setting_id, 120)).length,
+      item_count: items.length,
+    },
   }
 }
 
@@ -223,7 +272,12 @@ export async function GET(request: NextRequest) {
   const payload = await response.json().catch(() => null) as Record<string, any> | null
   if (!payload) return NextResponse.json({ ok: false, error: '수출 문서 카드 응답을 읽지 못했습니다.' }, { status: 500 })
   if (payload?.card?.domain === 'sales_export_bundle' && payload?.card?.stage === 'draft') {
-    payload.card = normalizeDraft(payload.card)
+    try {
+      payload.card = await normalizeDraft(payload.card)
+    } catch (error) {
+      console.error('[MONI_MOBILE_EXPORT_CONTEXT_ENHANCE_ERROR]', error)
+      // Never hide or replace the canonical export card because optional enrichment failed.
+    }
   }
   return NextResponse.json(payload, { status: response.status, headers: { 'Cache-Control': 'no-store' } })
 }
