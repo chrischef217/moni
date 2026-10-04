@@ -12,12 +12,10 @@ export async function GET() {
   return Response.json(
     {
       ok: true,
-      service: "GREEM Music API",
-      version: "1.0.0",
-      providers: {
-        elevenlabs: !!process.env.ELEVENLABS_API_KEY,
-        stability: !!process.env.STABILITY_API_KEY,
-      },
+      service: "GREEM Music Lab",
+      version: "2.0.0-free",
+      mode: "free-browser",
+      paid_api_routes: false,
     },
     { headers: CORS }
   );
